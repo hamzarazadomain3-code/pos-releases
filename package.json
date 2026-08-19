@@ -1,0 +1,101 @@
+{
+  "name": "pos-app",
+  "version": "1.5.7",
+  "description": "Local Billing & Inventory POS System",
+  "main": "dist/main/main.js",
+  "author": "ShopKeeper POS",
+  "license": "Commercial",
+  "private": true,
+  "scripts": {
+    "dev:vite": "vite",
+    "dev:main": "tsc -p tsconfig.main.json -w",
+    "dev:electron": "wait-on tcp:5173 && wait-on dist/main/main.js && cross-env NODE_ENV=development electron .",
+    "dev": "concurrently -k -n vite,main,electron -c blue,green,magenta \"npm:dev:vite\" \"npm:dev:main\" \"npm:dev:electron\"",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "vite build",
+    "build": "npm run build:main && npm run build:renderer",
+    "package": "npm run build && npm run prepare:puppeteer && electron-builder",
+    "package:dir": "npm run build && npm run prepare:puppeteer && electron-builder --dir",
+    "prepare:puppeteer": "node scripts/prepare-puppeteer.js",
+    "release": "npm run build && electron-builder --publish always && node scripts/finalize-release.js",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "bwip-js": "^4.11.2",
+    "electron-updater": "^6.8.9",
+    "i18next": "^26.3.6",
+    "i18next-browser-languagedetector": "^8.2.1",
+    "jsbarcode": "^3.11.5",
+    "qrcode": "^1.5.3",
+    "react-i18next": "^17.0.11",
+    "recharts": "^2.10.3",
+    "whatsapp-web.js": "^1.25.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/jsbarcode": "^3.11.4",
+    "@types/node": "^24.0.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^18.2.73",
+    "@types/react-dom": "^18.2.22",
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^43.4.0",
+    "electron-builder": "^24.13.3",
+    "node-fetch": "^2.7.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "typescript": "^5.4.3",
+    "vite": "^5.2.6",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.shopkeeper.pos",
+    "productName": "ShopKeeper POS",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "hamzarazadomain3-code",
+        "repo": "pos-releases"
+      }
+    ],
+    "directories": {
+      "output": "dist_release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json",
+      "scripts/smoke.js"
+    ],
+    "extraResources": [
+      {
+        "from": "migrations",
+        "to": "migrations"
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      },
+      {
+        "from": "build/puppeteer-cache",
+        "to": "puppeteer-cache"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ShopKeeper POS",
+      "artifactName": "ShopKeeperPOS-Setup-${version}.${ext}"
+    }
+  }
+}

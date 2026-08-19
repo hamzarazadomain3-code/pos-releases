@@ -1,0 +1,198 @@
+import { contextBridge, ipcRenderer } from 'electron';
+import type { PosBridge } from '../shared/types';
+
+const bridge: PosBridge = {
+  app: {
+    getVersion: () => ipcRenderer.invoke('app:get-version'),
+  },
+  updater: {
+    check: () => ipcRenderer.invoke('updater:check'),
+    install: () => ipcRenderer.invoke('updater:install'),
+    getState: () => ipcRenderer.invoke('updater:getState'),
+    onStatus: (callback: (status: { state: string; detail?: string }) => void) => {
+      const listener = (_e: unknown, status: { state: string; detail?: string }) => callback(status);
+      ipcRenderer.on('updater:status', listener);
+      return () => ipcRenderer.removeListener('updater:status', listener);
+    },
+  },
+  inventory: {
+    list: (search?: string, includeInactive?: boolean) =>
+      ipcRenderer.invoke('inventory:list', search, includeInactive),
+    get: (id: number) => ipcRenderer.invoke('inventory:get', id),
+    getByBarcode: (barcode: string) => ipcRenderer.invoke('inventory:getByBarcode', barcode),
+    create: (input) => ipcRenderer.invoke('inventory:create', input),
+    update: (id: number, input) => ipcRenderer.invoke('inventory:update', id, input),
+    remove: (id: number) => ipcRenderer.invoke('inventory:remove', id),
+    adjustStock: (productId: number, changeQty: number, reason: string, refType?: string | null, refId?: number | null) =>
+      ipcRenderer.invoke('inventory:adjustStock', productId, changeQty, reason, refType, refId),
+    movements: (productId?: number) => ipcRenderer.invoke('inventory:movements', productId),
+    getBatches: (productId: number) => ipcRenderer.invoke('inventory:getBatches', productId),
+    getUnits: (productId: number) => ipcRenderer.invoke('inventory:getUnits', productId),
+    lowStock: () => ipcRenderer.invoke('inventory:lowStock'),
+    categories: () => ipcRenderer.invoke('inventory:categories'),
+    createCategory: (name: string) => ipcRenderer.invoke('inventory:createCategory', name),
+    units: () => ipcRenderer.invoke('inventory:units'),
+    generateBarcode: () => Promise.resolve(generateEan13Local()),
+  },
+  sales: {
+    create: (input) => ipcRenderer.invoke('sales:create', input),
+    get: (id: number) => ipcRenderer.invoke('sales:get', id),
+    list: (from?: string, to?: string) => ipcRenderer.invoke('sales:list', from, to),
+    void: (id: number, reason: string) => ipcRenderer.invoke('sales:void', id, reason),
+    nextInvoiceNo: () => ipcRenderer.invoke('sales:nextInvoiceNo'),
+    hold: (kind: 'held' | 'quotation', label: string, data: unknown) =>
+      ipcRenderer.invoke('sales:hold', kind, label, data),
+    heldBills: (kind?: 'held' | 'quotation') => ipcRenderer.invoke('sales:heldBills', kind),
+    getHeld: (id: number) => ipcRenderer.invoke('sales:getHeld', id),
+    deleteHeld: (id: number) => ipcRenderer.invoke('sales:deleteHeld', id),
+  },
+  customers: {
+    list: () => ipcRenderer.invoke('customers:list'),
+    create: (name: string, phone?: string) => ipcRenderer.invoke('customers:create', name, phone),
+    ledger: (customerId: number) => ipcRenderer.invoke('customers:ledger', customerId),
+    receivePayment: (customerId: number, amount: number, mode: string, note?: string) =>
+      ipcRenderer.invoke('customers:receivePayment', customerId, amount, mode, note),
+    setCreditLimit: (customerId: number, limit: number) =>
+      ipcRenderer.invoke('customers:setCreditLimit', customerId, limit),
+  },
+  settings: {
+    getAll: () => ipcRenderer.invoke('settings:getAll'),
+    set: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value),
+    chooseCloudFolder: () => ipcRenderer.invoke('settings:chooseCloudFolder'),
+  },
+    printing: {
+    // existing printing methods
+
+      printSale: (saleId: number) => ipcRenderer.invoke('printing:printSale', saleId),
+      printLabel: (productId: number, copies?: number) => ipcRenderer.invoke('printing:printLabel', productId, copies),
+      printBarcodeLabel: (productId: number, copies?: number) => ipcRenderer.invoke('printing:printBarcodeLabel', productId, copies),
+      openCashDrawer: () => ipcRenderer.invoke('printing:openCashDrawer'),
+      previewReceipt: (saleId: number) => ipcRenderer.invoke('printing:previewReceipt', saleId),
+    previewInvoice: (saleId: number) => ipcRenderer.invoke('printing:previewInvoice', saleId),
+    printInvoice: (saleId: number) => ipcRenderer.invoke('printing:printInvoice', saleId),
+    },
+  licensing: {
+    activate: (key: string) => ipcRenderer.invoke('licensing:activate', key),
+    check: () => ipcRenderer.invoke('licensing:check')
+  },
+  reports: {
+    dashboard: () => ipcRenderer.invoke('reports:dashboard'),
+    expiringSoon: (days?: number) => ipcRenderer.invoke('reports:expiringSoon', days),
+    salesReport: (from?: string, to?: string) => ipcRenderer.invoke('reports:salesReport', from, to),
+    profitLoss: (from?: string, to?: string) => ipcRenderer.invoke('reports:profitLoss', from, to),
+    bestSellers: (from?: string, to?: string, limit?: number) => ipcRenderer.invoke('reports:bestSellers', from, to, limit),
+    stockValuation: () => ipcRenderer.invoke('reports:stockValuation'),
+    expenses: (from?: string, to?: string) => ipcRenderer.invoke('reports:expenses', from, to),
+    addExpense: (input) => ipcRenderer.invoke('reports:addExpense', input),
+    deleteExpense: (id: number) => ipcRenderer.invoke('reports:deleteExpense', id),
+    getDailySalesTrend: () => ipcRenderer.invoke('reports:getDailySalesTrend'),
+    getTopProducts: (limit?: number) => ipcRenderer.invoke('reports:getTopProducts', limit),
+    getDailyStats: () => ipcRenderer.invoke('reports:getDailyStats'),
+    getReceiptSettings: () => ipcRenderer.invoke('reports:getReceiptSettings'),
+    updateReceiptSetting: (key: string, value: string) => ipcRenderer.invoke('reports:updateReceiptSetting', key, value),
+  },
+  whatsapp: {
+    getStatus: () => ipcRenderer.invoke('whatsapp:status'),
+    send: (phone: string, text: string) => ipcRenderer.invoke('whatsapp:send', phone, text),
+    sendSaleReceipt: (saleId: number, phone?: string) => ipcRenderer.invoke('whatsapp:sendSaleReceipt', saleId, phone),
+    onQr: (callback: (qr: string | null) => void) => {
+      const listener = (_e: unknown, qr: string | null) => callback(qr);
+      ipcRenderer.on('whatsapp:qr', listener);
+      return () => ipcRenderer.removeListener('whatsapp:qr', listener);
+    },
+    onStatus: (callback: (status: { connected: boolean; phone?: string | null; error?: string | null }) => void) => {
+      const listener = (_e: unknown, status: { connected: boolean; phone?: string | null; error?: string | null }) => callback(status);
+      ipcRenderer.on('whatsapp:status', listener);
+      return () => ipcRenderer.removeListener('whatsapp:status', listener);
+    },
+  },
+  activity: {
+    list: (limit?: number) => ipcRenderer.invoke('activity:list', limit),
+  },
+  auth: {
+    verify: (username: string, password: string) => ipcRenderer.invoke('auth:verify', username, password),
+    login: (username: string, password: string) => ipcRenderer.invoke('auth:login', username, password),
+    loginWithPin: (pin: string) => ipcRenderer.invoke('auth:loginWithPin', pin),
+    logout: () => ipcRenderer.invoke('auth:logout'),
+    currentUser: () => ipcRenderer.invoke('auth:currentUser'),
+    verifyForUser: (userId: number, secret: string) => ipcRenderer.invoke('auth:verifyForUser', userId, secret),
+    defaultPasswordActive: () => ipcRenderer.invoke('auth:defaultPasswordActive'),
+  },
+  users: {
+    list: () => ipcRenderer.invoke('users:list'),
+    create: (input) => ipcRenderer.invoke('users:create', input),
+    update: (id: number, input) => ipcRenderer.invoke('users:update', id, input),
+    remove: (id: number) => ipcRenderer.invoke('users:remove', id),
+  },
+  shifts: {
+    open: (openingCash: number) => ipcRenderer.invoke('shifts:open', openingCash),
+    close: (id: number, countedCash: number, notes?: string) => ipcRenderer.invoke('shifts:close', id, countedCash, notes),
+    forceClose: (id: number, countedCash?: number, notes?: string) =>
+      ipcRenderer.invoke('shifts:forceClose', id, countedCash, notes),
+    current: () => ipcRenderer.invoke('shifts:current'),
+    list: () => ipcRenderer.invoke('shifts:list'),
+    get: (id: number) => ipcRenderer.invoke('shifts:get', id),
+  },
+
+  backup: {
+    run: () => ipcRenderer.invoke('backup:run'),
+  },
+  exportData: {
+    saveCsv: (defaultName: string, headers: string[], rows: (string | number)[][]) =>
+      ipcRenderer.invoke('export:saveCsv', defaultName, headers, rows),
+    saveXlsx: (defaultName: string, sheets: { name: string; headers: string[]; rows: (string | number | null)[][] }[]) =>
+      ipcRenderer.invoke('export:saveXlsx', defaultName, sheets),
+  },
+  excel: {
+    exportProducts: () => ipcRenderer.invoke('excel:exportProducts'),
+    exportSales: (from?: string, to?: string) => ipcRenderer.invoke('excel:exportSales', from, to),
+    exportCustomers: () => ipcRenderer.invoke('excel:exportCustomers'),
+    exportPurchaseOrders: () => ipcRenderer.invoke('excel:exportPurchaseOrders'),
+    exportExpenses: (from?: string, to?: string) => ipcRenderer.invoke('excel:exportExpenses', from, to),
+    downloadTemplate: () => ipcRenderer.invoke('excel:downloadTemplate'),
+    importProducts: () => ipcRenderer.invoke('excel:importProducts'),
+  },
+  purchases: {
+    suppliers: () => ipcRenderer.invoke('purchases:suppliers'),
+    createSupplier: (name: string, phone?: string, address?: string) =>
+      ipcRenderer.invoke('purchases:createSupplier', name, phone, address),
+    listOrders: (status?: string) => ipcRenderer.invoke('purchases:orders', status),
+    getOrder: (id: number) => ipcRenderer.invoke('purchases:getOrder', id),
+    createOrder: (supplierId: number, items) => ipcRenderer.invoke('purchases:createOrder', supplierId, items),
+    receiveOrder: (id: number) => ipcRenderer.invoke('purchases:receiveOrder', id),
+    cancelOrder: (id: number) => ipcRenderer.invoke('purchases:cancelOrder', id),
+    ledger: (supplierId: number) => ipcRenderer.invoke('purchases:ledger', supplierId),
+    paySupplier: (supplierId: number, amount: number, mode: string, note?: string) =>
+      ipcRenderer.invoke('purchases:paySupplier', supplierId, amount, mode, note),
+    priceHistory: (productId: number) => ipcRenderer.invoke('purchases:priceHistory', productId),
+  },
+  returns: {
+    create: (input) => ipcRenderer.invoke('returns:create', input),
+    list: (from?: string, to?: string) => ipcRenderer.invoke('returns:list', from, to),
+    get: (id: number) => ipcRenderer.invoke('returns:get', id),
+    createCashRefund: (amount: number, reason?: string, mode?: string) =>
+      ipcRenderer.invoke('returns:createCashRefund', amount, reason, mode),
+    listCashRefunds: (from?: string, to?: string) => ipcRenderer.invoke('returns:listCashRefunds', from, to),
+  },
+  audits: {
+    create: () => ipcRenderer.invoke('audits:create'),
+    list: () => ipcRenderer.invoke('audits:list'),
+    get: (id: number) => ipcRenderer.invoke('audits:get', id),
+    saveCounts: (auditId: number, counts) => ipcRenderer.invoke('audits:saveCounts', auditId, counts),
+    complete: (auditId: number) => ipcRenderer.invoke('audits:complete', auditId),
+  },
+  promotions: {
+    list: () => ipcRenderer.invoke('promotions:list'),
+    create: (input) => ipcRenderer.invoke('promotions:create', input),
+    update: (id: number, input) => ipcRenderer.invoke('promotions:update', id, input),
+    remove: (id: number) => ipcRenderer.invoke('promotions:remove', id),
+    resolve: (items) => ipcRenderer.invoke('promotions:resolve', items),
+  },
+};
+
+function generateEan13Local(): string {
+  const digits = '2' + String(Date.now()).slice(-4) + Array.from({ length: 7 }, (_, i) => (i + Date.now()) % 10).join('');
+  return digits.slice(0, 12);
+}
+
+contextBridge.exposeInMainWorld('api', bridge);

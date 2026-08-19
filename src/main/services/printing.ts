@@ -1,0 +1,468 @@
+import { BrowserWindow } from 'electron';
+import bwipjs from 'bwip-js';
+import { getSale } from './sales';
+import { getAllSettings } from './settings';
+import { getReceiptSettings } from './reports';
+import { getProduct } from './inventory';
+import { getUser } from './auth';
+
+function esc(s: string | null | undefined): string {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function getPrintSettings(): Record<string, string> {
+  try {
+    return { ...getAllSettings(), ...getReceiptSettings() };
+  } catch {
+    return getAllSettings();
+  }
+}
+
+function printHtml(html: string): void {
+  const win = new BrowserWindow({
+    show: false,
+    webPreferences: { sandbox: true },
+  });
+  win.webContents.setBackgroundThrottling(false);
+  win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+  win.webContents.once('did-finish-load', () => {
+    win.webContents.print(
+      { silent: false, printBackground: true },
+      () => win.destroy()
+    );
+  });
+  win.webContents.on('did-fail-load', () => win.destroy());
+}
+
+export function buildReceiptHtml(saleId: number): string {
+  const sale = getSale(saleId);
+  if (!sale) throw new Error('Sale not found');
+  const s = getPrintSettings();
+  const currency = s.currency || 'Rs';
+  const fmt = (n: number) => `${currency} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const cashier = getUser(sale.user_id ?? 0);
+  const rows = sale.items
+    .map((it) => {
+      const displayQty = it.display_qty;
+      const unitName = it.unit_name;
+      const useUnit = !!unitName && displayQty != null;
+      const qtyLabel = useUnit ? `${displayQty} ${unitName}` : String(it.qty);
+      const priceLabel =
+        useUnit && displayQty > 0 ? fmt(it.line_total / displayQty) : fmt(it.unit_price);
+      return `
+<tr>
+  <td class="item-name">${esc(it.product_name || `#${it.product_id}`)}</td>
+  <td class="r qty">${esc(qtyLabel)}</td>
+  <td class="r price">${priceLabel}</td>
+  <td class="r total">${fmt(it.line_total)}</td>
+</tr>
+${it.promo_name ? `<tr><td colspan="4" class="promo">Promo: ${esc(it.promo_name)}</td></tr>` : ''}`;
+    })
+    .join('');
+
+  const paymentRows = sale.payments
+    .map((p) => `<tr><td>${esc(p.mode)}</td><td class="r">${fmt(p.amount)}</td></tr>`)
+    .join('');
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; width: 300px; margin: 0 auto; font-size: 12px; color: #000; }
+  h1 { font-size: 15px; margin: 0 0 2px; text-align: center; }
+  .center { text-align: center; }
+  .addr { font-size: 11px; color: #444; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; }
+  td { padding: 2px 0; vertical-align: top; }
+  td.r { text-align: right; }
+  .meta td { font-size: 11px; }
+  .totals td { font-weight: 600; }
+  .line { border-top: 1px dashed #000; margin: 6px 0; }
+  .footer { text-align: center; margin-top: 8px; font-size: 11px; }
+  .qty { color: #444; }
+  .promo { color: #16a34a; font-size: 10px; display: block; }
+</style>
+</head>
+  <body>
+    ${s.shop_logo ? `<img src="${esc(s.shop_logo)}" style="max-width:100%;height:auto;margin-bottom:4px;"/>` : ''}
+    <h1>${esc(s.shop_name)}</h1>
+    <div class="center addr">${esc(s.shop_address)}${s.shop_phone ? '<br>' + esc(s.shop_phone) : ''}</div>
+    <div class="line"></div>
+    <table class="meta">
+      <tr><td>Invoice</td><td class="r">${esc(sale.invoice_no)}</td></tr>
+      <tr><td>Date</td><td class="r">${sale.created_at ? new Date(sale.created_at).toLocaleString() : ''}</td></tr>
+      ${sale.customer_name ? `<tr><td>Customer</td><td class="r">${esc(sale.customer_name)}</td></tr>` : ''}
+      <tr><td>Cashier</td><td class="r">${esc(cashier?.username ?? '')}</td></tr>
+    </table>
+    <div class="line"></div>
+    <table>${rows}</table>
+    <div class="line"></div>
+    <table class="totals">
+      <tr><td>Subtotal</td><td class="r">${fmt(sale.subtotal)}</td></tr>
+      ${sale.discount_amount > 0 ? `<tr><td>Discount</td><td class="r">-${fmt(sale.discount_amount)}</td></tr>` : ''}
+      ${sale.tax_amount > 0 ? `<tr><td>Tax</td><td class="r">${fmt(sale.tax_amount)}</td></tr>` : ''}
+      ${sale.service_charge && sale.service_charge > 0 ? `<tr><td>Service Charge</td><td class="r">${fmt(sale.service_charge)}</td></tr>` : ''}
+      ${sale.freight && sale.freight > 0 ? `<tr><td>Freight/Delivery</td><td class="r">${fmt(sale.freight)}</td></tr>` : ''}
+      <tr><td>TOTAL</td><td class="r">${fmt(sale.total_amount)}</td></tr>
+      ${paymentRows ? `<tr><td colspan="2" style="font-size:0"> </td></tr>` + paymentRows : ''}
+    </table>
+    <div class="footer">${esc(s.receipt_footer)}</div>
+  </body>
+</html>`;
+}
+
+export function previewHtml(html: string): void {
+  const win = new BrowserWindow({
+    show: true,
+    width: 400,
+    height: 600,
+    webPreferences: { sandbox: true },
+  });
+  win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+}
+
+export function buildReceiptText(saleId: number): string {
+  const sale = getSale(saleId);
+  if (!sale) throw new Error('Sale not found');
+  const s = getPrintSettings();
+  const currency = s.currency || 'Rs';
+  const fmt = (n: number) => `${currency} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const cashier = getUser(sale.user_id ?? 0);
+
+  const lines: string[] = [];
+  if (s.shop_name) lines.push(s.shop_name);
+  if (s.shop_address) lines.push(s.shop_address);
+  if (s.shop_phone) lines.push(s.shop_phone);
+  lines.push('----------------------------');
+  lines.push(`Invoice: ${sale.invoice_no}`);
+  lines.push(`Date: ${sale.created_at ? new Date(sale.created_at).toLocaleString() : ''}`);
+  if (sale.customer_name) lines.push(`Customer: ${sale.customer_name}`);
+  lines.push(`Cashier: ${cashier?.username ?? ''}`);
+  lines.push('----------------------------');
+  for (const it of sale.items) {
+    const displayQty = it.display_qty;
+    const unitName = it.unit_name;
+    const useUnit = !!unitName && displayQty != null;
+    const qtyLabel = useUnit ? `${displayQty} ${unitName}` : String(it.qty);
+    const priceLabel = useUnit && displayQty > 0 ? fmt(it.line_total / displayQty) : fmt(it.unit_price);
+    lines.push(`${it.product_name || `#${it.product_id}`}`);
+    lines.push(`  ${qtyLabel} x ${priceLabel} = ${fmt(it.line_total)}`);
+    if (it.promo_name) lines.push(`  Promo: ${it.promo_name}`);
+  }
+  lines.push('----------------------------');
+  lines.push(`Subtotal: ${fmt(sale.subtotal)}`);
+  if (sale.discount_amount > 0) lines.push(`Discount: -${fmt(sale.discount_amount)}`);
+  if (sale.tax_amount > 0) lines.push(`Tax: ${fmt(sale.tax_amount)}`);
+  if (sale.service_charge && sale.service_charge > 0) lines.push(`Service Charge: ${fmt(sale.service_charge)}`);
+  if (sale.freight && sale.freight > 0) lines.push(`Freight/Delivery: ${fmt(sale.freight)}`);
+  lines.push(`TOTAL: ${fmt(sale.total_amount)}`);
+  for (const p of sale.payments) lines.push(`  ${p.mode}: ${fmt(p.amount)}`);
+  lines.push('----------------------------');
+  if (s.receipt_footer) lines.push(s.receipt_footer);
+  return lines.join('\n');
+}
+
+export function previewReceipt(saleId: number): void {
+  previewHtml(buildReceiptHtml(saleId));
+}
+
+export function printSale(saleId: number): void {
+  printHtml(buildReceiptHtml(saleId));
+}
+
+export function buildInvoiceHtml(saleId: number): string {
+  const sale = getSale(saleId);
+  if (!sale) throw new Error('Sale not found');
+  const s = getPrintSettings();
+  const currency = s.currency || 'Rs';
+  const fmt = (n: number) => `${currency} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const cashier = getUser(sale.user_id ?? 0);
+  const rows = sale.items
+    .map((it) => {
+      const displayQty = it.display_qty;
+      const unitName = it.unit_name;
+      const useUnit = !!unitName && displayQty != null;
+      const qtyLabel = useUnit ? `${displayQty} ${unitName}` : String(it.qty);
+      const priceLabel =
+        useUnit && displayQty > 0 ? fmt(it.line_total / displayQty) : fmt(it.unit_price);
+      return `
+<tr>
+  <td class="item-name">${esc(it.product_name || `#${it.product_id}`)}</td>
+  <td class="r qty">${esc(qtyLabel)}</td>
+  <td class="r price">${priceLabel}</td>
+  <td class="r discount">${it.discount ? fmt(it.discount) : ''}</td>
+  <td class="r tax">${it.tax_rate ? `${it.tax_rate}%` : ''}</td>
+  <td class="r total">${fmt(it.line_total)}</td>
+</tr>
+${it.promo_name ? `<tr><td colspan="6" class="promo">Promo: ${esc(it.promo_name)}</td></tr>` : ''}`;
+    })
+    .join('');
+
+  const paymentRows = sale.payments
+    .map((p) => `<tr><td>${esc(p.mode)}</td><td class="r">${fmt(p.amount)}</td></tr>`)
+    .join('');
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; width: 21cm; margin: 0 auto; font-size: 12px; color: #000; }
+  h1 { font-size: 20px; margin: 0 0 4px; text-align: center; }
+  .center { text-align: center; }
+  .addr { font-size: 13px; color: #444; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+  th, td { padding: 4px 2px; border-bottom: 1px solid #ddd; }
+  td.r { text-align: right; }
+  .meta td { font-size: 13px; }
+  .totals td { font-weight: 600; }
+  .line { border-top: 2px solid #000; margin: 12px 0; }
+  .footer { text-align: center; margin-top: 12px; font-size: 13px; }
+  .promo { color: #16a34a; font-size: 12px; display: block; }
+  .signature { margin-top: 30px; font-size: 13px; }
+</style>
+</head>
+<body>
+  ${s.shop_logo ? `<img src="${esc(s.shop_logo)}" style="max-width:100%;height:auto;margin-bottom:8px;"/>` : ''}
+  <h1>${esc(s.shop_name)}</h1>
+  <div class="center addr">${esc(s.shop_address)}${s.shop_phone ? '<br>' + esc(s.shop_phone) : ''}</div>
+  <div class="line"></div>
+  <table class="meta">
+    <tr><td>Invoice</td><td class="r">${esc(sale.invoice_no)}</td></tr>
+    <tr><td>Date</td><td class="r">${sale.created_at ? new Date(sale.created_at).toLocaleString() : ''}</td></tr>
+    ${sale.customer_name ? `<tr><td>Customer</td><td class="r">${esc(sale.customer_name)}</td></tr>` : ''}
+    <tr><td>Cashier</td><td class="r">${esc(cashier?.username ?? '')}</td></tr>
+  </table>
+  <div class="line"></div>
+  <table>
+    <tr>
+      <th class="item-name">Item</th>
+      <th class="r qty">Qty</th>
+      <th class="r price">Price</th>
+      <th class="r discount">Discount</th>
+      <th class="r tax">Tax</th>
+      <th class="r">Total</th>
+    </tr>
+    ${rows}
+  </table>
+  <div class="line"></div>
+  <table class="totals">
+    <tr><td>Subtotal</td><td class="r">${fmt(sale.subtotal)}</td></tr>
+    ${sale.discount_amount > 0 ? `<tr><td>Discount</td><td class="r">-${fmt(sale.discount_amount)}</td></tr>` : ''}
+    ${sale.tax_amount > 0 ? `<tr><td>Tax</td><td class="r">${fmt(sale.tax_amount)}</td></tr>` : ''}
+    ${sale.service_charge && sale.service_charge > 0 ? `<tr><td>Service Charge</td><td class="r">${fmt(sale.service_charge)}</td></tr>` : ''}
+    ${sale.freight && sale.freight > 0 ? `<tr><td>Freight/Delivery</td><td class="r">${fmt(sale.freight)}</td></tr>` : ''}
+    <tr><td>TOTAL</td><td class="r">${fmt(sale.total_amount)}</td></tr>
+    ${paymentRows ? `<tr><td colspan="2" style="font-size:0"> </td></tr>` + paymentRows : ''}
+  </table>
+  <div class="signature">
+    <div>Cashier Signature: ______________________</div>
+    <div>Customer Signature: ______________________</div>
+  </div>
+  <div class="footer">${esc(s.receipt_footer)}</div>
+</body>
+</html>`;
+}
+
+export function previewInvoice(saleId: number): void {
+  previewHtml(buildInvoiceHtml(saleId));
+}
+
+export function printInvoice(saleId: number): void {
+  printHtml(buildInvoiceHtml(saleId));
+}
+
+
+function toDataUrl(options: { bcid: string; text: string; [k: string]: unknown }): Promise<string> {
+  return new Promise((resolve) => {
+    bwipjs.toBuffer(options, (err: string | Error | null, buffer?: Buffer) => {
+      if (err || !buffer) {
+        resolve('');
+      } else {
+        resolve('data:image/png;base64,' + buffer.toString('base64'));
+      }
+    });
+  });
+}
+
+export async function buildLabelHtml(productId: number, copies = 1): Promise<string> {
+  const product = getProduct(productId);
+  if (!product) throw new Error('Product not found');
+  const s = getPrintSettings();
+  const currency = s.currency || 'Rs';
+  const price = `${currency} ${product.sale_price.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+
+  let barcode = '';
+  if (product.barcode) {
+    barcode = await toDataUrl({
+      bcid: 'ean13',
+      text: product.barcode,
+      scale: 3,
+      height: 12,
+      includetext: true,
+      textxalign: 'center',
+    });
+  }
+
+  const labels = Array.from({ length: Math.max(1, copies) })
+    .map(
+      () => `
+      <div class="label">
+        <div class="name">${esc(product.name)}</div>
+        <div class="price">${esc(price)}</div>
+        ${barcode ? `<img src="${barcode}" alt="barcode" />` : `<div class="nobc">${esc(product.sku ?? product.barcode ?? '')}</div>`}
+      </div>`
+    )
+    .join('');
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; }
+  .label { width: 250px; border: 1px dashed #999; padding: 8px 10px; margin: 4px; display: inline-block; text-align: center; page-break-inside: avoid; }
+  .name { font-size: 11px; font-weight: 600; margin-bottom: 4px; }
+  .price { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  img { max-width: 100%; height: auto; }
+  .nobc { font-size: 10px; color: #444; }
+</style>
+</head>
+<body>
+${labels}
+</body>
+</html>`;
+}
+
+export async function printLabel(productId: number, copies = 1): Promise<boolean> {
+  printHtml(await buildLabelHtml(productId, copies));
+  return true;
+}
+
+export async function buildBarcodeLabelHtml(productId: number, copies = 1): Promise<string> {
+  const product = getProduct(productId);
+  if (!product) throw new Error('Product not found');
+
+  let barcode = '';
+  if (product.barcode) {
+    barcode = await toDataUrl({
+      bcid: 'ean13',
+      text: product.barcode,
+      scale: 3,
+      height: 12,
+      includetext: true,
+      textxalign: 'center',
+    });
+  }
+
+  const labels = Array.from({ length: Math.max(1, copies) })
+    .map(
+      () => `
+      <div class="label">
+        ${barcode ? `<img src="${barcode}" alt="barcode" />` : `<div class="nobc">${esc(product.sku ?? product.barcode ?? 'no barcode')}</div>`}
+      </div>`
+    )
+    .join('');
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; }
+  .label { width: 250px; border: 1px dashed #999; padding: 6px 10px; margin: 4px; display: inline-block; text-align: center; page-break-inside: avoid; }
+  img { max-width: 100%; height: auto; }
+  .nobc { font-size: 10px; color: #444; }
+</style>
+</head>
+<body>
+${labels}
+</body>
+</html>`;
+}
+
+export async function printBarcodeLabel(productId: number, copies = 1): Promise<boolean> {
+  printHtml(await buildBarcodeLabelHtml(productId, copies));
+  return true;
+}
+
+export async function openCashDrawer(): Promise<{ ok: boolean; message: string }> {
+  const { execFile } = await import('node:child_process');
+  const script = `
+$ErrorActionPreference = 'Stop'
+try {
+  $printer = Get-CimInstance Win32_Printer | Where-Object { $_.Default -eq $true } | Select-Object -First 1
+  if (-not $printer) {
+    Write-Output 'NO_PRINTER'
+    exit 2
+  }
+  Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class DrawerPulse {
+  [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
+  public static extern bool OpenPrinter(string pPrinterName, out IntPtr phPrinter, IntPtr pDefault);
+  [DllImport("winspool.drv", SetLastError = true)]
+  public static extern bool ClosePrinter(IntPtr hPrinter);
+  [DllImport("winspool.drv", SetLastError = true)]
+  public static extern bool StartDocPrinter(IntPtr hPrinter, int level, ref DOC_INFO_1 pDocInfo);
+  [DllImport("winspool.drv", SetLastError = true)]
+  public static extern bool EndDocPrinter(IntPtr hPrinter);
+  [DllImport("winspool.drv", SetLastError = true)]
+  public static extern bool WritePrinter(IntPtr hPrinter, byte[] pBytes, int dwCount, out int dwWritten);
+  [StructLayout(LayoutKind.Sequential)]
+  public struct DOC_INFO_1 { public string pDocName; public string pOutputFile; public string pDatatype; }
+}
+'@
+  $docInfo = New-Object DrawerPulse+DOC_INFO_1
+  $docInfo.pDocName = 'Cash Drawer'
+  $docInfo.pDatatype = 'RAW'
+  $hPrinter = [IntPtr]::Zero
+  if (-not [DrawerPulse]::OpenPrinter($printer.Name, [ref]$hPrinter, [IntPtr]::Zero)) {
+    Write-Output 'OPEN_FAILED'
+    exit 3
+  }
+  try {
+    [DrawerPulse]::StartDocPrinter($hPrinter, 1, [ref]$docInfo) | Out-Null
+    # ESC/POS cash drawer kick: ESC p m t1 t2  (pulse pin 2, 50ms on, 250ms off)
+    $bytes = [byte[]](0x1B, 0x70, 0x00, 0x19, 0xFA)
+    $written = 0
+    [DrawerPulse]::WritePrinter($hPrinter, $bytes, $bytes.Length, [ref]$written) | Out-Null
+    [DrawerPulse]::EndDocPrinter($hPrinter) | Out-Null
+    Write-Output 'KICK_SENT'
+  } finally {
+    [DrawerPulse]::ClosePrinter($hPrinter) | Out-Null
+  }
+} catch {
+  Write-Output ('ERROR: ' + $_.Exception.Message)
+  exit 1
+}
+`;
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 15000, windowsHide: true }, (err, stdout) => {
+      const out = String(stdout || '').trim();
+      if (out.includes('NO_PRINTER')) {
+        resolve({ ok: false, message: 'No default printer found. Connect a thermal printer to use the cash drawer.' });
+        return;
+      }
+      if (out.includes('OPEN_FAILED')) {
+        resolve({ ok: false, message: 'Could not open the printer for a drawer pulse. Check that the printer is online.' });
+        return;
+      }
+      if (err || out.includes('ERROR:')) {
+        resolve({ ok: false, message: out.includes('ERROR:') ? out.replace('ERROR: ', '') : String(err?.message ?? 'Unknown printer error') });
+        return;
+      }
+      if (out.includes('KICK_SENT')) {
+        resolve({ ok: true, message: 'Cash drawer pulse sent.' });
+        return;
+      }
+      resolve({ ok: false, message: 'Cash drawer command failed — no response from printer.' });
+    });
+  });
+}

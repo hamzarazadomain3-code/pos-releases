@@ -1,0 +1,134 @@
+import i18n from 'i18next';
+import { initReactI18next } from 'react-i18next';
+import LanguageDetector from 'i18next-browser-languagedetector';
+
+const resources = {
+  ur: {
+    translation: {
+      navigation: {
+        dashboard: 'ڈیشبورڈ',
+        billing: 'بلنگ',
+        inventory: 'انوینٹری',
+        sales: 'سیلز',
+        purchases: 'خرییدے',
+        customers: 'گاہکین',
+        reports: 'ریپورٹس',
+        users: 'صارفین',
+        settings: 'ترتیبات',
+        audits: 'آڈٹ',
+        shifts: 'شفٹس',
+        returns: 'ریٹرنز',
+        promotions: 'پروموشنز',
+        Udhaar: 'ادین',
+      },
+      buttons: {
+        save: 'محفوظ کریں',
+        cancel: 'منسوخ کریں',
+        delete: 'حذف کریں',
+        edit: 'تبدیل کریں',
+        add: 'شامل کریں',
+        close: 'بند کریں',
+        print: 'پرنٹ کریں',
+        preview: 'پیش کریں',
+        search: 'تلاش کریں',
+        submit: 'جمع کریں',
+        ok: 'ٹھیک ہے',
+        yes: 'ہاں',
+        no: 'نہیں',
+        activate: 'فعال کریں',
+        hold: 'روک دیں',
+        void: 'منسوخ کریں',
+      },
+      forms: {
+        product_name: 'پروڈکٹ کا نام',
+        sku: 'ایس کی یو',
+        barcode: 'بارکوڈ',
+        category: 'کیٹیگری',
+        cost_price: 'لاگت کا قیمت',
+        sale_price: 'فروش کا قیمت',
+        tax_rate: 'ٹیکس درجہ (%)',
+        stock_qty: 'اسٹاک مقدار',
+        low_stock_threshold: 'کم اسٹاک تلاش',
+        expiry_date: 'ختم ہونے کا تاریخ',
+        shop_name: 'فروش کا نام',
+        shop_address: 'فروش کا پتہ',
+        shop_phone: 'فون',
+        receipt_footer: 'رسید کا فوٹر',
+        currency: 'کرنسی',
+    },
+    tables: {
+      id: 'AZ',
+      name: 'نام',
+      sku: 'ایس کی یو',
+      barcode: 'بارکوڈ',
+      category: 'کیٹیگری',
+      cost: 'لاغت',
+      price: 'قیمت',
+      stock: 'اسٹاک',
+      expiry: 'ختم',
+      tax: 'ٹیکس',
+      total: 'کل',
+    },
+    messages: {
+      product_created: 'پروڈکٹ بنائے گئے',
+      product_updated: 'پروڈکٹ اپ ڈیٹ کیا گیا',
+      product_deleted: 'پروڈکٹ حذف کیا',
+      sale_created: 'سیل کیا گیا',
+      invoice_printed: 'インボイス印刷完了',
+      receipt_printed: 'ریسیٹ پرنٹ کیا',
+    },
+    errors: {
+      no_product_found: 'کوئی پروڈکٹ نہیں ملا',
+      invalid_price: 'غیر محفوظ قیمت',
+      save_failed: 'محفوظ کرنا ناکام',
+      network_error: 'چیل کے تبانی',
+    },
+    settings: {
+      general: 'عام',
+      appearance: 'ظاہریات',
+      language: 'زبان',
+      english: 'انگریزی',
+      urdu: 'اردو',
+    },
+    labels: {
+      invoice: 'آفر',
+      receipt: 'رسید',
+      total: 'کل',
+      subtotal: 'ثوالثہ',
+      discount: 'تخفیض',
+      tax: 'ٹیکس',
+      paid: 'ادا کیا گیا',
+      balance: 'بیلنس',
+      customer: 'گاہک',
+      cashier: 'کیشر',
+      date: 'تاریخ',
+      payment_method: 'ادا کرنے کا طریقہ',
+      amount: 'مقدار',
+    },
+    dashboard: {
+      today_sales: 'آج کے سیلز',
+      today_bills: 'آج کے بلینٹ',
+      udhaar: 'ادا نہیں',
+      low_stock: 'کم اسٹاک',
+      expenses: 'خرچ',
+    },
+  }
+};
+
+i18n
+  .use(LanguageDetector)
+  .use(initReactI18next)
+  .init({
+    resources,
+    lng: 'en',
+    fallbackLng: 'en',
+    interpolation: {
+      escapeValue: false,
+    },
+    detection: {
+      key: 'language',
+      caches: ['localStorage'],
+    },
+  });
+
+export default i18n;
