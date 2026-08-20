@@ -29,9 +29,8 @@ interface CartLine {
   selected_unit_level: number;
   box_qty?: number;
   // BayLan Label Scale integration
-  scale_weight_kg?: number;   // e.g. 0.234 (weight from scale barcode)
-  scale_weight_g?: number;    // e.g. 234 (display grams)
   scale_plu?: string;         // PLU code from scale barcode
+  scale_price?: number;       // decoded total price from scale barcode
 }
 
 function isExpired(dateStr: string | null): boolean {
@@ -176,20 +175,20 @@ const grandTotal = totals.total + serviceChargeAmt + freightAmt;
   }, [items]);
 
   const addProduct = useCallback(
-    (p: Product, scaleOpts?: { weightKg: number; weightG: number; plu: string; totalPrice: number }) => {
+     (p: Product, scaleOpts?: { scale_plu: string; scale_price: number }) => {
       const expired = isExpired(p.expiry_date);
       setItems((prev) => {
         const units = (p as any).units ?? [];
 
-        // --- BayLan Label Scale item: add as separate line (each label = distinct item) ---
+        // --- BayLan Label Scale item: decoded price from label, qty=1 ---
         if (scaleOpts) {
           return [
             ...prev,
             {
               product_id: p.id,
               name: p.name,
-              qty: scaleOpts.weightKg,            // qty in base KG units
-              price: p.sale_price,                // price per KG
+              qty: 1,
+              price: scaleOpts.scale_price,   // decoded price from scale label
               retail_price: p.sale_price,
               wholesale_price: p.wholesale_price,
               cost_price: p.cost_price,
@@ -200,15 +199,14 @@ const grandTotal = totals.total + serviceChargeAmt + freightAmt;
               stock_qty: p.stock_qty,
               units,
               selected_unit_level: 0,
-              scale_weight_kg: scaleOpts.weightKg,
-              scale_weight_g: scaleOpts.weightG,
-              scale_plu: scaleOpts.plu,
+              scale_plu: scaleOpts.scale_plu,
+              scale_price: scaleOpts.scale_price,
             },
           ];
         }
 
         // --- Normal item ---
-        const found = prev.find((i) => i.product_id === p.id && !i.scale_weight_kg);
+        const found = prev.find((i) => i.product_id === p.id && !i.scale_price);
         if (found) {
           return prev.map((i) =>
             i.product_id === p.id && !i.scale_weight_kg
@@ -253,13 +251,13 @@ const grandTotal = totals.total + serviceChargeAmt + freightAmt;
   }, []);
 
   // -------------------------------------------------------------------
-  // BayLan RLS1100 Label Scale — barcode parser
-  // Format: 2 | PPPPPP | WWWWW | C  (13 digits, EAN-13 check digit)
-  //   2       = flag (weighing item)
-  //   PPPPPP  = PLU code (6 digits) programmed in scale
-  //   WWWWW   = weight in grams (5 digits, zero-padded)
+  // BayLan RLS1100 Label Scale — barcode parser (v1.7.1)
+  // Format: 21 | PPPPP | PPPPP | C  (13 digits, EAN-13 check digit)
+  //   21      = prefix (identifies scale-generated price barcode)
+  //   PPPPP   = PLU/item code (5 digits)
+  //   PPPPP   = total price in whole currency units (5 digits, zero-padded)
   //   C       = EAN-13 check digit
-  // Example: 2110001002342 → PLU=110001, Weight=234g
+  // Example: 2110001002342 → PLU="10001", Price=234
   // -------------------------------------------------------------------
   function isValidEan13(barcode: string): boolean {
     if (!/^\d{13}$/.test(barcode)) return false;
@@ -271,17 +269,15 @@ const grandTotal = totals.total + serviceChargeAmt + freightAmt;
     return check === Number(barcode[12]);
   }
 
-  function parseBayLanBarcode(barcode: string): { plu: string; weightG: number; weightKg: number } | null {
+  function parseBayLanBarcode(barcode: string): { plu: string; price: number } | null {
     if (barcode.length !== 13) return null;
-    if (barcode[0] !== '2') return null;
+    if (barcode.substring(0, 2) !== '21') return null;
     if (!isValidEan13(barcode)) return null;
-    // Digits: [0]=flag [1-6]=PLU [7-11]=weight [12]=check
-    const plu = barcode.substring(1, 7);           // 6-digit PLU
-    const weightStr = barcode.substring(7, 12);    // 5-digit weight in grams
-    const weightG = parseInt(weightStr, 10);
-    if (isNaN(weightG) || weightG <= 0) return null;
-    const weightKg = weightG / 1000;
-    return { plu, weightG, weightKg };
+    const plu = barcode.substring(2, 7);        // 5-digit PLU
+    const priceStr = barcode.substring(7, 12);  // 5-digit encoded price
+    const price = parseInt(priceStr, 10);
+    if (isNaN(price) || price <= 0) return null;
+    return { plu, price };
   }
 
   const scanAdd = useCallback(
@@ -296,12 +292,10 @@ const grandTotal = totals.total + serviceChargeAmt + freightAmt;
             setNotice(`Scale label: PLU "${scaleData.plu}" nahi mila. Pehle product ki barcode/SKU mein PLU "${scaleData.plu}" set karein.`);
             return;
           }
-          const totalPrice = scaleData.weightKg * byPlu.sale_price;
+          // Use decoded price directly (scale already weighed and priced)
           addProduct(byPlu, {
-            weightKg: scaleData.weightKg,
-            weightG: scaleData.weightG,
-            plu: scaleData.plu,
-            totalPrice,
+            scale_plu: scaleData.plu,
+            scale_price: scaleData.price,
           });
           setScannerLastSeen(Date.now());
           return;

@@ -55,22 +55,27 @@ const bridge: PosBridge = {
     setCreditLimit: (customerId: number, limit: number) =>
       ipcRenderer.invoke('customers:setCreditLimit', customerId, limit),
   },
+  // BayLan Label Scale barcode handlers
+  scaleBarcode: {
+    parse: (barcode: string) => ipcRenderer.invoke('scaleBarcode:parse', barcode),
+    isScaleItem: (barcode: string) => ipcRenderer.invoke('scaleBarcode:isScaleItem', barcode),
+    listPluMappings: () => ipcRenderer.invoke('scaleBarcode:listPluMappings'),
+  },
   settings: {
     getAll: () => ipcRenderer.invoke('settings:getAll'),
     set: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value),
     chooseCloudFolder: () => ipcRenderer.invoke('settings:chooseCloudFolder'),
   },
-    printing: {
+  printing: {
     // existing printing methods
-
-      printSale: (saleId: number) => ipcRenderer.invoke('printing:printSale', saleId),
-      printLabel: (productId: number, copies?: number) => ipcRenderer.invoke('printing:printLabel', productId, copies),
-      printBarcodeLabel: (productId: number, copies?: number) => ipcRenderer.invoke('printing:printBarcodeLabel', productId, copies),
-      openCashDrawer: () => ipcRenderer.invoke('printing:openCashDrawer'),
-      previewReceipt: (saleId: number) => ipcRenderer.invoke('printing:previewReceipt', saleId),
+    printSale: (saleId: number) => ipcRenderer.invoke('printing:printSale', saleId),
+    printLabel: (productId: number, copies?: number) => ipcRenderer.invoke('printing:printLabel', productId, copies),
+    printBarcodeLabel: (productId: number, copies?: number) => ipcRenderer.invoke('printing:printBarcodeLabel', productId, copies),
+    openCashDrawer: () => ipcRenderer.invoke('printing:openCashDrawer'),
+    previewReceipt: (saleId: number) => ipcRenderer.invoke('printing:previewReceipt', saleId),
     previewInvoice: (saleId: number) => ipcRenderer.invoke('printing:previewInvoice', saleId),
     printInvoice: (saleId: number) => ipcRenderer.invoke('printing:printInvoice', saleId),
-    },
+  },
   licensing: {
     activate: (key: string) => ipcRenderer.invoke('licensing:activate', key),
     check: () => ipcRenderer.invoke('licensing:check')

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ActivityRow, SettingsMap, WhatsAppStatus } from '../../../shared/types';
+import type { ActivityRow, ScalePluMapping, SettingsMap, WhatsAppStatus } from '../../../shared/types';
 
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsMap>({});
@@ -15,6 +15,7 @@ export default function Settings() {
   const [waTestPhone, setWaTestPhone] = useState('');
   const [waTestText, setWaTestText] = useState('Test message from ShopKeeper POS ✓');
   const [waBusy, setWaBusy] = useState(false);
+  const [pluMappings, setPluMappings] = useState<ScalePluMapping[]>([]);
 
   useEffect(() => {
     window.api.settings.getAll().then(setSettings).catch((e) => setNotice(e.message));
@@ -36,6 +37,10 @@ export default function Settings() {
       offQr();
       offWaStatus();
     };
+  }, []);
+
+  useEffect(() => {
+    window.api.scaleBarcode.listPluMappings().then(setPluMappings).catch(() => setPluMappings([]));
   }, []);
 
   async function saveShop() {
@@ -245,6 +250,43 @@ export default function Settings() {
       </div>
     </div>
     
+    {/* BayLan Label Scale — PLU mappings panel */}
+    <div className="panel" style={{ marginTop: 14 }}>
+      <div className="panel-title">BayLan Label Scale — PLU Mappings</div>
+      <div className="settings-form">
+        <p className="muted small">
+          Products with a 5-digit PLU code stored in their Barcode field will appear here. When you scan a
+          scale-printed label barcode (starting with "21"), the app decodes the PLU and looks up the product by
+          its barcode. Set a product's barcode to its 5-digit PLU code (e.g. "10001") to link them.
+        </p>
+        {pluMappings.length === 0 ? (
+          <p className="muted small">No PLU mappings found. Add a 5-digit PLU code as a product's barcode to map it.</p>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>PLU Code</th>
+                <th>Product</th>
+                <th>ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pluMappings.map((m) => (
+                <tr key={m.plu}>
+                  <td>{m.plu}</td>
+                  <td>{m.product_name}</td>
+                  <td className="num muted small">{m.product_id}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <p className="muted small" style={{ marginTop: 8 }}>
+          Tip: In Inventory → Edit Product, set the Barcode field to the PLU code (5 digits) from the scale label.
+        </p>
+      </div>
+    </div>
+
     {/* Update panel */}
     <div className="panel">
       <div className="panel-title">Update</div>

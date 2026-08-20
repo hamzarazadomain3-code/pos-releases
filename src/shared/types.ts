@@ -83,6 +83,19 @@ export interface ProductImportResult {
   errors: ProductImportError[];
 }
 
+export interface ScaleBarcodeResult {
+  plu: string;
+  price: number;
+  isValid: boolean;
+  error?: string;
+}
+
+export interface ScalePluMapping {
+  plu: string;
+  product_id: number;
+  product_name: string;
+}
+
 export interface StockMovement {
   id: number;
   product_id: number;
@@ -731,6 +744,11 @@ export interface BackupResult {
 export interface PosBridge {
   app: {
     getVersion: () => Promise<string>;
+  };
+  scaleBarcode: {
+    parse: (barcode: string) => Promise<ScaleBarcodeResult>;
+    isScaleItem: (barcode: string) => Promise<boolean>;
+    listPluMappings: () => Promise<ScalePluMapping[]>;
   };
   updater: {
     check: () => Promise<string>;

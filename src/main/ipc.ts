@@ -15,6 +15,7 @@ import {
   listUnits,
   updateProduct,
 } from './services/inventory';
+import { parseBayLanBarcode, isScaleBarcode, listPluMappings } from './services/scaleBarcode';
 import {
   createCustomer,
   createSale,
@@ -154,8 +155,13 @@ export function registerIpcHandlers(): void {
       title: 'Select your OneDrive or Google Drive sync folder',
       properties: ['openDirectory'],
     });
-    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
+     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
   });
+
+  // --- BayLan Label Scale barcode handlers ---
+  ipcMain.handle('scaleBarcode:parse', (_e, barcode: string) => parseBayLanBarcode(barcode));
+  ipcMain.handle('scaleBarcode:isScaleItem', (_e, barcode: string) => isScaleBarcode(barcode));
+  ipcMain.handle('scaleBarcode:listPluMappings', () => listPluMappings());
 
   ipcMain.handle('printing:printSale', (_e, saleId: number) => {
     printSale(saleId);

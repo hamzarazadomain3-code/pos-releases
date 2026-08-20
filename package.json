@@ -1,6 +1,6 @@
 {
   "name": "pos-app",
-  "version": "1.6.0",
+  "version": "1.7.1",
   "description": "Local Billing & Inventory POS System",
   "main": "dist/main/main.js",
   "author": "ShopKeeper POS",
