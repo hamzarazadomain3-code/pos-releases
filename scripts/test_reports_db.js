@@ -1,11 +1,11 @@
-const { openSync } = require('node:sqlite');
+const { DatabaseSync } = require('node:sqlite');
 const fs = require('fs');
 const path = require('path');
 
 const tmpDb = path.join(require('os').tmpdir(), 'test_reports_160.db');
 if (fs.existsSync(tmpDb)) fs.unlinkSync(tmpDb);
 
-const db = openSync(tmpDb);
+const db = new DatabaseSync(tmpDb);
 db.exec(`
   CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT, sku TEXT, cost_price REAL, sale_price REAL, stock_qty REAL, low_stock_threshold REAL, category_id INTEGER, expiry_date TEXT, active INTEGER DEFAULT 1);
   CREATE TABLE categories (id INTEGER PRIMARY KEY, name TEXT);

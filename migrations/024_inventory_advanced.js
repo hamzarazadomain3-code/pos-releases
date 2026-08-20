@@ -40,12 +40,16 @@ exports.up = function (db) {
   const poCols = {
     delivery_date: 'DATETIME',
     notes: 'TEXT',
-    updated_at: 'DATETIME DEFAULT CURRENT_TIMESTAMP',
+    updated_at: 'DATETIME',
   };
   for (const [col, def] of Object.entries(poCols)) {
     if (hasTable('purchase_orders') && !hasColumn('purchase_orders', col)) {
       db.exec(`ALTER TABLE purchase_orders ADD COLUMN ${col} ${def}`);
     }
+  }
+  // Backfill updated_at (SQLite disallows non-constant defaults on ADD COLUMN)
+  if (hasColumn('purchase_orders', 'updated_at')) {
+    db.exec('UPDATE purchase_orders SET updated_at = created_at WHERE updated_at IS NULL');
   }
 
   // ── 3. Extend purchase_items (add quantity_received, total_cost, unit_name)

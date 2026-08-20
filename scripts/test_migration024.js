@@ -7,11 +7,12 @@ if (fs.existsSync(tmpDb)) fs.unlinkSync(tmpDb);
 
 const db = new DatabaseSync(tmpDb);
 
-// Apply all migrations up to 023
+// Apply migrations up to 023 (skip 024 so we can test its backfill with data present)
 const migrationsDir = path.join(__dirname, '..', 'migrations');
 const migrations = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.js')).sort();
 
 for (const mig of migrations) {
+  if (mig === '024_inventory_advanced.js') continue;
   const migration = require(path.join(migrationsDir, mig));
   db.exec('PRAGMA foreign_keys = ON;');
   try {
@@ -21,6 +22,18 @@ for (const mig of migrations) {
     console.error('  ✗', mig, e.message);
   }
 }
+
+// Insert a product with only low_stock_threshold (no min_stock_level yet)
+db.prepare("INSERT INTO categories (name) VALUES ('Grocery')").run();
+const catId = Number(db.prepare("SELECT id FROM categories WHERE name = 'Grocery'").get().id);
+const unitId = Number(db.prepare("SELECT id FROM units WHERE name = 'Piece'").get().id);
+db.prepare('INSERT INTO products (sku, barcode, name, category_id, unit_id, cost_price, sale_price, stock_qty, low_stock_threshold) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run('SKU001', '10001', 'Biscuits', catId, unitId, 10, 50, 100, 20);
+
+// Now apply migration 024 (adds columns + backfills min_stock_level)
+const mig024 = require(path.join(migrationsDir, '024_inventory_advanced.js'));
+db.exec('PRAGMA foreign_keys = ON;');
+mig024.up(db);
+console.log('  ✓ 024_inventory_advanced.js (with data present)');
 
 // Verify new columns
 const check = (table, col) => {
@@ -59,7 +72,6 @@ console.log('\n=== Default settings ===');
 settings.forEach(s => console.log('  ', s.key, '=', s.value));
 
 // Insert a product and backfill test
-db.prepare('INSERT INTO products (sku, barcode, name, category_id, unit_id, cost_price, sale_price, stock_qty, low_stock_threshold) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run('SKU001', '10001', 'Biscuits', 1, 1, 10, 50, 100, 20);
 const prod = db.prepare('SELECT * FROM products WHERE id = 1').get();
 console.log('\n=== Backfill test ===');
 console.log('Product min_stock_level (should be 20 from low_stock_threshold):', prod.min_stock_level);
