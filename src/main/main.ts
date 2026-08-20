@@ -8,6 +8,8 @@ import { getAllSettings } from './services/settings';
 import { closeLogger, initLogger, log, logError } from './logger';
 import { initUpdater, checkForUpdates } from './updater';
 import { initWhatsAppGateway } from './whatsapp-gateway';
+import { inventoryReports } from './services/inventoryReports';
+import { alertService } from './services/alertService';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -115,7 +117,7 @@ app.whenReady().then(async () => {
     .then((ok) => log(ok ? 'WhatsApp gateway initialized' : 'WhatsApp gateway unavailable'))
     .catch((err) => logError('whatsapp init', err));
 
-  // Auto-update: background, non-blocking, fully independent of licensing.
+   // Auto-update: background, non-blocking, fully independent of licensing.
   try {
     initUpdater();
     setTimeout(() => {
@@ -125,6 +127,11 @@ app.whenReady().then(async () => {
   } catch (err) {
     logError('updater init', err);
   }
+
+  // ── v1.8.0 Scheduler: daily snapshot + hourly alert checks ──
+  scheduleDailySnapshot();
+  scheduleHourlyAlerts();
+
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -141,3 +148,55 @@ app.on('window-all-closed', () => {
 
 ipcMain.handle('app:get-version', () => app.getVersion());
 ipcMain.handle('app:getLogPath', () => require('./logger').getLogFilePath());
+
+// ── v1.8.0 Background Scheduler ──
+
+function scheduleDailySnapshot(): void {
+  const now = new Date();
+  // Next midnight local time
+  const nextMidnight = new Date(now);
+  nextMidnight.setHours(24, 0, 0, 0);
+  const delayMs = nextMidnight.getTime() - now.getTime();
+
+  setTimeout(() => {
+    runSnapshot();
+    // Then repeat every 24h
+    setInterval(() => {
+      runSnapshot();
+    }, 24 * 60 * 60 * 1000);
+  }, delayMs);
+}
+
+function runSnapshot(): void {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const result = inventoryReports.createDailySnapshot(today);
+    log(`Daily snapshot created: ${result.created} products on ${result.date}`);
+  } catch (err) {
+    logError('daily snapshot', err);
+  }
+}
+
+function scheduleHourlyAlerts(): void {
+  // Check alerts every hour
+  const now = new Date();
+  const nextHour = new Date(now);
+  nextHour.setHours(nextHour.getHours() + 1, 0, 0, 0);
+  const delayMs = nextHour.getTime() - now.getTime();
+
+  setTimeout(() => {
+    runAlertCheck();
+    setInterval(() => {
+      runAlertCheck();
+    }, 60 * 60 * 1000);
+  }, delayMs);
+}
+
+function runAlertCheck(): void {
+  try {
+    const count = alertService.checkAndCreateAlerts();
+    log(`Alert check complete: ${count} new alert(s)`);
+  } catch (err) {
+    logError('alert check', err);
+  }
+}

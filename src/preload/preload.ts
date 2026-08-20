@@ -194,12 +194,46 @@ const bridge: PosBridge = {
     saveCounts: (auditId: number, counts) => ipcRenderer.invoke('audits:saveCounts', auditId, counts),
     complete: (auditId: number) => ipcRenderer.invoke('audits:complete', auditId),
   },
-  promotions: {
+   promotions: {
     list: () => ipcRenderer.invoke('promotions:list'),
     create: (input) => ipcRenderer.invoke('promotions:create', input),
     update: (id: number, input) => ipcRenderer.invoke('promotions:update', id, input),
     remove: (id: number) => ipcRenderer.invoke('promotions:remove', id),
     resolve: (items) => ipcRenderer.invoke('promotions:resolve', items),
+  },
+  inventoryReports: {
+    purchaseHistory: (productId?: number, dateRange?: { start: string; end: string }) =>
+      ipcRenderer.invoke('inventoryReports:purchaseHistory', productId, dateRange),
+    dailyInventory: (date: string) => ipcRenderer.invoke('inventoryReports:dailyInventory', date),
+    weeklyInventory: (weekStart: string, weekEnd: string) =>
+      ipcRenderer.invoke('inventoryReports:weeklyInventory', weekStart, weekEnd),
+    monthlyInventory: (year: number, month: number) =>
+      ipcRenderer.invoke('inventoryReports:monthlyInventory', year, month),
+    supplierMetrics: (supplierId?: number) => ipcRenderer.invoke('inventoryReports:supplierMetrics', supplierId),
+    productPurchaseSummary: (productId: number, months?: number) =>
+      ipcRenderer.invoke('inventoryReports:productPurchaseSummary', productId, months),
+    createDailySnapshot: (date: string) => ipcRenderer.invoke('inventoryReports:createDailySnapshot', date),
+    addPurchaseOrder: (supplierId: number, items: any[], notes?: string) =>
+      ipcRenderer.invoke('inventoryReports:addPurchaseOrder', supplierId, items, notes),
+  },
+  profitability: {
+    daily: (date: string) => ipcRenderer.invoke('profitability:daily', date),
+    weekly: (start: string, end: string) => ipcRenderer.invoke('profitability:weekly', start, end),
+    monthly: (year: number, month: number) => ipcRenderer.invoke('profitability:monthly', year, month),
+    category: (start: string, end: string) => ipcRenderer.invoke('profitability:category', start, end),
+    lowProfit: (threshold?: number) => ipcRenderer.invoke('profitability:lowProfit', threshold),
+    topProfit: (limit?: number, days?: number) => ipcRenderer.invoke('profitability:topProfit', limit, days),
+    worstPerforming: (limit?: number, days?: number) =>
+      ipcRenderer.invoke('profitability:worstPerforming', limit, days),
+    breakEven: () => ipcRenderer.invoke('profitability:breakEven'),
+    computePeriod: (date: string) => ipcRenderer.invoke('profitability:computePeriod', date),
+  },
+  alerts: {
+    getAll: () => ipcRenderer.invoke('alerts:getAll'),
+    getUnread: () => ipcRenderer.invoke('alerts:getUnread'),
+    markAsRead: (id: number) => ipcRenderer.invoke('alerts:markAsRead', id),
+    resolve: (id: number, action: string) => ipcRenderer.invoke('alerts:resolve', id, action),
+    checkNow: () => ipcRenderer.invoke('alerts:checkNow'),
   },
 };
 

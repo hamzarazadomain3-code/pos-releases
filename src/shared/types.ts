@@ -927,4 +927,194 @@ export interface PosBridge {
     remove: (id: number) => Promise<boolean>;
     resolve: (items: { product_id: number; qty: number; price: number }[]) => Promise<ResolvedPromotion[]>;
   };
+  inventoryReports: {
+    purchaseHistory: (
+      productId?: number,
+      dateRange?: { start: string; end: string }
+    ) => Promise<InventoryReportRow[]>;
+    dailyInventory: (date: string) => Promise<DailyInventoryRow[]>;
+    weeklyInventory: (weekStart: string, weekEnd: string) => Promise<WeeklyInventoryRow[]>;
+    monthlyInventory: (year: number, month: number) => Promise<MonthlyInventoryRow[]>;
+    supplierMetrics: (supplierId?: number) => Promise<SupplierMetricRow[]>;
+    productPurchaseSummary: (productId: number, months?: number) => Promise<ProductPurchaseSummaryRow[]>;
+    createDailySnapshot: (date: string) => Promise<{ created: number; date: string }>;
+    addPurchaseOrder: (
+      supplierId: number,
+      items: Array<{ product_id: number; qty: number; unit_cost: number; unit_name?: string; quantity_received?: number; expiry_date?: string | null; batch_number?: string | null }>,
+      notes?: string
+    ) => Promise<{ success: boolean; po_id: number; total: number }>;
+  };
+  profitability: {
+    daily: (date: string) => Promise<ProductProfitRow[]>;
+    weekly: (start: string, end: string) => Promise<ProductProfitRow[]>;
+    monthly: (year: number, month: number) => Promise<ProductProfitRow[]>;
+    category: (start: string, end: string) => Promise<CategoryProfitRow[]>;
+    lowProfit: (threshold?: number) => Promise<LowProfitRow[]>;
+    topProfit: (limit?: number, days?: number) => Promise<ProductProfitRow[]>;
+    worstPerforming: (limit?: number, days?: number) => Promise<WorstProductRow[]>;
+    breakEven: () => Promise<BreakEvenRow[]>;
+    computePeriod: (date: string) => Promise<void>;
+  };
+  alerts: {
+    getAll: () => Promise<AlertRow[]>;
+    getUnread: () => Promise<AlertRow[]>;
+    markAsRead: (id: number) => Promise<boolean>;
+    resolve: (id: number, action: string) => Promise<boolean>;
+    checkNow: () => Promise<number>;
+  };
+};
+
+// ── v1.8.0 Advanced Reports types ──
+
+export interface InventoryReportRow {
+  id: number;
+  product_id: number;
+  product_name: string;
+  supplier_name: string;
+  supplier_id: number;
+  quantity_ordered: number;
+  quantity_received: number | null;
+  unit_name: string | null;
+  cost_per_unit: number;
+  total_cost: number;
+  order_date: string;
+  delivery_date: string | null;
+  delivery_status: string;
+  batch_number: string | null;
+  expiry_date: string | null;
+}
+
+export interface DailyInventoryRow {
+  product_id: number;
+  product_name: string;
+  unit_name: string | null;
+  opening_qty: number;
+  purchases_qty: number;
+  sales_qty: number;
+  closing_qty: number;
+  variance_qty: number;
+  stock_qty: number;
+}
+
+export interface WeeklyInventoryRow {
+  product_id: number;
+  product_name: string;
+  unit_name: string | null;
+  opening_qty: number;
+  purchases_qty: number;
+  sales_qty: number;
+  variance_qty: number;
+  days_tracked: number;
+}
+
+export interface MonthlyInventoryRow {
+  product_id: number;
+  product_name: string;
+  category_name: string | null;
+  total_purchased: number;
+  total_sold: number;
+  supplier_count: number;
+  avg_cost: number;
+  avg_selling_price: number;
+  current_stock: number;
+  unit_name: string | null;
+}
+
+export interface SupplierMetricRow {
+  supplier_id: number;
+  supplier_name: string;
+  total_orders: number;
+  total_spent: number;
+  on_time_pct: number;
+  average_cost: number;
+  reliability_score: number;
+  last_order_date: string | null;
+  first_order_date: string | null;
+  is_active: number;
+}
+
+export interface ProductPurchaseSummaryRow {
+  id: number;
+  order_date: string;
+  supplier_name: string;
+  quantity: number;
+  cost_per_unit: number;
+  total_cost: number;
+  delivery_status: string;
+  expiry_date: string | null;
+  batch_number: string | null;
+  qty_sold_since: number;
+}
+
+export interface ProductProfitRow {
+  product_id: number;
+  product_name: string;
+  category: string | null;
+  period: string;
+  units_sold: number;
+  cost_of_goods: number;
+  revenue: number;
+  gross_profit: number;
+  profit_margin_pct: number;
+  avg_cost: number;
+  avg_selling_price: number;
+}
+
+export interface CategoryProfitRow {
+  category_name: string | null;
+  product_count: number;
+  units_sold: number;
+  revenue: number;
+  cost_of_goods: number;
+  gross_profit: number;
+  profit_margin_pct: number;
+}
+
+export interface LowProfitRow {
+  product_id: number;
+  product_name: string;
+  cost_price: number;
+  sale_price: number;
+  profit_per_unit: number;
+  margin_pct: number;
+  sold_last_30days: number;
+  stock_qty: number;
+}
+
+export interface WorstProductRow {
+  product_id: number;
+  product_name: string;
+  category: string | null;
+  units_sold: number;
+  revenue: number;
+  cogs: number;
+  total_profit: number;
+  profit_margin_pct: number | null;
+  stock_qty: number;
+  days_no_sale: number | null;
+}
+
+export interface BreakEvenRow {
+  product_id: number;
+  product_name: string;
+  cost_price: number;
+  sale_price: number;
+  break_even_price: number;
+  units_to_breakeven: number | null;
+  status: string;
+}
+
+export interface AlertRow {
+  id: number;
+  alert_type: string;
+  product_id: number | null;
+  supplier_id: number | null;
+  product_name?: string | null;
+  supplier_name?: string | null;
+  severity: 'critical' | 'warning' | 'info';
+  message: string;
+  is_read: boolean;
+  action_taken: string | null;
+  created_at: string;
+  resolved_at: string | null;
 }

@@ -16,6 +16,9 @@ import {
   updateProduct,
 } from './services/inventory';
 import { parseBayLanBarcode, isScaleBarcode, listPluMappings } from './services/scaleBarcode';
+import { inventoryReports } from './services/inventoryReports';
+import { profitabilityService } from './services/profitability';
+import { alertService } from './services/alertService';
 import {
   createCustomer,
   createSale,
@@ -297,5 +300,36 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('promotions:create', (_e, input) => createPromotion(input));
   ipcMain.handle('promotions:update', (_e, id: number, input) => updatePromotion(id, input));
   ipcMain.handle('promotions:remove', (_e, id: number) => deletePromotion(id));
-  ipcMain.handle('promotions:resolve', (_e, items) => resolvePromotions(items));
+   ipcMain.handle('promotions:resolve', (_e, items) => resolvePromotions(items));
+
+  // ── v1.8.0 Advanced Reports ──
+  // Inventory Reports
+  ipcMain.handle('inventoryReports:purchaseHistory', (_e, productId?: number, dateRange?: { start: string; end: string }) =>
+    inventoryReports.getPurchaseHistory(productId, dateRange)
+  );
+  ipcMain.handle('inventoryReports:dailyInventory', (_e, date: string) => inventoryReports.computeDailyInventory(date));
+  ipcMain.handle('inventoryReports:weeklyInventory', (_e, weekStart: string, weekEnd: string) => inventoryReports.getWeeklyInventory(weekStart, weekEnd));
+  ipcMain.handle('inventoryReports:monthlyInventory', (_e, year: number, month: number) => inventoryReports.getMonthlyInventory(year, month));
+  ipcMain.handle('inventoryReports:supplierMetrics', (_e, supplierId?: number) => inventoryReports.getSupplierMetrics(supplierId));
+  ipcMain.handle('inventoryReports:productPurchaseSummary', (_e, productId: number, months?: number) => inventoryReports.getProductPurchaseSummary(productId, months));
+  ipcMain.handle('inventoryReports:createDailySnapshot', (_e, date: string) => inventoryReports.createDailySnapshot(date));
+  ipcMain.handle('inventoryReports:addPurchaseOrder', (_e, supplierId: number, items: any[], notes?: string) => inventoryReports.addPurchaseOrder(supplierId, items, notes));
+
+  // Profitability
+  ipcMain.handle('profitability:daily', (_e, date: string) => profitabilityService.getDailyProfitability(date));
+  ipcMain.handle('profitability:weekly', (_e, start: string, end: string) => profitabilityService.getWeeklyProfitability(start, end));
+  ipcMain.handle('profitability:monthly', (_e, year: number, month: number) => profitabilityService.getMonthlyProfitability(year, month));
+  ipcMain.handle('profitability:category', (_e, start: string, end: string) => profitabilityService.getCategoryProfitability(start, end));
+  ipcMain.handle('profitability:lowProfit', (_e, threshold?: number) => profitabilityService.getLowProfitProducts(threshold));
+  ipcMain.handle('profitability:topProfit', (_e, limit?: number, days?: number) => profitabilityService.getTopProfitProducts(limit, days));
+  ipcMain.handle('profitability:worstPerforming', (_e, limit?: number, days?: number) => profitabilityService.getWorstPerformingProducts(limit, days));
+  ipcMain.handle('profitability:breakEven', () => profitabilityService.getBreakEvenAnalysis());
+  ipcMain.handle('profitability:computePeriod', (_e, date: string) => profitabilityService.computePeriodProfitability(date));
+
+  // Alerts
+  ipcMain.handle('alerts:getAll', () => alertService.getAll());
+  ipcMain.handle('alerts:getUnread', () => alertService.getUnread());
+  ipcMain.handle('alerts:markAsRead', (_e, id: number) => alertService.markAsRead(id));
+  ipcMain.handle('alerts:resolve', (_e, id: number, action: string) => alertService.resolve(id, action));
+  ipcMain.handle('alerts:checkNow', () => alertService.checkAndCreateAlerts());
 }
