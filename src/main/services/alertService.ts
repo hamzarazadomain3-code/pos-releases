@@ -1,5 +1,4 @@
 import { getDb } from '../db';
-import { inventoryReports } from './inventoryReports';
 
 export interface AlertRow {
   id: number;
@@ -20,7 +19,9 @@ function fmtQty(q: number | null | undefined): number {
 }
 
 export class AlertService {
-  private db = getDb();
+  private get db() {
+    return getDb();
+  }
 
   // ── INSERT alert (with dedup by type + product + date) ──
 
@@ -241,4 +242,11 @@ export class AlertService {
   }
 }
 
-export const alertService = new AlertService();
+let alertServiceInstance: AlertService | null = null;
+
+export function getAlertService(): AlertService {
+  if (!alertServiceInstance) {
+    alertServiceInstance = new AlertService();
+  }
+  return alertServiceInstance;
+}

@@ -64,7 +64,9 @@ function fmtQty(q: number | null | undefined): number {
 }
 
 export class ProfitabilityService {
-  private db = getDb();
+  private get db() {
+    return getDb();
+  }
 
   // ── Core period profitability query (shared logic) ──
 
@@ -337,4 +339,11 @@ export class ProfitabilityService {
   }
 }
 
-export const profitabilityService = new ProfitabilityService();
+let profitabilityServiceInstance: ProfitabilityService | null = null;
+
+export function getProfitabilityService(): ProfitabilityService {
+  if (!profitabilityServiceInstance) {
+    profitabilityServiceInstance = new ProfitabilityService();
+  }
+  return profitabilityServiceInstance;
+}

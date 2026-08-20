@@ -97,7 +97,9 @@ function fmtQty(q: number | null | undefined): number {
 // ── Core Service ──
 
 export class InventoryReportsService {
-  private db = getDb();
+  private get db() {
+    return getDb();
+  }
 
   // ── 1. PURCHASE HISTORY ──
 
@@ -469,4 +471,11 @@ export class InventoryReportsService {
   }
 }
 
-export const inventoryReports = new InventoryReportsService();
+let inventoryReportsInstance: InventoryReportsService | null = null;
+
+export function getInventoryReports(): InventoryReportsService {
+  if (!inventoryReportsInstance) {
+    inventoryReportsInstance = new InventoryReportsService();
+  }
+  return inventoryReportsInstance;
+}

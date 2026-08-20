@@ -8,8 +8,8 @@ import { getAllSettings } from './services/settings';
 import { closeLogger, initLogger, log, logError } from './logger';
 import { initUpdater, checkForUpdates } from './updater';
 import { initWhatsAppGateway } from './whatsapp-gateway';
-import { inventoryReports } from './services/inventoryReports';
-import { alertService } from './services/alertService';
+import { getInventoryReports } from './services/inventoryReports';
+import { getAlertService } from './services/alertService';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -170,7 +170,7 @@ function scheduleDailySnapshot(): void {
 function runSnapshot(): void {
   try {
     const today = new Date().toISOString().split('T')[0];
-    const result = inventoryReports.createDailySnapshot(today);
+    const result = getInventoryReports().createDailySnapshot(today);
     log(`Daily snapshot created: ${result.created} products on ${result.date}`);
   } catch (err) {
     logError('daily snapshot', err);
@@ -194,7 +194,7 @@ function scheduleHourlyAlerts(): void {
 
 function runAlertCheck(): void {
   try {
-    const count = alertService.checkAndCreateAlerts();
+    const count = getAlertService().checkAndCreateAlerts();
     log(`Alert check complete: ${count} new alert(s)`);
   } catch (err) {
     logError('alert check', err);

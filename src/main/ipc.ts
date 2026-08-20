@@ -16,9 +16,9 @@ import {
   updateProduct,
 } from './services/inventory';
 import { parseBayLanBarcode, isScaleBarcode, listPluMappings } from './services/scaleBarcode';
-import { inventoryReports } from './services/inventoryReports';
-import { profitabilityService } from './services/profitability';
-import { alertService } from './services/alertService';
+import { getInventoryReports } from './services/inventoryReports';
+import { getProfitabilityService } from './services/profitability';
+import { getAlertService } from './services/alertService';
 import {
   createCustomer,
   createSale,
@@ -304,6 +304,7 @@ export function registerIpcHandlers(): void {
 
   // ── v1.8.0 Advanced Reports ──
   // Inventory Reports
+  const inventoryReports = getInventoryReports();
   ipcMain.handle('inventoryReports:purchaseHistory', (_e, productId?: number, dateRange?: { start: string; end: string }) =>
     inventoryReports.getPurchaseHistory(productId, dateRange)
   );
@@ -316,6 +317,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('inventoryReports:addPurchaseOrder', (_e, supplierId: number, items: any[], notes?: string) => inventoryReports.addPurchaseOrder(supplierId, items, notes));
 
   // Profitability
+  const profitabilityService = getProfitabilityService();
   ipcMain.handle('profitability:daily', (_e, date: string) => profitabilityService.getDailyProfitability(date));
   ipcMain.handle('profitability:weekly', (_e, start: string, end: string) => profitabilityService.getWeeklyProfitability(start, end));
   ipcMain.handle('profitability:monthly', (_e, year: number, month: number) => profitabilityService.getMonthlyProfitability(year, month));
@@ -327,6 +329,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('profitability:computePeriod', (_e, date: string) => profitabilityService.computePeriodProfitability(date));
 
   // Alerts
+  const alertService = getAlertService();
   ipcMain.handle('alerts:getAll', () => alertService.getAll());
   ipcMain.handle('alerts:getUnread', () => alertService.getUnread());
   ipcMain.handle('alerts:markAsRead', (_e, id: number) => alertService.markAsRead(id));
