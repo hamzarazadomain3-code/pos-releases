@@ -87,8 +87,59 @@ function uploadAsset(releaseId, filePath, assetName, contentType) {
     console.log('Creating new release for', tag);
     const created = await api('POST', `/repos/${OWNER}/${REPO}/releases`, {
       tag_name: tag,
-      name: `${tag} - BayLan Label Scale Barcode Integration`,
-      body: '## ShopKeeper POS v' + version + '\n\n### BayLan RLS1100 Label Scale Integration (Phase 1 - Decode Only)\n\n- Scale barcode parser: detects prefix "21" + validates EAN-13 checksum + extracts 5-digit PLU + 5-digit price\n- Barcode 2110001002342 decodes to: PLU=10001, Price=Rs.234\n- Seamless billing flow: scan scale label → find product by PLU → add to cart with decoded price\n- PLU-to-product mapping UI in Settings page\n- Full EAN-13 check digit validation\n- Unit tests covering valid/invalid barcodes, wrong prefix, zero price, edge cases\n\nPhase 2 (live serial/USB connection) to follow separately.',
+       name: `${tag} - Advanced Inventory & Profitability Reports`,
+      body: `## ShopKeeper POS v${version}
+
+### Advanced Inventory + Profitability Reports (v1.8.0)
+
+#### Database Migration 024
+- **New tables:** \`inventory_snapshots\`, \`product_profitability\`, \`alert_log\`
+- **Extended \`suppliers\`:** email, city, payment_terms, average_rate, reliability_score, total_orders, on_time_delivery_pct, is_active
+- **Extended \`purchase_orders\`:** delivery_date, notes, updated_at
+- **Extended \`purchase_items\`:** quantity_received, total_cost, unit_name (batch_number/expiry_date already existed)
+- **Extended \`products\`:** min_stock_level, reorder_qty, last_supplier_id
+- **Default settings:** expiry_warning_days=30, low_stock_warning_days=7, slow_mover_days=60, low_profit_threshold=5
+
+#### Inventory Reports Service (\`inventoryReports.ts\`)
+- **Purchase History:** filter by product + date range, delivery status, batch/expiry tracking
+- **Daily Inventory:** opening/purchases/sales/closing/variance with snapshot capture
+- **Weekly Inventory:** 7-day rollup with days-tracked aggregation
+- **Monthly Inventory:** category, avg cost/selling price, supplier diversity
+- **Supplier Metrics:** order count, total spent, on-time %, reliability score, average cost
+- **Product Purchase Summary:** 3-month purchase history with post-purchase sales tracking
+- **Daily Snapshot:** auto-created at midnight via scheduler, stored in \`inventory_snapshots\`
+
+#### Profitability Service (\`profitability.ts\`)
+- **Daily/Weekly/Monthly:** units sold, COGS, revenue, gross profit, margin %
+- **Category Analysis:** revenue/profit/margin aggregated by category
+- **Low Profit Products:** margin below configurable threshold (default 5%)
+- **Top Products:** highest gross profit in period
+- **Worst Products:** lowest sales volume with days-no-sale
+- **Break-Even Analysis:** break-even price at 10% target margin, status indicator
+
+#### Alert Service (\`alertService.ts\`)
+- **Low Stock:** critical (out of stock) or warning (below minimum)
+- **Expiry:** warnings for items expiring within 30 days, critical within 7 days
+- **Low Profit:** products below margin threshold
+- **Slow Movers:** no sales for 60+ days (warning at 60, info at 90)
+- **Deduplication:** prevents duplicate alerts within same day for same product
+- **CRUD:** get all/unread, mark as read, resolve with action notes
+
+#### Scheduler (\`main.ts\`)
+- **Daily snapshot** at midnight local time (setTimeout to next midnight + 24h interval)
+- **Hourly alert checks** (setTimeout to next hour + 60min interval)
+
+#### UI (Reports.tsx)
+- **Alerts tab:** check-now button, daily snapshot button, alert table with severity badges, ack/resolve actions
+- **Profitability tab:** 8 sub-tabs (Daily, Weekly, Monthly, Category, Break-Even, Low Profit, Top Products, Worst Products)
+- **Inventory tab:** 5 sub-tabs (Daily, Weekly, Monthly, Purchase History, Supplier Metrics)
+- All tables include Excel export where applicable
+
+#### Test Suite
+- \`scripts/test_inventoryReports.js\`: 12 tests covering purchase history, daily inventory, supplier metrics, expiry, profitability COGS/revenue, snapshot creation, alert dedup
+
+#### Version bump: \`1.7.1\` → \`1.8.0\`
+`,
       draft: false,
       prerelease: false,
     });
