@@ -345,6 +345,184 @@ export interface StockValuation {
   by_category: { name: string | null; cost: number; retail: number; products: number }[];
 }
 
+// ============ v1.6.0 Reports ============
+
+export interface SalesAnalysisSummary {
+  total_sales: number;
+  bill_count: number;
+  avg_bill: number;
+  total_discount: number;
+  total_tax: number;
+}
+export interface PaymentBreakdownRow {
+  mode: string;
+  bill_count: number;
+  total: number;
+  percentage: number;
+}
+export interface DailyTrendRow {
+  date: string;
+  bills: number;
+  total: number;
+}
+export interface SalesAnalysisResult {
+  summary: SalesAnalysisSummary;
+  paymentBreakdown: PaymentBreakdownRow[];
+  dailyTrend: DailyTrendRow[];
+  generatedAt: string;
+}
+
+export interface ProductPerformanceRow {
+  id: number;
+  name: string;
+  category: string | null;
+  qty_sold: number;
+  times_sold: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+  profit_margin_pct: number;
+  revenue_pct: number;
+}
+export interface SlowMoverRow {
+  id: number;
+  name: string;
+  category: string | null;
+  stock_qty: number;
+  cost_price: number;
+  sale_price: number;
+  last_sale_date: string | null;
+  days_no_sale: number | null;
+}
+export interface CategorySalesRow {
+  category: string | null;
+  product_count: number;
+  qty_sold: number;
+  revenue: number;
+  avg_price: number;
+}
+export interface ProductPerformanceResult {
+  topProducts: ProductPerformanceRow[];
+  slowMovers: SlowMoverRow[];
+  categoryAnalysis: CategorySalesRow[];
+  generatedAt: string;
+}
+
+export interface TopCustomerRow {
+  id: number;
+  name: string;
+  phone: string | null;
+  udhaar_balance: number;
+  purchase_count: number;
+  total_spent: number;
+  avg_purchase: number;
+  last_purchase: string | null;
+  segment: 'VIP' | 'Regular' | 'Udhaar';
+}
+export interface UdhaarSummary {
+  total_customers: number;
+  with_balance: number;
+  cleared: number;
+  total_outstanding: number;
+  avg_balance: number | null;
+  max_balance: number;
+}
+export interface UdhaarOverdueRow {
+  id: number;
+  name: string;
+  phone: string | null;
+  balance: number;
+  last_purchase: string | null;
+  days_since_purchase: number | null;
+}
+export interface CustomerAnalysisResult {
+  topCustomers: TopCustomerRow[];
+  udhaarSummary: UdhaarSummary;
+  udhaarOverdue: UdhaarOverdueRow[];
+  generatedAt: string;
+}
+
+export interface StockSummary {
+  total_skus: number;
+  total_value: number;
+  out_of_stock: number;
+  below_minimum: number;
+}
+export interface ExpiryAlertRow {
+  id: number;
+  name: string;
+  category: string | null;
+  stock_qty: number;
+  expiry_date: string;
+  days_until_expiry: number;
+  status: 'EXPIRED' | 'URGENT' | 'WARNING' | 'OK';
+}
+export interface TurnoverRow {
+  id: number;
+  name: string;
+  stock_qty: number;
+  velocity: 'Fast Mover' | 'Medium' | 'Slow' | 'Dead Stock';
+  days_no_sale: number | null;
+  last_sale_date: string | null;
+}
+export interface InventoryAnalysisResult {
+  stockSummary: StockSummary;
+  expiryAlert: ExpiryAlertRow[];
+  turnoverAnalysis: TurnoverRow[];
+  generatedAt: string;
+}
+
+export interface FinancialPnL {
+  gross_sales: number;
+  discounts: number;
+  net_sales: number;
+  cogs: number;
+  gross_profit: number;
+  tax_paid: number;
+  net_profit: number;
+  expenses: number;
+}
+export interface FinancialMargins {
+  gross_margin_pct: number;
+  net_margin_pct: number;
+}
+export interface FinancialReportResult {
+  pnl: FinancialPnL;
+  margins: FinancialMargins;
+  generatedAt: string;
+}
+
+export interface TaxSummary {
+  taxable_sales: number;
+  tax_collected: number;
+  transaction_count: number;
+}
+export interface TaxByCategoryRow {
+  category: string | null;
+  sales: number;
+  estimated_gst_17pct: number;
+}
+export interface TaxReportResult {
+  taxSummary: TaxSummary;
+  taxByCategory: TaxByCategoryRow[];
+  period: { startDate: string; endDate: string };
+  generatedAt: string;
+}
+
+export interface DailyClosingRow {
+  mode: string;
+  total: number;
+}
+export interface DailyClosingResult {
+  date: string;
+  bill_count: number;
+  total_sales: number;
+  by_mode: DailyClosingRow[];
+  expenses: number;
+  expected_cash: number;
+  generatedAt: string;
+}
+
 export interface ActivityRow {
   id: number;
   user_id: number | null;
@@ -634,6 +812,14 @@ export interface PosBridge {
     getDailyStats: () => Promise<DailyStats>;
     getReceiptSettings: () => Promise<ReceiptSettings>;
     updateReceiptSetting: (key: string, value: string) => Promise<boolean>;
+    getSalesAnalysis: (from?: string, to?: string) => Promise<SalesAnalysisResult>;
+    getProductPerformance: (from?: string, to?: string) => Promise<ProductPerformanceResult>;
+    getCustomerAnalysis: () => Promise<CustomerAnalysisResult>;
+    getInventoryAnalysis: () => Promise<InventoryAnalysisResult>;
+    getFinancialReport: (from?: string, to?: string) => Promise<FinancialReportResult>;
+    getTaxReport: (from?: string, to?: string) => Promise<TaxReportResult>;
+    getDailyClosing: (date: string) => Promise<DailyClosingResult>;
+    exportReportPDF: (reportType: string, data: unknown) => Promise<string | null>;
   };
   whatsapp: {
     getStatus: () => Promise<WhatsAppStatus>;

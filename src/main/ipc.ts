@@ -38,9 +38,17 @@ import {
   bestSellers,
   dashboard,
   deleteExpense,
+  exportReportPDF,
+  getCustomerAnalysis,
+  getDailyClosing,
   getDailySalesTrend,
   getDailyStats,
+  getFinancialReport,
+  getInventoryAnalysis,
+  getProductPerformance,
   getReceiptSettings,
+  getSalesAnalysis,
+  getTaxReport,
   getTopProducts,
   listExpenses,
   listExpiringSoon,
@@ -187,6 +195,15 @@ export function registerIpcHandlers(): void {
     updateReceiptSetting(key, value);
     return true;
   });
+
+  ipcMain.handle('reports:getSalesAnalysis', (_e, from?: string, to?: string) => getSalesAnalysis(from, to));
+  ipcMain.handle('reports:getProductPerformance', (_e, from?: string, to?: string) => getProductPerformance(from, to));
+  ipcMain.handle('reports:getCustomerAnalysis', () => getCustomerAnalysis());
+  ipcMain.handle('reports:getInventoryAnalysis', () => getInventoryAnalysis());
+  ipcMain.handle('reports:getFinancialReport', (_e, from?: string, to?: string) => getFinancialReport(from, to));
+  ipcMain.handle('reports:getTaxReport', (_e, from?: string, to?: string) => getTaxReport(from, to));
+  ipcMain.handle('reports:getDailyClosing', (_e, date: string) => getDailyClosing(date));
+  ipcMain.handle('reports:exportReportPDF', (_e, reportType: string, data: unknown) => exportReportPDF(reportType, data));
 
   ipcMain.handle('whatsapp:status', () => getWhatsAppStatus());
   ipcMain.handle('whatsapp:send', (_e, phone: string, text: string) => sendWhatsAppReceipt(phone, text));
