@@ -23,9 +23,32 @@ import type {
   ProductPerformanceResult,
   SalesAnalysisResult,
   TaxReportResult,
+  AlertRow,
+  DailyInventoryRow,
+  MonthlyInventoryRow,
+  SupplierMetricRow,
+  WeeklyInventoryRow,
+  InventoryReportRow,
+  CategoryProfitRow,
+  LowProfitRow,
+  WorstProductRow,
+  BreakEvenRow,
+  ProductProfitRow,
+  ProductPurchaseSummaryRow,
+  DailySnapshotResult,
 } from '../../../shared/types';
 
-type Tab = 'sales' | 'products' | 'customers' | 'inventory' | 'financial' | 'tax' | 'closing' | 'expenses';
+type Tab =
+  | 'sales'
+  | 'products'
+  | 'customers'
+  | 'inventory'
+  | 'financial'
+  | 'tax'
+  | 'closing'
+  | 'expenses'
+  | 'alerts'
+  | 'profitability';
 
 function daysAgo(n: number): string {
   return new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
@@ -52,8 +75,71 @@ export default function Reports() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [expForm, setExpForm] = useState({ title: '', category: 'Other', amount: '', date: today(), notes: '' });
 
+  // ── v1.8.0 state ──
+  const [invSubTab, setInvSubTab] = useState<'purchaseHistory' | 'daily' | 'weekly' | 'monthly' | 'supplierMetrics'>('daily');
+  const [dailyInv, setDailyInv] = useState<DailyInventoryRow[]>([]);
+  const [weeklyInv, setWeeklyInv] = useState<WeeklyInventoryRow[]>([]);
+  const [monthlyInv, setMonthlyInv] = useState<MonthlyInventoryRow[]>([]);
+  const [purchaseHistory, setPurchaseHistory] = useState<InventoryReportRow[]>([]);
+  const [supplierMetrics, setSupplierMetrics] = useState<SupplierMetricRow[]>([]);
+
+  const [profitSubTab, setProfitSubTab] = useState<'daily' | 'weekly' | 'monthly' | 'category' | 'breakEven' | 'lowProfit' | 'topProducts' | 'worstProducts'>('daily');
+  const [profitData, setProfitData] = useState<ProductProfitRow[]>([]);
+  const [categoryProfit, setCategoryProfit] = useState<CategoryProfitRow[]>([]);
+  const [lowProfitData, setLowProfitData] = useState<LowProfitRow[]>([]);
+  const [worstProducts, setWorstProducts] = useState<WorstProductRow[]>([]);
+  const [breakEven, setBreakEven] = useState<BreakEvenRow[]>([]);
+
+  const [alerts, setAlerts] = useState<AlertRow[]>([]);
+  const [snapshotResult, setSnapshotResult] = useState<DailySnapshotResult | null>(null);
+
   const fmt = (n: number | null | undefined): string =>
     (n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+  // ── v1.8.0 Profitability sub-tab loader ──
+  const loadProfitSubTab = useCallback(async () => {
+    try {
+      switch (profitSubTab) {
+        case 'daily':
+          setProfitData(await window.api.profitability.daily(today()));
+          break;
+        case 'weekly':
+          const ws = new Date();
+          ws.setDate(ws.getDate() - 7);
+          const we = new Date();
+          setProfitData(await window.api.profitability.weekly(
+            ws.toISOString().split('T')[0], we.toISOString().split('T')[0]
+          ));
+          break;
+        case 'monthly':
+          const now = new Date();
+          setProfitData(await window.api.profitability.monthly(now.getFullYear(), now.getMonth() + 1));
+          break;
+        case 'category':
+          const cs = new Date();
+          cs.setDate(cs.getDate() - 30);
+          const ce = new Date();
+          setCategoryProfit(await window.api.profitability.category(
+            cs.toISOString().split('T')[0], ce.toISOString().split('T')[0]
+          ));
+          break;
+        case 'breakEven':
+          setBreakEven(await window.api.profitability.breakEven());
+          break;
+        case 'lowProfit':
+          setLowProfitData(await window.api.profitability.lowProfit());
+          break;
+        case 'topProducts':
+          setProfitData(await window.api.profitability.topProfit());
+          break;
+        case 'worstProducts':
+          setWorstProducts(await window.api.profitability.worstPerforming());
+          break;
+      }
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err));
+    }
+  }, [profitSubTab]);
 
   const loadTab = useCallback(async () => {
     setNotice(null);
@@ -83,11 +169,38 @@ export default function Reports() {
         case 'expenses':
           setExpenses(await window.api.reports.expenses(from, to));
           break;
+        // ── v1.8.0 ──
+        case 'alerts':
+          setAlerts(await window.api.alerts.getAll());
+          break;
+        case 'profitability':
+          await loadProfitSubTab();
+          break;
+      }
+
+      // Inventory sub-tabs
+      if (invSubTab === 'daily') {
+        setDailyInv(await window.api.inventoryReports.dailyInventory(today()));
+      } else if (invSubTab === 'weekly') {
+        const weekStart = new Date();
+        weekStart.setDate(weekStart.getDate() - 7);
+        const weekEnd = new Date();
+        setWeeklyInv(await window.api.inventoryReports.weeklyInventory(
+          weekStart.toISOString().split('T')[0],
+          weekEnd.toISOString().split('T')[0]
+        ));
+      } else if (invSubTab === 'monthly') {
+        const now = new Date();
+        setMonthlyInv(await window.api.inventoryReports.monthlyInventory(now.getFullYear(), now.getMonth() + 1));
+      } else if (invSubTab === 'purchaseHistory') {
+        setPurchaseHistory(await window.api.inventoryReports.purchaseHistory(undefined, { start: from, end: to }));
+      } else if (invSubTab === 'supplierMetrics') {
+        setSupplierMetrics(await window.api.inventoryReports.supplierMetrics());
       }
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err));
     }
-  }, [tab, from, to, closingDate]);
+  }, [tab, from, to, closingDate, invSubTab, profitSubTab]);
 
   useEffect(() => {
     loadTab();
@@ -129,11 +242,11 @@ export default function Reports() {
       <div className="page-header">
         <h1>Reports & Analytics</h1>
         <div className="toolbar">
-          {tab !== 'closing' && tab !== 'customers' && tab !== 'inventory' && (
-            <>
-              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-              <span className="muted">to</span>
-              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+           {tab !== 'closing' && tab !== 'customers' && tab !== 'inventory' && tab !== 'alerts' && tab !== 'profitability' && (
+             <>
+               <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+               <span className="muted">to</span>
+               <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
             </>
           )}
           {tab === 'closing' && (
@@ -155,19 +268,21 @@ export default function Reports() {
        </div>
       )}
 
-      <div className="tabs">
-        {(
-          [
-            ['sales', 'Sales'],
-            ['products', 'Products'],
-            ['customers', 'Customers'],
-            ['inventory', 'Inventory'],
-            ['financial', 'Financial'],
-            ['tax', 'Tax (FBR)'],
-            ['closing', 'Daily Closing'],
-            ['expenses', 'Expenses'],
-          ] as [Tab, string][]
-        ).map(([k, label]) => (
+       <div className="tabs">
+         {(
+           [
+             ['sales', 'Sales'],
+             ['products', 'Products'],
+             ['customers', 'Customers'],
+             ['inventory', 'Inventory'],
+             ['financial', 'Financial'],
+             ['tax', 'Tax (FBR)'],
+             ['closing', 'Daily Closing'],
+             ['expenses', 'Expenses'],
+             ['alerts', 'Alerts'],
+             ['profitability', 'Profitability'],
+           ] as [Tab, string][]
+         ).map(([k, label]) => (
           <button
             key={k}
             className={tab === k ? 'tab-btn active' : 'tab-btn'}
@@ -485,102 +600,281 @@ export default function Reports() {
        </div>
       )}
 
-      {/* ============ INVENTORY ============ */}
-      {tab === 'inventory' && inventoryAnalysis && (
+       {/* ============ INVENTORY ============ */}
+       {tab === 'inventory' && (
         <div>
-          <div className="stat-grid">
-            <div className="stat-card">
-              <div className="stat-label">Total SKUs</div>
-              <div className="stat-value">{inventoryAnalysis.stockSummary.total_skus}</div>
-           </div>
-            <div className="stat-card">
-              <div className="stat-label">Stock Value (cost</div>
-              <div className="stat-value">{fmt(inventoryAnalysis.stockSummary.total_value)}</div>
-           </div>
-            <div className="stat-card">
-              <div className="stat-label">Out of Stock</div>
-              <div className="stat-value text-warn">{inventoryAnalysis.stockSummary.out_of_stock}</div>
-           </div>
-            <div className="stat-card">
-              <div className="stat-label">Below Minimum</div>
-              <div className="stat-value text-warn">{inventoryAnalysis.stockSummary.below_minimum}</div>
-           </div>
-         </div>
+          {/* ── v1.8.0 Sub-tabs ── */}
+          <div className="tabs" style={{ marginBottom: 16 }}>
+            {(
+              [
+                ['daily', 'Daily'],
+                ['weekly', 'Weekly'],
+                ['monthly', 'Monthly'],
+                ['purchaseHistory', 'Purchase History'],
+                ['supplierMetrics', 'Supplier Metrics'],
+              ] as [typeof invSubTab, string][]
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                className={invSubTab === k ? 'tab-btn active' : 'tab-btn'}
+                onClick={() => setInvSubTab(k)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
-          <div className="panel">
-            <div className="panel-title">Product Velocity</div>
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Product</th>
-                    <th className="num">Stock</th>
-                    <th>Velocity</th>
-                    <th>Last Sale</th>
-                    <th className="num">Days No Sale</th>
-                 </tr>
-               </thead>
-                <tbody>
-                  {inventoryAnalysis.turnoverAnalysis.map((p) => (
-                    <tr key={p.id}>
-                      <td>{p.name}</td>
-                      <td className="num">{fmt(p.stock_qty)}</td>
-                      <td>
-                        <span
-                          className={`velocity velocity-${p.velocity
-                            .toLowerCase()
-                            .replace(' ', '-')}`}
-                        >
-                          {p.velocity}
-                       </span>
-                     </td>
-                      <td>{p.last_sale_date ?? '—'}</td>
-                      <td className="num">{p.days_no_sale ?? '—'}</td>
-                   </tr>
-                  ))}
-               </tbody>
-             </table>
-           </div>
-            <ExportButtons reportType="inventory" data={inventoryAnalysis} />
-         </div>
-
-          {inventoryAnalysis.expiryAlert.filter((e) => e.status !== 'OK').length > 0 && (
-            <div className="panel" style={{ marginTop: 12 }}>
-              <div className="panel-title">Expiry Alerts</div>
-              <div className="table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Product</th>
-                      <th>Category</th>
-                      <th className="num">Stock</th>
-                      <th>Expiry</th>
-                      <th className="num">Days Left</th>
-                      <th>Status</th>
-                   </tr>
-                 </thead>
-                  <tbody>
-                    {inventoryAnalysis.expiryAlert
-                      .filter((e) => e.status !== 'OK')
-                      .map((e) => (
-                        <tr key={e.id} className={`row-${e.status.toLowerCase()}`}>
-                          <td>{e.name}</td>
-                          <td>{e.category ?? '—'}</td>
-                          <td className="num">{fmt(e.stock_qty)}</td>
-                          <td>{e.expiry_date}</td>
-                          <td className="num">{e.days_until_expiry}</td>
-                          <td>
-                            <span className={`badge badge-${e.status.toLowerCase()}`}>{e.status}</span>
-                         </td>
-                       </tr>
+          {/* ── Daily Inventory ── */}
+          {invSubTab === 'daily' && dailyInv.length > 0 && (
+            <div>
+              <div className="panel">
+                <div className="panel-title">Today's Daily Inventory</div>
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Product</th>
+                        <th>Unit</th>
+                        <th className="num">Opening</th>
+                        <th className="num">Purchases</th>
+                        <th className="num">Sales</th>
+                        <th className="num">Closing</th>
+                        <th className="num">Variance</th>
+                        <th className="num">Stock</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dailyInv.map((r) => (
+                        <tr key={r.product_id}>
+                          <td>{r.product_name}</td>
+                          <td>{r.unit_name || '—'}</td>
+                          <td className="num">{fmt(r.opening_qty)}</td>
+                          <td className="num">{fmt(r.purchases_qty)}</td>
+                          <td className="num">{fmt(r.sales_qty)}</td>
+                          <td className="num">{fmt(r.closing_qty)}</td>
+                          <td className="num" style={{ color: r.variance_qty !== 0 ? '#ef4444' : '#22c55e' }}>
+                            {r.variance_qty !== 0 ? fmt(r.variance_qty) : '0'}
+                          </td>
+                          <td className="num">{fmt(r.stock_qty)}</td>
+                        </tr>
                       ))}
-                 </tbody>
-               </table>
-             </div>
-           </div>
+                    </tbody>
+                  </table>
+                </div>
+                <ExportButtons
+                  reportType="daily-inventory"
+                  data={dailyInv}
+                  xlsx={{
+                    name: 'daily-inventory',
+                    headers: ['Product', 'Unit', 'Opening', 'Purchases', 'Sales', 'Closing', 'Variance', 'Stock'],
+                    rows: dailyInv.map((r) => [
+                      r.product_name, r.unit_name || '', r.opening_qty, r.purchases_qty,
+                      r.sales_qty, r.closing_qty, r.variance_qty, r.stock_qty
+                    ]),
+                  }}
+                />
+              </div>
+            </div>
           )}
-       </div>
-      )}
+
+          {/* ── Weekly Inventory ── */}
+          {invSubTab === 'weekly' && weeklyInv.length > 0 && (
+            <div>
+              <div className="panel">
+                <div className="panel-title">Weekly Inventory Summary</div>
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Product</th>
+                        <th>Unit</th>
+                        <th className="num">Opening</th>
+                        <th className="num">Purchases</th>
+                        <th className="num">Sales</th>
+                        <th className="num">Variance</th>
+                        <th className="num">Days Tracked</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {weeklyInv.map((r) => (
+                        <tr key={r.product_id}>
+                          <td>{r.product_name}</td>
+                          <td>{r.unit_name || '—'}</td>
+                          <td className="num">{fmt(r.opening_qty)}</td>
+                          <td className="num">{fmt(r.purchases_qty)}</td>
+                          <td className="num">{fmt(r.sales_qty)}</td>
+                          <td className="num" style={{ color: r.variance_qty !== 0 ? '#ef4444' : '#22c55e' }}>
+                            {r.variance_qty !== 0 ? fmt(r.variance_qty) : '0'}
+                          </td>
+                          <td className="num">{r.days_tracked}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Monthly Inventory ── */}
+          {invSubTab === 'monthly' && monthlyInv.length > 0 && (
+            <div>
+              <div className="panel">
+                <div className="panel-title">Monthly Inventory Summary</div>
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Product</th>
+                        <th>Category</th>
+                        <th>Unit</th>
+                        <th className="num">Purchased</th>
+                        <th className="num">Sold</th>
+                        <th className="num">Avg Cost</th>
+                        <th className="num">Avg Selling</th>
+                        <th className="num">Current Stock</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {monthlyInv.map((r) => (
+                        <tr key={r.product_id}>
+                          <td>{r.product_name}</td>
+                          <td>{r.category_name || '—'}</td>
+                          <td>{r.unit_name || '—'}</td>
+                          <td className="num">{fmt(r.total_purchased)}</td>
+                          <td className="num">{fmt(r.total_sold)}</td>
+                          <td className="num">{fmt(r.avg_cost)}</td>
+                          <td className="num">{fmt(r.avg_selling_price)}</td>
+                          <td className="num">{fmt(r.current_stock)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <ExportButtons
+                  reportType="monthly-inventory"
+                  data={monthlyInv}
+                  xlsx={{
+                    name: 'monthly-inventory',
+                    headers: ['Product', 'Category', 'Unit', 'Purchased', 'Sold', 'AvgCost', 'AvgPrice', 'Stock'],
+                    rows: monthlyInv.map((r) => [
+                      r.product_name, r.category_name || '', r.unit_name || '',
+                      r.total_purchased, r.total_sold, r.avg_cost, r.avg_selling_price, r.current_stock
+                    ]),
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* ── Purchase History ── */}
+          {invSubTab === 'purchaseHistory' && (
+            <div>
+              <div className="panel">
+                <div className="panel-title">Purchase History</div>
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Product</th>
+                        <th>Supplier</th>
+                        <th>Qty Ordered</th>
+                        <th>Qty Received</th>
+                        <th>Unit</th>
+                        <th className="num">Unit Cost</th>
+                        <th className="num">Total</th>
+                        <th>Status</th>
+                        <th>Batch / Expiry</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {purchaseHistory.map((r) => (
+                        <tr key={r.id}>
+                          <td>{r.order_date}</td>
+                          <td>{r.product_name}</td>
+                          <td>{r.supplier_name}</td>
+                          <td className="num">{fmt(r.quantity_ordered)}</td>
+                          <td className="num">{r.quantity_received != null ? fmt(r.quantity_received) : '—'}</td>
+                          <td>{r.unit_name || '—'}</td>
+                          <td className="num">{fmt(r.cost_per_unit)}</td>
+                          <td className="num">{fmt(r.total_cost)}</td>
+                          <td>{r.delivery_status}</td>
+                          <td>{r.batch_number || 'N/A'} / {r.expiry_date || 'N/A'}</td>
+                        </tr>
+                      ))}
+                      {purchaseHistory.length === 0 && (
+                        <tr>
+                          <td colSpan={10} className="muted center">No purchase records in selected period.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {purchaseHistory.length > 0 && (
+                  <ExportButtons
+                    reportType="purchase-history"
+                    data={purchaseHistory}
+                    xlsx={{
+                      name: 'purchase-history',
+                      headers: ['Date', 'Product', 'Supplier', 'Ordered', 'Received', 'Unit', 'Cost', 'Total', 'Status', 'Batch/Expiry'],
+                      rows: purchaseHistory.map((r) => [
+                        r.order_date, r.product_name, r.supplier_name, r.quantity_ordered,
+                        r.quantity_received ?? '', r.unit_name || '',
+                        r.cost_per_unit, r.total_cost, r.delivery_status,
+                        `${r.batch_number || ''}/${r.expiry_date || ''}`
+                      ]),
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Supplier Metrics ── */}
+          {invSubTab === 'supplierMetrics' && (
+            <div>
+              <div className="panel">
+                <div className="panel-title">Supplier Metrics</div>
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Supplier</th>
+                        <th className="num">Orders</th>
+                        <th className="num">Total Spent</th>
+                        <th className="num">On-Time %</th>
+                        <th className="num">Avg Cost</th>
+                        <th>Reliability</th>
+                        <th>Last Order</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {supplierMetrics.map((s) => (
+                        <tr key={s.supplier_id}>
+                          <td>{s.supplier_name}</td>
+                          <td className="num">{s.total_orders}</td>
+                          <td className="num">{fmt(s.total_spent)}</td>
+                          <td className="num">{fmt(s.on_time_pct)}%</td>
+                          <td className="num">{fmt(s.average_cost)}</td>
+                          <td>
+                            <span className={`badge badge-${
+                              s.reliability_score >= 4 ? 'ok' : s.reliability_score >= 2.5 ? 'warn' : 'danger'
+                            }`}>
+                              {fmt(s.reliability_score)} / 5
+                            </span>
+                          </td>
+                          <td>{s.last_order_date || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+       )}
 
       {/* ============ FINANCIAL ============ */}
       {tab === 'financial' && financial && (
@@ -870,11 +1164,342 @@ export default function Reports() {
                    </tr>
                   )}
                </tbody>
-             </table>
-           </div>
-         </div>
-       </div>
-      )}
-   </div>
+              </table>
+            </div>
+          </div>
+        </div>
+       )}
+
+       {/* ============ ALERTS (v1.8.0) ============ */}
+       {tab === 'alerts' && (
+        <div>
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+            <button
+              className="btn btn-sm"
+              onClick={async () => {
+                const count = await window.api.alerts.checkNow();
+                setNotice(`Check complete: ${count} new alert(s)`);
+                setAlerts(await window.api.alerts.getAll());
+              }}
+            >
+              Run Check Now
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={async () => {
+                const snap = await window.api.inventoryReports.createDailySnapshot(today());
+                setNotice(`Snapshot: ${snap.created} products`);
+              }}
+            >
+              Create Daily Snapshot
+            </button>
+          </div>
+
+          {alerts.length === 0 ? (
+            <div className="muted center" style={{ padding: 24 }}>
+              No alerts. All systems healthy.
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Severity</th>
+                  <th>Message</th>
+                  <th>Status</th>
+                  <th style={{ width: 200 }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {alerts.map((a) => (
+                  <tr key={a.id} style={a.is_read ? { opacity: 0.6 } : undefined}>
+                    <td className="num">{a.created_at?.substring(0, 10)}</td>
+                    <td>{a.alert_type.replace('_', ' ')}</td>
+                    <td>
+                      <span
+                        style={{
+                          color:
+                            a.severity === 'critical'
+                              ? '#ef4444'
+                              : a.severity === 'warning'
+                              ? '#f59e0b'
+                              : '#3b82f6',
+                          fontWeight: a.severity === 'critical' ? 'bold' : 'normal',
+                        }}
+                      >
+                        {a.severity}
+                      </span>
+                    </td>
+                    <td>{a.message}</td>
+                    <td>{a.is_read ? 'Resolved' : 'Active'}</td>
+                    <td>
+                      {!a.is_read && (
+                        <>
+                          <button
+                            className="btn btn-sm"
+                            onClick={async () => {
+                              await window.api.alerts.markAsRead(a.id);
+                              setAlerts(await window.api.alerts.getAll());
+                            }}
+                          >
+                            Ack
+                          </button>
+                          {' '}
+                          <button
+                            className="btn btn-sm btn-danger"
+                            onClick={async () => {
+                              await window.api.alerts.resolve(a.id, 'Manual resolution');
+                              setAlerts(await window.api.alerts.getAll());
+                            }}
+                          >
+                            Resolve
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+       )}
+
+       {/* ============ PROFITABILITY (v1.8.0) ============ */}
+       {tab === 'profitability' && (
+        <div>
+          <div className="tabs" style={{ marginBottom: 16 }}>
+            {(
+              [
+                ['daily', 'Daily'],
+                ['weekly', 'Weekly'],
+                ['monthly', 'Monthly'],
+                ['category', 'By Category'],
+                ['breakEven', 'Break-Even'],
+                ['lowProfit', 'Low Profit'],
+                ['topProducts', 'Top Products'],
+                ['worstProducts', 'Worst Products'],
+              ] as [typeof profitSubTab, string][]
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                className={profitSubTab === k ? 'tab-btn active' : 'tab-btn'}
+                onClick={() => setProfitSubTab(k)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {(['daily', 'weekly', 'monthly', 'topProducts'].includes(profitSubTab)) && profitData.length >= 0 && (
+            <div>
+              {profitData.length === 0 ? (
+                <div className="muted center" style={{ padding: 24 }}>No data for this period.</div>
+              ) : (
+                <>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Product</th>
+                        <th>Category</th>
+                        <th>Sold</th>
+                        <th>Revenue</th>
+                        <th>COGS</th>
+                        <th>Profit</th>
+                        <th>Margin %</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {profitData.map((p) => (
+                        <tr key={p.product_id}>
+                          <td>{p.product_name}</td>
+                          <td>{p.category || '—'}</td>
+                          <td className="num">{fmt(p.units_sold)}</td>
+                          <td className="num">{fmt(p.revenue)}</td>
+                          <td className="num">{fmt(p.cost_of_goods)}</td>
+                          <td className="num">{fmt(p.gross_profit)}</td>
+                          <td className="num">{fmt(p.profit_margin_pct)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div style={{ marginTop: 12 }}>
+                    <ExportButtons
+                      reportType="profitability-table"
+                      data={profitData}
+                      xlsx={{
+                        name: `Profitability-${profitSubTab}`,
+                        headers: ['Product', 'Category', 'Sold', 'Revenue', 'COGS', 'Profit', 'Margin%'],
+                        rows: profitData.map((p) => [
+                          p.product_name,
+                          p.category || '',
+                          p.units_sold,
+                          p.revenue,
+                          p.cost_of_goods,
+                          p.gross_profit,
+                          p.profit_margin_pct,
+                        ]),
+                      }}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {profitSubTab === 'category' && categoryProfit.length >= 0 && (
+            <div>
+              {categoryProfit.length === 0 ? (
+                <div className="muted center" style={{ padding: 24 }}>No category data.</div>
+              ) : (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Category</th>
+                      <th>Products</th>
+                      <th>Units Sold</th>
+                      <th>Revenue</th>
+                      <th>COGS</th>
+                      <th>Profit</th>
+                      <th>Margin %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {categoryProfit.map((c) => (
+                      <tr key={c.category_name || 'N/A'}>
+                        <td>{c.category_name || 'Uncategorized'}</td>
+                        <td className="num">{c.product_count}</td>
+                        <td className="num">{fmt(c.units_sold)}</td>
+                        <td className="num">{fmt(c.revenue)}</td>
+                        <td className="num">{fmt(c.cost_of_goods)}</td>
+                        <td className="num">{fmt(c.gross_profit)}</td>
+                        <td className="num">{fmt(c.profit_margin_pct)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {profitSubTab === 'breakEven' && breakEven.length >= 0 && (
+            <div>
+              {breakEven.length === 0 ? (
+                <div className="muted center" style={{ padding: 24 }}>No products with cost data.</div>
+              ) : (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th>Cost</th>
+                      <th>Sale Price</th>
+                      <th>Break-Even Price</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {breakEven.map((b) => (
+                      <tr key={b.product_id}>
+                        <td>{b.product_name}</td>
+                        <td className="num">{fmt(b.cost_price)}</td>
+                        <td className="num">{fmt(b.sale_price)}</td>
+                        <td className="num">{fmt(b.break_even_price)}</td>
+                        <td
+                          style={{
+                            color:
+                              b.status === 'Profitable'
+                                ? '#22c55e'
+                                : b.status === 'Below Break-Even'
+                                ? '#ef4444'
+                                : '#6b7280',
+                          }}
+                        >
+                          {b.status}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {profitSubTab === 'lowProfit' && lowProfitData.length >= 0 && (
+            <div>
+              {lowProfitData.length === 0 ? (
+                <div className="muted center" style={{ padding: 24 }}>No low-margin products found.</div>
+              ) : (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th>Cost</th>
+                      <th>Sale Price</th>
+                      <th>Profit/Unit</th>
+                      <th>Margin %</th>
+                      <th>Sold 30d</th>
+                      <th>Stock</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lowProfitData.map((lp) => (
+                      <tr key={lp.product_id}>
+                        <td>{lp.product_name}</td>
+                        <td className="num">{fmt(lp.cost_price)}</td>
+                        <td className="num">{fmt(lp.sale_price)}</td>
+                        <td className="num">{fmt(lp.profit_per_unit)}</td>
+                        <td className="num">{fmt(lp.margin_pct)}%</td>
+                        <td className="num">{lp.sold_last_30days}</td>
+                        <td className="num">{fmt(lp.stock_qty)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {profitSubTab === 'worstProducts' && worstProducts.length >= 0 && (
+            <div>
+              {worstProducts.length === 0 ? (
+                <div className="muted center" style={{ padding: 24 }}>No product data.</div>
+              ) : (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th>Category</th>
+                      <th>Units Sold</th>
+                      <th>Revenue</th>
+                      <th>COGS</th>
+                      <th>Profit</th>
+                      <th>Margin %</th>
+                      <th>Stock</th>
+                      <th>Days No Sale</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {worstProducts.map((w) => (
+                      <tr key={w.product_id}>
+                        <td>{w.product_name}</td>
+                        <td>{w.category || '—'}</td>
+                        <td className="num">{w.units_sold}</td>
+                        <td className="num">{fmt(w.revenue)}</td>
+                        <td className="num">{fmt(w.cogs)}</td>
+                        <td className="num">{fmt(w.total_profit)}</td>
+                        <td className="num">{fmt(w.profit_margin_pct)}%</td>
+                        <td className="num">{fmt(w.stock_qty)}</td>
+                        <td className="num">{w.days_no_sale ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+        </div>
+       )}
+    </div>
   );
 }

@@ -1116,5 +1116,10 @@ export interface AlertRow {
   is_read: boolean;
   action_taken: string | null;
   created_at: string;
-  resolved_at: string | null;
+   resolved_at: string | null;
+}
+
+export interface DailySnapshotResult {
+  created: number;
+  date: string;
 }
