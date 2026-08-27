@@ -807,3 +807,112 @@ export async function exportReportPDF(reportType: string, data: unknown): Promis
   doc.end();
   return new Promise((resolve) => stream.on('finish', () => resolve(filePath)));
 }
+
+export async function exportReportExcel(reportType: string, data: unknown): Promise<string | null> {
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  const defaultName = `${reportType}-report-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const result = win
+    ? await dialog.showSaveDialog(win, {
+        title: `Save ${reportType} report as Excel`,
+        defaultPath: defaultName,
+        filters: [{ name: 'Excel', extensions: ['xlsx'] }],
+      })
+    : { canceled: true, filePath: undefined as string | undefined };
+  if (result.canceled || !result.filePath) return null;
+  const filePath = result.filePath;
+
+  const XLSX = require('xlsx');
+  const wb = XLSX.utils.book_new();
+  const d = data as any;
+
+  function addSheet(name: string, headers: string[], rows: (string | number)[][]) {
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
+  }
+
+  switch (reportType) {
+    case 'sales': {
+      addSheet('Summary', ['Metric', 'Value'], [
+        ['Total Sales', fmt(d.summary.total_sales)],
+        ['Bill Count', d.summary.bill_count],
+        ['Avg Bill', fmt(d.summary.avg_bill)],
+        ['Total Discount', fmt(d.summary.total_discount)],
+        ['Total Tax', fmt(d.summary.total_tax)],
+      ]);
+      addSheet('Payment Breakdown', ['Mode', 'Total (Rs)', '%'], d.paymentBreakdown.map((r: any) => [r.mode, r.total, r.percentage]));
+      addSheet('Daily Trend', ['Date', 'Bills', 'Sales (Rs)'], d.dailyTrend.map((r: any) => [r.date, r.bills, r.total]));
+      break;
+    }
+    case 'products': {
+      addSheet('Top Products', ['Product', 'Category', 'Qty', 'Revenue', 'Margin %', '% of Total'], d.topProducts.map((p: any) => [p.name, p.category ?? '', p.qty_sold, p.revenue, p.profit_margin_pct, p.revenue_pct]));
+      addSheet('Slow Movers', ['Product', 'Category', 'Stock', 'Days No Sale'], d.slowMovers.map((p: any) => [p.name, p.category ?? '', p.stock_qty, p.days_no_sale ?? '']));
+      addSheet('Categories', ['Category', 'Products', 'Qty Sold', 'Revenue'], d.categoryAnalysis.map((c: any) => [c.category ?? 'Uncategorised', c.product_count, c.qty_sold, c.revenue]));
+      break;
+    }
+    case 'customers': {
+      addSheet('Summary', ['Metric', 'Value'], [
+        ['Total Customers', d.udhaarSummary.total_customers],
+        ['With Balance', d.udhaarSummary.with_balance],
+        ['Total Outstanding', d.udhaarSummary.total_outstanding],
+        ['Avg Balance', d.udhaarSummary.avg_balance],
+      ]);
+      addSheet('Top Customers', ['Customer', 'Phone', 'Purchases', 'Total Spent', 'Segment'], d.topCustomers.map((c: any) => [c.name, c.phone ?? '', c.purchase_count, c.total_spent, c.segment]));
+      if (d.udhaarOverdue.length) {
+        addSheet('Overdue', ['Customer', 'Phone', 'Outstanding', 'Days'], d.udhaarOverdue.map((c: any) => [c.name, c.phone ?? '', c.balance, c.days_since_purchase ?? '']));
+      }
+      break;
+    }
+    case 'inventory': {
+      addSheet('Stock Summary', ['Metric', 'Value'], [
+        ['Total SKUs', d.stockSummary.total_skus],
+        ['Total Value (cost)', d.stockSummary.total_value],
+        ['Out of Stock', d.stockSummary.out_of_stock],
+        ['Below Minimum', d.stockSummary.below_minimum],
+      ]);
+      const exp = d.expiryAlert.filter((e: any) => e.status !== 'OK');
+      addSheet('Expiry Alerts', ['Product', 'Category', 'Stock', 'Expiry', 'Days', 'Status'], exp.map((e: any) => [e.name, e.category ?? '', e.stock_qty, e.expiry_date, e.days_until_expiry, e.status]));
+      addSheet('Turnover', ['Product', 'Stock', 'Velocity', 'Days No Sale'], d.turnoverAnalysis.map((t: any) => [t.name, t.stock_qty, t.velocity, t.days_no_sale ?? '']));
+      break;
+    }
+    case 'financial': {
+      const p = d.pnl;
+      addSheet('Profit & Loss', ['Metric', 'Value'], [
+        ['Gross Sales', p.gross_sales],
+        ['Discounts', -p.discounts],
+        ['Net Sales', p.net_sales],
+        ['Cost of Goods', -p.cogs],
+        [`Gross Profit (${d.margins.gross_margin_pct}%)`, p.gross_profit],
+        ['Tax Paid', -p.tax_paid],
+        [`NET PROFIT (${d.margins.net_margin_pct}%)`, p.net_profit],
+        ['Expenses', -p.expenses],
+      ]);
+      break;
+    }
+    case 'tax': {
+      addSheet('Tax Summary', ['Metric', 'Value'], [
+        ['Taxable Sales', d.taxSummary.taxable_sales],
+        ['Tax Collected', d.taxSummary.tax_collected],
+        ['Transactions', d.taxSummary.transaction_count],
+      ]);
+      addSheet('By Category', ['Category', 'Sales (Rs)', 'Est. GST 17% (Rs)'], d.taxByCategory.map((t: any) => [t.category ?? 'Uncategorised', t.sales, t.estimated_gst_17pct]));
+      break;
+    }
+    case 'closing': {
+      addSheet('Daily Closing', ['Metric', 'Value'], [
+        ['Date', d.date],
+        ['Total Sales', d.total_sales],
+        ['Bill Count', d.bill_count],
+        ['Expenses', -d.expenses],
+        ['Expected Cash', d.expected_cash],
+      ]);
+      addSheet('By Payment Mode', ['Mode', 'Total (Rs)'], d.by_mode.map((m: any) => [m.mode, m.total]));
+      break;
+    }
+    default: {
+      addSheet('Report', ['Data'], [[JSON.stringify(d, null, 2)]]);
+    }
+  }
+
+  XLSX.writeFile(wb, filePath);
+  return filePath;
+}

@@ -211,6 +211,11 @@ export default function Reports() {
     if (path) setNotice(`PDF saved: ${path}`);
   }
 
+  async function exportFullExcel(reportType: string, data: unknown) {
+    const path = await window.api.reports.exportReportExcel(reportType, data);
+    if (path) setNotice(`Excel saved: ${path}`);
+  }
+
   async function exportXlsx(name: string, headers: string[], rows: (string | number | null)[][]) {
     await window.api.exportData.saveXlsx(`${name}-${to}.xlsx`, [{ name: name.slice(0, 31), headers, rows }]);
   }
@@ -223,14 +228,20 @@ export default function Reports() {
     return (
       <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
         <button className="btn btn-sm" onClick={() => exportPdf(props.reportType, props.data)}>
-          📄 PDF
+          PDF
        </button>
+        <button
+          className="btn btn-sm"
+          onClick={() => exportFullExcel(props.reportType, props.data)}
+        >
+          Excel (Full)
+        </button>
         {props.xlsx && (
           <button
             className="btn btn-sm"
             onClick={() => exportXlsx(props.xlsx!.name, props.xlsx!.headers, props.xlsx!.rows)}
           >
-            📊 Excel
+            Excel (Table)
          </button>
         )}
      </span>

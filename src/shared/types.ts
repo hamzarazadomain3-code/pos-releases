@@ -143,6 +143,7 @@ export interface Customer {
 }
 
 export interface Sale {
+  cashier_name?: string | null;
   id: number;
   invoice_no: string;
   customer_id: number | null;
@@ -187,6 +188,13 @@ export interface Payment {
   amount: number;
   reference: string | null;
   created_at?: string;
+}
+
+export interface SaleDetail extends Sale {
+  items: SaleItem[];
+  payments: Payment[];
+  paymentBreakdown: Record<string, number>;
+  subtotal: number;
 }
 
 export interface BillLineInput {
@@ -757,7 +765,7 @@ export interface PosBridge {
     onStatus: (callback: (status: { state: string; detail?: string }) => void) => () => void;
   };
   inventory: {
-    list: (search?: string, includeInactive?: boolean) => Promise<Product[]>;
+    list: (search?: string, includeInactive?: boolean, categoryId?: number, stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock', supplierId?: number, expiryFrom?: string, expiryTo?: string) => Promise<Product[]>;
     get: (id: number) => Promise<Product | null>;
     getByBarcode: (barcode: string) => Promise<Product | null>;
     create: (input: ProductInput) => Promise<Product>;
@@ -782,7 +790,7 @@ export interface PosBridge {
   sales: {
     create: (input: SaleInput) => Promise<SaleCreateResult>;
     get: (id: number) => Promise<(Sale & { items: SaleItem[]; payments: Payment[] }) | null>;
-    list: (from?: string, to?: string) => Promise<Sale[]>;
+    list: (from?: string, to?: string, includeVoided?: boolean, customerId?: number, userId?: number, paymentMode?: string, productId?: number, minAmount?: number, maxAmount?: number, saleNo?: string, sortBy?: 'date' | 'amount' | 'saleNo', sortOrder?: 'asc' | 'desc', onlyMySales?: boolean, status?: 'completed' | 'voided' | 'held') => Promise<Sale[]>;
     void: (id: number, reason: string) => Promise<boolean>;
     nextInvoiceNo: () => Promise<string>;
     hold: (kind: 'held' | 'quotation', label: string, data: unknown) => Promise<HeldBill>;
@@ -838,9 +846,11 @@ export interface PosBridge {
     getTaxReport: (from?: string, to?: string) => Promise<TaxReportResult>;
     getDailyClosing: (date: string) => Promise<DailyClosingResult>;
     exportReportPDF: (reportType: string, data: unknown) => Promise<string | null>;
+    exportReportExcel: (reportType: string, data: unknown) => Promise<string | null>;
   };
   whatsapp: {
     getStatus: () => Promise<WhatsAppStatus>;
+    start: () => Promise<WhatsAppStatus>;
     send: (phone: string, text: string) => Promise<WhatsAppSendResult>;
     sendSaleReceipt: (saleId: number, phone?: string) => Promise<WhatsAppSendResult>;
     onQr: (callback: (qr: string | null) => void) => () => void;
@@ -855,6 +865,7 @@ export interface PosBridge {
     loginWithPin: (pin: string) => Promise<LoginResult>;
     logout: () => Promise<boolean>;
     currentUser: () => Promise<UserRow | null>;
+    refreshSession: () => Promise<UserRow | null>;
     verifyForUser: (userId: number, secret: string) => Promise<boolean>;
     defaultPasswordActive: () => Promise<boolean>;
   };
@@ -884,10 +895,10 @@ export interface PosBridge {
     ) => Promise<boolean>;
   };
   excel: {
-    exportProducts: () => Promise<boolean>;
+    exportProducts: (filters?: { search?: string; includeInactive?: boolean; categoryId?: number; stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock'; supplierId?: number; expiryFrom?: string; expiryTo?: string }) => Promise<boolean>;
     exportSales: (from?: string, to?: string) => Promise<boolean>;
-    exportCustomers: () => Promise<boolean>;
-    exportPurchaseOrders: () => Promise<boolean>;
+    exportCustomers: (filters?: { status?: 'paid' | 'pending' | 'all'; from?: string; to?: string }) => Promise<boolean>;
+    exportPurchaseOrders: (filters?: { status?: string; from?: string; to?: string; supplierId?: number }) => Promise<boolean>;
     exportExpenses: (from?: string, to?: string) => Promise<boolean>;
     downloadTemplate: () => Promise<boolean>;
     importProducts: () => Promise<ProductImportResult | null>;
@@ -895,7 +906,7 @@ export interface PosBridge {
   purchases: {
     suppliers: () => Promise<Supplier[]>;
     createSupplier: (name: string, phone?: string, address?: string) => Promise<Supplier>;
-    listOrders: (status?: string) => Promise<PurchaseOrder[]>;
+    listOrders: (status?: string, from?: string, to?: string, supplierId?: number) => Promise<PurchaseOrder[]>;
     getOrder: (id: number) => Promise<(PurchaseOrder & { items: PurchaseItem[] }) | null>;
     createOrder: (supplierId: number, items: PurchaseLineInput[]) => Promise<PurchaseOrder>;
     receiveOrder: (id: number) => Promise<PurchaseOrder>;
@@ -908,7 +919,7 @@ export interface PosBridge {
     create: (
       input: { sale_id: number; items: ReturnInputItem[]; reason?: string; refund_mode: 'cash' | 'credit'; restock: boolean }
     ) => Promise<ReturnRow & { items: ReturnItemRow[] }>;
-    list: (from?: string, to?: string) => Promise<ReturnRow[]>;
+    list: (from?: string, to?: string, customerId?: number, productId?: number) => Promise<ReturnRow[]>;
     get: (id: number) => Promise<(ReturnRow & { items: ReturnItemRow[] }) | null>;
     createCashRefund: (amount: number, reason?: string, mode?: string) => Promise<CashRefundRow>;
     listCashRefunds: (from?: string, to?: string) => Promise<CashRefundRow[]>;
@@ -916,6 +927,7 @@ export interface PosBridge {
   audits: {
     create: () => Promise<AuditRow & { items: AuditItemRow[] }>;
     list: () => Promise<AuditRow[]>;
+    listPaginated: (page?: number, pageSize?: number, from?: string, to?: string, userId?: number, status?: 'in_progress' | 'completed') => Promise<{ rows: AuditRow[]; total: number }>;
     get: (id: number) => Promise<(AuditRow & { items: AuditItemRow[] }) | null>;
     saveCounts: (auditId: number, counts: AuditCountInput[]) => Promise<boolean>;
     complete: (auditId: number) => Promise<AuditRow & { items: AuditItemRow[] }>;
@@ -961,6 +973,8 @@ export interface PosBridge {
     markAsRead: (id: number) => Promise<boolean>;
     resolve: (id: number, action: string) => Promise<boolean>;
     checkNow: () => Promise<number>;
+    sendWhatsApp: () => Promise<{ sent: number; errors: number }>;
+    sendDailySummary: () => Promise<{ ok: boolean; message: string }>;
   };
 };
 

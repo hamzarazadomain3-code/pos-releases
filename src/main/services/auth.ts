@@ -92,6 +92,10 @@ export function logout(): void {
   sessionUserId = null;
 }
 
+export function refreshSession(): UserRow | null {
+  return currentUser();
+}
+
 export function verifyForUser(userId: number, secret: string): boolean {
   const user = getUser(userId);
   if (!user || user.active !== 1) return false;

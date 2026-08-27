@@ -1,4 +1,5 @@
 import { getDb } from '../db';
+import { getAllSettings } from './settings';
 
 export interface AlertRow {
   id: number;
@@ -230,6 +231,111 @@ export class AlertService {
       'UPDATE alert_log SET is_read = 1, action_taken = ?, resolved_at = CURRENT_TIMESTAMP WHERE id = ?'
     ).run(action || 'Resolved', id);
     return result.changes > 0;
+  }
+
+  // ── 10. SEND CRITICAL ALERTS VIA WHATSAPP ──
+
+  async sendAlertsWhatsApp(): Promise<{ sent: number; errors: number }> {
+    const settings = getAllSettings();
+    if (settings.alert_whatsapp_enabled !== '1') return { sent: 0, errors: 0 };
+
+    const phoneNumbers = [settings.alert_manager_phone, settings.alert_owner_phone].filter(Boolean);
+    if (phoneNumbers.length === 0) return { sent: 0, errors: 0 };
+
+    // Dynamically import whatsapp gateway to avoid circular deps
+    const { sendWhatsAppReceipt } = await import('../whatsapp-gateway');
+
+    const alerts = this.db.prepare(`
+      SELECT id, alert_type, message, severity
+      FROM alert_log
+      WHERE is_read = 0 AND severity IN ('critical', 'warning')
+      ORDER BY severity DESC, created_at DESC
+      LIMIT 10
+    `).all() as Array<{ id: number; alert_type: string; message: string; severity: string }>;
+
+    if (alerts.length === 0) return { sent: 0, errors: 0 };
+
+    const lines = alerts.map((a) => `${a.severity === 'critical' ? '🔴' : '⚠️'} ${a.message}`);
+    const text = `*ShopKeeper POS Alerts*\n\n${lines.join('\n')}\n\n_Sent at ${new Date().toLocaleString()}_`;
+
+    let sent = 0;
+    let errors = 0;
+    for (const phone of phoneNumbers) {
+      try {
+        const res = await sendWhatsAppReceipt(phone, text);
+        if (res.ok) sent++;
+        else errors++;
+      } catch {
+        errors++;
+      }
+    }
+    return { sent, errors };
+  }
+
+  // ── 11. SEND DAILY SALES SUMMARY VIA WHATSAPP ──
+
+  async sendDailySalesSummary(): Promise<{ ok: boolean; message: string }> {
+    const settings = getAllSettings();
+    if (settings.alert_whatsapp_enabled !== '1') return { ok: false, message: 'WhatsApp alerts disabled' };
+
+    const phoneNumbers = [settings.alert_manager_phone, settings.alert_owner_phone].filter(Boolean);
+    if (phoneNumbers.length === 0) return { ok: false, message: 'No phone numbers configured' };
+
+    const { sendWhatsAppReceipt } = await import('../whatsapp-gateway');
+
+    const today = new Date().toISOString().slice(0, 10);
+    const stats = this.db.prepare(`
+      SELECT
+        COUNT(*) as bill_count,
+        COALESCE(SUM(total_amount), 0) as total_sales,
+        COALESCE(SUM(CASE WHEN status = 'completed' THEN total_amount ELSE 0 END), 0) as completed_sales
+      FROM sales
+      WHERE DATE(created_at) = ?
+    `).get(today) as { bill_count: number; total_sales: number; completed_sales: number };
+
+    const topProducts = this.db.prepare(`
+      SELECT p.name, SUM(si.quantity) as qty
+      FROM sale_items si
+      JOIN products p ON si.product_id = p.id
+      JOIN sales s ON si.sale_id = s.id
+      WHERE DATE(s.created_at) = ? AND s.status = 'completed'
+      GROUP BY p.id
+      ORDER BY qty DESC
+      LIMIT 5
+    `).all(today) as Array<{ name: string; qty: number }>;
+
+    const lowStock = this.db.prepare(`
+      SELECT name, stock_qty FROM products
+      WHERE active = 1 AND stock_qty <= COALESCE(min_stock_level, low_stock_threshold, 0)
+        AND COALESCE(min_stock_level, low_stock_threshold, 0) > 0
+      LIMIT 5
+    `).all() as Array<{ name: string; stock_qty: number }>;
+
+    let text = `*ShopKeeper POS — Daily Summary*\n`;
+    text += `📅 ${today}\n\n`;
+    text += `*Sales:*\n`;
+    text += `• Bills: ${stats.bill_count}\n`;
+    text += `• Total: Rs ${stats.completed_sales.toFixed(2)}\n\n`;
+
+    if (topProducts.length) {
+      text += `*Top Products:*\n`;
+      topProducts.forEach((p, i) => { text += `${i + 1}. ${p.name} (${p.qty} sold)\n`; });
+      text += '\n';
+    }
+
+    if (lowStock.length) {
+      text += `*Low Stock:*\n`;
+      lowStock.forEach((p) => { text += `• ${p.name}: ${p.stock_qty} left\n`; });
+    }
+
+    let sent = 0;
+    for (const phone of phoneNumbers) {
+      try {
+        const res = await sendWhatsAppReceipt(phone, text);
+        if (res.ok) sent++;
+      } catch { /* ignore */ }
+    }
+    return { ok: sent > 0, message: `Summary sent to ${sent}/${phoneNumbers.length} recipients` };
   }
 
   // ── Helpers ──

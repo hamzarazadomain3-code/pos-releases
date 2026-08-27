@@ -43,6 +43,7 @@ import {
   dashboard,
   deleteExpense,
   exportReportPDF,
+  exportReportExcel,
   getCustomerAnalysis,
   getDailyClosing,
   getDailySalesTrend,
@@ -70,6 +71,7 @@ import {
   login,
   loginWithPin,
   logout,
+  refreshSession,
   updateUser,
   verifyCredentials,
   verifyForUser,
@@ -106,7 +108,7 @@ import {
   resolvePromotions,
   updatePromotion,
 } from './services/promotions';
-import { getWhatsAppStatus, sendSaleReceiptOnWhatsApp, sendWhatsAppReceipt } from './whatsapp-gateway';
+import { getWhatsAppStatus, restartWhatsAppGateway, sendSaleReceiptOnWhatsApp, sendWhatsAppReceipt } from './whatsapp-gateway';
 
 export function registerIpcHandlers(): void {
   ipcMain.handle('inventory:list', (_e, search?: string, includeInactive?: boolean) =>
@@ -130,7 +132,7 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('sales:create', (_e, input) => createSale(input));
   ipcMain.handle('sales:get', (_e, id: number) => getSale(id));
-  ipcMain.handle('sales:list', (_e, from?: string, to?: string) => listSales(from, to));
+  ipcMain.handle('sales:list', (_e, from?: string, to?: string, includeVoided?: boolean, customerId?: number, userId?: number, paymentMode?: string, productId?: number, minAmount?: number, maxAmount?: number, saleNo?: string, sortBy?: 'date' | 'amount' | 'saleNo', sortOrder?: 'asc' | 'desc', onlyMySales?: boolean, status?: 'completed' | 'voided' | 'held') => listSales(from, to, includeVoided, customerId, userId, paymentMode, productId, minAmount, maxAmount, saleNo, sortBy, sortOrder, onlyMySales, status));
   ipcMain.handle('sales:void', (_e, id: number, reason: string) => voidSale(id, reason));
   ipcMain.handle('sales:nextInvoiceNo', () => nextInvoiceNo());
   ipcMain.handle('sales:hold', (_e, kind: string, label: string, data) => holdBill(kind as 'held' | 'quotation', label, data));
@@ -213,8 +215,13 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('reports:getTaxReport', (_e, from?: string, to?: string) => getTaxReport(from, to));
   ipcMain.handle('reports:getDailyClosing', (_e, date: string) => getDailyClosing(date));
   ipcMain.handle('reports:exportReportPDF', (_e, reportType: string, data: unknown) => exportReportPDF(reportType, data));
+  ipcMain.handle('reports:exportReportExcel', (_e, reportType: string, data: unknown) => exportReportExcel(reportType, data));
 
   ipcMain.handle('whatsapp:status', () => getWhatsAppStatus());
+  ipcMain.handle('whatsapp:start', async () => {
+    await restartWhatsAppGateway();
+    return getWhatsAppStatus();
+  });
   ipcMain.handle('whatsapp:send', (_e, phone: string, text: string) => sendWhatsAppReceipt(phone, text));
   ipcMain.handle('whatsapp:sendSaleReceipt', (_e, saleId: number, phone?: string) =>
     sendSaleReceiptOnWhatsApp(saleId, phone)
@@ -230,6 +237,7 @@ export function registerIpcHandlers(): void {
     return true;
   });
   ipcMain.handle('auth:currentUser', () => currentUser());
+  ipcMain.handle('auth:refreshSession', () => refreshSession());
   ipcMain.handle('auth:verifyForUser', (_e, userId: number, secret: string) => verifyForUser(userId, secret));
   ipcMain.handle('auth:defaultPasswordActive', () => defaultPasswordActive());
 
@@ -259,10 +267,10 @@ export function registerIpcHandlers(): void {
     saveXlsx(BrowserWindow.getFocusedWindow(), defaultName, sheets)
   );
 
-  ipcMain.handle('excel:exportProducts', () => exportProductsXlsx(BrowserWindow.getFocusedWindow()));
+  ipcMain.handle('excel:exportProducts', (_e, filters?: { search?: string; includeInactive?: boolean; categoryId?: number; stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock'; supplierId?: number; expiryFrom?: string; expiryTo?: string }) => exportProductsXlsx(BrowserWindow.getFocusedWindow(), filters?.search, filters?.includeInactive, filters?.categoryId, filters?.stockStatus, filters?.supplierId, filters?.expiryFrom, filters?.expiryTo));
   ipcMain.handle('excel:exportSales', (_e, from?: string, to?: string) => exportSalesXlsx(BrowserWindow.getFocusedWindow(), from, to));
-  ipcMain.handle('excel:exportCustomers', () => exportCustomersXlsx(BrowserWindow.getFocusedWindow()));
-  ipcMain.handle('excel:exportPurchaseOrders', () => exportPurchaseOrdersXlsx(BrowserWindow.getFocusedWindow()));
+  ipcMain.handle('excel:exportCustomers', (_e, filters?: { status?: 'paid' | 'pending' | 'all'; from?: string; to?: string }) => exportCustomersXlsx(BrowserWindow.getFocusedWindow(), filters?.status, filters?.from, filters?.to));
+  ipcMain.handle('excel:exportPurchaseOrders', (_e, filters?: { status?: string; from?: string; to?: string; supplierId?: number }) => exportPurchaseOrdersXlsx(BrowserWindow.getFocusedWindow(), filters?.status, filters?.from, filters?.to, filters?.supplierId));
   ipcMain.handle('excel:exportExpenses', (_e, from?: string, to?: string) => exportExpensesXlsx(BrowserWindow.getFocusedWindow(), from, to));
   ipcMain.handle('excel:downloadTemplate', () => downloadProductTemplate(BrowserWindow.getFocusedWindow()));
   ipcMain.handle('excel:importProducts', () => importProductsFromExcel(BrowserWindow.getFocusedWindow()));
@@ -335,4 +343,6 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('alerts:markAsRead', (_e, id: number) => alertService.markAsRead(id));
   ipcMain.handle('alerts:resolve', (_e, id: number, action: string) => alertService.resolve(id, action));
   ipcMain.handle('alerts:checkNow', () => alertService.checkAndCreateAlerts());
+  ipcMain.handle('alerts:sendWhatsApp', () => alertService.sendAlertsWhatsApp());
+  ipcMain.handle('alerts:sendDailySummary', () => alertService.sendDailySalesSummary());
 }

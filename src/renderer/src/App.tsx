@@ -16,7 +16,9 @@ import Shifts from './pages/Shifts';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const BarcodeGenerator = lazy(() => import('./pages/BarcodeGenerator'));
 
-const LOCK_AFTER_MS = 5 * 60 * 1000;
+const LOCK_AFTER_MS = 30 * 60 * 1000;
+const SESSION_KEY = 'pos_session';
+const SESSION_MAX_AGE = 24 * 60 * 60 * 1000;
 
 interface UpdateStatus {
   state: string;
@@ -93,6 +95,29 @@ function UpdateBanner() {
     );
   }
 
+  if (status.state === 'restarting') {
+    return (
+      <div className="modal-overlay" style={{ zIndex: 9999 }}>
+        <div className="modal" style={{ textAlign: 'center', padding: '40px' }}>
+          <div className="spinner" style={{
+            margin: '0 auto 16px',
+            width: '40px',
+            height: '40px',
+            border: '4px solid #e0e0e0',
+            borderTopColor: '#3b82f6',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+          }}></div>
+          <strong style={{ fontSize: '18px', display: 'block', marginBottom: '8px' }}>
+            Installing update...
+          </strong>
+          <span className="muted small">Please wait while the app restarts</span>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      </div>
+    );
+  }
+
   return null;
 }
 
@@ -118,13 +143,14 @@ function navFor(role: string): { key: NavPage; label: string }[] {
   return ALL_NAV.filter((n) => ROLE_RANK[role] >= ROLE_RANK[n.minRole]).map(({ key, labelKey }) => ({ key, label: key }));
 }
 
-function LoginScreen({ onLogin, logo }: { onLogin: (user: UserRow) => void; logo?: string | null }) {
+function LoginScreen({ onLogin, logo }: { onLogin: (user: UserRow, rememberMe: boolean) => void; logo?: string | null }) {
   const { t } = useTranslation();
   const [pinMode, setPinMode] = useState(false);
   const [username, setUsername] = useState('');
   const [secret, setSecret] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
 
   const doLogin = async () => {
     if (busy) return;
@@ -137,7 +163,7 @@ function LoginScreen({ onLogin, logo }: { onLogin: (user: UserRow) => void; logo
       if (res.ok && res.user) {
         setSecret('');
         setUsername('');
-        onLogin(res.user);
+        onLogin(res.user, rememberMe);
       } else {
         setErr(res.message ?? 'errors.login_failed');
       }
@@ -169,6 +195,14 @@ function LoginScreen({ onLogin, logo }: { onLogin: (user: UserRow) => void; logo
           onChange={(e) => setSecret(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && doLogin()}
         />
+        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#888', margin: '4px 0 8px', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={rememberMe}
+            onChange={(e) => setRememberMe(e.target.checked)}
+          />
+          Remember me
+        </label>
         {err && <p className="text-warn small">{err}</p>}
         <button className="btn btn-primary btn-lg" disabled={!secret || busy} onClick={doLogin}>
           {pinMode ? t('buttons.login_with_pin') : t('buttons.Login')}
@@ -265,6 +299,7 @@ export default function App() {
   const [locked, setLocked] = useState(false);
   const [mustChangePw, setMustChangePw] = useState(false);
   const [shopLogo, setShopLogo] = useState<string | null>(null);
+  const [sessionRestoring, setSessionRestoring] = useState(true);
   const timerRef = useRef<number>(0);
   const nav = user ? navFor(user.role) : [];
 
@@ -273,6 +308,33 @@ export default function App() {
       .getAll()
       .then((s) => setShopLogo(s.shop_logo ?? null))
       .catch(() => undefined);
+  }, []);
+
+  // Restore session from localStorage on mount
+  useEffect(() => {
+    const restore = async () => {
+      try {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (!raw) { setSessionRestoring(false); return; }
+        const saved = JSON.parse(raw) as { user: UserRow; savedAt: number };
+        if (Date.now() - saved.savedAt > SESSION_MAX_AGE) {
+          localStorage.removeItem(SESSION_KEY);
+          setSessionRestoring(false);
+          return;
+        }
+        const refreshed = await window.api.auth.refreshSession();
+        if (refreshed) {
+          setUser(refreshed);
+          setPage('billing');
+        } else {
+          localStorage.removeItem(SESSION_KEY);
+        }
+      } catch {
+        localStorage.removeItem(SESSION_KEY);
+      }
+      setSessionRestoring(false);
+    };
+    restore();
   }, []);
 
   const handleLanguageChange = (lang: 'en' | 'ur') => {
@@ -290,9 +352,12 @@ export default function App() {
     document.documentElement.dir = dir;
   }, [i18n.language]);
 
-  const handleLogin = useCallback(async (u: UserRow) => {
+  const handleLogin = useCallback(async (u: UserRow, rememberMe: boolean) => {
     setUser(u);
     setPage('billing');
+    if (rememberMe) {
+      localStorage.setItem(SESSION_KEY, JSON.stringify({ user: u, savedAt: Date.now() }));
+    }
     if (u.role === 'owner') {
       setMustChangePw(await window.api.auth.defaultPasswordActive());
     }
@@ -320,6 +385,20 @@ export default function App() {
       i18n.changeLanguage(savedLang);
     }
   }, [user, nav, page, i18n.language]);
+
+  if (sessionRestoring) {
+    return (
+      <div className="app-shell">
+        <div className="lock-overlay">
+          <div className="lock-box" style={{ textAlign: 'center' }}>
+            <div className="spinner" style={{ margin: '0 auto 16px', width: '32px', height: '32px', border: '3px solid #e0e0e0', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+            <p className="muted">Restoring session...</p>
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!user) {
     return (
@@ -367,6 +446,7 @@ export default function App() {
             style={{ width: '100%', marginTop: 8 }}
             onClick={async () => {
               await window.api.auth.logout();
+              localStorage.removeItem(SESSION_KEY);
               setUser(null);
             }}
           >

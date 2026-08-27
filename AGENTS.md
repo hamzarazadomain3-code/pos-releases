@@ -1,7 +1,7 @@
 # ShopKeeper POS — Agent Guide
 
 ## Version
-**v1.8.0** (Advanced Inventory + Profitability Reports)
+**v2.0.0** (Scanner Fix + Session Persistence + Performance + Reports Excel + Alerts WhatsApp)
 
 ## Environment
 - Node.js v24.18.0 (portable at `C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64`)

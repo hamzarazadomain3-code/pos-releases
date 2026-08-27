@@ -7,7 +7,7 @@ import { runBackup } from './services/backup';
 import { getAllSettings } from './services/settings';
 import { closeLogger, initLogger, log, logError } from './logger';
 import { initUpdater, checkForUpdates } from './updater';
-import { initWhatsAppGateway } from './whatsapp-gateway';
+import { initWhatsAppGateway, shutdownWhatsAppGateway } from './whatsapp-gateway';
 import { getInventoryReports } from './services/inventoryReports';
 import { getAlertService } from './services/alertService';
 
@@ -61,7 +61,16 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
   logError('unhandledRejection', reason);
 });
-app.on('before-quit', () => {
+// Store interval IDs for cleanup
+let dailySnapshotInterval: NodeJS.Timeout | null = null;
+let hourlyAlertInterval: NodeJS.Timeout | null = null;
+
+app.on('before-quit', async () => {
+  // Cleanup WhatsApp gateway (Puppeteer/Chrome processes)
+  await shutdownWhatsAppGateway();
+  // Clear scheduler intervals
+  if (dailySnapshotInterval) clearInterval(dailySnapshotInterval);
+  if (hourlyAlertInterval) clearInterval(hourlyAlertInterval);
   closeLogger();
 });
 
@@ -128,9 +137,11 @@ app.whenReady().then(async () => {
     logError('updater init', err);
   }
 
-  // ── v1.8.0 Scheduler: daily snapshot + hourly alert checks ──
+   // ── v1.8.0 Scheduler: daily snapshot + hourly alert checks ──
   scheduleDailySnapshot();
   scheduleHourlyAlerts();
+  // ── v2.0.0 Time-based triggers ──
+  scheduleTimeBasedTriggers();
 
 
   app.on('activate', () => {
@@ -161,7 +172,7 @@ function scheduleDailySnapshot(): void {
   setTimeout(() => {
     runSnapshot();
     // Then repeat every 24h
-    setInterval(() => {
+    dailySnapshotInterval = setInterval(() => {
       runSnapshot();
     }, 24 * 60 * 60 * 1000);
   }, delayMs);
@@ -198,5 +209,68 @@ function runAlertCheck(): void {
     log(`Alert check complete: ${count} new alert(s)`);
   } catch (err) {
     logError('alert check', err);
+  }
+}
+
+// ── v2.0.0 Time-Based Triggers ──
+
+function scheduleTimeBasedTriggers(): void {
+  scheduleDailyAt(7, 0, runUdhaarReminder);   // 7:00 AM
+  scheduleDailyAt(18, 0, runExpiryAlert);     // 6:00 PM
+  scheduleDailyAt(22, 0, runDailyReport);     // 10:00 PM
+}
+
+function scheduleDailyAt(hour: number, minute: number, fn: () => void): void {
+  const now = new Date();
+  const target = new Date(now);
+  target.setHours(hour, minute, 0, 0);
+  if (target.getTime() <= now.getTime()) {
+    target.setDate(target.getDate() + 1);
+  }
+  const delayMs = target.getTime() - now.getTime();
+  setTimeout(() => {
+    fn();
+    setInterval(fn, 24 * 60 * 60 * 1000);
+  }, delayMs);
+}
+
+function runUdhaarReminder(): void {
+  try {
+    const { getDb } = require('./db');
+    const db = getDb();
+    const overdue = db.prepare(`
+      SELECT c.name, c.balance, c.phone
+      FROM customers c
+      WHERE c.balance > 0
+      ORDER BY c.balance DESC
+      LIMIT 10
+    `).all() as Array<{ name: string; balance: number; phone: string | null }>;
+    if (overdue.length === 0) return;
+    log(`Udhaar reminder: ${overdue.length} customers with outstanding balance`);
+  } catch (err) {
+    logError('udhaar reminder', err);
+  }
+}
+
+function runExpiryAlert(): void {
+  try {
+    const count = getAlertService().checkExpiry();
+    log(`Expiry alert check: ${count} product(s) expiring soon`);
+  } catch (err) {
+    logError('expiry alert', err);
+  }
+}
+
+function runDailyReport(): void {
+  try {
+    getAlertService().sendAlertsWhatsApp().then((res) => {
+      log(`WhatsApp alerts sent: ${res.sent} ok, ${res.errors} errors`);
+    }).catch((err: unknown) => logError('WhatsApp alerts', err));
+
+    getAlertService().sendDailySalesSummary().then((res) => {
+      log(`Daily sales summary: ${res.message}`);
+    }).catch((err: unknown) => logError('daily summary', err));
+  } catch (err) {
+    logError('daily report', err);
   }
 }

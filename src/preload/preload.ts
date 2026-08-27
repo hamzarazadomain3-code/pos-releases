@@ -16,8 +16,8 @@ const bridge: PosBridge = {
     },
   },
   inventory: {
-    list: (search?: string, includeInactive?: boolean) =>
-      ipcRenderer.invoke('inventory:list', search, includeInactive),
+    list: (search?: string, includeInactive?: boolean, categoryId?: number, stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock', supplierId?: number, expiryFrom?: string, expiryTo?: string) =>
+      ipcRenderer.invoke('inventory:list', search, includeInactive, categoryId, stockStatus, supplierId, expiryFrom, expiryTo),
     get: (id: number) => ipcRenderer.invoke('inventory:get', id),
     getByBarcode: (barcode: string) => ipcRenderer.invoke('inventory:getByBarcode', barcode),
     create: (input) => ipcRenderer.invoke('inventory:create', input),
@@ -37,7 +37,7 @@ const bridge: PosBridge = {
   sales: {
     create: (input) => ipcRenderer.invoke('sales:create', input),
     get: (id: number) => ipcRenderer.invoke('sales:get', id),
-    list: (from?: string, to?: string) => ipcRenderer.invoke('sales:list', from, to),
+    list: (from?: string, to?: string, includeVoided?: boolean, customerId?: number, userId?: number, paymentMode?: string, productId?: number, minAmount?: number, maxAmount?: number, saleNo?: string, sortBy?: 'date' | 'amount' | 'saleNo', sortOrder?: 'asc' | 'desc', onlyMySales?: boolean, status?: 'completed' | 'voided' | 'held') => ipcRenderer.invoke('sales:list', from, to, includeVoided, customerId, userId, paymentMode, productId, minAmount, maxAmount, saleNo, sortBy, sortOrder, onlyMySales, status),
     void: (id: number, reason: string) => ipcRenderer.invoke('sales:void', id, reason),
     nextInvoiceNo: () => ipcRenderer.invoke('sales:nextInvoiceNo'),
     hold: (kind: 'held' | 'quotation', label: string, data: unknown) =>
@@ -103,9 +103,11 @@ const bridge: PosBridge = {
     getTaxReport: (from?: string, to?: string) => ipcRenderer.invoke('reports:getTaxReport', from, to),
     getDailyClosing: (date: string) => ipcRenderer.invoke('reports:getDailyClosing', date),
     exportReportPDF: (reportType: string, data: unknown) => ipcRenderer.invoke('reports:exportReportPDF', reportType, data),
+    exportReportExcel: (reportType: string, data: unknown) => ipcRenderer.invoke('reports:exportReportExcel', reportType, data),
   },
   whatsapp: {
     getStatus: () => ipcRenderer.invoke('whatsapp:status'),
+    start: () => ipcRenderer.invoke('whatsapp:start'),
     send: (phone: string, text: string) => ipcRenderer.invoke('whatsapp:send', phone, text),
     sendSaleReceipt: (saleId: number, phone?: string) => ipcRenderer.invoke('whatsapp:sendSaleReceipt', saleId, phone),
     onQr: (callback: (qr: string | null) => void) => {
@@ -128,6 +130,7 @@ const bridge: PosBridge = {
     loginWithPin: (pin: string) => ipcRenderer.invoke('auth:loginWithPin', pin),
     logout: () => ipcRenderer.invoke('auth:logout'),
     currentUser: () => ipcRenderer.invoke('auth:currentUser'),
+    refreshSession: () => ipcRenderer.invoke('auth:refreshSession'),
     verifyForUser: (userId: number, secret: string) => ipcRenderer.invoke('auth:verifyForUser', userId, secret),
     defaultPasswordActive: () => ipcRenderer.invoke('auth:defaultPasswordActive'),
   },
@@ -157,10 +160,10 @@ const bridge: PosBridge = {
       ipcRenderer.invoke('export:saveXlsx', defaultName, sheets),
   },
   excel: {
-    exportProducts: () => ipcRenderer.invoke('excel:exportProducts'),
+    exportProducts: (filters?: { search?: string; includeInactive?: boolean; categoryId?: number; stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock'; supplierId?: number; expiryFrom?: string; expiryTo?: string }) => ipcRenderer.invoke('excel:exportProducts', filters),
     exportSales: (from?: string, to?: string) => ipcRenderer.invoke('excel:exportSales', from, to),
-    exportCustomers: () => ipcRenderer.invoke('excel:exportCustomers'),
-    exportPurchaseOrders: () => ipcRenderer.invoke('excel:exportPurchaseOrders'),
+    exportCustomers: (filters?: { status?: 'paid' | 'pending' | 'all'; from?: string; to?: string }) => ipcRenderer.invoke('excel:exportCustomers', filters),
+    exportPurchaseOrders: (filters?: { status?: string; from?: string; to?: string; supplierId?: number }) => ipcRenderer.invoke('excel:exportPurchaseOrders', filters),
     exportExpenses: (from?: string, to?: string) => ipcRenderer.invoke('excel:exportExpenses', from, to),
     downloadTemplate: () => ipcRenderer.invoke('excel:downloadTemplate'),
     importProducts: () => ipcRenderer.invoke('excel:importProducts'),
@@ -169,7 +172,7 @@ const bridge: PosBridge = {
     suppliers: () => ipcRenderer.invoke('purchases:suppliers'),
     createSupplier: (name: string, phone?: string, address?: string) =>
       ipcRenderer.invoke('purchases:createSupplier', name, phone, address),
-    listOrders: (status?: string) => ipcRenderer.invoke('purchases:orders', status),
+    listOrders: (status?: string, from?: string, to?: string, supplierId?: number) => ipcRenderer.invoke('purchases:orders', status, from, to, supplierId),
     getOrder: (id: number) => ipcRenderer.invoke('purchases:getOrder', id),
     createOrder: (supplierId: number, items) => ipcRenderer.invoke('purchases:createOrder', supplierId, items),
     receiveOrder: (id: number) => ipcRenderer.invoke('purchases:receiveOrder', id),
@@ -181,7 +184,7 @@ const bridge: PosBridge = {
   },
   returns: {
     create: (input) => ipcRenderer.invoke('returns:create', input),
-    list: (from?: string, to?: string) => ipcRenderer.invoke('returns:list', from, to),
+    list: (from?: string, to?: string, customerId?: number, productId?: number) => ipcRenderer.invoke('returns:list', from, to, customerId, productId),
     get: (id: number) => ipcRenderer.invoke('returns:get', id),
     createCashRefund: (amount: number, reason?: string, mode?: string) =>
       ipcRenderer.invoke('returns:createCashRefund', amount, reason, mode),
@@ -190,6 +193,8 @@ const bridge: PosBridge = {
   audits: {
     create: () => ipcRenderer.invoke('audits:create'),
     list: () => ipcRenderer.invoke('audits:list'),
+    listPaginated: (page?: number, pageSize?: number, from?: string, to?: string, userId?: number, status?: 'in_progress' | 'completed') =>
+      ipcRenderer.invoke('audits:listPaginated', page, pageSize, from, to, userId, status),
     get: (id: number) => ipcRenderer.invoke('audits:get', id),
     saveCounts: (auditId: number, counts) => ipcRenderer.invoke('audits:saveCounts', auditId, counts),
     complete: (auditId: number) => ipcRenderer.invoke('audits:complete', auditId),
@@ -234,6 +239,8 @@ const bridge: PosBridge = {
     markAsRead: (id: number) => ipcRenderer.invoke('alerts:markAsRead', id),
     resolve: (id: number, action: string) => ipcRenderer.invoke('alerts:resolve', id, action),
     checkNow: () => ipcRenderer.invoke('alerts:checkNow'),
+    sendWhatsApp: () => ipcRenderer.invoke('alerts:sendWhatsApp'),
+    sendDailySummary: () => ipcRenderer.invoke('alerts:sendDailySummary'),
   },
 };
 
