@@ -83,6 +83,7 @@
     "password": "پاس ورڈ",
     "locked": "بند کیا گیا",
     "enter_password_or_pin": "اپنا پاس ورڈ یا پین درج کریں",
+    "password/_pin": "پاس ورڈ / پین",
     "set_new_owner_password": "نئے اور کے پاس ورڈ سیٹ کریں",
     "default_password_warning": "آپ ڈیفالٹ پاس ورڈ استعمال کر رہے ہیں۔ براہ کرم اپنا دفاع کے لئے نیا ایک سیٹ کریں۔",
     "new_password": "نیا پاس ورڈ",
@@ -94,7 +95,8 @@
     "save_failed": "محفوظ کرنا ناکام",
     "network_error": "چیل کے تبانی",
     "password_at_least_4_chars": "پاس ورڈ کم از کم 4 حروف کا ہونا چاہئے",
-    "passwords_do_not_match": "پاس ورڈ میں نہیں کرتے"
+    "passwords_do_not_match": "پاس ورڈ میں نہیں کرتے",
+    "incorrect_password_or_pin": "غلط پاس ورڈ یا پین"
   },
   "settings": {
     "general": "عام",

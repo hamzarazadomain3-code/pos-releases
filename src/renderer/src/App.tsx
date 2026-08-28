@@ -1,4 +1,4 @@
-import { Component, Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Component, Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { NavPage, UserRow } from '../../shared/types';
 import Inventory from './pages/Inventory';
@@ -16,7 +16,6 @@ import Shifts from './pages/Shifts';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const BarcodeGenerator = lazy(() => import('./pages/BarcodeGenerator'));
 
-const LOCK_AFTER_MS = 30 * 60 * 1000;
 const SESSION_KEY = 'pos_session';
 const SESSION_MAX_AGE = 24 * 60 * 60 * 1000;
 
@@ -300,7 +299,6 @@ export default function App() {
   const [mustChangePw, setMustChangePw] = useState(false);
   const [shopLogo, setShopLogo] = useState<string | null>(null);
   const [sessionRestoring, setSessionRestoring] = useState(true);
-  const timerRef = useRef<number>(0);
   const nav = user ? navFor(user.role) : [];
 
   useEffect(() => {
@@ -362,21 +360,6 @@ export default function App() {
       setMustChangePw(await window.api.auth.defaultPasswordActive());
     }
   }, []);
-  const armLock = useCallback(() => {
-    window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => setLocked(true), LOCK_AFTER_MS);
-  }, []);
-
-  useEffect(() => {
-    if (!user) return;
-    armLock();
-    const events: (keyof WindowEventMap)[] = ['mousemove', 'keydown', 'click', 'mousedown', 'wheel'];
-    events.forEach((ev) => window.addEventListener(ev, armLock));
-    return () => {
-      window.clearTimeout(timerRef.current);
-      events.forEach((ev) => window.removeEventListener(ev, armLock));
-    };
-  }, [user, armLock]);
 
   useEffect(() => {
     if (user && !nav.some((n) => n.key === page)) setPage('billing');
@@ -473,7 +456,7 @@ export default function App() {
           </Suspense>
         </ErrorBoundary>
       </main>
-      {locked && <LockScreen user={user} onUnlock={() => { setLocked(false); armLock(); }} logo={shopLogo} />}
+      {locked && <LockScreen user={user} onUnlock={() => setLocked(false)} logo={shopLogo} />}
       {mustChangePw && (
         <ChangePasswordModal
           user={user}
