@@ -99,6 +99,7 @@ import {
   createAudit,
   getAudit,
   listAudits,
+  listAuditsPaginated,
   saveCounts,
 } from './services/audits';
 import {
@@ -300,6 +301,9 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('audits:create', () => createAudit());
   ipcMain.handle('audits:list', () => listAudits());
+  ipcMain.handle('audits:listPaginated', (_e, page?: number, pageSize?: number, from?: string, to?: string, userId?: number, status?: 'in_progress' | 'completed') =>
+    listAuditsPaginated(page, pageSize, from, to, userId, status)
+  );
   ipcMain.handle('audits:get', (_e, id: number) => getAudit(id));
   ipcMain.handle('audits:saveCounts', (_e, auditId: number, counts) => saveCounts(auditId, counts));
   ipcMain.handle('audits:complete', (_e, id: number) => completeAudit(id));
