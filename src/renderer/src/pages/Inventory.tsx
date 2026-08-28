@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import bwipjs from 'bwip-js';
 import type { Category, ExpiringRow, Product, ProductImportResult, ProductInput, StockMovement, Unit } from '../../../shared/types';
+import { DateRangePicker, SearchInput, MultiSelectDropdown, FilterBar, FilterRow } from '../components/filters';
 
 interface ProductBatch {
   id: number;
@@ -94,8 +95,14 @@ export default function Inventory() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
+  const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([]);
   const [lowStockCount, setLowStockCount] = useState(0);
   const [search, setSearch] = useState('');
+  const [categoryId, setCategoryId] = useState<number | ''>('');
+  const [stockStatus, setStockStatus] = useState<'in_stock' | 'low_stock' | 'out_of_stock' | ''>('');
+  const [supplierId, setSupplierId] = useState<number | ''>('');
+  const [expiryFrom, setExpiryFrom] = useState('');
+  const [expiryTo, setExpiryTo] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -114,7 +121,6 @@ export default function Inventory() {
 
   const [importResult, setImportResult] = useState<ProductImportResult | null>(null);
 
-  const [expiryFilter, setExpiryFilter] = useState('');
   const [expirySort, setExpirySort] = useState<'none' | 'expiry_asc' | 'expiry_desc'>('none');
   const [expiryDays, setExpiryDays] = useState(30);
   const [expiring, setExpiring] = useState<ExpiringRow[]>([]);
@@ -133,17 +139,27 @@ export default function Inventory() {
   };
 
   const load = useCallback(async () => {
-    const [prod, cats, unis, low] = await Promise.all([
-      window.api.inventory.list(search || undefined, false),
+    const [prod, cats, unis, low, sups] = await Promise.all([
+      window.api.inventory.list(
+        search || undefined,
+        false,
+        categoryId || undefined,
+        stockStatus || undefined,
+        supplierId || undefined,
+        expiryFrom || undefined,
+        expiryTo || undefined
+      ),
       window.api.inventory.categories(),
       window.api.inventory.units(),
       window.api.inventory.lowStock(),
+      window.api.purchases.suppliers(),
     ]);
     setProducts(prod);
     setCategories(cats);
     setUnits(unis);
     setLowStockCount(low.length);
-  }, [search]);
+    setSuppliers(sups.map(s => ({ id: s.id, name: s.name })));
+  }, [search, categoryId, stockStatus, supplierId, expiryFrom, expiryTo]);
 
   useEffect(() => {
     window.api.settings
@@ -371,7 +387,15 @@ export default function Inventory() {
 
   async function handleExport() {
     try {
-      const ok = await window.api.excel.exportProducts();
+      const ok = await window.api.excel.exportProducts({
+        search: search || undefined,
+        includeInactive: false,
+        categoryId: categoryId || undefined,
+        stockStatus: stockStatus || undefined,
+        supplierId: supplierId || undefined,
+        expiryFrom: expiryFrom || undefined,
+        expiryTo: expiryTo || undefined,
+      });
       if (ok) setNotice('Inventory exported to Excel.');
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
@@ -390,13 +414,6 @@ export default function Inventory() {
 
   const shown = (() => {
     let list = products;
-    if (expiryFilter === 'expired') list = list.filter((p) => (daysUntil(p.expiry_date) ?? Infinity) < 0);
-    if (expiryFilter === 'expiring') {
-      list = list.filter((p) => {
-        const n = daysUntil(p.expiry_date);
-        return n !== null && n <= expiryDays;
-      });
-    }
     if (expirySort === 'expiry_asc') {
       list = [...list].sort(
         (a, b) => (daysUntil(a.expiry_date) ?? Infinity) - (daysUntil(b.expiry_date) ?? Infinity)
@@ -410,44 +427,109 @@ export default function Inventory() {
     return list;
   })();
 
+  const categoryOptions = categories.map(c => ({ value: c.id, label: c.name }));
+  const stockStatusOptions = [
+    { value: 'in_stock', label: 'In Stock' },
+    { value: 'low_stock', label: 'Low Stock' },
+    { value: 'out_of_stock', label: 'Out of Stock' },
+  ];
+  const supplierOptions = suppliers.map(s => ({ value: s.id, label: s.name }));
+
+  const handleClearFilters = () => {
+    setSearch('');
+    setCategoryId('');
+    setStockStatus('');
+    setSupplierId('');
+    setExpiryFrom('');
+    setExpiryTo('');
+  };
+
   return (
     <div className="page">
       <div className="page-header">
         <h1>Inventory</h1>
-        <div className="toolbar">
-          {lowStockCount > 0 && <span className="badge badge-warn">{lowStockCount} low stock</span>}
-          <input
-            className="search-input"
-            placeholder="Search name, SKU or barcode..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <select className="field-select" value={expiryFilter} onChange={(e) => setExpiryFilter(e.target.value)}>
-            <option value="">All expiry</option>
-            <option value="expired">Expired only</option>
-            <option value="expiring">Expiring within {expiryDays}d</option>
-          </select>
-          <select className="field-select" value={expirySort} onChange={(e) => setExpirySort(e.target.value as 'none' | 'expiry_asc' | 'expiry_desc')}>
-            <option value="none">Sort: default</option>
-            <option value="expiry_asc">Sort: expiry nearest</option>
-            <option value="expiry_desc">Sort: expiry farthest</option>
-          </select>
-          <button className="btn btn-sm" onClick={handleTemplate}>
-            Template
-          </button>
-          <button className="btn btn-sm" onClick={handleImport}>
-            Import Excel
-          </button>
-          <button className="btn btn-sm" onClick={handleExport}>
-            Export Excel
-          </button>
-          <button className="btn btn-sm" onClick={openStockReceived}>
-            Stock Received
-          </button>
-          <button className="btn btn-primary" onClick={openCreate}>
-            + Add Product
-          </button>
-        </div>
+        <FilterBar
+          onClear={handleClearFilters}
+          onApply={load}
+        >
+          <FilterRow>
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Search name, SKU, barcode..."
+              debounceMs={300}
+            />
+            <select
+              className="field-select"
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value ? Number(e.target.value) : '')}
+              style={{ width: '160px' }}
+            >
+              <option value="">All Categories</option>
+              {categoryOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            <select
+              className="field-select"
+              value={stockStatus}
+              onChange={(e) => setStockStatus(e.target.value as any)}
+              style={{ width: '140px' }}
+            >
+              <option value="">All Stock Status</option>
+              {stockStatusOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            <select
+              className="field-select"
+              value={supplierId}
+              onChange={(e) => setSupplierId(e.target.value ? Number(e.target.value) : '')}
+              style={{ width: '180px' }}
+            >
+              <option value="">All Suppliers</option>
+              {supplierOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </FilterRow>
+          <FilterRow>
+            <DateRangePicker
+              from={expiryFrom}
+              to={expiryTo}
+              onChange={(from: string, to: string) => { setExpiryFrom(from); setExpiryTo(to); }}
+              labelFrom="Expiry From"
+              labelTo="Expiry To"
+            />
+            <select
+              className="field-select"
+              value={expirySort}
+              onChange={(e) => setExpirySort(e.target.value as 'none' | 'expiry_asc' | 'expiry_desc')}
+              style={{ width: '160px' }}
+            >
+              <option value="none">Sort: default</option>
+              <option value="expiry_asc">Sort: expiry nearest</option>
+              <option value="expiry_desc">Sort: expiry farthest</option>
+            </select>
+          </FilterRow>
+          <FilterRow style={{ justifyContent: 'flex-end' }}>
+            <button className="btn btn-sm" onClick={handleTemplate}>
+              Template
+            </button>
+            <button className="btn btn-sm" onClick={handleImport}>
+              Import Excel
+            </button>
+            <button className="btn btn-sm" onClick={handleExport}>
+              Export Excel
+            </button>
+            <button className="btn btn-sm" onClick={openStockReceived}>
+              Stock Received
+            </button>
+            <button className="btn btn-primary" onClick={openCreate}>
+              + Add Product
+            </button>
+          </FilterRow>
+        </FilterBar>
       </div>
 
       {notice && (

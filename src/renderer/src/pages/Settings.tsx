@@ -15,6 +15,7 @@ export default function Settings() {
   const [waTestPhone, setWaTestPhone] = useState('');
   const [waTestText, setWaTestText] = useState('Test message from ShopKeeper POS ✓');
   const [waBusy, setWaBusy] = useState(false);
+  const [waConnecting, setWaConnecting] = useState(false);
   const [pluMappings, setPluMappings] = useState<ScalePluMapping[]>([]);
 
   useEffect(() => {
@@ -32,7 +33,18 @@ export default function Settings() {
       setWaStatus({ connected: s.connected, phone: s.phone ?? null, qr: null, error: s.error ?? null });
       if (s.connected) setWaQr(null);
     });
+    const poll = setInterval(async () => {
+      try {
+        const s = await window.api.whatsapp.getStatus();
+        setWaStatus(s);
+        if (s.qr) setWaQr(s.qr);
+        if (s.connected) setWaQr(null);
+      } catch {
+        // ignore transient failures
+      }
+    }, 2500);
     return () => {
+      clearInterval(poll);
       off();
       offQr();
       offWaStatus();
@@ -298,7 +310,7 @@ export default function Settings() {
         <div className="row-btns">
           <button
             className="btn btn-primary"
-            disabled={updateState === 'checking' || updateState === 'downloading' || updateState === 'downloaded'}
+            disabled={updateState === 'checking' || updateState === 'downloading' || updateState === 'downloaded' || updateState === 'restarting'}
             onClick={async () => {
               setUpdateState('checking');
               setUpdateDetail('');
@@ -324,6 +336,26 @@ export default function Settings() {
           <p className="small text-ok">Update v{updateDetail} downloaded — restart to install.</p>
         )}
         {updateState === 'error' && <p className="small text-warn">Update check failed: {updateDetail}</p>}
+        {updateState === 'restarting' && (
+          <div className="modal-overlay" style={{ zIndex: 9999 }}>
+            <div className="modal" style={{ textAlign: 'center', padding: '40px' }}>
+              <div className="spinner" style={{
+                margin: '0 auto 16px',
+                width: '40px',
+                height: '40px',
+                border: '4px solid #e0e0e0',
+                borderTopColor: '#3b82f6',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite'
+              }}></div>
+              <strong style={{ fontSize: '18px', display: 'block', marginBottom: '8px' }}>
+                Installing update...
+              </strong>
+              <span className="muted small">Please wait while the app restarts</span>
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+            </div>
+          </div>
+        )}
       </div>
     </div>
 
@@ -349,6 +381,27 @@ export default function Settings() {
                 {waStatus?.error ? ` (${waStatus.error})` : ''} — restart the app or rescan the QR below.
               </span>
             )}
+            <div style={{ marginTop: 6 }}>
+              <button
+                className="btn"
+                disabled={waConnecting}
+                onClick={async () => {
+                  setWaConnecting(true);
+                  setWaQr(null);
+                  try {
+                    const s = await window.api.whatsapp.start();
+                    setWaStatus(s);
+                    if (s.qr) setWaQr(s.qr);
+                  } catch (e) {
+                    setNotice(e instanceof Error ? e.message : String(e));
+                  } finally {
+                    setWaConnecting(false);
+                  }
+                }}
+              >
+                {waConnecting ? 'Connecting…' : 'Reconnect / Rescan QR'}
+              </button>
+            </div>
           </div>
         </div>
         {waQr && (

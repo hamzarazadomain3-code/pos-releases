@@ -23,7 +23,15 @@ function generateSku(): string {
   return 'SKU' + Date.now().toString(36).toUpperCase() + randomBytes(2).toString('hex').toUpperCase();
 }
 
-export function listProducts(search?: string, includeInactive = false): Product[] {
+export function listProducts(
+  search?: string,
+  includeInactive = false,
+  categoryId?: number,
+  stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock',
+  supplierId?: number,
+  expiryFrom?: string,
+  expiryTo?: string
+): Product[] {
   const db = getDb();
   let sql = `
     SELECT p.*, c.name AS category_name, u.name AS unit_name, u.symbol AS unit_symbol
@@ -40,6 +48,35 @@ export function listProducts(search?: string, includeInactive = false): Product[
     sql += ' AND (p.name LIKE ? OR p.sku LIKE ? OR p.barcode LIKE ? OR p.shelf_location LIKE ?)';
     const like = `%${search.trim()}%`;
     params.push(like, like, like, like);
+  }
+  if (categoryId) {
+    sql += ' AND p.category_id = ?';
+    params.push(categoryId);
+  }
+  if (stockStatus) {
+    if (stockStatus === 'out_of_stock') {
+      sql += ' AND p.stock_qty <= 0';
+    } else if (stockStatus === 'low_stock') {
+      sql += ' AND p.low_stock_threshold > 0 AND p.stock_qty > 0 AND p.stock_qty <= p.low_stock_threshold';
+    } else if (stockStatus === 'in_stock') {
+      sql += ' AND p.stock_qty > p.low_stock_threshold';
+    }
+  }
+  if (supplierId) {
+    sql += ` AND EXISTS (
+      SELECT 1 FROM purchase_orders po
+      JOIN purchase_items pi ON pi.purchase_order_id = po.id
+      WHERE pi.product_id = p.id AND po.supplier_id = ?
+    )`;
+    params.push(supplierId);
+  }
+  if (expiryFrom) {
+    sql += ' AND p.expiry_date IS NOT NULL AND date(p.expiry_date) >= date(?)';
+    params.push(expiryFrom);
+  }
+  if (expiryTo) {
+    sql += ' AND p.expiry_date IS NOT NULL AND date(p.expiry_date) <= date(?)';
+    params.push(expiryTo);
   }
   sql += ' ORDER BY p.name COLLATE NOCASE';
   const products = db.prepare(sql).all(...params) as unknown as Product[];

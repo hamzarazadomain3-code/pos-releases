@@ -81,7 +81,12 @@ export function getPurchaseOrder(id: number): (PurchaseOrder & { items: Purchase
   return { ...po, items };
 }
 
-export function listPurchaseOrders(status?: string): PurchaseOrder[] {
+export function listPurchaseOrders(
+  status?: string,
+  from?: string,
+  to?: string,
+  supplierId?: number
+): PurchaseOrder[] {
   const db = getDb();
   let sql = `
     SELECT p.*, s.name AS supplier_name
@@ -93,7 +98,19 @@ export function listPurchaseOrders(status?: string): PurchaseOrder[] {
     sql += ' AND p.status = ?';
     params.push(status);
   }
-  sql += ' ORDER BY p.id DESC LIMIT 300';
+  if (from) {
+    sql += ' AND date(p.created_at) >= date(?)';
+    params.push(from);
+  }
+  if (to) {
+    sql += ' AND date(p.created_at) <= date(?)';
+    params.push(to);
+  }
+  if (supplierId) {
+    sql += ' AND p.supplier_id = ?';
+    params.push(supplierId);
+  }
+  sql += ' ORDER BY p.id DESC LIMIT 500';
   return db.prepare(sql).all(...params) as unknown as PurchaseOrder[];
 }
 

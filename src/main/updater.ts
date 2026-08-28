@@ -15,7 +15,8 @@ export type UpdaterState =
   | 'downloading'
   | 'downloaded'
   | 'up-to-date'
-  | 'error';
+  | 'error'
+  | 'restarting';
 
 function sendStatus(state: UpdaterState, detail?: string): void {
   lastState = state;
@@ -69,7 +70,12 @@ export function initUpdater(): void {
   });
 
   ipcMain.handle('updater:install', async () => {
-    autoUpdater.quitAndInstall();
+    // Send 'restarting' status to show modal in renderer
+    sendStatus('restarting');
+    // Small delay to allow cleanup handlers to run
+    await new Promise(resolve => setTimeout(resolve, 500));
+    // quitAndInstall(isSilent, isForceRunAfter)
+    autoUpdater.quitAndInstall(true, true);
     return 'ok';
   });
 

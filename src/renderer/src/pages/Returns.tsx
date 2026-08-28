@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CashRefundRow, ReturnRow, Sale, SaleItem } from '../../../shared/types';
+import { DateRangePicker, SearchInput, FilterBar, FilterRow } from '../components/filters';
 
 export default function Returns() {
   const [sales, setSales] = useState<Sale[]>([]);
@@ -20,11 +21,16 @@ export default function Returns() {
   const [cfBusy, setCfBusy] = useState(false);
   const [cashRefunds, setCashRefunds] = useState<CashRefundRow[]>([]);
 
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [customerId, setCustomerId] = useState<number | ''>('');
+  const [productId, setProductId] = useState<number | ''>('');
+
   const load = useCallback(async () => {
     setSales(await window.api.sales.list());
-    setReturns(await window.api.returns.list());
+    setReturns(await window.api.returns.list(from || undefined, to || undefined, customerId || undefined, productId || undefined));
     setCashRefunds(await window.api.returns.listCashRefunds());
-  }, []);
+  }, [from, to, customerId, productId]);
 
   useEffect(() => {
     load();
@@ -97,10 +103,53 @@ export default function Returns() {
     }
   };
 
+  const customerOptions = sales.map(s => ({ value: s.customer_id ?? 0, label: s.customer_name ?? 'Walk-in' })).filter((v, i, a) => a.findIndex(t => t.value === v.value) === i && v.value !== 0);
+  const productOptions = [] as { value: number; label: string }[]; // Would need to fetch from products or aggregate from sales
+
+  const handleClearReturnFilters = () => {
+    setFrom('');
+    setTo('');
+    setCustomerId('');
+    setProductId('');
+  };
+
   return (
     <div className="page">
       <div className="page-head">
         <h1>Returns / Refunds</h1>
+        <FilterBar onClear={handleClearReturnFilters} onApply={load}>
+          <FilterRow>
+            <DateRangePicker
+              from={from}
+              to={to}
+              onChange={(from: string, to: string) => { setFrom(from); setTo(to); }}
+              labelFrom="From"
+              labelTo="To"
+            />
+            <select
+              className="field-select"
+              value={customerId}
+              onChange={(e) => setCustomerId(e.target.value ? Number(e.target.value) : '')}
+              style={{ width: '180px' }}
+            >
+              <option value="">All Customers</option>
+              {customerOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            <select
+              className="field-select"
+              value={productId}
+              onChange={(e) => setProductId(e.target.value ? Number(e.target.value) : '')}
+              style={{ width: '180px' }}
+            >
+              <option value="">All Products</option>
+              {productOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </FilterRow>
+        </FilterBar>
       </div>
 
       {err && (

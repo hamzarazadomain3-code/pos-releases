@@ -300,17 +300,49 @@ export function getSale(id: number): (Sale & { items: SaleItem[]; payments: Paym
   return { ...sale, items, payments };
 }
 
-export function listSales(from?: string, to?: string, includeVoided = false): Sale[] {
+export function listSales(
+  from?: string,
+  to?: string,
+  includeVoided = false,
+  customerId?: number,
+  userId?: number,
+  paymentMode?: string,
+  productId?: number,
+  minAmount?: number,
+  maxAmount?: number,
+  saleNo?: string,
+  sortBy?: 'date' | 'amount' | 'saleNo',
+  sortOrder?: 'asc' | 'desc',
+  onlyMySales?: boolean,
+  status?: 'completed' | 'voided' | 'held'
+): Sale[] {
   const db = getDb();
   let sql = `
-    SELECT s.*, c.name AS customer_name
-    FROM sales s LEFT JOIN customers c ON c.id = s.customer_id
+    SELECT s.*, c.name AS customer_name, u.username AS cashier_name
+    FROM sales s
+    LEFT JOIN customers c ON c.id = s.customer_id
+    LEFT JOIN users u ON u.id = s.user_id
     WHERE 1=1
   `;
   const params: (string | number)[] = [];
-  if (!includeVoided) {
-    sql += " AND s.status != 'voided'";
+  
+  if (status === 'held') {
+    sql = `
+      SELECT hb.*, c.name AS customer_name, u.username AS cashier_name
+      FROM held_bills hb
+      LEFT JOIN customers c ON c.id = hb.customer_id
+      LEFT JOIN users u ON u.id = hb.user_id
+      WHERE 1=1
+    `;
+  } else {
+    if (!includeVoided && status !== 'voided') {
+      sql += " AND s.status != 'voided'";
+    }
+    if (status === 'voided') {
+      sql += " AND s.status = 'voided'";
+    }
   }
+  
   if (from) {
     sql += ' AND date(s.created_at) >= date(?)';
     params.push(from);
@@ -319,7 +351,49 @@ export function listSales(from?: string, to?: string, includeVoided = false): Sa
     sql += ' AND date(s.created_at) <= date(?)';
     params.push(to);
   }
-  sql += ' ORDER BY s.id DESC LIMIT 500';
+  if (customerId) {
+    sql += ' AND s.customer_id = ?';
+    params.push(customerId);
+  }
+  if (userId) {
+    sql += ' AND s.user_id = ?';
+    params.push(userId);
+  }
+  if (paymentMode) {
+    sql += ` AND EXISTS (
+      SELECT 1 FROM payments p WHERE p.sale_id = s.id AND p.mode = ?
+    )`;
+    params.push(paymentMode);
+  }
+  if (productId) {
+    sql += ` AND EXISTS (
+      SELECT 1 FROM sale_items si WHERE si.sale_id = s.id AND si.product_id = ?
+    )`;
+    params.push(productId);
+  }
+  if (minAmount !== undefined) {
+    sql += ' AND s.total_amount >= ?';
+    params.push(minAmount);
+  }
+  if (maxAmount !== undefined) {
+    sql += ' AND s.total_amount <= ?';
+    params.push(maxAmount);
+  }
+  if (saleNo) {
+    sql += ' AND s.invoice_no LIKE ?';
+    params.push(`%${saleNo}%`);
+  }
+  if (onlyMySales) {
+    const currentUserId = getSessionUserId();
+    if (currentUserId) {
+      sql += ' AND s.user_id = ?';
+      params.push(currentUserId);
+    }
+  }
+  
+  const orderBy = sortBy === 'amount' ? 's.total_amount' : sortBy === 'saleNo' ? 's.invoice_no' : 's.created_at';
+  sql += ` ORDER BY ${orderBy} ${sortOrder?.toUpperCase() || 'DESC'}, s.id DESC LIMIT 500`;
+  
   return db.prepare(sql).all(...params) as unknown as Sale[];
 }
 
@@ -403,11 +477,28 @@ export function deleteHeldBill(id: number): boolean {
   return db.prepare('DELETE FROM held_bills WHERE id = ?').run(id).changes > 0;
 }
 
-export function listCustomers(): Customer[] {
+export function listCustomers(status?: 'paid' | 'pending' | 'all', from?: string, to?: string): Customer[] {
   const db = getDb();
-  return db
-    .prepare('SELECT * FROM customers ORDER BY name COLLATE NOCASE')
-    .all() as unknown as Customer[];
+  let sql = 'SELECT * FROM customers WHERE 1=1';
+  const params: (string | number)[] = [];
+  
+  if (status === 'paid') {
+    sql += ' AND balance <= 0';
+  } else if (status === 'pending') {
+    sql += ' AND balance > 0';
+  }
+  
+  if (from) {
+    sql += ' AND date(created_at) >= date(?)';
+    params.push(from);
+  }
+  if (to) {
+    sql += ' AND date(created_at) <= date(?)';
+    params.push(to);
+  }
+  
+  sql += ' ORDER BY name COLLATE NOCASE';
+  return db.prepare(sql).all(...params) as unknown as Customer[];
 }
 
 export function createCustomer(name: string, phone?: string, openingBalance = 0): Customer {

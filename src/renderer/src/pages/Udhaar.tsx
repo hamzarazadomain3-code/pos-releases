@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Customer, CustomerTransaction } from '../../../shared/types';
+import { DateRangePicker, SearchInput, FilterBar, FilterRow } from '../components/filters';
 
 export default function Udhaar() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -16,6 +17,10 @@ export default function Udhaar() {
   const [limitInput, setLimitInput] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [status, setStatus] = useState<'paid' | 'pending' | 'all'>('all');
+
   const load = useCallback(async () => {
     setCustomers(await window.api.customers.list());
   }, []);
@@ -24,14 +29,22 @@ export default function Udhaar() {
     load().catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
   }, [load]);
 
-  const filtered = customers.filter(
-    (c) => !search.trim() || c.name.toLowerCase().includes(search.trim().toLowerCase()) || (c.phone ?? '').includes(search.trim())
-  );
+  const filtered = customers
+    .filter((c) => !search.trim() || c.name.toLowerCase().includes(search.trim().toLowerCase()) || (c.phone ?? '').includes(search.trim()))
+    .filter((c) => {
+      if (status === 'paid') return c.balance <= 0;
+      if (status === 'pending') return c.balance > 0;
+      return true;
+    });
   const totalDue = customers.reduce((s, c) => s + c.balance, 0);
 
   async function exportCustomers() {
     try {
-      const ok = await window.api.excel.exportCustomers();
+      const ok = await window.api.excel.exportCustomers({
+        status: status === 'all' ? undefined : status,
+        from: from || undefined,
+        to: to || undefined,
+      });
       if (ok) setNotice('Customer list exported to Excel.');
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
@@ -70,25 +83,59 @@ export default function Udhaar() {
     }
   }
 
+  const statusOptions = [
+    { value: 'all', label: 'All' },
+    { value: 'pending', label: 'Pending (Due)' },
+    { value: 'paid', label: 'Paid/Settled' },
+  ];
+
+  const handleClearUdhaarFilters = () => {
+    setFrom('');
+    setTo('');
+    setStatus('all');
+    setSearch('');
+  };
+
   return (
     <div className="page">
       <div className="page-header">
         <h1>Udhaar / Khata</h1>
-        <div className="toolbar">
-          <span className="badge badge-warn">Total due: {totalDue.toFixed(2)}</span>
-          <input
-            className="search-input"
-            placeholder="Search customer..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <button className="btn btn-sm" onClick={exportCustomers}>
-            Export Excel
-          </button>
-          <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
-            + Add Customer
-          </button>
-        </div>
+        <FilterBar onClear={handleClearUdhaarFilters} onApply={load}>
+          <FilterRow>
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Search customer..."
+              debounceMs={300}
+            />
+            <DateRangePicker
+              from={from}
+              to={to}
+              onChange={(from: string, to: string) => { setFrom(from); setTo(to); }}
+              labelFrom="From"
+              labelTo="To"
+            />
+            <select
+              className="field-select"
+              value={status}
+              onChange={(e) => setStatus(e.target.value as any)}
+              style={{ width: '160px' }}
+            >
+              {statusOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </FilterRow>
+          <FilterRow style={{ justifyContent: 'flex-end' }}>
+            <span className="badge badge-warn" style={{ marginRight: 'auto' }}>Total due: {totalDue.toFixed(2)}</span>
+            <button className="btn btn-sm" onClick={exportCustomers}>
+              Export Excel
+            </button>
+            <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
+              + Add Customer
+            </button>
+          </FilterRow>
+        </FilterBar>
       </div>
 
       {notice && (

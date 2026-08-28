@@ -7,7 +7,9 @@ const os = require('node:os');
 
 const src = process.env.PUPPETEER_CACHE_DIR || path.join(os.homedir(), '.cache', 'puppeteer');
 const shellDir = path.join(src, 'chrome-headless-shell');
-const dest = path.join(__dirname, '..', 'build', 'puppeteer-cache');
+// Puppeteer expects <cache>/chrome-headless-shell/<platform>-<buildId>/... so the
+// browser folder name MUST be preserved inside the shipped cache.
+const dest = path.join(__dirname, '..', 'build', 'puppeteer-cache', 'chrome-headless-shell');
 
 function copyDir(from, to) {
   fs.mkdirSync(to, { recursive: true });
@@ -28,11 +30,16 @@ if (!fs.existsSync(shellDir)) {
   process.exit(0);
 }
 
-fs.rmSync(dest, { recursive: true, force: true });
+fs.rmSync(path.join(__dirname, '..', 'build', 'puppeteer-cache'), { recursive: true, force: true });
 copyDir(shellDir, dest);
+
+const meta = path.join(src, '.metadata');
+if (fs.existsSync(meta)) {
+  fs.copyFileSync(meta, path.join(dest, '..', '.metadata'));
+}
 
 const sizeMB = ((fs.readdirSync(dest, { recursive: true }).reduce((sum, f) => {
   const st = fs.statSync(path.join(dest, f));
   return sum + (st.isFile() ? st.size : 0);
 }, 0)) / 1024 / 1024);
-console.log(`[prepare-puppeteer] Copied headless shell → build/puppeteer-cache (${sizeMB.toFixed(1)} MB)`);
+console.log(`[prepare-puppeteer] Copied headless shell → build/puppeteer-cache/chrome-headless-shell (${sizeMB.toFixed(1)} MB)`);

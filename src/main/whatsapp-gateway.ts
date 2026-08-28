@@ -9,6 +9,7 @@ let whatsappClient: any = null;
 let qrDataUrl: string | null = null;
 let readyPhone: string | null = null;
 let connecting = false;
+let lastError: string | null = null;
 
 function broadcast(channel: string, payload: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -39,6 +40,7 @@ function bundledCacheDir(): string | null {
 export async function initWhatsAppGateway(): Promise<boolean> {
   if (whatsappClient || connecting) return !!whatsappClient;
   connecting = true;
+  lastError = null;
   console.log('WhatsApp gateway: starting…');
   try {
     const cacheDir = bundledCacheDir();
@@ -46,7 +48,9 @@ export async function initWhatsAppGateway(): Promise<boolean> {
     const { Client, LocalAuth } = await import('whatsapp-web.js');
 
     const client = new Client({
-      authStrategy: new LocalAuth(),
+      authStrategy: new LocalAuth({
+        dataPath: path.join(app.getPath('userData'), '.wwebjs_auth'),
+      }),
       puppeteer: {
         headless: 'shell',
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
@@ -73,12 +77,14 @@ export async function initWhatsAppGateway(): Promise<boolean> {
     });
 
     client.on('auth_failure', (msg: string) => {
+      lastError = msg;
       broadcast('whatsapp:status', { connected: false, error: msg });
     });
 
     client.on('disconnected', (reason: string) => {
       whatsappClient = null;
       connecting = false;
+      lastError = reason;
       broadcast('whatsapp:status', { connected: false, error: reason });
     });
 
@@ -88,10 +94,29 @@ export async function initWhatsAppGateway(): Promise<boolean> {
   } catch (e) {
     whatsappClient = null;
     connecting = false;
+    lastError = e instanceof Error ? e.message : String(e);
     console.error('WhatsApp init error:', e);
     logError('WhatsApp init', e);
     return false;
   }
+}
+
+/** Force a full restart of the WhatsApp gateway (used by the Rescan button). */
+export async function restartWhatsAppGateway(): Promise<boolean> {
+  const existing = whatsappClient;
+  whatsappClient = null;
+  qrDataUrl = null;
+  readyPhone = null;
+  connecting = false;
+  if (existing && typeof existing.destroy === 'function') {
+    try {
+      await existing.destroy();
+    } catch {
+      // ignore teardown errors
+    }
+  }
+  broadcast('whatsapp:status', { connected: false, error: null });
+  return initWhatsAppGateway();
 }
 
 export function getWhatsAppStatus(): {
@@ -104,7 +129,7 @@ export function getWhatsAppStatus(): {
     connected: !!whatsappClient,
     phone: readyPhone,
     qr: qrDataUrl,
-    error: null,
+    error: lastError,
   };
 }
 
@@ -149,4 +174,19 @@ export async function sendSaleReceiptOnWhatsApp(
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/** Gracefully shutdown the WhatsApp gateway - for use during app quit. */
+export async function shutdownWhatsAppGateway(): Promise<void> {
+  if (whatsappClient && typeof whatsappClient.destroy === 'function') {
+    try {
+      await whatsappClient.destroy();
+    } catch {
+      // ignore teardown errors
+    }
+  }
+  whatsappClient = null;
+  qrDataUrl = null;
+  readyPhone = null;
+  connecting = false;
 }

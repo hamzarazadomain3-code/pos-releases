@@ -63,19 +63,58 @@ export function getAudit(id: number): AuditFull | null {
 }
 
 export function listAudits(): AuditRow[] {
+  return listAuditsPaginated(1, 500).rows;
+}
+
+export function listAuditsPaginated(
+  page = 1,
+  pageSize = 50,
+  from?: string,
+  to?: string,
+  userId?: number,
+  status?: 'in_progress' | 'completed'
+): { rows: AuditRow[]; total: number } {
   requireAuditAccess();
   const db = getDb();
-  return db
-    .prepare(
-      `SELECT a.*, u.username,
-        (SELECT COALESCE(SUM(CASE WHEN variance > 0 THEN variance ELSE 0 END), 0)
-         FROM audit_items WHERE audit_id = a.id) AS overage,
-        (SELECT COALESCE(SUM(CASE WHEN variance < 0 THEN variance ELSE 0 END), 0)
-         FROM audit_items WHERE audit_id = a.id) AS shortage
-       FROM audits a LEFT JOIN users u ON u.id = a.user_id
-       ORDER BY a.id DESC LIMIT 500`
-    )
-    .all() as unknown as AuditRow[];
+  let sql = `
+    SELECT a.*, u.username,
+      (SELECT COALESCE(SUM(CASE WHEN variance > 0 THEN variance ELSE 0 END), 0)
+       FROM audit_items WHERE audit_id = a.id) AS overage,
+      (SELECT COALESCE(SUM(CASE WHEN variance < 0 THEN variance ELSE 0 END), 0)
+       FROM audit_items WHERE audit_id = a.id) AS shortage
+    FROM audits a LEFT JOIN users u ON u.id = a.user_id
+    WHERE 1=1
+  `;
+  const params: (string | number)[] = [];
+  if (from) {
+    sql += ' AND date(a.created_at) >= date(?)';
+    params.push(from);
+  }
+  if (to) {
+    sql += ' AND date(a.created_at) <= date(?)';
+    params.push(to);
+  }
+  if (userId) {
+    sql += ' AND a.user_id = ?';
+    params.push(userId);
+  }
+  if (status) {
+    sql += ' AND a.status = ?';
+    params.push(status);
+  }
+  sql += ' ORDER BY a.id DESC';
+  
+  // Count total
+  const countSql = sql.replace(/SELECT a\.\*, u\.username,[\s\S]*?FROM/, 'SELECT COUNT(*) as total FROM');
+  const totalResult = db.prepare(countSql).get(...params) as { total: number };
+  const total = totalResult.total;
+  
+  // Add pagination
+  sql += ' LIMIT ? OFFSET ?';
+  params.push(pageSize, (page - 1) * pageSize);
+  
+  const rows = db.prepare(sql).all(...params) as unknown as AuditRow[];
+  return { rows, total };
 }
 
 export function saveCounts(auditId: number, counts: AuditCountInput[]): boolean {

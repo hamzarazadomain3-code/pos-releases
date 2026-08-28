@@ -15,6 +15,13 @@ src/renderer/public/icon.png
 build/puppeteer-cache/
 license-server/
 cred_input.txt
+cred.txt
+cred_out.txt
+eb_token.txt
+get_token.ps1
+get_token.cmd
+publish.bat
+.env
 check_batches.js
 find_rusk.js
 fix_batch_quantities.js

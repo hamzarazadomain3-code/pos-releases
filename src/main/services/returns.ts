@@ -135,7 +135,12 @@ export function getReturn(id: number): (ReturnRow & { items: ReturnItemRow[] }) 
   return { ...r, items };
 }
 
-export function listReturns(from?: string, to?: string): ReturnRow[] {
+export function listReturns(
+  from?: string,
+  to?: string,
+  customerId?: number,
+  productId?: number
+): ReturnRow[] {
   const db = getDb();
   let sql = `
     SELECT r.*, s.invoice_no, c.name AS customer_name
@@ -152,6 +157,16 @@ export function listReturns(from?: string, to?: string): ReturnRow[] {
   if (to) {
     sql += ' AND date(r.created_at) <= date(?)';
     params.push(to);
+  }
+  if (customerId) {
+    sql += ' AND s.customer_id = ?';
+    params.push(customerId);
+  }
+  if (productId) {
+    sql += ` AND EXISTS (
+      SELECT 1 FROM return_items ri WHERE ri.return_id = r.id AND ri.product_id = ?
+    )`;
+    params.push(productId);
   }
   sql += ' ORDER BY r.id DESC LIMIT 500';
   return db.prepare(sql).all(...params) as unknown as ReturnRow[];

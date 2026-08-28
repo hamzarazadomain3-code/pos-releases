@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Product, PurchaseItem, PurchaseOrder, PurchasePriceRow, Supplier, SupplierTransaction } from '../../../shared/types';
+import { DateRangePicker, SearchInput, FilterBar, FilterRow } from '../components/filters';
 
 type Tab = 'suppliers' | 'orders';
 
@@ -8,6 +9,11 @@ export default function Purchases() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [supplierId, setSupplierId] = useState<number | ''>('');
+  const [status, setStatus] = useState<'pending' | 'received' | 'cancelled' | ''>('');
 
   const [supplierModal, setSupplierModal] = useState(false);
   const [sName, setSName] = useState('');
@@ -30,12 +36,12 @@ export default function Purchases() {
   const load = useCallback(async () => {
     try {
       setSuppliers(await window.api.purchases.suppliers());
-      setOrders(await window.api.purchases.listOrders());
+      setOrders(await window.api.purchases.listOrders(status || undefined, from || undefined, to || undefined, supplierId || undefined));
       setProducts(await window.api.inventory.list());
     } catch (e) {
       setErr(String(e));
     }
-  }, []);
+  }, [from, to, supplierId, status]);
 
   useEffect(() => {
     load();
@@ -112,6 +118,20 @@ export default function Purchases() {
 
   const statusLabel = (s: string) => (s === 'received' ? 'Received' : s === 'cancelled' ? 'Cancelled' : 'Pending');
 
+  const supplierOptions = suppliers.map(s => ({ value: s.id, label: s.name }));
+  const statusOptions = [
+    { value: 'pending', label: 'Pending' },
+    { value: 'received', label: 'Received' },
+    { value: 'cancelled', label: 'Cancelled' },
+  ];
+
+  const handleClearPurchaseFilters = () => {
+    setFrom('');
+    setTo('');
+    setSupplierId('');
+    setStatus('');
+  };
+
   return (
     <div className="page">
       <div className="page-head">
@@ -176,15 +196,47 @@ export default function Purchases() {
 
       {tab === 'orders' && (
         <div className="card">
-          <div className="card-head">
-            <h2>Purchase Orders</h2>
-            <button className="btn btn-sm" onClick={() => window.api.excel.exportPurchaseOrders().catch((e) => setErr(String(e)))}>
-              Export Excel
-            </button>
-            <button className="btn btn-primary" onClick={() => setPoModal(true)}>
-              New Purchase Order
-            </button>
-          </div>
+          <FilterBar onClear={handleClearPurchaseFilters} onApply={load}>
+            <FilterRow>
+              <DateRangePicker
+                from={from}
+                to={to}
+                onChange={(from: string, to: string) => { setFrom(from); setTo(to); }}
+                labelFrom="From"
+                labelTo="To"
+              />
+              <select
+                className="field-select"
+                value={supplierId}
+                onChange={(e) => setSupplierId(e.target.value ? Number(e.target.value) : '')}
+                style={{ width: '180px' }}
+              >
+                <option value="">All Suppliers</option>
+                {supplierOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+              <select
+                className="field-select"
+                value={status}
+                onChange={(e) => setStatus(e.target.value as any)}
+                style={{ width: '140px' }}
+              >
+                <option value="">All Status</option>
+                {statusOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </FilterRow>
+            <FilterRow style={{ justifyContent: 'flex-end' }}>
+              <button className="btn btn-sm" onClick={() => window.api.excel.exportPurchaseOrders({ status: status || undefined, from: from || undefined, to: to || undefined, supplierId: supplierId || undefined }).catch((e) => setErr(String(e)))}>
+                Export Excel
+              </button>
+              <button className="btn btn-primary" onClick={() => setPoModal(true)}>
+                New Purchase Order
+              </button>
+            </FilterRow>
+          </FilterBar>
           <table className="tbl">
             <thead>
               <tr>

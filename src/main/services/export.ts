@@ -65,8 +65,17 @@ export function saveXlsx(win: BrowserWindow | null, defaultName: string, sheets:
   })();
 }
 
-export function exportProductsXlsx(win: BrowserWindow | null): Promise<boolean> {
-  const products = listProducts(undefined, true);
+export function exportProductsXlsx(
+  win: BrowserWindow | null,
+  search?: string,
+  includeInactive = true,
+  categoryId?: number,
+  stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock',
+  supplierId?: number,
+  expiryFrom?: string,
+  expiryTo?: string
+): Promise<boolean> {
+  const products = listProducts(search, includeInactive, categoryId, stockStatus, supplierId, expiryFrom, expiryTo);
   return saveXlsx(win, 'products.xlsx', [
     {
       name: 'Inventory',
@@ -117,8 +126,8 @@ export function exportSalesXlsx(win: BrowserWindow | null, from?: string, to?: s
   ]);
 }
 
-export function exportCustomersXlsx(win: BrowserWindow | null): Promise<boolean> {
-  const customers = listCustomers();
+export function exportCustomersXlsx(win: BrowserWindow | null, status?: 'paid' | 'pending' | 'all', from?: string, to?: string): Promise<boolean> {
+  const customers = listCustomers(status, from, to);
   return saveXlsx(win, 'customers.xlsx', [
     {
       name: 'Customers',
@@ -128,8 +137,8 @@ export function exportCustomersXlsx(win: BrowserWindow | null): Promise<boolean>
   ]);
 }
 
-export function exportPurchaseOrdersXlsx(win: BrowserWindow | null): Promise<boolean> {
-  const orders = listPurchaseOrders();
+export function exportPurchaseOrdersXlsx(win: BrowserWindow | null, status?: string, from?: string, to?: string, supplierId?: number): Promise<boolean> {
+  const orders = listPurchaseOrders(status, from, to, supplierId);
   const orderRows = orders.map((o) => [o.id, o.created_at ?? '', o.supplier_name ?? '', o.status, o.total_amount]);
   const itemRows: (string | number | null)[][] = [];
   for (const o of orders) {

@@ -47,15 +47,19 @@ export function isScaleBarcode(barcode: string): boolean {
  * Example: 2110001002342 → prefix="21", PLU="10001", Price=234, check=2
  */
 export function parseBayLanBarcode(barcode: string): ScaleBarcodeResult {
+  console.log(`[ScaleBarcode] parseBayLanBarcode("${barcode}") length=${barcode.length}`);
   if (!/^\d{13}$/.test(barcode)) {
+    console.log(`[ScaleBarcode] REJECTED: not 13 numeric digits`);
     return { plu: '', price: 0, isValid: false, error: 'Barcode must be 13 numeric digits' };
   }
 
   if (!barcode.startsWith(SCALE_PREFIX)) {
+    console.log(`[ScaleBarcode] REJECTED: does not start with "${SCALE_PREFIX}"`);
     return { plu: '', price: 0, isValid: false, error: `Barcode does not start with scale prefix "${SCALE_PREFIX}"` };
   }
 
   if (!isValidEan13(barcode)) {
+    console.log(`[ScaleBarcode] REJECTED: invalid EAN-13 checksum`);
     return { plu: '', price: 0, isValid: false, error: 'Invalid EAN-13 checksum' };
   }
 
@@ -64,9 +68,11 @@ export function parseBayLanBarcode(barcode: string): ScaleBarcodeResult {
   const price = parseInt(priceStr, 10);
 
   if (isNaN(price) || price <= 0) {
+    console.log(`[ScaleBarcode] REJECTED: decoded price is zero or invalid (priceStr="${priceStr}")`);
     return { plu, price: 0, isValid: false, error: 'Decoded price is zero or invalid' };
   }
 
+  console.log(`[ScaleBarcode] VALID: plu="${plu}" price=${price}`);
   return { plu, price, isValid: true };
 }
 

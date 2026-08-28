@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AuditItemRow, AuditRow, Category } from '../../../shared/types';
+import { DateRangePicker, SearchInput, MultiSelectDropdown, FilterBar, FilterRow, Pagination } from '../components/filters';
 
 export default function Audits() {
   const [tab, setTab] = useState<'active' | 'history'>('active');
   const [active, setActive] = useState<AuditRow[]>([]);
   const [history, setHistory] = useState<AuditRow[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [users, setUsers] = useState<{ id: number; username: string }[]>([]);
   const [current, setCurrent] = useState<(AuditRow & { items: AuditItemRow[] }) | null>(null);
   const [counts, setCounts] = useState<Record<number, string>>({});
   const [search, setSearch] = useState('');
@@ -16,20 +18,48 @@ export default function Audits() {
   const [err, setErr] = useState('');
   const [msg, setMsg] = useState('');
 
+  // History pagination & filters
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageSize, setHistoryPageSize] = useState(50);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyFrom, setHistoryFrom] = useState('');
+  const [historyTo, setHistoryTo] = useState('');
+  const [historyUserId, setHistoryUserId] = useState<number | ''>('');
+  const [historyStatus, setHistoryStatus] = useState<'in_progress' | 'completed' | ''>('');
+
   const load = useCallback(async () => {
     try {
       const all = await window.api.audits.list();
       setActive(all.filter((a) => a.status === 'in_progress'));
       setHistory(all.filter((a) => a.status === 'completed'));
       setCategories(await window.api.inventory.categories());
+      setUsers((await window.api.users.list()).map(u => ({ id: u.id, username: u.username })));
     } catch (e) {
       setErr(String(e));
     }
   }, []);
 
+  const loadHistory = useCallback(async () => {
+    try {
+      const res = await window.api.audits.listPaginated(
+        historyPage,
+        historyPageSize,
+        historyFrom || undefined,
+        historyTo || undefined,
+        historyUserId || undefined,
+        historyStatus || undefined
+      );
+      setHistory(res.rows);
+      setHistoryTotal(res.total);
+    } catch (e) {
+      setErr(String(e));
+    }
+  }, [historyPage, historyPageSize, historyFrom, historyTo, historyUserId, historyStatus]);
+
   useEffect(() => {
     load();
-  }, [load]);
+    loadHistory();
+  }, [load, loadHistory]);
 
   const seedCounts = (audit: AuditRow & { items: AuditItemRow[] }) => {
     const map: Record<number, string> = {};
@@ -181,9 +211,60 @@ export default function Audits() {
 
       {tab === 'history' && (
         <div className="card">
-          <div className="card-head">
-            <h2>Audit History</h2>
-          </div>
+          <FilterBar
+            onClear={() => {
+              setHistoryFrom('');
+              setHistoryTo('');
+              setHistoryUserId('');
+              setHistoryStatus('');
+              setHistoryPage(1);
+            }}
+            onApply={loadHistory}
+          >
+            <FilterRow>
+              <DateRangePicker
+                from={historyFrom}
+                to={historyTo}
+                onChange={(from: string, to: string) => { setHistoryFrom(from); setHistoryTo(to); setHistoryPage(1); }}
+                labelFrom="From"
+                labelTo="To"
+              />
+              <select
+                className="field-select"
+                value={historyUserId}
+                onChange={(e) => { setHistoryUserId(e.target.value ? Number(e.target.value) : ''); setHistoryPage(1); }}
+                style={{ width: '180px' }}
+              >
+                <option value="">All Users</option>
+                {users.map(u => (
+                  <option key={u.id} value={u.id}>{u.username}</option>
+                ))}
+              </select>
+              <select
+                className="field-select"
+                value={historyStatus}
+                onChange={(e) => { setHistoryStatus(e.target.value as any); setHistoryPage(1); }}
+                style={{ width: '140px' }}
+              >
+                <option value="">All Status</option>
+                <option value="completed">Completed</option>
+                <option value="in_progress">In Progress</option>
+              </select>
+            </FilterRow>
+            <FilterRow style={{ justifyContent: 'flex-end' }}>
+              <select
+                className="field-select"
+                value={historyPageSize}
+                onChange={(e) => { setHistoryPageSize(Number(e.target.value)); setHistoryPage(1); }}
+                style={{ width: '120px' }}
+              >
+                <option value="10">10 per page</option>
+                <option value="25">25 per page</option>
+                <option value="50">50 per page</option>
+                <option value="100">100 per page</option>
+              </select>
+            </FilterRow>
+          </FilterBar>
           <table className="tbl">
             <thead>
               <tr>
@@ -223,6 +304,13 @@ export default function Audits() {
               )}
             </tbody>
           </table>
+          <Pagination
+            currentPage={historyPage}
+            pageSize={historyPageSize}
+            totalItems={historyTotal}
+            onPageChange={setHistoryPage}
+            onPageSizeChange={setHistoryPageSize}
+          />
         </div>
       )}
 
