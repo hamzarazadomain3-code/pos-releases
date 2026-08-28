@@ -105,7 +105,7 @@ export function listAuditsPaginated(
   sql += ' ORDER BY a.id DESC';
   
   // Count total
-  const countSql = sql.replace(/SELECT a\.\*, u\.username,[\s\S]*?FROM/, 'SELECT COUNT(*) as total FROM');
+  const countSql = sql.replace(/SELECT a\.\*, u\.username,[\s\S]*?FROM audits/, 'SELECT COUNT(*) as total FROM audits');
   const totalResult = db.prepare(countSql).get(...params) as { total: number };
   const total = totalResult.total;
   
