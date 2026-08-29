@@ -158,10 +158,11 @@ export function createSale(input: SaleInput): SaleCreateResult {
       batchAllocations.set(l.product_id, allocation);
     }
     const invoiceNo = nextInvoiceNo();
+    const nowIso = new Date().toISOString();
     const saleInfo = db
       .prepare(
-        `INSERT INTO sales (invoice_no, customer_id, user_id, shift_id, subtotal, tax_amount, discount_amount, total_amount, service_charge, service_charge_type, freight, price_overridden, status, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?)`
+        `INSERT INTO sales (invoice_no, customer_id, user_id, shift_id, subtotal, tax_amount, discount_amount, total_amount, service_charge, service_charge_type, freight, price_overridden, status, notes, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?)`
       )
       .run(
         invoiceNo,
@@ -176,7 +177,8 @@ export function createSale(input: SaleInput): SaleCreateResult {
         serviceChargeType,
         freight,
         priceOverridden ? 1 : 0,
-        input.notes ?? null
+        input.notes ?? null,
+        nowIso
       );
     const saleId = Number(saleInfo.lastInsertRowid);
 
@@ -235,12 +237,12 @@ export function createSale(input: SaleInput): SaleCreateResult {
     }
 
     const insPay = db.prepare(
-      `INSERT INTO payments (sale_id, mode, amount, reference) VALUES (?, ?, ?, ?)`
+      `INSERT INTO payments (sale_id, mode, amount, reference, created_at) VALUES (?, ?, ?, ?, ?)`
     );
     const payRows: Payment[] = [];
     for (const p of payments) {
-      insPay.run(saleId, p.mode, p.amount, p.reference ?? null);
-      payRows.push({ id: 0, sale_id: saleId, mode: p.mode, amount: p.amount, reference: p.reference ?? null });
+      insPay.run(saleId, p.mode, p.amount, p.reference ?? null, nowIso);
+      payRows.push({ id: 0, sale_id: saleId, mode: p.mode, amount: p.amount, reference: p.reference ?? null, created_at: nowIso });
     }
 
     if (balance > 0 && input.customer_id) {
