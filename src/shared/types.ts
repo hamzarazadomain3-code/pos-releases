@@ -1021,6 +1021,16 @@ export interface PosBridge {
     };
     systemHealth: () => Promise<SystemHealth>;
   };
+  twoFactor: {
+    isEnabled: () => Promise<boolean>;
+    method: () => Promise<string>;
+    generateOtp: (userId: number) => Promise<{ ok: boolean; method: string; message: string }>;
+    verifyOtp: (userId: number, code: string) => Promise<{ ok: boolean; message: string }>;
+  };
+  email: {
+    send: (options: { to: string | string[]; subject: string; text?: string; html?: string }) => Promise<{ ok: boolean; message: string }>;
+    sendDailyReport: () => Promise<{ ok: boolean; message: string }>;
+  };
 };
 
 // ── v1.8.0 Advanced Reports types ──

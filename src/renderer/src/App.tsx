@@ -163,6 +163,10 @@ function LoginScreen({ onLogin, logo }: { onLogin: (user: UserRow, rememberMe: b
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+  const [otpPending, setOtpPending] = useState<UserRow | null>(null);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpMessage, setOtpMessage] = useState<string | null>(null);
+  const [otpBusy, setOtpBusy] = useState(false);
 
   const doLogin = async () => {
     if (busy) return;
@@ -173,8 +177,17 @@ function LoginScreen({ onLogin, logo }: { onLogin: (user: UserRow, rememberMe: b
         ? await window.api.auth.loginWithPin(secret)
         : await window.api.auth.login(username, secret);
       if (res.ok && res.user) {
+        // Check if 2FA is enabled
+        const twoFAEnabled = await window.api.twoFactor.isEnabled();
+        if (twoFAEnabled) {
+          setOtpPending(res.user);
+          const otpResult = await window.api.twoFactor.generateOtp(res.user.id);
+          setOtpMessage(otpResult.message);
+          setSecret('');
+          setBusy(false);
+          return;
+        }
         setSecret('');
-        setUsername('');
         onLogin(res.user, rememberMe);
       } else {
         setErr(res.message ?? 'errors.login_failed');
@@ -184,6 +197,52 @@ function LoginScreen({ onLogin, logo }: { onLogin: (user: UserRow, rememberMe: b
     }
     setBusy(false);
   };
+
+  const verifyOtp = async () => {
+    if (!otpPending || !otpCode || otpBusy) return;
+    setOtpBusy(true);
+    setErr(null);
+    try {
+      const result = await window.api.twoFactor.verifyOtp(otpPending.id, otpCode);
+      if (result.ok) {
+        onLogin(otpPending, rememberMe);
+      } else {
+        setErr(result.message);
+      }
+    } catch (e) {
+      setErr(String(e));
+    }
+    setOtpBusy(false);
+  };
+
+  // 2FA OTP screen
+  if (otpPending) {
+    return (
+      <div className="lock-overlay">
+        <div className="lock-box">
+          {logo && <img src={logo} alt="Shop logo" className="lock-logo" />}
+          <h2>Verification Code</h2>
+          <p className="muted">{otpMessage || 'Enter the code sent to your email/phone'}</p>
+          <input
+            type="text"
+            placeholder="Enter 6-digit code"
+            value={otpCode}
+            autoFocus
+            maxLength={6}
+            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+            onKeyDown={(e) => e.key === 'Enter' && verifyOtp()}
+          />
+          {err && <p className="text-warn small">{err}</p>}
+          <button className="btn btn-primary btn-lg" disabled={!otpCode || otpBusy} onClick={verifyOtp}>
+            {otpBusy ? 'Verifying...' : 'Verify'}
+          </button>
+          <button className="btn" onClick={() => { setOtpPending(null); setOtpCode(''); setErr(null); }}>
+            Back to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="lock-overlay">

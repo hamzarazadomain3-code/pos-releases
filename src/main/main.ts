@@ -11,6 +11,7 @@ import { initUpdater, checkForUpdates } from './updater';
 import { initWhatsAppGateway, shutdownWhatsAppGateway } from './whatsapp-gateway';
 import { getInventoryReports } from './services/inventoryReports';
 import { getAlertService } from './services/alertService';
+import { ensureOtpTable } from './services/twoFactorAuth';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -81,6 +82,7 @@ app.whenReady().then(async () => {
   try {
     await initDatabase();
     log('Database initialized + migrations applied');
+    ensureOtpTable();
       registerIpcHandlers();
       licensing.registerIpc();
       try {
@@ -280,15 +282,29 @@ function runExpiryAlert(): void {
 function runDailyReport(): void {
   try {
     const adminSettings = getAllAdminSettings();
-    if (adminSettings.whatsapp_alerts !== 'false' && adminSettings.whatsapp_alerts !== '0') {
-      getAlertService().sendAlertsWhatsApp().then((res) => {
-        log(`WhatsApp alerts sent: ${res.sent} ok, ${res.errors} errors`);
-      }).catch((err: unknown) => logError('WhatsApp alerts', err));
+
+    // WhatsApp reports
+    if (adminSettings.report_send_whatsapp === 'true' || adminSettings.report_send_whatsapp === '1') {
+      getAlertService().sendDailySalesSummary().then((res) => {
+        log(`Daily sales summary (WhatsApp): ${res.message}`);
+      }).catch((err: unknown) => logError('daily summary WhatsApp', err));
     }
 
-    getAlertService().sendDailySalesSummary().then((res) => {
-      log(`Daily sales summary: ${res.message}`);
-    }).catch((err: unknown) => logError('daily summary', err));
+    // Email reports
+    if (adminSettings.report_send_email === 'true' || adminSettings.report_send_email === '1') {
+      import('./services/emailService').then(({ sendDailySalesReportEmail }) => {
+        sendDailySalesReportEmail().then((res) => {
+          log(`Daily sales summary (Email): ${res.message}`);
+        }).catch((err: unknown) => logError('daily summary email', err));
+      }).catch((err: unknown) => logError('email service import', err));
+    }
+
+    // Always send alerts via WhatsApp if alerts are enabled
+    if (adminSettings.whatsapp_alerts !== 'false' && adminSettings.whatsapp_alerts !== '0') {
+      getAlertService().sendAlertsWhatsApp().then((res) => {
+        if (res.sent > 0) log(`WhatsApp alerts sent: ${res.sent} ok, ${res.errors} errors`);
+      }).catch((err: unknown) => logError('WhatsApp alerts', err));
+    }
   } catch (err) {
     logError('daily report', err);
   }

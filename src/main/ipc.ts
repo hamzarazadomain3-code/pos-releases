@@ -140,6 +140,8 @@ import {
   resetUserPassword,
   getSystemHealth,
 } from './services/admin';
+import { is2FAEnabled, get2FAMethod, generateOtp, verifyOtp } from './services/twoFactorAuth';
+import { sendEmail, sendDailySalesReportEmail } from './services/emailService';
 
 export function registerIpcHandlers(): void {
   ipcMain.handle('inventory:list', (_e, search?: string, includeInactive?: boolean) =>
@@ -446,4 +448,14 @@ export function registerIpcHandlers(): void {
 
   // ── Admin: System Health ──
   ipcMain.handle('admin:systemHealth', () => getSystemHealth());
+
+  // ── 2FA ──
+  ipcMain.handle('2fa:isEnabled', () => is2FAEnabled());
+  ipcMain.handle('2fa:method', () => get2FAMethod());
+  ipcMain.handle('2fa:generateOtp', (_e, userId: number) => generateOtp(userId));
+  ipcMain.handle('2fa:verifyOtp', (_e, userId: number, code: string) => verifyOtp(userId, code));
+
+  // ── Email ──
+  ipcMain.handle('email:send', (_e, options: { to: string | string[]; subject: string; text?: string; html?: string }) => sendEmail(options));
+  ipcMain.handle('email:sendDailyReport', () => sendDailySalesReportEmail());
 }

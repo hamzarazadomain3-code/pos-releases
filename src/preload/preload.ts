@@ -291,6 +291,16 @@ const bridge: PosBridge = {
     },
     systemHealth: () => ipcRenderer.invoke('admin:systemHealth'),
   },
+  twoFactor: {
+    isEnabled: () => ipcRenderer.invoke('2fa:isEnabled'),
+    method: () => ipcRenderer.invoke('2fa:method'),
+    generateOtp: (userId: number) => ipcRenderer.invoke('2fa:generateOtp', userId),
+    verifyOtp: (userId: number, code: string) => ipcRenderer.invoke('2fa:verifyOtp', userId, code),
+  },
+  email: {
+    send: (options: { to: string | string[]; subject: string; text?: string; html?: string }) => ipcRenderer.invoke('email:send', options),
+    sendDailyReport: () => ipcRenderer.invoke('email:sendDailyReport'),
+  },
 };
 
 function generateEan13Local(): string {
