@@ -172,10 +172,11 @@ export function completeAudit(auditId: number): AuditFull {
         'UPDATE audit_items SET variance = ? WHERE audit_id = ? AND product_id = ?'
       ).run(change, auditId, item.product_id);
     }
+    const completedAt = new Date().toISOString();
     db.prepare(
-      `UPDATE audits SET status = 'completed', total_items = ?, total_variance = ?, completed_at = CURRENT_TIMESTAMP
+      `UPDATE audits SET status = 'completed', total_items = ?, total_variance = ?, completed_at = ?
        WHERE id = ?`
-    ).run(counted.length, totalVariance, auditId);
+    ).run(counted.length, totalVariance, completedAt, auditId);
     db.exec('COMMIT');
     logActivity(
       'audit_completed',

@@ -13,7 +13,7 @@ src/renderer/public/icon.png
 *.db-journal
 .wwebjs_auth/
 build/puppeteer-cache/
-license-server/
+# license-server/
 cred_input.txt
 cred.txt
 cred_out.txt

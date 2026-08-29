@@ -99,12 +99,13 @@ export function closeShift(id: number, countedCash: number, notes?: string): Shi
   if (shift.user_id !== uid && !can('manager')) {
     throw new Error('You can only close your own shift');
   }
+  const closedAt = new Date().toISOString();
   const { expected } = shiftTotals(id);
   const variance = countedCash - expected;
   db.prepare(
-    `UPDATE shifts SET closed_at = CURRENT_TIMESTAMP, end_cash = ?, expected_cash = ?, variance = ?, forced = 0, notes = ?
+    `UPDATE shifts SET closed_at = ?, end_cash = ?, expected_cash = ?, variance = ?, forced = 0, notes = ?
      WHERE id = ?`
-  ).run(countedCash, expected, variance, notes?.trim() || null, id);
+  ).run(closedAt, countedCash, expected, variance, notes?.trim() || null, id);
   logActivity('shift_closed', 'shift', id, `counted=${countedCash} expected=${expected} variance=${variance}`, uid);
   const updated = db
     .prepare(`SELECT s.*, u.username FROM shifts s JOIN users u ON u.id = s.user_id WHERE s.id = ?`)
@@ -121,13 +122,14 @@ export function forceCloseShift(id: number, countedCash?: number, notes?: string
     | undefined;
   if (!shift) throw new Error('Shift not found');
   if (shift.closed_at) throw new Error('This shift is already closed');
+  const closedAt = new Date().toISOString();
   const { expected } = shiftTotals(id);
   const counted = countedCash ?? expected;
   const variance = counted - expected;
   db.prepare(
-    `UPDATE shifts SET closed_at = CURRENT_TIMESTAMP, end_cash = ?, expected_cash = ?, variance = ?, forced = 1, notes = ?
+    `UPDATE shifts SET closed_at = ?, end_cash = ?, expected_cash = ?, variance = ?, forced = 1, notes = ?
      WHERE id = ?`
-  ).run(counted, expected, variance, notes?.trim() || null, id);
+  ).run(closedAt, counted, expected, variance, notes?.trim() || null, id);
   logActivity('shift_force_closed', 'shift', id, `user=${shift.user_id} counted=${counted} expected=${expected}`, uid);
   const updated = db
     .prepare(`SELECT s.*, u.username FROM shifts s JOIN users u ON u.id = s.user_id WHERE s.id = ?`)

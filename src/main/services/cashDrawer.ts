@@ -70,10 +70,11 @@ export function closeDrawer(shiftId: number, closingCash: number, notes?: string
   const expected = session.opening_cash + breakdown.cash_sales - breakdown.refunds;
   const variance = closingCash - expected;
 
+  const closingTime = new Date().toISOString();
   db.prepare(
-    `UPDATE cash_drawer_sessions SET closing_cash = ?, closing_time = CURRENT_TIMESTAMP, closed_by = ?, variance = ?, notes = ?
+    `UPDATE cash_drawer_sessions SET closing_cash = ?, closing_time = ?, closed_by = ?, variance = ?, notes = ?
      WHERE id = ?`
-  ).run(closingCash, uid, variance, notes?.trim() || null, session.id);
+  ).run(closingCash, closingTime, uid, variance, notes?.trim() || null, session.id);
 
   logActivity('cash_drawer_closed', 'cash_drawer', session.id, `closing=${closingCash} expected=${expected} variance=${variance}`, uid);
 

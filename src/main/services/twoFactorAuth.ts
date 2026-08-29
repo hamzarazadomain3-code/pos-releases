@@ -40,10 +40,11 @@ export async function generateOtp(userId: number): Promise<{ ok: boolean; method
 
   const otp = generateRandomOtp();
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000).toISOString();
+  const createdAt = new Date().toISOString();
 
   db.prepare(
-    'INSERT INTO otp_codes (user_id, otp_code, method, expires_at, used, created_at) VALUES (?, ?, ?, ?, 0, CURRENT_TIMESTAMP)'
-  ).run(userId, otp, method, expiresAt);
+    'INSERT INTO otp_codes (user_id, otp_code, method, expires_at, used, created_at) VALUES (?, ?, ?, ?, 0, ?)'
+  ).run(userId, otp, method, expiresAt, createdAt);
 
   // Deliver OTP based on method
   if (method === 'email') {
@@ -114,7 +115,7 @@ export function ensureOtpTable(): void {
       method TEXT NOT NULL DEFAULT 'email',
       expires_at TEXT NOT NULL,
       used INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+      created_at TEXT NOT NULL DEFAULT (datetime('now', 'utc') || 'Z'),
       FOREIGN KEY (user_id) REFERENCES users(id)
     )
   `);

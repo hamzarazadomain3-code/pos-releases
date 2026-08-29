@@ -7,8 +7,8 @@ exports.up = async (db) => {
       total_items INTEGER NOT NULL DEFAULT 0,
       total_variance REAL NOT NULL DEFAULT 0,
       notes TEXT,
-      completed_at DATETIME,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      completed_at TEXT,
+      created_at TEXT DEFAULT (datetime('now', 'utc') || 'Z'),
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
 

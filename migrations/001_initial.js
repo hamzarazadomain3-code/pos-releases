@@ -84,8 +84,8 @@ exports.up = async (db) => {
       user_id INTEGER NOT NULL,
       start_cash REAL DEFAULT 0,
       end_cash REAL,
-      opened_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      closed_at DATETIME,
+      opened_at TEXT DEFAULT (datetime('now', 'utc') || 'Z'),
+      closed_at TEXT,
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
 
@@ -100,7 +100,7 @@ exports.up = async (db) => {
       discount_amount REAL DEFAULT 0,
       total_amount REAL DEFAULT 0,
       status TEXT DEFAULT 'completed',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at TEXT DEFAULT (datetime('now', 'utc') || 'Z'),
       FOREIGN KEY (customer_id) REFERENCES customers(id),
       FOREIGN KEY (user_id) REFERENCES users(id),
       FOREIGN KEY (shift_id) REFERENCES shifts(id)
@@ -125,7 +125,7 @@ exports.up = async (db) => {
       mode TEXT NOT NULL,
       amount REAL NOT NULL,
       reference TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at TEXT DEFAULT (datetime('now', 'utc') || 'Z'),
       FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
     );
 
@@ -134,7 +134,7 @@ exports.up = async (db) => {
       supplier_id INTEGER NOT NULL,
       status TEXT DEFAULT 'pending',
       total_amount REAL DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at TEXT DEFAULT (datetime('now', 'utc') || 'Z'),
       FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
     );
 
@@ -155,7 +155,7 @@ exports.up = async (db) => {
       entity TEXT,
       entity_id INTEGER,
       details TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at TEXT DEFAULT (datetime('now', 'utc') || 'Z')
     );
   `);
 

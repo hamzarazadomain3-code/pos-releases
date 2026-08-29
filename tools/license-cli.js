@@ -18,7 +18,7 @@ async function generate(shop) {
   const payment_status = await ask('Payment status (optional, default pending): ');
   const notes = await ask('Notes (optional): ');
   const plan_type = await ask('Plan type (optional, default basic): ');
-  const max_devices_raw = await ask('Max devices (optional, default 1): ');
+  const max_devices_raw = await ask('Max devices (optional, default 5): ');
   const activated_devices_raw = await ask('Activated devices (comma‑separated, optional): ');
 
   const payload = {
@@ -78,6 +78,17 @@ async function history(key) {
   console.table(data);
 }
 
+async function updateLimit(key, newLimit) {
+  const res = await fetch(`${SERVER_URL}/api/update-limit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, max_devices: Number(newLimit) })
+  });
+  const data = await res.json();
+  if (data.ok) console.log(`Updated limit for ${key}: ${data.old_limit} → ${data.new_limit}`);
+  else console.error('Update limit failed:', data.msg);
+}
+
 async function main() {
   const [cmd, ...args] = process.argv.slice(2);
   switch (cmd) {
@@ -100,8 +111,12 @@ async function main() {
       if (!args[0]) { console.error('Usage: history <key>'); process.exit(1); }
       await history(args[0]);
       break;
+    case 'update-limit':
+      if (!args[0] || !args[1]) { console.error('Usage: update-limit <key> <new-limit>'); process.exit(1); }
+      await updateLimit(args[0], args[1]);
+      break;
     default:
-      console.log('Commands: generate <shop>, revoke <key>, list, renew <key> <new-expires-ISO>, history <key>');
+      console.log('Commands: generate <shop>, revoke <key>, list, renew <key> <new-expires-ISO>, history <key>, update-limit <key> <new-limit>');
   }
 }
 
