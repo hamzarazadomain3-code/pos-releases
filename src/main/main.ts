@@ -5,6 +5,7 @@ import { registerIpcHandlers } from './ipc';
 import * as licensing from './services/licensing';
 import { runBackup } from './services/backup';
 import { getAllSettings } from './services/settings';
+import { getAllAdminSettings } from './services/admin';
 import { closeLogger, initLogger, log, logError } from './logger';
 import { initUpdater, checkForUpdates } from './updater';
 import { initWhatsAppGateway, shutdownWhatsAppGateway } from './whatsapp-gateway';
@@ -205,6 +206,9 @@ function scheduleHourlyAlerts(): void {
 
 function runAlertCheck(): void {
   try {
+    const adminSettings = getAllAdminSettings();
+    const lowStockEnabled = adminSettings.low_stock_alert_enabled;
+    if (lowStockEnabled === 'false' || lowStockEnabled === '0') return;
     const count = getAlertService().checkAndCreateAlerts();
     log(`Alert check complete: ${count} new alert(s)`);
   } catch (err) {
@@ -215,9 +219,21 @@ function runAlertCheck(): void {
 // ── v2.0.0 Time-Based Triggers ──
 
 function scheduleTimeBasedTriggers(): void {
-  scheduleDailyAt(7, 0, runUdhaarReminder);   // 7:00 AM
-  scheduleDailyAt(18, 0, runExpiryAlert);     // 6:00 PM
-  scheduleDailyAt(22, 0, runDailyReport);     // 10:00 PM
+  const adminSettings = getAllAdminSettings();
+  const udhaarTime = adminSettings.udhaar_reminder_time || '7:00';
+  const reportTime = adminSettings.daily_report_time || '22:00';
+  const [udhaarH, udhaarM] = udhaarTime.split(':').map(Number);
+  const [reportH, reportM] = reportTime.split(':').map(Number);
+
+  if (adminSettings.udhaar_reminder_enabled !== 'false' && adminSettings.udhaar_reminder_enabled !== '0') {
+    scheduleDailyAt(udhaarH || 7, udhaarM || 0, runUdhaarReminder);
+  }
+  if (adminSettings.expiry_alert_enabled !== 'false' && adminSettings.expiry_alert_enabled !== '0') {
+    scheduleDailyAt(18, 0, runExpiryAlert);
+  }
+  if (adminSettings.daily_report_time_enabled !== 'false' && adminSettings.daily_report_time_enabled !== '0') {
+    scheduleDailyAt(reportH || 22, reportM || 0, runDailyReport);
+  }
 }
 
 function scheduleDailyAt(hour: number, minute: number, fn: () => void): void {
@@ -263,9 +279,12 @@ function runExpiryAlert(): void {
 
 function runDailyReport(): void {
   try {
-    getAlertService().sendAlertsWhatsApp().then((res) => {
-      log(`WhatsApp alerts sent: ${res.sent} ok, ${res.errors} errors`);
-    }).catch((err: unknown) => logError('WhatsApp alerts', err));
+    const adminSettings = getAllAdminSettings();
+    if (adminSettings.whatsapp_alerts !== 'false' && adminSettings.whatsapp_alerts !== '0') {
+      getAlertService().sendAlertsWhatsApp().then((res) => {
+        log(`WhatsApp alerts sent: ${res.sent} ok, ${res.errors} errors`);
+      }).catch((err: unknown) => logError('WhatsApp alerts', err));
+    }
 
     getAlertService().sendDailySalesSummary().then((res) => {
       log(`Daily sales summary: ${res.message}`);

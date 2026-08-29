@@ -3,6 +3,7 @@ import bwipjs from 'bwip-js';
 import { getSale } from './sales';
 import { getAllSettings } from './settings';
 import { getReceiptSettings } from './reports';
+import { getAllAdminSettings } from './admin';
 import { getProduct } from './inventory';
 import { getUser } from './auth';
 
@@ -16,7 +17,19 @@ function esc(s: string | null | undefined): string {
 
 function getPrintSettings(): Record<string, string> {
   try {
-    return { ...getAllSettings(), ...getReceiptSettings() };
+    const base = { ...getAllSettings(), ...getReceiptSettings() };
+    const admin = getAllAdminSettings();
+    // Override with admin receipt settings
+    if (admin.receipt_width) base.receipt_width = admin.receipt_width;
+    if (admin.receipt_font_size) base.receipt_font_size = admin.receipt_font_size;
+    if (admin.receipt_header_text) base.receipt_header_text = admin.receipt_header_text;
+    if (admin.receipt_footer_text) base.receipt_footer_text = admin.receipt_footer_text;
+    if (admin.show_tax_on_receipt !== undefined) base.show_tax_on_receipt = admin.show_tax_on_receipt;
+    if (admin.show_discount_breakdown !== undefined) base.show_discount_breakdown = admin.show_discount_breakdown;
+    if (admin.show_payment_method !== undefined) base.show_payment_method = admin.show_payment_method;
+    if (admin.show_cashier_name !== undefined) base.show_cashier_name = admin.show_cashier_name;
+    if (admin.currency_symbol) base.currency = admin.currency_symbol;
+    return base;
   } catch {
     return getAllSettings();
   }
@@ -45,6 +58,14 @@ export function buildReceiptHtml(saleId: number): string {
   const currency = s.currency || 'Rs';
   const fmt = (n: number) => `${currency} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const cashier = getUser(sale.user_id ?? 0);
+  const receiptWidth = s.receipt_width === '58mm' ? '220px' : '300px';
+  const fontSize = s.receipt_font_size === 'small' ? '10px' : s.receipt_font_size === 'large' ? '14px' : '12px';
+  const showTax = s.show_tax_on_receipt !== 'false';
+  const showDiscount = s.show_discount_breakdown !== 'false';
+  const showPaymentMethod = s.show_payment_method !== 'false';
+  const showCashierName = s.show_cashier_name !== 'false';
+  const headerText = s.receipt_header_text || '';
+  const footerText = s.receipt_footer_text || s.receipt_footer || '';
   const rows = sale.items
     .map((it) => {
       const displayQty = it.display_qty;
@@ -73,7 +94,7 @@ ${it.promo_name ? `<tr><td colspan="4" class="promo">Promo: ${esc(it.promo_name)
 <head>
 <meta charset="utf-8">
 <style>
-  body { font-family: 'Segoe UI', Arial, sans-serif; width: 300px; margin: 0 auto; font-size: 12px; color: #000; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; width: ${receiptWidth}; margin: 0 auto; font-size: ${fontSize}; color: #000; }
   h1 { font-size: 15px; margin: 0 0 2px; text-align: center; }
   .center { text-align: center; }
   .addr { font-size: 11px; color: #444; }
@@ -89,6 +110,7 @@ ${it.promo_name ? `<tr><td colspan="4" class="promo">Promo: ${esc(it.promo_name)
 </style>
 </head>
   <body>
+    ${headerText ? `<div class="center" style="margin-bottom:4px">${esc(headerText)}</div>` : ''}
     ${s.shop_logo ? `<img src="${esc(s.shop_logo)}" style="max-width:100%;height:auto;margin-bottom:4px;"/>` : ''}
     <h1>${esc(s.shop_name)}</h1>
     <div class="center addr">${esc(s.shop_address)}${s.shop_phone ? '<br>' + esc(s.shop_phone) : ''}</div>
@@ -97,21 +119,21 @@ ${it.promo_name ? `<tr><td colspan="4" class="promo">Promo: ${esc(it.promo_name)
       <tr><td>Invoice</td><td class="r">${esc(sale.invoice_no)}</td></tr>
       <tr><td>Date</td><td class="r">${sale.created_at ? new Date(sale.created_at).toLocaleString() : ''}</td></tr>
       ${sale.customer_name ? `<tr><td>Customer</td><td class="r">${esc(sale.customer_name)}</td></tr>` : ''}
-      <tr><td>Cashier</td><td class="r">${esc(cashier?.username ?? '')}</td></tr>
+      ${showCashierName ? `<tr><td>Cashier</td><td class="r">${esc(cashier?.username ?? '')}</td></tr>` : ''}
     </table>
     <div class="line"></div>
     <table>${rows}</table>
     <div class="line"></div>
     <table class="totals">
       <tr><td>Subtotal</td><td class="r">${fmt(sale.subtotal)}</td></tr>
-      ${sale.discount_amount > 0 ? `<tr><td>Discount</td><td class="r">-${fmt(sale.discount_amount)}</td></tr>` : ''}
-      ${sale.tax_amount > 0 ? `<tr><td>Tax</td><td class="r">${fmt(sale.tax_amount)}</td></tr>` : ''}
+      ${showDiscount && sale.discount_amount > 0 ? `<tr><td>Discount</td><td class="r">-${fmt(sale.discount_amount)}</td></tr>` : ''}
+      ${showTax && sale.tax_amount > 0 ? `<tr><td>Tax</td><td class="r">${fmt(sale.tax_amount)}</td></tr>` : ''}
       ${sale.service_charge && sale.service_charge > 0 ? `<tr><td>Service Charge</td><td class="r">${fmt(sale.service_charge)}</td></tr>` : ''}
       ${sale.freight && sale.freight > 0 ? `<tr><td>Freight/Delivery</td><td class="r">${fmt(sale.freight)}</td></tr>` : ''}
       <tr><td>TOTAL</td><td class="r">${fmt(sale.total_amount)}</td></tr>
-      ${paymentRows ? `<tr><td colspan="2" style="font-size:0"> </td></tr>` + paymentRows : ''}
+      ${showPaymentMethod ? paymentRows : ''}
     </table>
-    <div class="footer">${esc(s.receipt_footer)}</div>
+    <div class="footer">${esc(footerText)}</div>
   </body>
 </html>`;
 }
@@ -465,4 +487,68 @@ public class DrawerPulse {
       resolve({ ok: false, message: 'Cash drawer command failed — no response from printer.' });
     });
   });
+}
+
+export function buildDrawerSummaryHtml(data: {
+  opening_cash: number; closing_cash: number; cash_sales: number;
+  card_sales: number; udhaar_sales: number; other_payments: number;
+  cash_refunds: number; cash_in: number; cash_out: number;
+  expected_cash: number; actual_cash: number; variance: number;
+  opened_at: string; closed_at: string; cashier: string;
+  notes?: string;
+}): string {
+  const s = getPrintSettings();
+  const currency = s.currency || 'Rs';
+  const fmt = (n: number) => `${currency} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const receiptWidth = s.receipt_width === '58mm' ? '220px' : '300px';
+  const fontSize = s.receipt_font_size === 'small' ? '10px' : s.receipt_font_size === 'large' ? '14px' : '12px';
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; width: ${receiptWidth}; margin: 0 auto; font-size: ${fontSize}; color: #000; }
+  h1 { font-size: 14px; margin: 0 0 4px; text-align: center; }
+  .center { text-align: center; }
+  table { width: 100%; border-collapse: collapse; margin: 4px 0; }
+  td { padding: 2px 0; }
+  td.r { text-align: right; }
+  .line { border-top: 1px dashed #000; margin: 6px 0; }
+  .totals td { font-weight: 600; }
+  .footer { text-align: center; margin-top: 8px; font-size: 10px; }
+  .variance-pos { color: #16a34a; font-weight: 600; }
+  .variance-neg { color: #dc2626; font-weight: 600; }
+</style></head>
+<body>
+  <h1>Cash Drawer Summary</h1>
+  <div class="center muted">${esc(s.shop_name || '')}</div>
+  <div class="line"></div>
+  <table>
+    <tr><td>Cashier</td><td class="r">${esc(data.cashier)}</td></tr>
+    <tr><td>Opened</td><td class="r">${data.opened_at}</td></tr>
+    <tr><td>Closed</td><td class="r">${data.closed_at}</td></tr>
+  </table>
+  <div class="line"></div>
+  <table>
+    <tr><td>Opening Cash</td><td class="r">${fmt(data.opening_cash)}</td></tr>
+    <tr><td>Cash Sales</td><td class="r">${fmt(data.cash_sales)}</td></tr>
+    <tr><td>Card Sales</td><td class="r">${fmt(data.card_sales)}</td></tr>
+    <tr><td>Udhaar Sales</td><td class="r">${fmt(data.udhaar_sales)}</td></tr>
+    ${data.other_payments > 0 ? `<tr><td>Other Payments</td><td class="r">${fmt(data.other_payments)}</td></tr>` : ''}
+    ${data.cash_refunds > 0 ? `<tr><td>Cash Refunds</td><td class="r">-${fmt(data.cash_refunds)}</td></tr>` : ''}
+    ${data.cash_in > 0 ? `<tr><td>Cash In</td><td class="r">+${fmt(data.cash_in)}</td></tr>` : ''}
+    ${data.cash_out > 0 ? `<tr><td>Cash Out</td><td class="r">-${fmt(data.cash_out)}</td></tr>` : ''}
+  </table>
+  <div class="line"></div>
+  <table class="totals">
+    <tr><td>Expected Cash</td><td class="r">${fmt(data.expected_cash)}</td></tr>
+    <tr><td>Actual Cash</td><td class="r">${fmt(data.actual_cash)}</td></tr>
+    <tr><td>Variance</td><td class="r ${data.variance >= 0 ? 'variance-pos' : 'variance-neg'}">${data.variance >= 0 ? '+' : ''}${fmt(data.variance)}</td></tr>
+  </table>
+  ${data.notes ? `<div class="line"></div><div class="center muted">${esc(data.notes)}</div>` : ''}
+  <div class="footer">${esc(s.receipt_footer_text || 'Thank you!')}</div>
+</body></html>`;
+}
+
+export function printDrawerSummary(data: Parameters<typeof buildDrawerSummaryHtml>[0]): void {
+  printHtml(buildDrawerSummaryHtml(data));
 }

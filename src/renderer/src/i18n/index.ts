@@ -18,9 +18,9 @@ i18n
       escapeValue: false,
     },
     detection: {
-      key: 'language',
+      lookupLocalStorage: 'language',
       caches: ['localStorage'],
-    },
-  });
+    } as any,
+  } as any);
 
 export default i18n;

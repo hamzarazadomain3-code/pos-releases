@@ -1,6 +1,7 @@
 import { Component, Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { NavPage, UserRow } from '../../shared/types';
+import { resetFormatCache } from './utils/formatters';
 import Inventory from './pages/Inventory';
 import Billing from './pages/Billing';
 import Udhaar from './pages/Udhaar';
@@ -139,6 +140,16 @@ const ALL_NAV: { key: NavPage; labelKey: string; minRole: 'cashier' | 'manager' 
 ];
 
 const ROLE_RANK: Record<string, number> = { cashier: 1, manager: 2, owner: 3 };
+
+function adjustColor(hex: string, amount: number): string {
+  hex = hex.replace('#', '');
+  if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+  const num = parseInt(hex, 16);
+  let r = Math.min(255, Math.max(0, (num >> 16) + amount));
+  let g = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amount));
+  let b = Math.min(255, Math.max(0, (num & 0x0000FF) + amount));
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+}
 
 function navFor(role: string): { key: NavPage; label: string }[] {
   return ALL_NAV.filter((n) => ROLE_RANK[role] >= ROLE_RANK[n.minRole]).map(({ key, labelKey }) => ({ key, label: key }));
@@ -340,6 +351,7 @@ export default function App() {
   const handleLanguageChange = (lang: 'en' | 'ur') => {
     i18n.changeLanguage(lang);
     localStorage.setItem('language', lang);
+    window.api.admin.settings.set('language', lang).catch(() => undefined);
   };
 
   useEffect(() => {
@@ -351,6 +363,70 @@ export default function App() {
     document.documentElement.lang = i18n.language;
     document.documentElement.dir = dir;
   }, [i18n.language]);
+
+  // ── Apply admin settings: theme, primary color, font size, language, wallpaper ──
+  useEffect(() => {
+    let mounted = true;
+    async function applySettings() {
+      try {
+        const settings = await window.api.admin.settings.getAll();
+        if (!mounted || !settings) return;
+
+        // Theme (dark/light)
+        const theme = settings.theme || 'light';
+        document.body.classList.remove('theme-dark', 'theme-light');
+        document.body.classList.add(`theme-${theme}`);
+
+        // Primary color
+        const primaryColor = settings.primary_color;
+        if (primaryColor) {
+          document.documentElement.style.setProperty('--primary', primaryColor);
+          const darker = adjustColor(primaryColor, -20);
+          document.documentElement.style.setProperty('--primary-dark', darker);
+        }
+
+        // Font size
+        const fontSize = settings.font_size || 'normal';
+        const sizeMap: Record<string, string> = { small: '12px', normal: '14px', large: '16px' };
+        document.documentElement.style.fontSize = sizeMap[fontSize] || '14px';
+
+        // Language from admin settings
+        const adminLang = settings.language;
+        if (adminLang && adminLang !== i18n.language) {
+          i18n.changeLanguage(adminLang);
+          localStorage.setItem('language', adminLang);
+        }
+
+        // Wallpaper
+        const wallpaper = settings.wallpaper_image;
+        if (wallpaper) {
+          document.body.style.backgroundImage = `url(${wallpaper})`;
+          document.body.style.backgroundSize = 'cover';
+          document.body.style.backgroundPosition = 'center';
+          document.body.style.backgroundRepeat = 'no-repeat';
+          document.body.style.backgroundAttachment = 'fixed';
+        } else {
+          document.body.style.backgroundImage = '';
+          document.body.style.backgroundSize = '';
+          document.body.style.backgroundPosition = '';
+          document.body.style.backgroundRepeat = '';
+          document.body.style.backgroundAttachment = '';
+        }
+      } catch {
+        // Admin settings may not exist yet on first run
+      }
+    }
+    applySettings();
+    return () => { mounted = false; };
+  }, [i18n.language]);
+
+  // ── Listen for admin settings changes to re-apply live ──
+  useEffect(() => {
+    const off = window.api.admin.settings.onChange?.(() => {
+      resetFormatCache();
+    });
+    return () => { if (off) off(); };
+  }, []);
 
   const handleLogin = useCallback(async (u: UserRow, rememberMe: boolean) => {
     setUser(u);

@@ -36,7 +36,7 @@ import {
   voidSale,
 } from './services/sales';
 import { getAllSettings, setSetting } from './services/settings';
-import { printLabel, printBarcodeLabel, printSale, previewReceipt, previewInvoice, printInvoice, openCashDrawer } from './services/printing';
+import { printLabel, printBarcodeLabel, printSale, previewReceipt, previewInvoice, printInvoice, openCashDrawer, printDrawerSummary } from './services/printing';
 import {
   addExpense,
   bestSellers,
@@ -123,6 +123,7 @@ import {
   resetShortcuts,
   getAllFeatures,
   toggleFeature,
+  isFeatureEnabled,
   getAllRoles,
   createRole,
   updateRole,
@@ -215,6 +216,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('printing:openCashDrawer', () => openCashDrawer());
   ipcMain.handle('printing:printInvoice', (_e, saleId: number) => {
     printInvoice(saleId);
+    return true;
+  });
+  ipcMain.handle('printing:printDrawerSummary', (_e, data: Parameters<typeof printDrawerSummary>[0]) => {
+    printDrawerSummary(data);
     return true;
   });
 
@@ -394,6 +399,7 @@ export function registerIpcHandlers(): void {
   // ── Admin: Feature Toggles ──
   ipcMain.handle('admin:features:getAll', () => getAllFeatures());
   ipcMain.handle('admin:features:toggle', (_e, name: string) => toggleFeature(name));
+  ipcMain.handle('admin:features:isEnabled', (_e, name: string) => isFeatureEnabled(name));
 
   // ── Admin: Roles & Permissions ──
   ipcMain.handle('admin:roles:getAll', () => getAllRoles());
@@ -408,9 +414,25 @@ export function registerIpcHandlers(): void {
 
   // ── Admin: Settings ──
   ipcMain.handle('admin:settings:getAll', () => getAllAdminSettings());
-  ipcMain.handle('admin:settings:set', (_e, key: string, value: string) => { setAdminSetting(key, value); return true; });
-  ipcMain.handle('admin:settings:setBatch', (_e, settings: Record<string, string>) => { setAdminSettingsBatch(settings); return true; });
-  ipcMain.handle('admin:settings:resetDefaults', () => { resetAdminSettings(); return true; });
+  ipcMain.handle('admin:settings:get', (_e, key: string) => {
+    const all = getAllAdminSettings();
+    return all[key] ?? null;
+  });
+  ipcMain.handle('admin:settings:set', (_e, key: string, value: string) => {
+    setAdminSetting(key, value);
+    BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('admin:settings:changed'));
+    return true;
+  });
+  ipcMain.handle('admin:settings:setBatch', (_e, settings: Record<string, string>) => {
+    setAdminSettingsBatch(settings);
+    BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('admin:settings:changed'));
+    return true;
+  });
+  ipcMain.handle('admin:settings:resetDefaults', () => {
+    resetAdminSettings();
+    BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('admin:settings:changed'));
+    return true;
+  });
 
   // ── Admin: Activity Log ──
   ipcMain.handle('admin:activity:getAll', (_e, filters?: { from?: string; to?: string; user_id?: number; action?: string; limit?: number; offset?: number }) =>

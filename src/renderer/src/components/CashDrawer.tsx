@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import type { CashDrawerBreakdown, CashDrawerSession, ShiftRow } from '../../../shared/types';
+import type { CashDrawerBreakdown, CashDrawerSession, ShiftRow, UserRow } from '../../../shared/types';
 
 interface Props {
   shift: ShiftRow;
@@ -16,6 +16,7 @@ export default function CashDrawer({ shift, onClose }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [now, setNow] = useState(new Date());
   const [confirmClose, setConfirmClose] = useState(false);
+  const [user, setUser] = useState<UserRow | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -31,6 +32,10 @@ export default function CashDrawer({ shift, onClose }: Props) {
   }, [shift.id]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    window.api.auth.currentUser().then(setUser).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -61,6 +66,32 @@ export default function CashDrawer({ shift, onClose }: Props) {
       setNotice(e instanceof Error ? e.message : String(e));
     }
     setBusy(false);
+  };
+
+  const handlePrintSummary = () => {
+    if (!session || !breakdown) return;
+    const actualCash = Number(closingCash) || 0;
+    const cashIn = (breakdown as any).cash_in ?? 0;
+    const cashOut = (breakdown as any).cash_out ?? 0;
+    const otherPayments = (breakdown as any).cheque_sales + (breakdown as any).easypaisa_sales + (breakdown as any).jazzcash_sales;
+    window.api.printing.printDrawerSummary({
+      opening_cash: session.opening_cash,
+      closing_cash: actualCash,
+      cash_sales: breakdown.cash_sales,
+      card_sales: breakdown.card_sales,
+      udhaar_sales: breakdown.udhaar_sales,
+      other_payments: otherPayments,
+      cash_refunds: breakdown.refunds,
+      cash_in: cashIn,
+      cash_out: cashOut,
+      expected_cash: expectedBalance,
+      actual_cash: actualCash,
+      variance: actualCash - expectedBalance,
+      opened_at: new Date(session.opening_time).toLocaleString(),
+      closed_at: new Date().toLocaleString(),
+      cashier: user?.username ?? session.opened_by_name ?? '—',
+      notes: notes.trim() || undefined,
+    }).catch(() => setNotice('Print failed'));
   };
 
   const totalReceived = breakdown
@@ -164,6 +195,9 @@ export default function CashDrawer({ shift, onClose }: Props) {
                     <span className="stat-label">Average Bill</span>
                     <span className="stat-value">Rs {breakdown.average_bill.toFixed(2)}</span>
                   </div>
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <button className="btn btn-sm" onClick={handlePrintSummary}>Print Drawer Summary</button>
                 </div>
               </div>
             )}

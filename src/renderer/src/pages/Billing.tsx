@@ -166,6 +166,8 @@ export default function Billing() {
   const [quotationCount, setQuotationCount] = useState(0);
   const [currentHeldId, setCurrentHeldId] = useState<number | null>(null);
   const [inputDrafts, setInputDrafts] = useState<Record<string, string>>({});
+  const [shortcutMap, setShortcutMap] = useState<Record<string, string>>({});
+  const [autoPrintReceipt, setAutoPrintReceipt] = useState(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
   const totals = useMemo(() => lineTotals(items, Number(billDiscount) || 0, discountType, promoMap), [items, billDiscount, discountType, promoMap]);
@@ -447,6 +449,29 @@ useEffect(() => {
     .catch(() => setUserRole(null));
 }, []);
 
+  // ── Load shortcuts + auto-print setting from admin settings ──
+  useEffect(() => {
+    window.api.admin.shortcuts.getAll().then((rows) => {
+      const map: Record<string, string> = {};
+      for (const r of rows) map[r.action] = r.shortcut_key;
+      setShortcutMap(map);
+    }).catch(() => undefined);
+    window.api.admin.settings.get('auto_print_receipt').then((v) => {
+      setAutoPrintReceipt(v === 'true' || v === '1');
+    }).catch(() => undefined);
+    const off = window.api.admin.settings.onChange?.(() => {
+      window.api.admin.shortcuts.getAll().then((rows) => {
+        const map: Record<string, string> = {};
+        for (const r of rows) map[r.action] = r.shortcut_key;
+        setShortcutMap(map);
+      }).catch(() => undefined);
+      window.api.admin.settings.get('auto_print_receipt').then((v) => {
+        setAutoPrintReceipt(v === 'true' || v === '1');
+      }).catch(() => undefined);
+    });
+    return () => { if (off) off(); };
+  }, []);
+
   useEffect(() => { updateHeldCounts(); }, []);
 
   // adjust price‑edit enable flag when role changes
@@ -492,21 +517,52 @@ useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
       const inField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
-      if (e.key === 'F2') {
+      const key = e.key.toLowerCase();
+      const ctrl = e.ctrlKey || e.metaKey;
+      const combo = ctrl ? `ctrl+${key}` : key;
+
+      // Dynamic shortcuts from admin settings
+      if (shortcutMap['focus_search'] && combo === shortcutMap['focus_search'].toLowerCase()) {
         e.preventDefault();
         searchRef.current?.focus();
         return;
       }
-      if (e.key === 'F5') {
+      if (shortcutMap['new_bill'] && combo === shortcutMap['new_bill'].toLowerCase()) {
         e.preventDefault();
         newBill();
         return;
       }
-      if (e.key === 'F9') {
+      if (shortcutMap['hold_bill'] && combo === shortcutMap['hold_bill'].toLowerCase()) {
         e.preventDefault();
         doHold();
         return;
       }
+      if (shortcutMap['hold_list'] && combo === shortcutMap['hold_list'].toLowerCase()) {
+        e.preventDefault();
+        openHeld('held');
+        return;
+      }
+      if (shortcutMap['payment'] && combo === shortcutMap['payment'].toLowerCase()) {
+        e.preventDefault();
+        if (items.length > 0 && payTotal > 0) setPayOpen(true);
+        return;
+      }
+      if (shortcutMap['price_mode'] && combo === shortcutMap['price_mode'].toLowerCase()) {
+        e.preventDefault();
+        setPriceMode((m) => m === 'retail' ? 'wholesale' : 'retail');
+        return;
+      }
+      if (shortcutMap['cash_drawer'] && combo === shortcutMap['cash_drawer'].toLowerCase()) {
+        e.preventDefault();
+        if (shift) setCashDrawerOpen(true);
+        return;
+      }
+
+      // Fallback hardcoded keys (in case no shortcut configured)
+      if (e.key === 'F2') { e.preventDefault(); searchRef.current?.focus(); return; }
+      if (e.key === 'F5') { e.preventDefault(); newBill(); return; }
+      if (e.key === 'F9') { e.preventDefault(); doHold(); return; }
+      if (e.key === 'F12') { e.preventDefault(); openHeld('held'); return; }
       if (inField) return;
       const now = Date.now();
       if (e.key === 'Enter' || e.key === '\r' || e.key === '\n') {
@@ -533,7 +589,7 @@ useEffect(() => {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [scanAdd, newBill, doHold]);
+  }, [scanAdd, newBill, doHold, shortcutMap]);
 
   async function handleSearchEnter() {
     const q = search.trim();
@@ -643,6 +699,10 @@ function openPay() {
       setPriceFloorOverride(false);
       setPriceFloorUserId(null);
       setPriceFloorPin('');
+      // Auto-print receipt if enabled
+      if (autoPrintReceipt && result.sale?.id) {
+        window.api.printing.printSale(result.sale.id).catch(() => undefined);
+      }
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
     } finally {

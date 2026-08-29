@@ -75,6 +75,7 @@ const bridge: PosBridge = {
     previewReceipt: (saleId: number) => ipcRenderer.invoke('printing:previewReceipt', saleId),
     previewInvoice: (saleId: number) => ipcRenderer.invoke('printing:previewInvoice', saleId),
     printInvoice: (saleId: number) => ipcRenderer.invoke('printing:printInvoice', saleId),
+    printDrawerSummary: (data: { opening_cash: number; closing_cash: number; cash_sales: number; card_sales: number; udhaar_sales: number; other_payments: number; cash_refunds: number; cash_in: number; cash_out: number; expected_cash: number; actual_cash: number; variance: number; opened_at: string; closed_at: string; cashier: string; notes?: string }) => ipcRenderer.invoke('printing:printDrawerSummary', data),
   },
   licensing: {
     activate: (key: string) => ipcRenderer.invoke('licensing:activate', key),
@@ -258,6 +259,7 @@ const bridge: PosBridge = {
     features: {
       getAll: () => ipcRenderer.invoke('admin:features:getAll'),
       toggle: (name: string) => ipcRenderer.invoke('admin:features:toggle', name),
+      isEnabled: (name: string) => ipcRenderer.invoke('admin:features:isEnabled', name),
     },
     roles: {
       getAll: () => ipcRenderer.invoke('admin:roles:getAll'),
@@ -269,9 +271,15 @@ const bridge: PosBridge = {
     },
     settings: {
       getAll: () => ipcRenderer.invoke('admin:settings:getAll'),
+      get: (key: string) => ipcRenderer.invoke('admin:settings:get', key),
       set: (key: string, value: string) => ipcRenderer.invoke('admin:settings:set', key, value),
       setBatch: (settings: Record<string, string>) => ipcRenderer.invoke('admin:settings:setBatch', settings),
       resetDefaults: () => ipcRenderer.invoke('admin:settings:resetDefaults'),
+      onChange: (cb: () => void) => {
+        const handler = () => cb();
+        ipcRenderer.on('admin:settings:changed', handler);
+        return () => { ipcRenderer.removeListener('admin:settings:changed', handler); };
+      },
     },
     activity: {
       getAll: (filters?: { from?: string; to?: string; user_id?: number; action?: string; limit?: number; offset?: number }) => ipcRenderer.invoke('admin:activity:getAll', filters),

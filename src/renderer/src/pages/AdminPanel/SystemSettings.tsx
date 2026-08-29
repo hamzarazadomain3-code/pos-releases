@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import type { AdminSettingsMap } from '../../../../shared/types';
 
 interface Section {
   key: string;
   label: string;
-  settings: { key: string; label: string; type: 'text' | 'number' | 'toggle' | 'select'; options?: string[]; hint?: string }[];
+  settings: { key: string; label: string; type: 'text' | 'number' | 'toggle' | 'select' | 'color' | 'wallpaper'; options?: string[]; hint?: string }[];
 }
 
 const SECTIONS: Section[] = [
@@ -21,8 +21,14 @@ const SECTIONS: Section[] = [
     key: 'billing', label: 'Billing Settings',
     settings: [
       { key: 'receipt_width', label: 'Receipt Width', type: 'select', options: ['58mm', '80mm'] },
-      { key: 'receipt_font_size', label: 'Receipt Font Size', type: 'number' },
+      { key: 'receipt_font_size', label: 'Receipt Font Size', type: 'select', options: ['small', 'normal', 'large'] },
       { key: 'auto_print_receipt', label: 'Auto-print Receipt', type: 'toggle' },
+      { key: 'receipt_header_text', label: 'Receipt Header Text', type: 'text', hint: 'Shown at top of receipt' },
+      { key: 'receipt_footer_text', label: 'Receipt Footer Text', type: 'text', hint: 'Shown at bottom of receipt' },
+      { key: 'show_tax_on_receipt', label: 'Show Tax on Receipt', type: 'toggle' },
+      { key: 'show_discount_breakdown', label: 'Show Discount Breakdown', type: 'toggle' },
+      { key: 'show_payment_method', label: 'Show Payment Method', type: 'toggle' },
+      { key: 'show_cashier_name', label: 'Show Cashier Name', type: 'toggle' },
       { key: 'round_off_total', label: 'Round Off Total', type: 'toggle' },
       { key: 'default_payment_mode', label: 'Default Payment Mode', type: 'select', options: ['Cash', 'Card', 'Easypaisa', 'JazzCash'] },
       { key: 'require_customer', label: 'Require Customer for Every Bill', type: 'toggle' },
@@ -97,9 +103,10 @@ const SECTIONS: Section[] = [
     key: 'theme', label: 'Theme & UI',
     settings: [
       { key: 'theme', label: 'Theme', type: 'select', options: ['light', 'dark', 'auto'] },
-      { key: 'primary_color', label: 'Primary Color', type: 'text' },
+      { key: 'primary_color', label: 'Primary Color', type: 'color' },
       { key: 'font_size', label: 'Font Size', type: 'select', options: ['small', 'normal', 'large'] },
       { key: 'language', label: 'Language', type: 'select', options: ['en', 'ur'] },
+      { key: 'wallpaper_image', label: 'Background Wallpaper', type: 'wallpaper' },
     ],
   },
   {
@@ -145,6 +152,8 @@ export default function SystemSettings() {
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const wallpaperInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     window.api.admin.settings.getAll().then(setSettings).catch((e) => setNotice(String(e)));
@@ -186,6 +195,52 @@ export default function SystemSettings() {
 
   const currentSection = SECTIONS.find((s) => s.key === activeSection) ?? SECTIONS[0];
 
+  const PRESET_COLORS = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#ea580c', '#0d9488', '#6366f1', '#ec4899'];
+
+  const handlePreview = () => {
+    setPreviewing(true);
+    const theme = settings.theme || 'light';
+    document.body.classList.remove('theme-dark', 'theme-light');
+    document.body.classList.add(`theme-${theme}`);
+    if (settings.primary_color) {
+      document.documentElement.style.setProperty('--primary', settings.primary_color);
+    }
+    if (settings.font_size) {
+      const sizeMap: Record<string, string> = { small: '12px', normal: '14px', large: '16px' };
+      document.documentElement.style.fontSize = sizeMap[settings.font_size] || '14px';
+    }
+    if (settings.wallpaper_image) {
+      document.body.style.backgroundImage = `url(${settings.wallpaper_image})`;
+      document.body.style.backgroundSize = 'cover';
+      document.body.style.backgroundPosition = 'center';
+      document.body.style.backgroundRepeat = 'no-repeat';
+    }
+    setTimeout(() => setPreviewing(false), 3000);
+  };
+
+  const handleWallpaperUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setNotice('Image too large (max 5MB)');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      updateSetting('wallpaper_image', dataUrl);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeWallpaper = () => {
+    updateSetting('wallpaper_image', '');
+    document.body.style.backgroundImage = '';
+    document.body.style.backgroundSize = '';
+    document.body.style.backgroundPosition = '';
+    document.body.style.backgroundRepeat = '';
+  };
+
   return (
     <div className="admin-sub-page">
       <div className="admin-sub-header">
@@ -216,6 +271,13 @@ export default function SystemSettings() {
 
         <div className="settings-content">
           <h3 style={{ marginBottom: 16 }}>{currentSection.label}</h3>
+          {activeSection === 'theme' && (
+            <div style={{ marginBottom: 16 }}>
+              <button className="btn btn-sm" onClick={handlePreview} disabled={previewing}>
+                {previewing ? 'Previewing...' : 'Preview Theme'}
+              </button>
+            </div>
+          )}
           {currentSection.settings.map((s) => (
             <label key={s.key} className="admin-setting-item">
               <div className="admin-setting-label">
@@ -239,6 +301,39 @@ export default function SystemSettings() {
                 >
                   {s.options?.map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
+              ) : s.type === 'color' ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="color"
+                    value={settings[s.key] || '#2563eb'}
+                    onChange={(e) => updateSetting(s.key, e.target.value)}
+                    style={{ width: 40, height: 32, padding: 0, border: 'none', cursor: 'pointer' }}
+                  />
+                  <input
+                    type="text"
+                    value={settings[s.key] ?? ''}
+                    onChange={(e) => updateSetting(s.key, e.target.value)}
+                    className="admin-setting-input"
+                    style={{ flex: 1 }}
+                    placeholder="#2563eb"
+                  />
+                </div>
+              ) : s.type === 'wallpaper' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {settings.wallpaper_image && (
+                    <div style={{ position: 'relative', width: '100%', maxHeight: 120, overflow: 'hidden', borderRadius: 8, border: '1px solid var(--border)' }}>
+                      <img src={settings.wallpaper_image} alt="Wallpaper preview" style={{ width: '100%', height: 120, objectFit: 'cover' }} />
+                      <button className="btn btn-danger btn-sm" onClick={removeWallpaper} style={{ position: 'absolute', top: 4, right: 4 }}>Remove</button>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-sm" onClick={() => wallpaperInputRef.current?.click()}>
+                      {settings.wallpaper_image ? 'Change Wallpaper' : 'Upload Wallpaper'}
+                    </button>
+                    <input ref={wallpaperInputRef} type="file" accept="image/*" onChange={handleWallpaperUpload} style={{ display: 'none' }} />
+                  </div>
+                  <span className="muted small">Max 5MB. Supports JPG, PNG, WebP.</span>
+                </div>
               ) : (
                 <input
                   type={s.type}
@@ -249,6 +344,24 @@ export default function SystemSettings() {
               )}
             </label>
           ))}
+          {activeSection === 'theme' && settings.primary_color && (
+            <div style={{ marginTop: 16 }}>
+              <div className="muted small" style={{ marginBottom: 8 }}>Preset Colors:</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {PRESET_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => updateSetting('primary_color', c)}
+                    style={{
+                      width: 28, height: 28, borderRadius: '50%', border: settings.primary_color === c ? '3px solid var(--text)' : '2px solid var(--border)',
+                      background: c, cursor: 'pointer', padding: 0,
+                    }}
+                    title={c}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

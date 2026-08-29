@@ -196,7 +196,7 @@ export default function Inventory() {
       quantity_in_base_units: u.quantity_in_base_units,
       barcode: u.barcode ?? '',
       price: u.price != null ? String(u.price) : '',
-      is_base: u.is_base === 1,
+      is_base: !!u.is_base,
     }));
     setForm({
       name: p.name,

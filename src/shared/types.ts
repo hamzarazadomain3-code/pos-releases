@@ -818,6 +818,7 @@ export interface PosBridge {
     previewReceipt: (saleId: number) => Promise<boolean>;
     previewInvoice: (saleId: number) => Promise<boolean>;
     printInvoice: (saleId: number) => Promise<boolean>;
+    printDrawerSummary: (data: { opening_cash: number; closing_cash: number; cash_sales: number; card_sales: number; udhaar_sales: number; other_payments: number; cash_refunds: number; cash_in: number; cash_out: number; expected_cash: number; actual_cash: number; variance: number; opened_at: string; closed_at: string; cashier: string; notes?: string }) => Promise<boolean>;
   };
   licensing: {
     activate: (key: string) => Promise<string>;
@@ -992,6 +993,7 @@ export interface PosBridge {
     features: {
       getAll: () => Promise<FeatureToggleRow[]>;
       toggle: (name: string) => Promise<FeatureToggleRow>;
+      isEnabled: (name: string) => Promise<boolean>;
     };
     roles: {
       getAll: () => Promise<AdminRole[]>;
@@ -1003,9 +1005,11 @@ export interface PosBridge {
     };
     settings: {
       getAll: () => Promise<AdminSettingsMap>;
+      get: (key: string) => Promise<string | null>;
       set: (key: string, value: string) => Promise<boolean>;
       setBatch: (settings: Record<string, string>) => Promise<boolean>;
       resetDefaults: () => Promise<boolean>;
+      onChange: (cb: () => void) => () => void;
     };
     activity: {
       getAll: (filters?: ActivityFilters) => Promise<{ rows: ActivityLogEntry[]; total: number }>;

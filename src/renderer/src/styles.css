@@ -13,6 +13,47 @@
   --sidebar-w: 220px;
 }
 
+body.theme-dark {
+  --bg: #0f172a;
+  --card-bg: #1e293b;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --border: #334155;
+  --danger: #ef4444;
+  --warn: #f59e0b;
+  --ok: #22c55e;
+}
+body.theme-dark .sidebar { background: #020617; }
+body.theme-dark .panel,
+body.theme-dark .card { background: var(--card-bg); border-color: var(--border); }
+body.theme-dark input,
+body.theme-dark select,
+body.theme-dark textarea { background: #0f172a; color: var(--text); border-color: var(--border); }
+body.theme-dark .data-table th { background: #1e293b; color: var(--text); }
+body.theme-dark .data-table td { border-color: var(--border); }
+body.theme-dark .modal { background: var(--card-bg); color: var(--text); }
+body.theme-dark .lock-overlay { background: rgba(2, 6, 23, 0.95); }
+body.theme-dark .lock-box { background: var(--card-bg); color: var(--text); }
+body.theme-dark .result-item { border-color: var(--border); }
+body.theme-dark .result-item:hover { background: #1e293b; }
+body.theme-dark .notice { background: #1e293b; color: var(--text); border-color: var(--border); }
+body.theme-dark .badge { background: #334155; color: var(--text); }
+body.theme-dark .settings-grid .panel { background: var(--card-bg); border-color: var(--border); }
+body.theme-dark .admin-sidebar { background: #020617; }
+body.theme-dark .settings-nav-btn { background: var(--card-bg); color: var(--text); border-color: var(--border); }
+body.theme-dark .shortcut-row { background: var(--card-bg); border-color: var(--border); }
+body.theme-dark .feature-card { background: var(--card-bg); border-color: var(--border); }
+body.theme-dark .role-card { background: var(--card-bg); border-color: var(--border); }
+body.theme-dark .health-card { background: var(--card-bg); border-color: var(--border); }
+body.theme-dark .cash-drawer-section { background: #1e293b; }
+body.theme-dark .cash-drawer-variance { background: #0f172a; }
+body.theme-dark .confirm-box { background: #450a0a; }
+body.theme-dark .closing-row { border-color: var(--border); }
+body.theme-dark .admin-setting-item { border-color: var(--border); }
+body.theme-dark .permission-item { background: #1e293b; border-color: var(--border); }
+body.theme-dark .permission-item.allowed { background: #052e16; border-color: #166534; }
+body.theme-dark .permission-item.denied { background: #450a0a; border-color: #991b1b; }
+
 * {
   box-sizing: border-box;
   margin: 0;
