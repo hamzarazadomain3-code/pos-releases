@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import CashDrawer from '../components/CashDrawer';
 import type {
   Customer,
   HeldBill,
@@ -160,6 +161,7 @@ export default function Billing() {
   const [scannerLastSeen, setScannerLastSeen] = useState<number | null>(null);
   const [scannerConnected, setScannerConnected] = useState(false);
   const [drawerBusy, setDrawerBusy] = useState(false);
+  const [cashDrawerOpen, setCashDrawerOpen] = useState(false);
   const [heldCount, setHeldCount] = useState(0);
   const [quotationCount, setQuotationCount] = useState(0);
   const [currentHeldId, setCurrentHeldId] = useState<number | null>(null);
@@ -174,15 +176,7 @@ const freightAmt = Number(freight) || 0;
 const grandTotal = totals.total + serviceChargeAmt + freightAmt;
 
   const handleOpenCashDrawer = async () => {
-    setDrawerBusy(true);
-    try {
-      const res = await window.api.printing.openCashDrawer();
-      setNotice(res.ok ? res.message : res.message);
-    } catch (e) {
-      setNotice(e instanceof Error ? e.message : String(e));
-    } finally {
-      setDrawerBusy(false);
-    }
+    setCashDrawerOpen(true);
   };
 
   useEffect(() => {
@@ -2211,6 +2205,9 @@ Quotes ({quotationCount})
     </div>
   </div>
 )}
+  {cashDrawerOpen && shift && (
+    <CashDrawer shift={shift} onClose={() => setCashDrawerOpen(false)} />
+  )}
   </>
 );
 }

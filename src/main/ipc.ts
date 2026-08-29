@@ -110,6 +110,35 @@ import {
   updatePromotion,
 } from './services/promotions';
 import { getWhatsAppStatus, restartWhatsAppGateway, sendSaleReceiptOnWhatsApp, sendWhatsAppReceipt } from './whatsapp-gateway';
+import {
+  openDrawer,
+  closeDrawer,
+  getCurrentDrawer,
+  getBreakdown,
+  getDrawerHistory,
+} from './services/cashDrawer';
+import {
+  getAllShortcuts,
+  updateShortcut,
+  resetShortcuts,
+  getAllFeatures,
+  toggleFeature,
+  getAllRoles,
+  createRole,
+  updateRole,
+  deleteRole,
+  getRolePermissions,
+  setRolePermissions,
+  getAllAdminSettings,
+  setAdminSetting,
+  setAdminSettingsBatch,
+  resetAdminSettings,
+  listActivityLogs,
+  clearOldActivityLogs,
+  listAllUsers,
+  resetUserPassword,
+  getSystemHealth,
+} from './services/admin';
 
 export function registerIpcHandlers(): void {
   ipcMain.handle('inventory:list', (_e, search?: string, includeInactive?: boolean) =>
@@ -349,4 +378,50 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('alerts:checkNow', () => alertService.checkAndCreateAlerts());
   ipcMain.handle('alerts:sendWhatsApp', () => alertService.sendAlertsWhatsApp());
   ipcMain.handle('alerts:sendDailySummary', () => alertService.sendDailySalesSummary());
+
+  // ── Cash Drawer Sessions ──
+  ipcMain.handle('cashDrawer:open', (_e, shiftId: number, openingCash: number) => openDrawer(shiftId, openingCash));
+  ipcMain.handle('cashDrawer:close', (_e, shiftId: number, closingCash: number, notes?: string) => closeDrawer(shiftId, closingCash, notes));
+  ipcMain.handle('cashDrawer:getCurrent', (_e, shiftId: number) => getCurrentDrawer(shiftId));
+  ipcMain.handle('cashDrawer:getBreakdown', (_e, shiftId: number) => getBreakdown(shiftId));
+  ipcMain.handle('cashDrawer:history', (_e, shiftId?: number) => getDrawerHistory(shiftId));
+
+  // ── Admin: Shortcuts ──
+  ipcMain.handle('admin:shortcuts:getAll', () => getAllShortcuts());
+  ipcMain.handle('admin:shortcuts:update', (_e, action: string, key: string) => updateShortcut(action, key));
+  ipcMain.handle('admin:shortcuts:reset', () => { resetShortcuts(); return true; });
+
+  // ── Admin: Feature Toggles ──
+  ipcMain.handle('admin:features:getAll', () => getAllFeatures());
+  ipcMain.handle('admin:features:toggle', (_e, name: string) => toggleFeature(name));
+
+  // ── Admin: Roles & Permissions ──
+  ipcMain.handle('admin:roles:getAll', () => getAllRoles());
+  ipcMain.handle('admin:roles:create', (_e, name: string, description?: string) => createRole(name, description));
+  ipcMain.handle('admin:roles:update', (_e, id: number, data: { name?: string; description?: string }) => updateRole(id, data));
+  ipcMain.handle('admin:roles:delete', (_e, id: number) => deleteRole(id));
+  ipcMain.handle('admin:roles:getPermissions', (_e, roleId: number) => getRolePermissions(roleId));
+  ipcMain.handle('admin:roles:setPermissions', (_e, roleId: number, permissions: { permission_name: string; is_allowed: boolean }[]) => {
+    setRolePermissions(roleId, permissions);
+    return true;
+  });
+
+  // ── Admin: Settings ──
+  ipcMain.handle('admin:settings:getAll', () => getAllAdminSettings());
+  ipcMain.handle('admin:settings:set', (_e, key: string, value: string) => { setAdminSetting(key, value); return true; });
+  ipcMain.handle('admin:settings:setBatch', (_e, settings: Record<string, string>) => { setAdminSettingsBatch(settings); return true; });
+  ipcMain.handle('admin:settings:resetDefaults', () => { resetAdminSettings(); return true; });
+
+  // ── Admin: Activity Log ──
+  ipcMain.handle('admin:activity:getAll', (_e, filters?: { from?: string; to?: string; user_id?: number; action?: string; limit?: number; offset?: number }) =>
+    listActivityLogs(filters ?? {})
+  );
+  ipcMain.handle('admin:activity:clear', (_e, retentionDays: number) => clearOldActivityLogs(retentionDays));
+
+  // ── Admin: User Management ──
+  ipcMain.handle('admin:users:getAll', () => listAllUsers());
+  ipcMain.handle('admin:users:resetPassword', (_e, userId: number, newPassword: string) => resetUserPassword(userId, newPassword));
+
+  // ── Admin: System Health ──
+  ipcMain.handle('admin:systemHealth', () => getSystemHealth());
 }

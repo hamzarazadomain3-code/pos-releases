@@ -15,6 +15,7 @@ import Shifts from './pages/Shifts';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const BarcodeGenerator = lazy(() => import('./pages/BarcodeGenerator'));
+const AdminPanel = lazy(() => import('./pages/AdminPanel'));
 
 const SESSION_KEY = 'pos_session';
 const SESSION_MAX_AGE = 24 * 60 * 60 * 1000;
@@ -134,6 +135,7 @@ const ALL_NAV: { key: NavPage; labelKey: string; minRole: 'cashier' | 'manager' 
   { key: 'reports', labelKey: 'navigation.reports', minRole: 'manager' },
   { key: 'settings', labelKey: 'navigation.settings', minRole: 'owner' },
   { key: 'users', labelKey: 'navigation.users', minRole: 'owner' },
+  { key: 'admin', labelKey: 'navigation.admin', minRole: 'owner' },
 ];
 
 const ROLE_RANK: Record<string, number> = { cashier: 1, manager: 2, owner: 3 };
@@ -453,6 +455,7 @@ export default function App() {
           {page === 'reports' && <Reports />}
           {page === 'settings' && <Settings />}
           {page === 'users' && <Users />}
+          {page === 'admin' && <AdminPanel />}
           </Suspense>
         </ErrorBoundary>
       </main>

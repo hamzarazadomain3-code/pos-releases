@@ -242,6 +242,47 @@ const bridge: PosBridge = {
     sendWhatsApp: () => ipcRenderer.invoke('alerts:sendWhatsApp'),
     sendDailySummary: () => ipcRenderer.invoke('alerts:sendDailySummary'),
   },
+  cashDrawer: {
+    open: (shiftId: number, openingCash: number) => ipcRenderer.invoke('cashDrawer:open', shiftId, openingCash),
+    close: (shiftId: number, closingCash: number, notes?: string) => ipcRenderer.invoke('cashDrawer:close', shiftId, closingCash, notes),
+    getCurrent: (shiftId: number) => ipcRenderer.invoke('cashDrawer:getCurrent', shiftId),
+    getBreakdown: (shiftId: number) => ipcRenderer.invoke('cashDrawer:getBreakdown', shiftId),
+    history: (shiftId?: number) => ipcRenderer.invoke('cashDrawer:history', shiftId),
+  },
+  admin: {
+    shortcuts: {
+      getAll: () => ipcRenderer.invoke('admin:shortcuts:getAll'),
+      update: (action: string, key: string) => ipcRenderer.invoke('admin:shortcuts:update', action, key),
+      reset: () => ipcRenderer.invoke('admin:shortcuts:reset'),
+    },
+    features: {
+      getAll: () => ipcRenderer.invoke('admin:features:getAll'),
+      toggle: (name: string) => ipcRenderer.invoke('admin:features:toggle', name),
+    },
+    roles: {
+      getAll: () => ipcRenderer.invoke('admin:roles:getAll'),
+      create: (name: string, description?: string) => ipcRenderer.invoke('admin:roles:create', name, description),
+      update: (id: number, data: { name?: string; description?: string }) => ipcRenderer.invoke('admin:roles:update', id, data),
+      delete: (id: number) => ipcRenderer.invoke('admin:roles:delete', id),
+      getPermissions: (roleId: number) => ipcRenderer.invoke('admin:roles:getPermissions', roleId),
+      setPermissions: (roleId: number, permissions: { permission_name: string; is_allowed: boolean }[]) => ipcRenderer.invoke('admin:roles:setPermissions', roleId, permissions),
+    },
+    settings: {
+      getAll: () => ipcRenderer.invoke('admin:settings:getAll'),
+      set: (key: string, value: string) => ipcRenderer.invoke('admin:settings:set', key, value),
+      setBatch: (settings: Record<string, string>) => ipcRenderer.invoke('admin:settings:setBatch', settings),
+      resetDefaults: () => ipcRenderer.invoke('admin:settings:resetDefaults'),
+    },
+    activity: {
+      getAll: (filters?: { from?: string; to?: string; user_id?: number; action?: string; limit?: number; offset?: number }) => ipcRenderer.invoke('admin:activity:getAll', filters),
+      clear: (retentionDays: number) => ipcRenderer.invoke('admin:activity:clear', retentionDays),
+    },
+    users: {
+      getAll: () => ipcRenderer.invoke('admin:users:getAll'),
+      resetPassword: (userId: number, newPassword: string) => ipcRenderer.invoke('admin:users:resetPassword', userId, newPassword),
+    },
+    systemHealth: () => ipcRenderer.invoke('admin:systemHealth'),
+  },
 };
 
 function generateEan13Local(): string {

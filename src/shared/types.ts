@@ -107,7 +107,7 @@ export interface StockMovement {
   product_name?: string | null;
 }
 
-export type NavPage = 'dashboard' | 'billing' | 'inventory' | 'audits' | 'promotions' | 'purchases' | 'udhaar' | 'returns' | 'shifts' | 'reports' | 'settings' | 'users' | 'barcode';
+export type NavPage = 'dashboard' | 'billing' | 'inventory' | 'audits' | 'promotions' | 'purchases' | 'udhaar' | 'returns' | 'shifts' | 'reports' | 'settings' | 'users' | 'barcode' | 'admin';
 
 export type UserRole = 'owner' | 'manager' | 'cashier';
 
@@ -976,6 +976,47 @@ export interface PosBridge {
     sendWhatsApp: () => Promise<{ sent: number; errors: number }>;
     sendDailySummary: () => Promise<{ ok: boolean; message: string }>;
   };
+  cashDrawer: {
+    open: (shiftId: number, openingCash: number) => Promise<CashDrawerSession>;
+    close: (shiftId: number, closingCash: number, notes?: string) => Promise<CashDrawerSession>;
+    getCurrent: (shiftId: number) => Promise<CashDrawerSession | null>;
+    getBreakdown: (shiftId: number) => Promise<CashDrawerBreakdown>;
+    history: (shiftId?: number) => Promise<CashDrawerSession[]>;
+  };
+  admin: {
+    shortcuts: {
+      getAll: () => Promise<ShortcutRow[]>;
+      update: (action: string, key: string) => Promise<ShortcutRow>;
+      reset: () => Promise<boolean>;
+    };
+    features: {
+      getAll: () => Promise<FeatureToggleRow[]>;
+      toggle: (name: string) => Promise<FeatureToggleRow>;
+    };
+    roles: {
+      getAll: () => Promise<AdminRole[]>;
+      create: (name: string, description?: string) => Promise<AdminRole>;
+      update: (id: number, data: { name?: string; description?: string }) => Promise<AdminRole>;
+      delete: (id: number) => Promise<boolean>;
+      getPermissions: (roleId: number) => Promise<RolePermission[]>;
+      setPermissions: (roleId: number, permissions: { permission_name: string; is_allowed: boolean }[]) => Promise<boolean>;
+    };
+    settings: {
+      getAll: () => Promise<AdminSettingsMap>;
+      set: (key: string, value: string) => Promise<boolean>;
+      setBatch: (settings: Record<string, string>) => Promise<boolean>;
+      resetDefaults: () => Promise<boolean>;
+    };
+    activity: {
+      getAll: (filters?: ActivityFilters) => Promise<{ rows: ActivityLogEntry[]; total: number }>;
+      clear: (retentionDays: number) => Promise<number>;
+    };
+    users: {
+      getAll: () => Promise<AdminUserRow[]>;
+      resetPassword: (userId: number, newPassword: string) => Promise<boolean>;
+    };
+    systemHealth: () => Promise<SystemHealth>;
+  };
 };
 
 // ── v1.8.0 Advanced Reports types ──
@@ -1136,4 +1177,110 @@ export interface AlertRow {
 export interface DailySnapshotResult {
   created: number;
   date: string;
+}
+
+// ── v2.1.0 Admin Panel types ──
+
+export interface CashDrawerSession {
+  id: number;
+  shift_id: number;
+  opening_cash: number;
+  opening_time: string;
+  opened_by: number;
+  closing_cash: number | null;
+  closing_time: string | null;
+  closed_by: number | null;
+  variance: number;
+  notes: string | null;
+  opened_by_name?: string;
+  closed_by_name?: string;
+}
+
+export interface CashDrawerBreakdown {
+  cash_sales: number;
+  card_sales: number;
+  cheque_sales: number;
+  easypaisa_sales: number;
+  jazzcash_sales: number;
+  udhaar_sales: number;
+  refunds: number;
+  total_bills: number;
+  average_bill: number;
+}
+
+export interface ShortcutRow {
+  id: number;
+  action: string;
+  shortcut_key: string;
+  description: string | null;
+  is_active: number;
+  updated_at: string;
+}
+
+export interface FeatureToggleRow {
+  id: number;
+  feature_name: string;
+  is_enabled: number;
+  description: string | null;
+  updated_by: number | null;
+  updated_at: string;
+}
+
+export interface AdminRole {
+  id: number;
+  name: string;
+  description: string | null;
+  is_system_role: number;
+  created_at: string;
+}
+
+export interface RolePermission {
+  id: number;
+  role_id: number;
+  permission_name: string;
+  is_allowed: number;
+}
+
+export interface AdminSettingsMap {
+  [key: string]: string;
+}
+
+export interface ActivityLogEntry {
+  id: number;
+  user_id: number | null;
+  action: string;
+  entity: string | null;
+  entity_id: number | null;
+  details: string | null;
+  created_at: string;
+  username: string | null;
+}
+
+export interface AdminUserRow {
+  id: number;
+  username: string;
+  role: string;
+  active: number;
+  created_at: string;
+  last_login?: string | null;
+}
+
+export interface SystemHealth {
+  total_users: number;
+  active_users: number;
+  total_products: number;
+  total_sales: number;
+  total_customers: number;
+  db_size_bytes: number;
+  db_path: string;
+  uptime_seconds: number;
+}
+
+export interface ActivityFilters {
+  from?: string;
+  to?: string;
+  user_id?: number;
+  action?: string;
+  limit?: number;
+  offset?: number;
 }
