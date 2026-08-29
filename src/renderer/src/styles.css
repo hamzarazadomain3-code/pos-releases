@@ -1209,3 +1209,79 @@ input.qty-val::-webkit-inner-spin-button {
   border-radius: 4px; font-size: 11px; font-weight: 600; color: var(--muted);
 }
 .badge-warn { background: #fef3c7; color: #92400e; }
+
+/* ── Wallpaper Editor ── */
+.wallpaper-editor-overlay { z-index: 1000; }
+.wallpaper-editor-modal {
+  width: 800px; max-width: 95vw; max-height: 90vh;
+  display: flex; flex-direction: column;
+}
+.wallpaper-editor-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+}
+.wallpaper-editor-header h2 { margin: 0; font-size: 18px; }
+.wallpaper-editor-toolbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 20px; border-bottom: 1px solid var(--border); gap: 12px;
+}
+.wallpaper-editor-aspects { display: flex; gap: 4px; }
+.wallpaper-editor-zoom { display: flex; align-items: center; gap: 8px; }
+.wallpaper-editor-canvas-wrap {
+  flex: 1; display: flex; justify-content: center; align-items: center;
+  padding: 16px; overflow: hidden; background: #1a1a1a; min-height: 400px;
+}
+.wallpaper-editor-canvas-wrap canvas {
+  border-radius: 4px; max-width: 100%; max-height: 100%;
+}
+.wallpaper-editor-actions {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 12px 20px; border-top: 1px solid var(--border);
+}
+
+/* ── Wallpaper Presets ── */
+.wallpaper-presets { margin-bottom: 20px; }
+.wallpaper-presets-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 8px;
+}
+.wallpaper-preset-thumb {
+  background: none; border: 2px solid var(--border); border-radius: 8px;
+  overflow: hidden; cursor: pointer; padding: 0; text-align: center;
+  transition: border-color 0.15s;
+}
+.wallpaper-preset-thumb:hover { border-color: var(--primary); }
+.wallpaper-preset-thumb.active { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary); }
+.wallpaper-preset-preview {
+  width: 100%; height: 60px; border-radius: 6px 6px 0 0;
+}
+.wallpaper-preset-name {
+  display: block; padding: 4px; font-size: 11px; color: var(--text);
+  background: var(--card-bg);
+}
+
+/* ── Wallpaper blur behind content ── */
+body.wallpaper-active .sidebar { backdrop-filter: blur(8px); background: rgba(2, 6, 23, 0.85); }
+body.wallpaper-active .panel,
+body.wallpaper-active .card { backdrop-filter: blur(4px); background: rgba(255,255,255,0.05); }
+body.theme-dark.wallpaper-active .sidebar { background: rgba(2, 6, 23, 0.85); }
+body.theme-dark.wallpaper-active .panel,
+body.theme-dark.wallpaper-active .card { background: rgba(30, 41, 59, 0.7); }
+
+/* Range slider */
+input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  height: 6px; border-radius: 3px; background: var(--border);
+  outline: none; cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--primary); cursor: pointer; border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--primary); cursor: pointer; border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}

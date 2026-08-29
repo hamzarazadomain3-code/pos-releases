@@ -1,10 +1,12 @@
 import { useEffect, useState, useRef } from 'react';
 import type { AdminSettingsMap } from '../../../../shared/types';
+import WallpaperEditor from '../../components/WallpaperEditor';
+import WallpaperPresets from '../../components/WallpaperPresets';
 
 interface Section {
   key: string;
   label: string;
-  settings: { key: string; label: string; type: 'text' | 'number' | 'toggle' | 'select' | 'color' | 'wallpaper'; options?: string[]; hint?: string }[];
+  settings: { key: string; label: string; type: 'text' | 'number' | 'toggle' | 'select' | 'color' | 'wallpaper' | 'range'; options?: string[]; hint?: string }[];
 }
 
 const SECTIONS: Section[] = [
@@ -115,6 +117,15 @@ const SECTIONS: Section[] = [
       { key: 'font_size', label: 'Font Size', type: 'select', options: ['small', 'normal', 'large'] },
       { key: 'language', label: 'Language', type: 'select', options: ['en', 'ur'] },
       { key: 'wallpaper_image', label: 'Background Wallpaper', type: 'wallpaper' },
+      { key: 'wallpaper_opacity', label: 'Wallpaper Opacity (%)', type: 'range', hint: '0=invisible, 100=fully visible' },
+      { key: 'wallpaper_blur', label: 'Wallpaper Blur (px)', type: 'range', hint: '0=sharp, 20=very blurry' },
+      { key: 'wallpaper_brightness', label: 'Wallpaper Brightness (%)', type: 'range', hint: '50=dark, 100=normal, 150=bright' },
+      { key: 'wallpaper_saturation', label: 'Wallpaper Saturation (%)', type: 'range', hint: '0=gray, 100=normal, 200=vivid' },
+      { key: 'wallpaper_grayscale', label: 'Wallpaper Grayscale', type: 'toggle' },
+      { key: 'wallpaper_position', label: 'Wallpaper Position', type: 'select', options: ['center', 'top', 'bottom', 'left', 'right'] },
+      { key: 'wallpaper_scale', label: 'Wallpaper Scale', type: 'select', options: ['cover', 'contain', 'stretch', 'tile'] },
+      { key: 'wallpaper_tint_color', label: 'Tint Overlay Color', type: 'color' },
+      { key: 'wallpaper_tint_opacity', label: 'Tint Overlay Opacity (%)', type: 'range', hint: '0=none, 100=solid color' },
     ],
   },
   {
@@ -162,6 +173,7 @@ export default function SystemSettings() {
   const [dirty, setDirty] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const wallpaperInputRef = useRef<HTMLInputElement>(null);
+  const [cropEditor, setCropEditor] = useState<{ src: string } | null>(null);
 
   useEffect(() => {
     window.api.admin.settings.getAll().then(setSettings).catch((e) => setNotice(String(e)));
@@ -218,12 +230,51 @@ export default function SystemSettings() {
       document.documentElement.style.fontSize = sizeMap[settings.font_size] || '14px';
     }
     if (settings.wallpaper_image) {
-      document.body.style.backgroundImage = `url(${settings.wallpaper_image})`;
-      document.body.style.backgroundSize = 'cover';
-      document.body.style.backgroundPosition = 'center';
-      document.body.style.backgroundRepeat = 'no-repeat';
+      applyWallpaperEffects(settings);
     }
     setTimeout(() => setPreviewing(false), 3000);
+  };
+
+  const applyWallpaperEffects = (s: AdminSettingsMap) => {
+    if (!s.wallpaper_image) {
+      document.body.style.backgroundImage = '';
+      document.body.style.backgroundSize = '';
+      document.body.style.backgroundPosition = '';
+      document.body.style.backgroundRepeat = '';
+      return;
+    }
+    const opacity = (parseInt(s.wallpaper_opacity || '100', 10) / 100);
+    const blur = parseInt(s.wallpaper_blur || '0', 10);
+    const brightness = parseInt(s.wallpaper_brightness || '100', 10);
+    const saturation = parseInt(s.wallpaper_saturation || '100', 10);
+    const grayscale = s.wallpaper_grayscale === 'true' || s.wallpaper_grayscale === '1' ? 1 : 0;
+    const pos = s.wallpaper_position || 'center';
+    const scale = s.wallpaper_scale || 'cover';
+    const posMap: Record<string, string> = { center: 'center', top: 'top center', bottom: 'bottom center', left: 'center left', right: 'center right' };
+    const scaleMap: Record<string, string> = { cover: 'cover', contain: 'contain', stretch: '100% 100%', tile: 'repeat' };
+
+    const filters = `blur(${blur}px) brightness(${brightness}%) saturate(${saturation}%) grayscale(${grayscale})`;
+
+    document.body.style.backgroundImage = `url(${s.wallpaper_image})`;
+    document.body.style.backgroundSize = scaleMap[scale] || 'cover';
+    document.body.style.backgroundPosition = posMap[pos] || 'center';
+    document.body.style.backgroundRepeat = scale === 'tile' ? 'repeat' : 'no-repeat';
+    document.body.style.backgroundAttachment = 'fixed';
+    document.body.style.opacity = String(opacity);
+    (document.body.style as any).filter = filters;
+
+    // Apply tint overlay
+    const tintColor = s.wallpaper_tint_color || '#000000';
+    const tintOpacity = parseInt(s.wallpaper_tint_opacity || '0', 10) / 100;
+    let tintEl = document.getElementById('wallpaper-tint-overlay') as HTMLElement;
+    if (!tintEl) {
+      tintEl = document.createElement('div');
+      tintEl.id = 'wallpaper-tint-overlay';
+      tintEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:0;';
+      document.body.appendChild(tintEl);
+    }
+    tintEl.style.backgroundColor = tintColor;
+    tintEl.style.opacity = String(tintOpacity);
   };
 
   const handleWallpaperUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -236,17 +287,36 @@ export default function SystemSettings() {
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
-      updateSetting('wallpaper_image', dataUrl);
+      setCropEditor({ src: dataUrl });
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleCropApply = (croppedDataUrl: string) => {
+    updateSetting('wallpaper_image', croppedDataUrl);
+    setCropEditor(null);
   };
 
   const removeWallpaper = () => {
     updateSetting('wallpaper_image', '');
+    updateSetting('wallpaper_opacity', '100');
+    updateSetting('wallpaper_blur', '0');
+    updateSetting('wallpaper_brightness', '100');
+    updateSetting('wallpaper_saturation', '100');
+    updateSetting('wallpaper_grayscale', 'false');
+    updateSetting('wallpaper_position', 'center');
+    updateSetting('wallpaper_scale', 'cover');
+    updateSetting('wallpaper_tint_color', '#000000');
+    updateSetting('wallpaper_tint_opacity', '0');
     document.body.style.backgroundImage = '';
     document.body.style.backgroundSize = '';
     document.body.style.backgroundPosition = '';
     document.body.style.backgroundRepeat = '';
+    document.body.style.opacity = '';
+    (document.body.style as any).filter = '';
+    const tintEl = document.getElementById('wallpaper-tint-overlay');
+    if (tintEl) tintEl.style.opacity = '0';
   };
 
   return (
@@ -263,6 +333,14 @@ export default function SystemSettings() {
       </div>
 
       {notice && <div className="notice" onClick={() => setNotice(null)}>{notice}</div>}
+
+      {cropEditor && (
+        <WallpaperEditor
+          imageSrc={cropEditor.src}
+          onApply={handleCropApply}
+          onClose={() => setCropEditor(null)}
+        />
+      )}
 
       <div className="settings-layout">
         <div className="settings-nav">
@@ -285,6 +363,14 @@ export default function SystemSettings() {
                 {previewing ? 'Previewing...' : 'Preview Theme'}
               </button>
             </div>
+          )}
+          {activeSection === 'theme' && (
+            <WallpaperPresets
+              currentWallpaper={settings.wallpaper_image || ''}
+              onSelect={(dataUrl: string) => {
+                setCropEditor({ src: dataUrl });
+              }}
+            />
           )}
           {currentSection.settings.map((s) => (
             <label key={s.key} className="admin-setting-item">
@@ -326,12 +412,27 @@ export default function SystemSettings() {
                     placeholder="#2563eb"
                   />
                 </div>
+              ) : s.type === 'range' ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 300 }}>
+                  <input
+                    type="range"
+                    min={s.key.includes('blur') ? '0' : '0'}
+                    max={s.key.includes('blur') ? '20' : s.key.includes('brightness') || s.key.includes('saturation') ? '200' : '100'}
+                    value={settings[s.key] ?? '0'}
+                    onChange={(e) => updateSetting(s.key, e.target.value)}
+                    style={{ flex: 1 }}
+                  />
+                  <span className="muted small" style={{ minWidth: 40, textAlign: 'right' }}>{settings[s.key] ?? '0'}</span>
+                </div>
               ) : s.type === 'wallpaper' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {settings.wallpaper_image && (
                     <div style={{ position: 'relative', width: '100%', maxHeight: 120, overflow: 'hidden', borderRadius: 8, border: '1px solid var(--border)' }}>
                       <img src={settings.wallpaper_image} alt="Wallpaper preview" style={{ width: '100%', height: 120, objectFit: 'cover' }} />
-                      <button className="btn btn-danger btn-sm" onClick={removeWallpaper} style={{ position: 'absolute', top: 4, right: 4 }}>Remove</button>
+                      <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 4 }}>
+                        <button className="btn btn-sm btn-primary" onClick={() => setCropEditor({ src: settings.wallpaper_image! })}>Crop</button>
+                        <button className="btn btn-danger btn-sm" onClick={removeWallpaper}>Remove</button>
+                      </div>
                     </div>
                   )}
                   <div style={{ display: 'flex', gap: 8 }}>
@@ -340,7 +441,7 @@ export default function SystemSettings() {
                     </button>
                     <input ref={wallpaperInputRef} type="file" accept="image/*" onChange={handleWallpaperUpload} style={{ display: 'none' }} />
                   </div>
-                  <span className="muted small">Max 5MB. Supports JPG, PNG, WebP.</span>
+                  <span className="muted small">Max 5MB. Supports JPG, PNG, WebP. Opens crop editor after upload.</span>
                 </div>
               ) : (
                 <input

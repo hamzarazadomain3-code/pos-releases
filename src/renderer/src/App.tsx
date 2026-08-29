@@ -459,17 +459,47 @@ export default function App() {
         // Wallpaper
         const wallpaper = settings.wallpaper_image;
         if (wallpaper) {
+          const opacity = (parseInt(settings.wallpaper_opacity || '100', 10) / 100);
+          const blur = parseInt(settings.wallpaper_blur || '0', 10);
+          const brightness = parseInt(settings.wallpaper_brightness || '100', 10);
+          const saturation = parseInt(settings.wallpaper_saturation || '100', 10);
+          const grayscale = settings.wallpaper_grayscale === 'true' || settings.wallpaper_grayscale === '1' ? 1 : 0;
+          const pos = settings.wallpaper_position || 'center';
+          const scale = settings.wallpaper_scale || 'cover';
+          const posMap: Record<string, string> = { center: 'center', top: 'top center', bottom: 'bottom center', left: 'center left', right: 'center right' };
+          const scaleMap: Record<string, string> = { cover: 'cover', contain: 'contain', stretch: '100% 100%', tile: 'repeat' };
+          const filters = `blur(${blur}px) brightness(${brightness}%) saturate(${saturation}%) grayscale(${grayscale})`;
+
           document.body.style.backgroundImage = `url(${wallpaper})`;
-          document.body.style.backgroundSize = 'cover';
-          document.body.style.backgroundPosition = 'center';
-          document.body.style.backgroundRepeat = 'no-repeat';
+          document.body.style.backgroundSize = scaleMap[scale] || 'cover';
+          document.body.style.backgroundPosition = posMap[pos] || 'center';
+          document.body.style.backgroundRepeat = scale === 'tile' ? 'repeat' : 'no-repeat';
           document.body.style.backgroundAttachment = 'fixed';
+          document.body.style.opacity = String(opacity);
+          (document.body.style as any).filter = blur > 0 || brightness !== 100 || saturation !== 100 || grayscale ? filters : '';
+
+          // Tint overlay
+          const tintColor = settings.wallpaper_tint_color || '#000000';
+          const tintOpacity = parseInt(settings.wallpaper_tint_opacity || '0', 10) / 100;
+          let tintEl = document.getElementById('wallpaper-tint-overlay') as HTMLElement;
+          if (!tintEl) {
+            tintEl = document.createElement('div');
+            tintEl.id = 'wallpaper-tint-overlay';
+            tintEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:0;';
+            document.body.appendChild(tintEl);
+          }
+          tintEl.style.backgroundColor = tintColor;
+          tintEl.style.opacity = String(tintOpacity);
         } else {
           document.body.style.backgroundImage = '';
           document.body.style.backgroundSize = '';
           document.body.style.backgroundPosition = '';
           document.body.style.backgroundRepeat = '';
           document.body.style.backgroundAttachment = '';
+          document.body.style.opacity = '';
+          (document.body.style as any).filter = '';
+          const tintEl = document.getElementById('wallpaper-tint-overlay');
+          if (tintEl) tintEl.style.opacity = '0';
         }
       } catch {
         // Admin settings may not exist yet on first run
