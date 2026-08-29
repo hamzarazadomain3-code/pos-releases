@@ -176,17 +176,134 @@ export async function sendSaleReceiptOnWhatsApp(
   }
 }
 
-/** Gracefully shutdown the WhatsApp gateway - for use during app quit. */
-export async function shutdownWhatsAppGateway(): Promise<void> {
-  if (whatsappClient && typeof whatsappClient.destroy === 'function') {
+/**
+ * Check if the WhatsApp gateway is initialized and active.
+ */
+export function isWhatsAppInitialized(): boolean {
+  return !!whatsappClient;
+}
+
+/**
+ * Get the underlying browser process ID if available (for debugging).
+ */
+function getBrowserProcessId(): number | null {
+  try {
+    // @ts-ignore - accessing internal puppeteer browser/process
+    const browser = whatsappClient?.pupBrowser;
+    if (browser?.process) {
+      const proc = browser.process();
+      if (proc) return proc.pid;
+    }
+    // @ts-ignore
+    if (whatsappClient?.browser?.process) {
+      // @ts-ignore
+      const proc = whatsappClient.browser.process();
+      if (proc) return proc.pid;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/**
+ * Kill a child process tree (process + all children) on Windows.
+ * Uses taskkill to ensure the full Puppeteer Chrome process tree exits.
+ */
+function killProcessTree(pid: number): void {
+  if (process.platform === 'win32') {
     try {
-      await whatsappClient.destroy();
+      const { execSync } = require('node:child_process');
+      execSync(`taskkill /pid ${pid} /T /F`, { stdio: 'pipe' });
+    } catch {
+      // process may already be dead
+    }
+  } else {
+    try {
+      process.kill(pid, 'SIGTERM');
+    } catch {
+      // ignore
+    }
+  }
+}
+
+/** Gracefully shutdown the WhatsApp gateway — for use during app quit.
+ *
+ * Returns a Promise that resolves only after the underlying Chrome/Puppeteer
+ * process has fully exited, or after a 3-second timeout (after which we
+ * force-kill the process tree).
+ *
+ * If the gateway was never initialised (client is null) the Promise resolves
+ * immediately.
+ */
+export async function shutdownWhatsAppGateway(): Promise<void> {
+  if (!whatsappClient) return;
+
+  const pid = getBrowserProcessId();
+  let destroyed = false;
+
+  // 1. Ask whatsapp-web.js to destroy the client (async, non-blocking)
+  if (typeof whatsappClient.destroy === 'function') {
+    try {
+      // Start the destroy but don't await it — we need to wait for the
+      // process exit event instead, because destroy() may return before
+      // Chrome actually exits.
+      whatsappClient.destroy();
+      destroyed = true;
     } catch {
       // ignore teardown errors
     }
   }
+
+  // 2. Wait for Chrome process to exit, with a 3-second timeout
+  if (pid) {
+    const startTime = Date.now();
+    const timeout = 3000;
+    while (Date.now() - startTime < timeout) {
+      if (!isProcessAlive(pid)) {
+        break;
+      }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    // 3. If still alive after timeout, force-kill the process tree
+    if (isProcessAlive(pid)) {
+      killProcessTree(pid);
+      // Give it a moment to die
+      const forceStart = Date.now();
+      while (Date.now() - forceStart < 1000) {
+        if (!isProcessAlive(pid)) break;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+  } else if (destroyed) {
+    // No PID available; wait a generous period for any in-flight cleanup
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+
   whatsappClient = null;
   qrDataUrl = null;
   readyPhone = null;
   connecting = false;
+}
+
+/** Check if a process is still alive (Windows uses tasklist). */
+function isProcessAlive(pid: number): boolean {
+  if (process.platform === 'win32') {
+    try {
+      const { execSync } = require('node:child_process');
+      execSync(`tasklist /fi "PID eq ${pid}" /fo csv`, { stdio: 'pipe' });
+      return true;
+    } catch {
+      // tasklist returns non-zero when the process doesn't exist
+      return false;
+    }
+  } else {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }

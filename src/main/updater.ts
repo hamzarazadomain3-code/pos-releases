@@ -1,6 +1,7 @@
-import { BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow, ipcMain, app } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { log, logError } from './logger';
+import { shutdownWhatsAppGateway, isWhatsAppInitialized } from './whatsapp-gateway';
 
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
@@ -72,8 +73,20 @@ export function initUpdater(): void {
   ipcMain.handle('updater:install', async () => {
     // Send 'restarting' status to show modal in renderer
     sendStatus('restarting');
-    // Small delay to allow cleanup handlers to run
-    await new Promise(resolve => setTimeout(resolve, 500));
+    log('Updater: shutting down before install');
+
+    // Gracefully shut down WhatsApp gateway so the Chrome/Puppeteer
+    // process tree exits *before* quitAndInstall runs.  This prevents
+    // the NSIS "Failed to uninstall old application files" error.
+    if (isWhatsAppInitialized()) {
+      try {
+        await shutdownWhatsAppGateway();
+        log('Updater: WhatsApp gateway shut down cleanly');
+      } catch (e) {
+        logError('updater shutdown', e);
+      }
+    }
+
     // quitAndInstall(isSilent, isForceRunAfter)
     autoUpdater.quitAndInstall(true, true);
     return 'ok';
