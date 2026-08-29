@@ -98,9 +98,9 @@ app.whenReady().then(async () => {
   }
 
   try {
-    const settings = getAllSettings();
+    const adminSettings = getAllAdminSettings();
     const today = new Date().toISOString().slice(0, 10);
-    if (!settings.last_backup || !settings.last_backup.startsWith(today)) {
+    if (!adminSettings.backup_last || !adminSettings.backup_last.startsWith(today)) {
       const res = runBackup();
       log(`Daily backup done${res.cloudOk ? (res.cloudPath ? ' + cloud copy' : ' (cloud not configured)') : ` + cloud FAILED: ${res.cloudError}`}`);
     }
@@ -235,6 +235,19 @@ function scheduleTimeBasedTriggers(): void {
   }
   if (adminSettings.daily_report_time_enabled !== 'false' && adminSettings.daily_report_time_enabled !== '0') {
     scheduleDailyAt(reportH || 22, reportM || 0, runDailyReport);
+  }
+  // Automatic backup scheduling
+  if (adminSettings.auto_backup_enabled !== 'false' && adminSettings.auto_backup_enabled !== '0') {
+    const backupTime = adminSettings.backup_time || '02:00';
+    const [backupH, backupM] = backupTime.split(':').map(Number);
+    scheduleDailyAt(backupH || 2, backupM || 0, () => {
+      try {
+        const res = runBackup();
+        log(`Scheduled backup done${res.cloudOk ? (res.cloudPath ? ' + cloud copy' : ' (cloud not configured)') : ` + cloud FAILED: ${res.cloudError}`}`);
+      } catch (e) {
+        logError('scheduled backup', e);
+      }
+    });
   }
 }
 

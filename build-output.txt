@@ -1,0 +1,5 @@
+  • electron-builder  version=24.13.3 os=10.0.26200
+  • loaded configuration  file=package.json ("build" field)
+  • packaging       platform=win32 arch=x64 electron=43.4.0 appOutDir=dist_release\win-unpacked
+  • building        target=nsis file=dist_release\ShopKeeperPOS-Setup-2.3.0.exe archs=x64 oneClick=false perMachine=false
+  • building block map  blockMapFile=dist_release\ShopKeeperPOS-Setup-2.3.0.exe.blockmap

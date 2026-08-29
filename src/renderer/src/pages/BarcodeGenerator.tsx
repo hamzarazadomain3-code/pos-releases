@@ -143,7 +143,7 @@ export default function BarcodeGenerator() {
             <span className="result-meta">
               Rs {p.sale_price.toFixed(2)}
               {p.barcode ? ` • ${p.barcode}` : p.sku ? ` • ${p.sku}` : ' • no barcode'}
-              {p.stock_qty > 0 ? ` • ${p.stock_qty} in stock` : ' • out of stock'}
+              {p.stock_qty > 0 ? ` • ${Number(p.stock_qty.toFixed(3))} in stock` : ' • out of stock'}
             </span>
           </label>
         ))}

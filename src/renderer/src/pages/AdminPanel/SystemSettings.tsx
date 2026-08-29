@@ -135,7 +135,8 @@ const SECTIONS: Section[] = [
       { key: 'auto_backup_interval', label: 'Backup Interval', type: 'select', options: ['daily', 'weekly', 'monthly'] },
       { key: 'backup_time', label: 'Backup Time', type: 'text', hint: 'HH:MM format' },
       { key: 'backup_retention_days', label: 'Backup Retention (days)', type: 'number' },
-      { key: 'encrypt_backup', label: 'Encrypt Backup', type: 'toggle' },
+        { key: 'encrypt_backup', label: 'Encrypt Backup', type: 'toggle' },
+        { key: 'backup_folder', label: 'Backup Folder', type: 'text', hint: 'Full path (blank for default)' },
     ],
   },
   {
@@ -173,7 +174,8 @@ export default function SystemSettings() {
   const [dirty, setDirty] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const wallpaperInputRef = useRef<HTMLInputElement>(null);
-  const [cropEditor, setCropEditor] = useState<{ src: string } | null>(null);
+   const [cropEditor, setCropEditor] = useState<{ src: string } | null>(null);
+   const [backupRunning, setBackupRunning] = useState(false);
 
   useEffect(() => {
     window.api.admin.settings.getAll().then(setSettings).catch((e) => setNotice(String(e)));
@@ -211,6 +213,20 @@ export default function SystemSettings() {
       setNotice(e instanceof Error ? e.message : String(e));
     }
     setBusy(false);
+  };
+
+  const handleBackupNow = async () => {
+    setBackupRunning(true);
+    setNotice(null);
+    try {
+      await window.api.backup.run();
+      const fresh = await window.api.admin.settings.getAll();
+      setSettings(fresh);
+      setNotice('Backup completed successfully');
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e));
+    }
+    setBackupRunning(false);
   };
 
   const currentSection = SECTIONS.find((s) => s.key === activeSection) ?? SECTIONS[0];
@@ -453,6 +469,16 @@ export default function SystemSettings() {
               )}
             </label>
           ))}
+          {activeSection === 'backup' && (
+            <div style={{ marginTop: 16 }}>
+              <button className="btn btn-primary" onClick={handleBackupNow} disabled={backupRunning}>
+                {backupRunning ? 'Backing up...' : 'Backup Now'}
+              </button>
+              <div style={{ marginTop: 8 }}>
+                Last backup: {settings.backup_last || 'Never'}
+              </div>
+            </div>
+          )}
           {activeSection === 'theme' && settings.primary_color && (
             <div style={{ marginTop: 16 }}>
               <div className="muted small" style={{ marginBottom: 8 }}>Preset Colors:</div>

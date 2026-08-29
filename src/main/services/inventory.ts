@@ -3,6 +3,10 @@ import { getDb } from '../db';
 import { logActivity } from './activity';
 import type { Category, Product, ProductInput, StockMovement, Unit } from '../../shared/types';
 
+export function roundStock(qty: number): number {
+  return Math.round(qty * 1000) / 1000;
+}
+
 export interface ProductBatch {
   id: number;
   product_id: number;
@@ -301,9 +305,9 @@ export function adjustStock(
       recordMovement(productId, changeQty, reason, refType, refId);
     }
   } else if (changeQty < 0) {
-    const allocations = deductStockFIFO(productId, -changeQty);
+    const allocations = deductStockFIFO(productId, roundStock(-changeQty));
     db.prepare('UPDATE products SET stock_qty = stock_qty - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-      .run(-changeQty, productId);
+      .run(roundStock(-changeQty), productId);
     const ins = db.prepare(
       `INSERT INTO stock_movements (product_id, change_qty, reason, ref_type, ref_id, batch_id)
        VALUES (?, ?, ?, ?, ?, ?)`
@@ -404,14 +408,14 @@ export function deductStockFIFO(productId: number, qty: number): { batchId: numb
 
   for (const batch of batches) {
     if (remaining <= 0) break;
-    const take = Math.min(batch.quantity, remaining);
+    const take = roundStock(Math.min(batch.quantity, remaining));
     allocation.push({ batchId: batch.id, qty: take });
     
     // Update batch quantity
     db.prepare('UPDATE product_batches SET quantity = quantity - ? WHERE id = ?')
       .run(take, batch.id);
     
-    remaining -= take;
+    remaining = roundStock(remaining - take);
   }
 
   if (remaining > 0) {
@@ -430,25 +434,26 @@ export function recordMovement(
   batchId?: number | null
 ): void {
   const db = getDb();
+  const roundedQty = roundStock(changeQty);
   db.prepare(
     'UPDATE products SET stock_qty = stock_qty + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
-  ).run(changeQty, productId);
+  ).run(roundedQty, productId);
   
   if (batchId !== undefined && batchId !== null) {
     db.prepare(
       `INSERT INTO stock_movements (product_id, change_qty, reason, ref_type, ref_id, batch_id)
        VALUES (?, ?, ?, ?, ?, ?)`
-    ).run(productId, changeQty, reason, refType ?? null, refId ?? null, batchId);
+    ).run(productId, roundedQty, reason, refType ?? null, refId ?? null, batchId);
     
-    if (changeQty > 0) {
+    if (roundedQty > 0) {
       db.prepare('UPDATE product_batches SET quantity = quantity + ? WHERE id = ?')
-        .run(changeQty, batchId);
+        .run(roundedQty, batchId);
     }
   } else {
     db.prepare(
       `INSERT INTO stock_movements (product_id, change_qty, reason, ref_type, ref_id)
        VALUES (?, ?, ?, ?, ?)`
-    ).run(productId, changeQty, reason, refType ?? null, refId ?? null);
+    ).run(productId, roundedQty, reason, refType ?? null, refId ?? null);
   }
 }
 

@@ -653,16 +653,16 @@ function openPay() {
           items: items.map((i) => {
             // --- BayLan Scale item: use grams as display unit ---
             if (i.scale_price != null && i.scale_weight_kg != null && i.scale_weight_kg > 0) {
-              const pricePerKg = i.scale_price / i.scale_weight_kg;
+              const pricePerKg = Math.round((i.scale_price / i.scale_weight_kg) * 100) / 100;
               return {
                 product_id: i.product_id,
-                qty: i.scale_weight_kg,          // KG stored in DB
+                qty: Math.round(i.scale_weight_kg * 1000) / 1000,          // KG stored in DB
                 price: pricePerKg,               // price per KG (total / weight)
                 line_discount: i.line_discount,
                 tax_rate: i.tax_rate,
                 box_qty: undefined,
-                unit_name: 'gram',
-                display_qty: i.scale_weight_g,   // show "234 gram" on receipt
+                unit_name: 'Gram',
+                display_qty: Math.round((i.scale_weight_g ?? 0) * 1000) / 1000,   // show "234 gram" on receipt
               };
             }
             // --- Normal item ---
@@ -1118,7 +1118,7 @@ Quotes ({quotationCount})
                   {r.sale_price}
                   {r.wholesale_price != null ? ` • W ${r.wholesale_price}` : ''}
                   {r.shelf_location ? ` • ${r.shelf_location}` : ''}
-                  {r.stock_qty > 0 ? ` • ${r.stock_qty} in stock` : ' • out of stock'}
+                   {r.stock_qty > 0 ? ` • ${Number(r.stock_qty.toFixed(3))} in stock` : ' • out of stock'}
                 </span>
               </button>
             ))}
@@ -1196,31 +1196,39 @@ Quotes ({quotationCount})
                 setItems((prev) => prev.map((x, i) => (i === idx ? { ...x, qty: newQty * multiplier } : x)));
               };
 
-              const handleUnitChange = (newLevel: number) => {
-                const units = it.units || [];
-                const newUnit = units[newLevel];
-                if (!newUnit) return;
-                const basePiece =
-                  promo
-                    ? promo.effective_price
-                    : priceMode === 'wholesale' && it.wholesale_price != null
-                      ? it.wholesale_price
-                      : it.retail_price;
-                const newBasePrice =
-                  newUnit.price != null ? newUnit.price / newUnit.quantity_in_base_units : basePiece;
-                setItems((prev) =>
-                  prev.map((x, i) =>
-                    i === idx
-                      ? {
-                          ...x,
-                          selected_unit_level: newLevel,
-                          qty: newUnit.quantity_in_base_units,
-                          price: newBasePrice,
-                        }
-                      : x
-                  )
-                );
-              };
+const handleUnitChange = (newLevel: number) => {
+                  const units = it.units || [];
+                  const newUnit = units[newLevel];
+                  if (!newUnit) return;
+                  // Base price per base unit (kilogram) – either from promotion or price mode fallback
+                  const basePiece =
+                    promo
+                      ? promo.effective_price
+                      : priceMode === 'wholesale' && it.wholesale_price != null
+                        ? it.wholesale_price
+                        : it.retail_price;
+                  // Compute per‑selected‑unit price: if the unit has an explicit price, derive per‑unit price; otherwise reuse base price
+                  const newPricePerUnit =
+                    newUnit.price != null ? newUnit.price / newUnit.quantity_in_base_units : basePiece;
+                  // Preserve the actual physical quantity (stored as base units) when switching units
+                   // Preserve the base‑unit quantity (kg) when switching units; it.qty already stores the amount in base units
+                  // Only the selected unit index and the per‑base‑unit price may need updating
+                  setItems((prev) =>
+                    prev.map((x, i) =>
+                      i === idx
+                        ? {
+                            ...x,
+                            selected_unit_level: newLevel,
+                            // Keep the existing base‑unit quantity unchanged
+                            qty: x.qty,
+                            // Update price per base unit (kg) if the new unit defines an explicit price
+                            price: newPricePerUnit,
+                          }
+                        : x
+                    )
+                  );
+                };
+
 
               const draftKey = `${it.product_id}:${idx}`;
               const setDraft = (key: string, raw: string) => {
@@ -1374,7 +1382,7 @@ Quotes ({quotationCount})
                     {promo && <div className="small text-ok">Promo: {promo.promo_name}</div>}
                     {it.stock_qty != null && ((isScaleItem && (it.scale_weight_kg ?? 0) > it.stock_qty) || (!isScaleItem && it.qty > it.stock_qty)) && (
                       <div className="small text-warn">
-                        Stock kam hai — sirf {isScaleItem ? it.stock_qty : availableLabel} {isScaleItem ? 'kg' : `${selectedUnit?.name || 'pcs'}`} available
+                        Stock kam hai — sirf {isScaleItem ? Number(it.stock_qty.toFixed(3)) : availableLabel} {isScaleItem ? 'kg' : `${selectedUnit?.name || 'pcs'}`} available
                       </div>
                     )}
                     <div className="small">

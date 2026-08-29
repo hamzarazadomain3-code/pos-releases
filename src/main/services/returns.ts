@@ -1,5 +1,5 @@
 import { getDb } from '../db';
-import { getProduct, recordMovement } from './inventory';
+import { getProduct, recordMovement, roundStock } from './inventory';
 import { logActivity } from './activity';
 import { getSale } from './sales';
 import { currentShift } from './shifts';
@@ -65,19 +65,19 @@ export function createReturn(input: {
         if (batchId) {
           // Restore to specific batch
           db.prepare('UPDATE product_batches SET quantity = quantity + ? WHERE id = ?')
-            .run(it.qty, batchId);
+            .run(roundStock(it.qty), batchId);
           db.prepare('UPDATE products SET stock_qty = stock_qty + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-            .run(it.qty, si.product_id);
+            .run(roundStock(it.qty), si.product_id);
           db.prepare(
             `INSERT INTO stock_movements (product_id, change_qty, reason, ref_type, ref_id, batch_id)
              VALUES (?, ?, ?, ?, ?, ?)`
-          ).run(si.product_id, it.qty, 'Returned to stock', 'return', returnId, batchId);
+          ).run(si.product_id, roundStock(it.qty), 'Returned to stock', 'return', returnId, batchId);
         } else {
           // Legacy: no batch tracking
           recordMovement(si.product_id, it.qty, 'Returned to stock', 'return', returnId);
         }
       }
-      db.prepare('UPDATE sale_items SET returned_qty = returned_qty + ? WHERE id = ?').run(it.qty, si.id);
+      db.prepare('UPDATE sale_items SET returned_qty = returned_qty + ? WHERE id = ?').run(roundStock(it.qty), si.id);
     }
 
     db.prepare('UPDATE sales SET returned_amount = returned_amount + ? WHERE id = ?').run(refund, input.sale_id);

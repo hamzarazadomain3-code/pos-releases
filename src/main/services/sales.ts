@@ -1,5 +1,5 @@
 import { getDb } from '../db';
-import { getProduct, recordMovement, getProductBatches, deductStockFIFO } from './inventory';
+import { getProduct, recordMovement, getProductBatches, deductStockFIFO, roundStock } from './inventory';
 import { getSetting } from './settings';
 import { logActivity } from './activity';
 import { getSessionUserId } from './auth';
@@ -133,7 +133,7 @@ export function createSale(input: SaleInput): SaleCreateResult {
   for (const l of lines) {
     const p = getProduct(l.product_id);
     if (!p) throw new Error(`Product ${l.product_id} not found`);
-    if (p.stock_qty < l.qty) throw new Error(`Insufficient stock: ${p.name} (${p.stock_qty} available)`);
+    if (p.stock_qty < roundStock(l.qty)) throw new Error(`Insufficient stock: ${p.name} (${p.stock_qty} available)`);
   }
 
   const payments = input.payments.filter((p) => p.amount > 0);
@@ -154,7 +154,7 @@ export function createSale(input: SaleInput): SaleCreateResult {
     // FIFO batch deduction (mutates batches + product stock, rolled back on error)
     const batchAllocations: Map<number, { batchId: number; qty: number }[]> = new Map();
     for (const l of lines) {
-      const allocation = deductStockFIFO(l.product_id, l.qty);
+      const allocation = deductStockFIFO(l.product_id, roundStock(l.qty));
       batchAllocations.set(l.product_id, allocation);
     }
     const invoiceNo = nextInvoiceNo();
@@ -414,13 +414,13 @@ export function voidSale(id: number, reason: string): boolean {
       if (batchId) {
         // Restore to specific batch
         db.prepare('UPDATE product_batches SET quantity = quantity + ? WHERE id = ?')
-          .run(it.qty, batchId);
+          .run(roundStock(it.qty), batchId);
         db.prepare('UPDATE products SET stock_qty = stock_qty + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-          .run(it.qty, it.product_id);
+          .run(roundStock(it.qty), it.product_id);
         db.prepare(
           `INSERT INTO stock_movements (product_id, change_qty, reason, ref_type, ref_id, batch_id)
            VALUES (?, ?, ?, ?, ?, ?)`
-        ).run(it.product_id, it.qty, 'Voided sale', 'sale', id, batchId);
+        ).run(it.product_id, roundStock(it.qty), 'Voided sale', 'sale', id, batchId);
       } else {
         // Legacy: no batch tracking
         recordMovement(it.product_id, it.qty, 'Voided sale', 'sale', id);

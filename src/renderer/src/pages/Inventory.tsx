@@ -557,7 +557,7 @@ export default function Inventory() {
                   <tr key={e.id} className={e.days_left < 0 ? 'row-expired' : e.days_left <= 7 ? 'row-expiring' : ''}>
                     <td>{e.name}</td>
                     <td>{e.category_name ?? '—'}</td>
-                    <td className="num">{e.stock_qty}</td>
+                    <td className="num">{Number(e.stock_qty.toFixed(3))}</td>
                     <td>{e.expiry_date}</td>
                     <td className={`num ${e.days_left < 0 ? 'text-warn' : e.days_left <= 7 ? 'text-warn' : ''}`}>
                       {e.days_left < 0 ? `expired ${Math.abs(e.days_left)}d ago` : `${e.days_left}d`}
@@ -613,7 +613,7 @@ export default function Inventory() {
                   <td>{p.wholesale_price != null ? p.wholesale_price.toLocaleString() : '—'}</td>
                   <td>{p.shelf_location ?? '—'}</td>
                   <td className={`num ${low(p) ? 'text-warn' : ''}`}>
-                    {p.stock_qty} {p.low_stock_threshold > 0 && low(p) ? '(low)' : ''}
+                    {Number(p.stock_qty.toFixed(3))} {p.low_stock_threshold > 0 && low(p) ? '(low)' : ''}
                   </td>
                   <td>
                     {p.expiry_date ? (
@@ -924,7 +924,7 @@ export default function Inventory() {
           <div className="modal modal-sm">
             <h2>Stock Adjustment</h2>
             <p className="muted">
-              {stockModal.product.name} — current stock: <strong>{stockModal.product.stock_qty}</strong>
+              {stockModal.product.name} — current stock: <strong>{Number(stockModal.product.stock_qty.toFixed(3))}</strong>
             </p>
             <label className="field">
               <span>Quantity (+in / −out)</span>
