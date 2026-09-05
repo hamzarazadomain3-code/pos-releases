@@ -1311,10 +1311,14 @@ setQuotationMode(false);
 return (
   <>
     <div className="page billing-page">
-      <div className={shift ? 'shift-bar ok' : 'shift-bar warn'}>
+      <div className={shift ? 'shift-bar ok' : 'shift-bar warn'} style={{
+        background: shift ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #f59e0b, #d97706)',
+        color: '#fff', borderRadius: 8, padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10,
+      }}>
         {shift ? (
           <>
-            <span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
               Shift open · started {formatTimeAdmin(shift.opened_at)} · opening cash {shift.start_cash.toFixed(2)}
             </span>
             <button
@@ -1335,7 +1339,10 @@ return (
           </>
         ) : (
           <>
-            <span>No open shift — you must open one before charging sales.</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              No open shift — you must open one before charging sales.
+            </span>
             <button className="btn btn-sm" onClick={() => setOpenShiftModal(true)}>
               Open Shift
             </button>
@@ -1350,7 +1357,9 @@ return (
               <button
                 key={qp.id}
                 className="btn btn-sm"
-                style={{ fontSize: 11, padding: '4px 8px', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                style={{ fontSize: 11, padding: '12px 16px', borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', transition: 'all 0.2s', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', border: '1px solid var(--border)' }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)'; }}
                 onClick={() => addProduct(qp)}
                 title={`Add ${qp.name} — Rs ${qp.sale_price}`}
               >
@@ -1467,7 +1476,7 @@ Quotes ({quotationCount})
 
       <div className="billing-body">
         <div className="panel panel-results">
-          <div className="panel-title">Products ({results.length})</div>
+          <div className="panel-title" style={{ borderBottom: '2px solid transparent', backgroundImage: 'linear-gradient(var(--card-bg), var(--card-bg)), linear-gradient(90deg, var(--primary), var(--primary-light))', backgroundOrigin: 'border-box', backgroundClip: 'padding-box, border-box' }}>Products ({results.length})</div>
           <div className="result-list">
             {results.map((r) => (
               <button key={r.id} className="result-item" onClick={() => addProduct(r)}>
@@ -1485,7 +1494,7 @@ Quotes ({quotationCount})
         </div>
 
         <div className="panel panel-cart">
-          <div className="panel-title">
+          <div className="panel-title" style={{ borderBottom: '2px solid transparent', backgroundImage: 'linear-gradient(var(--card-bg), var(--card-bg)), linear-gradient(90deg, var(--primary), var(--primary-light))', backgroundOrigin: 'border-box', backgroundClip: 'padding-box, border-box' }}>
             Current Bill {quotationMode && <span className="badge badge-quote">Quotation</span>}
 <span className="mode-toggle">
   <button
@@ -1868,7 +1877,7 @@ const handleUnitChange = (newLevel: number) => {
         </div>
 
         <div className="panel panel-summary">
-          <div className="panel-title">Summary</div>
+          <div className="panel-title" style={{ borderBottom: '2px solid transparent', backgroundImage: 'linear-gradient(var(--card-bg), var(--card-bg)), linear-gradient(90deg, var(--primary), var(--primary-light))', backgroundOrigin: 'border-box', backgroundClip: 'padding-box, border-box' }}>Summary</div>
           {items.some((i) => i.expired) && (
             <div className="expiry-warning-banner">
               <strong>Warning:</strong> This bill contains expired item(s):{' '}
@@ -1951,7 +1960,11 @@ const handleUnitChange = (newLevel: number) => {
             </div>
           )}
           <div className="summary-actions">
-            <button className="btn btn-primary btn-lg" onClick={quotationMode ? completeQuotation : openPay} disabled={items.length === 0 || busy || (!quotationMode && !shift)}>
+            <button className="btn btn-primary btn-lg" onClick={quotationMode ? completeQuotation : openPay} disabled={items.length === 0 || busy || (!quotationMode && !shift)}
+              style={{ background: 'linear-gradient(135deg, var(--primary), var(--primary-dark))', boxShadow: '0 4px 15px rgba(79, 70, 229, 0.4)', border: 'none', color: '#fff', transition: 'all 0.2s ease' }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'; }}
+            >
               {busy ? 'Working...' : quotationMode ? 'Save Quotation' : `Charge ${finalTotal.toFixed(2)}`}
             </button>
             <button className="btn btn-lg" onClick={doHold} disabled={items.length === 0}>
@@ -2737,9 +2750,9 @@ const handleUnitChange = (newLevel: number) => {
   {items.length > 0 && (
     <div className="running-total-bar" style={{
       position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 900,
-      background: 'var(--primary)', color: '#fff', padding: '8px 20px',
+      background: 'linear-gradient(135deg, #4f46e5, #7c3aed)', color: '#fff', padding: '8px 20px',
       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      boxShadow: '0 -2px 10px rgba(0,0,0,0.15)', fontSize: 14, fontWeight: 600,
+      boxShadow: '0 -4px 20px rgba(79, 70, 229, 0.3)', fontSize: 14, fontWeight: 600,
     }}>
       <span>{items.length} item{items.length > 1 ? 's' : ''} in bill</span>
       <span style={{ fontSize: 20, fontWeight: 700 }}>Rs {finalTotal.toFixed(2)}</span>
