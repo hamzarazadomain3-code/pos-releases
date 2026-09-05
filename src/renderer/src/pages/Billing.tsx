@@ -1505,13 +1505,22 @@ Quotes ({quotationCount})
           <div className="result-list">
             {filteredProducts.map((r) => (
               <button key={r.id} className="result-item" onClick={() => addProduct(r)}>
-                <span className="result-name">{r.name}</span>
-                <span className="result-meta">
-                  {r.sale_price}
-                  {r.wholesale_price != null ? ` • W ${r.wholesale_price}` : ''}
-                  {r.shelf_location ? ` • ${r.shelf_location}` : ''}
-                   {r.stock_qty > 0 ? ` • ${Number(r.stock_qty.toFixed(3))} in stock` : ' • out of stock'}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
+                  {r.image ? (
+                    <img src={r.image} alt="" className="product-thumb" />
+                  ) : (
+                    <div className="product-thumb-placeholder">🖼</div>
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <span className="result-name">{r.name}</span>
+                    <span className="result-meta">
+                      {r.sale_price}
+                      {r.wholesale_price != null ? ` • W ${r.wholesale_price}` : ''}
+                      {r.shelf_location ? ` • ${r.shelf_location}` : ''}
+                       {r.stock_qty > 0 ? ` • ${Number(r.stock_qty.toFixed(3))} in stock` : ' • out of stock'}
+                    </span>
+                  </div>
+                </div>
               </button>
             ))}
             {filteredProducts.length === 0 && <div className="muted center pad">Type to search products</div>}
@@ -1912,22 +1921,37 @@ const handleUnitChange = (newLevel: number) => {
           )}
           <div className="bill-summary-grid">
             <div className="bill-summary-item bill-sub-total">
+              <div className="bill-summary-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              </div>
               <span className="bill-summary-label">Sub Total</span>
               <span className="bill-summary-value">{totals.subtotal.toFixed(2)}</span>
             </div>
             <div className="bill-summary-item bill-net-total">
+              <div className="bill-summary-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              </div>
               <span className="bill-summary-label">Net Total</span>
               <span className="bill-summary-value">{finalTotal.toFixed(2)}</span>
             </div>
             <div className="bill-summary-item bill-paid">
+              <div className="bill-summary-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              </div>
               <span className="bill-summary-label">Paid</span>
               <span className="bill-summary-value">{payTotal.toFixed(2)}</span>
             </div>
             <div className="bill-summary-item bill-balance">
+              <div className="bill-summary-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              </div>
               <span className="bill-summary-label">Balance</span>
               <span className="bill-summary-value">{Math.max(0, finalTotal - payTotal).toFixed(2)}</span>
             </div>
-            <div className="bill-summary-item bill-return">
+            <div className="bill-summary-item bill-return" style={{ gridColumn: '1 / -1' }}>
+              <div className="bill-summary-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              </div>
               <span className="bill-summary-label">Items</span>
               <span className="bill-summary-value">{items.reduce((s, c) => s + c.qty, 0)}</span>
             </div>

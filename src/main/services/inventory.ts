@@ -149,8 +149,8 @@ export function createProduct(input: ProductInput): Product {
     .prepare(
       `INSERT INTO products
         (sku, barcode, name, category_id, unit_id, cost_price, sale_price, wholesale_price, shelf_location,
-         stock_qty, low_stock_threshold, tax_rate, expiry_date, active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 1)`
+         stock_qty, low_stock_threshold, tax_rate, expiry_date, image, active)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 1)`
     )
     .run(
       sku,
@@ -164,7 +164,8 @@ export function createProduct(input: ProductInput): Product {
       input.shelf_location ?? null,
       input.low_stock_threshold ?? 0,
       input.tax_rate ?? 0,
-      input.expiry_date ?? null
+      input.expiry_date ?? null,
+      input.image ?? null
     );
 
   const id = Number(info.lastInsertRowid);
@@ -215,7 +216,7 @@ export function updateProduct(id: number, input: ProductInput): Product {
     `UPDATE products SET
        sku = ?, barcode = ?, name = ?, category_id = ?, unit_id = ?,
        cost_price = ?, sale_price = ?, wholesale_price = ?, shelf_location = ?,
-       low_stock_threshold = ?, tax_rate = ?, expiry_date = ?,
+       low_stock_threshold = ?, tax_rate = ?, expiry_date = ?, image = ?,
        updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`
   ).run(
@@ -231,6 +232,7 @@ export function updateProduct(id: number, input: ProductInput): Product {
     input.low_stock_threshold ?? existing.low_stock_threshold,
     input.tax_rate ?? existing.tax_rate,
     input.expiry_date ?? existing.expiry_date,
+    input.image !== undefined ? input.image : existing.image ?? null,
     id
   );
 

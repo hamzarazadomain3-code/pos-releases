@@ -46,6 +46,7 @@ export interface Product {
   units_per_box: number | null;
   box_barcode: string | null;
   box_price: number | null;
+  image?: string | null;
   units?: ProductUnit[];
 }
 
@@ -63,6 +64,7 @@ export interface ProductInput {
   low_stock_threshold?: number;
   tax_rate?: number;
   expiry_date?: string | null;
+  image?: string | null;
   units?: {
     level: 0 | 1 | 2;
     name: string;

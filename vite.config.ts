@@ -10,6 +10,15 @@ export default defineConfig({
     outDir: path.resolve(__dirname, 'dist/renderer'),
     emptyOutDir: true,
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react': ['react', 'react-dom'],
+          'recharts': ['recharts'],
+          'xlsx': ['xlsx'],
+        }
+      }
+    }
   },
   server: {
     port: 5173,

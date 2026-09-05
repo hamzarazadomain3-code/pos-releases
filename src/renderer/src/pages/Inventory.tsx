@@ -40,6 +40,7 @@ interface FormState {
   low_stock_threshold: string;
   tax_rate: string;
   expiry_date: string;
+  image: string;
   units: ProductUnit[];
 }
 
@@ -57,6 +58,7 @@ const EMPTY_FORM: FormState = {
   low_stock_threshold: '',
   tax_rate: '',
   expiry_date: '',
+  image: '',
   units: [
     { level: 0, name: 'Piece', quantity_in_base_units: 1, barcode: '', price: '', is_base: true },
   ],
@@ -214,6 +216,7 @@ export default function Inventory() {
       low_stock_threshold: p.low_stock_threshold != null ? String(p.low_stock_threshold) : '',
       tax_rate: p.tax_rate != null ? String(p.tax_rate) : '',
       expiry_date: p.expiry_date ?? '',
+      image: p.image ?? '',
       units,
     });
     setFormOpen(true);
@@ -285,6 +288,7 @@ export default function Inventory() {
         low_stock_threshold: form.low_stock_threshold ? Number(form.low_stock_threshold) : 0,
         tax_rate: form.tax_rate ? Number(form.tax_rate) : 0,
         expiry_date: form.expiry_date || null,
+        image: form.image || null,
         units: unitsPayload,
       };
       if (editing) {
@@ -596,8 +600,17 @@ export default function Inventory() {
               return (
                 <tr key={p.id} className={expiryClass(p.expiry_date) || (low(p) ? 'row-low' : '')}>
                   <td>
-                    <strong>{p.name}</strong>
-                    <div className="muted small">{p.sku}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {p.image ? (
+                        <img src={p.image} alt="" className="product-thumb" />
+                      ) : (
+                        <div className="product-thumb-placeholder">🖼</div>
+                      )}
+                      <div>
+                        <strong>{p.name}</strong>
+                        <div className="muted small">{p.sku}</div>
+                      </div>
+                    </div>
                   </td>
                   <td>
                     {p.barcode ? (
@@ -838,6 +851,40 @@ export default function Inventory() {
                   onChange={(e) => setForm({ ...form, expiry_date: e.target.value })}
                 />
               </label>
+              <div className="field span-2">
+                <span>Product Image</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <label className="image-upload-btn">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          setForm({ ...form, image: reader.result as string });
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                    />
+                    {form.image ? 'Change Image' : 'Upload Image'}
+                  </label>
+                  {form.image && (
+                    <>
+                      <img src={form.image} alt="Preview" className="image-preview" />
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-danger"
+                        onClick={() => setForm({ ...form, image: '' })}
+                      >
+                        Remove
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
               <div className="field span-2">
                 <span>Selling Units</span>
                 <div className="units-config">
