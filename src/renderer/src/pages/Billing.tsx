@@ -268,6 +268,9 @@ const [currentHeldId, setCurrentHeldId] = useState<number | null>(null);
   // Enhancement: Running total bar visibility
   const [showRunningBar, setShowRunningBar] = useState(true);
 
+  // Category quick-filter
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
   const searchRef = useRef<HTMLInputElement>(null);
   const totals = useMemo(() => lineTotals(items, Number(billDiscount) || 0, discountType, promoMap), [items, billDiscount, discountType, promoMap]);
   const serviceChargeAmt = serviceChargeType === 'percent'
@@ -285,6 +288,10 @@ const [currentHeldId, setCurrentHeldId] = useState<number | null>(null);
   }, [grandTotal, roundOffEnabled, roundOffValue]);
 
   const finalTotal = grandTotal + roundOffAmount;
+
+  // Category filter derived values
+  const categories = useMemo(() => [...new Set(results.map(p => p.category_name).filter(Boolean))] as string[], [results]);
+  const filteredProducts = useMemo(() => selectedCategory ? results.filter(p => p.category_name === selectedCategory) : results, [results, selectedCategory]);
 
   const handleOpenCashDrawer = async () => {
     setCashDrawerOpen(true);
@@ -1349,6 +1356,18 @@ return (
           </>
         )}
       </div>
+      <div className="sale-invoice-bar">
+        <div className="sale-invoice-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+          <span>Sale Invoice</span>
+        </div>
+        <div className="sale-invoice-actions">
+          <button className="sale-inv-icon-btn" title="Refresh" onClick={() => window.location.reload()}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          </button>
+          <span className="sale-inv-clock">{new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}</span>
+        </div>
+      </div>
       <div className="billing-top">
         {/* Quick Products Row */}
         {quickProducts.length > 0 && (
@@ -1368,6 +1387,12 @@ return (
             ))}
           </div>
         )}
+        <div className="category-quick-row">
+          <button className={`category-pill ${!selectedCategory ? 'active' : ''}`} onClick={() => setSelectedCategory(null)}>All</button>
+          {categories.map(cat => (
+            <button key={cat} className={`category-pill ${selectedCategory === cat ? 'active' : ''}`} onClick={() => setSelectedCategory(cat)}>{cat}</button>
+          ))}
+        </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         <input
           ref={searchRef}
@@ -1476,9 +1501,9 @@ Quotes ({quotationCount})
 
       <div className="billing-body">
         <div className="panel panel-results">
-          <div className="panel-title" style={{ borderBottom: '2px solid transparent', backgroundImage: 'linear-gradient(var(--card-bg), var(--card-bg)), linear-gradient(90deg, var(--primary), var(--primary-light))', backgroundOrigin: 'border-box', backgroundClip: 'padding-box, border-box' }}>Products ({results.length})</div>
+          <div className="panel-title" style={{ borderBottom: '2px solid transparent', backgroundImage: 'linear-gradient(var(--card-bg), var(--card-bg)), linear-gradient(90deg, var(--primary), var(--primary-light))', backgroundOrigin: 'border-box', backgroundClip: 'padding-box, border-box' }}>Products ({filteredProducts.length})</div>
           <div className="result-list">
-            {results.map((r) => (
+            {filteredProducts.map((r) => (
               <button key={r.id} className="result-item" onClick={() => addProduct(r)}>
                 <span className="result-name">{r.name}</span>
                 <span className="result-meta">
@@ -1489,7 +1514,7 @@ Quotes ({quotationCount})
                 </span>
               </button>
             ))}
-            {results.length === 0 && <div className="muted center pad">Type to search products</div>}
+            {filteredProducts.length === 0 && <div className="muted center pad">Type to search products</div>}
           </div>
         </div>
 
@@ -1885,20 +1910,28 @@ const handleUnitChange = (newLevel: number) => {
               confirm before charging.
             </div>
           )}
-          <div className="summary-row">
-            <span>Subtotal</span>
-            <span>{totals.subtotal.toFixed(2)}</span>
-          </div>
-          <div className="summary-row">
-            <span>Tax</span>
-            <span>{totals.tax.toFixed(2)}</span>
-          </div>
-          {totals.promoSavings > 0 && (
-            <div className="summary-row">
-              <span className="text-ok">Promo savings</span>
-              <span className="text-ok">-{totals.promoSavings.toFixed(2)}</span>
+          <div className="bill-summary-grid">
+            <div className="bill-summary-item bill-sub-total">
+              <span className="bill-summary-label">Sub Total</span>
+              <span className="bill-summary-value">{totals.subtotal.toFixed(2)}</span>
             </div>
-          )}
+            <div className="bill-summary-item bill-net-total">
+              <span className="bill-summary-label">Net Total</span>
+              <span className="bill-summary-value">{finalTotal.toFixed(2)}</span>
+            </div>
+            <div className="bill-summary-item bill-paid">
+              <span className="bill-summary-label">Paid</span>
+              <span className="bill-summary-value">{payTotal.toFixed(2)}</span>
+            </div>
+            <div className="bill-summary-item bill-balance">
+              <span className="bill-summary-label">Balance</span>
+              <span className="bill-summary-value">{Math.max(0, finalTotal - payTotal).toFixed(2)}</span>
+            </div>
+            <div className="bill-summary-item bill-return">
+              <span className="bill-summary-label">Items</span>
+              <span className="bill-summary-value">{items.reduce((s, c) => s + c.qty, 0)}</span>
+            </div>
+          </div>
             <div className="summary-row">
               <span>Discount</span>
               <div className="discount-input">
@@ -1959,16 +1992,18 @@ const handleUnitChange = (newLevel: number) => {
               </span>
             </div>
           )}
-          <div className="summary-actions">
-            <button className="btn btn-primary btn-lg" onClick={quotationMode ? completeQuotation : openPay} disabled={items.length === 0 || busy || (!quotationMode && !shift)}
-              style={{ background: 'linear-gradient(135deg, var(--primary), var(--primary-dark))', boxShadow: '0 4px 15px rgba(79, 70, 229, 0.4)', border: 'none', color: '#fff', transition: 'all 0.2s ease' }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'; }}
-            >
-              {busy ? 'Working...' : quotationMode ? 'Save Quotation' : `Charge ${finalTotal.toFixed(2)}`}
+          <div className="summary-actions-vertical">
+            <button className="action-btn-pay-save" onClick={quotationMode ? completeQuotation : openPay} disabled={items.length === 0 || busy || (!quotationMode && !shift)}>
+              {busy ? 'Working...' : quotationMode ? 'Save Quotation' : 'Pay & Save'}
             </button>
-            <button className="btn btn-lg" onClick={doHold} disabled={items.length === 0}>
-              Hold (F9)
+            <button className="action-btn-save" onClick={quotationMode ? completeQuotation : openPay} disabled={items.length === 0 || busy || (!quotationMode && !shift)}>
+              Save
+            </button>
+            <button className="action-btn-hold" onClick={doHold} disabled={items.length === 0}>
+              Hold
+            </button>
+            <button className="action-btn-reset" onClick={() => { setItems([]); setCustomerId(''); setBillDiscount(''); setDiscountType('amount'); setServiceCharge(''); setFreight(''); }}>
+              Reset
             </button>
           </div>
           <div className="shortcuts muted small">
