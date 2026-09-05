@@ -226,8 +226,6 @@ body.theme-dark .btn-lg:last-of-type {
 }
 
 body.theme-dark .sale-invoice-bar { background: linear-gradient(135deg, #991b1b, #7f1d1d); }
-body.theme-dark .category-pill { background: #1e293b; color: #e2e8f0; border-color: #334155; }
-body.theme-dark .category-pill:hover { border-color: var(--primary); background: #1e3a5f; }
 /* Bill summary grid — Dashboard KPI style */
 .bill-summary-grid {
   display: grid;
@@ -3267,40 +3265,6 @@ input[type="range"]::-moz-range-thumb {
   font-weight: 600;
   opacity: 0.9;
   font-variant-numeric: tabular-nums;
-}
-
-/* Category quick filters */
-.category-quick-row {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-}
-
-.category-pill {
-  padding: 6px 14px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--card-bg);
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-
-.category-pill:hover {
-  border-color: var(--primary);
-  background: #eff6ff;
-  color: var(--primary);
-}
-
-.category-pill.active {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
-  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3);
 }
 
 /* Vertical action buttons */

@@ -260,9 +260,6 @@ const [currentHeldId, setCurrentHeldId] = useState<number | null>(null);
   const [lastSaleItems, setLastSaleItems] = useState<CartLine[] | null>(null);
   const [lastSaleCustomer, setLastSaleCustomer] = useState<string>('');
 
-  // Enhancement: Quick products
-  const [quickProducts, setQuickProducts] = useState<Product[]>([]);
-
   // Enhancement: Return mode
   const [returnMode, setReturnMode] = useState(false);
 
@@ -271,9 +268,6 @@ const [currentHeldId, setCurrentHeldId] = useState<number | null>(null);
 
   // Enhancement: Running total bar visibility
   const [showRunningBar, setShowRunningBar] = useState(true);
-
-  // Category quick-filter
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   // Receipt template selector
   const [receiptTemplates, setReceiptTemplates] = useState<Array<{ id: string; name: string; description: string; width: string }>>([]);
@@ -298,10 +292,7 @@ const [currentHeldId, setCurrentHeldId] = useState<number | null>(null);
   const finalTotal = grandTotal + roundOffAmount;
 
   // Category filter derived values
-  const categories = useMemo(() => [...new Set(results.map(p => p.category_name).filter(Boolean))] as string[], [results]);
-  const filteredProducts = useMemo(() => selectedCategory ? results.filter(p => p.category_name === selectedCategory) : results, [results, selectedCategory]);
-
-  const handleOpenCashDrawer = async () => {
+const handleOpenCashDrawer = async () => {
     setCashDrawerOpen(true);
   };
 
@@ -732,15 +723,6 @@ useEffect(() => {
       }
     }
   }, [customers]);
-
-  // ── Quick products: load most-sold products ──
-  useEffect(() => {
-    window.api.inventory.list().then((all) => {
-      // Sort by stock_qty descending as proxy for popularity, take top 6
-      const top = [...all].sort((a, b) => (b.stock_qty || 0) - (a.stock_qty || 0)).slice(0, 6);
-      setQuickProducts(top);
-    }).catch(() => {});
-  }, []);
 
   // ── Profit calculation for owner ──
   useEffect(() => {
@@ -1381,30 +1363,6 @@ return (
         </div>
       </div>
       <div className="billing-top">
-        {/* Quick Products Row */}
-        {quickProducts.length > 0 && (
-          <div className="quick-products-row" style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-            {quickProducts.map((qp) => (
-              <button
-                key={qp.id}
-                className="btn btn-sm"
-                style={{ fontSize: 11, padding: '12px 16px', borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', transition: 'all 0.2s', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', border: '1px solid var(--border)' }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)'; }}
-                onClick={() => addProduct(qp)}
-                title={`Add ${qp.name} — Rs ${qp.sale_price}`}
-              >
-                {qp.name} · Rs{qp.sale_price}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="category-quick-row">
-          <button className={`category-pill ${!selectedCategory ? 'active' : ''}`} onClick={() => setSelectedCategory(null)}>All</button>
-          {categories.map(cat => (
-            <button key={cat} className={`category-pill ${selectedCategory === cat ? 'active' : ''}`} onClick={() => setSelectedCategory(cat)}>{cat}</button>
-          ))}
-        </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         <input
           ref={searchRef}
@@ -1512,10 +1470,10 @@ Quotes ({quotationCount})
       )}
 
       <div className="billing-body">
-        <div className="panel panel-results">
-          <div className="panel-title" style={{ borderBottom: '2px solid transparent', backgroundImage: 'linear-gradient(var(--card-bg), var(--card-bg)), linear-gradient(90deg, var(--primary), var(--primary-light))', backgroundOrigin: 'border-box', backgroundClip: 'padding-box, border-box' }}>Products ({filteredProducts.length})</div>
+<div className="panel panel-results">
+          <div className="panel-title" style={{ borderBottom: '2px solid transparent', backgroundImage: 'linear-gradient(var(--card-bg), var(--card-bg)), linear-gradient(90deg, var(--primary), var(--primary-light))', backgroundOrigin: 'border-box', backgroundClip: 'padding-box, border-box' }}>Products ({results.length})</div>
           <div className="result-list">
-            {filteredProducts.map((r) => (
+            {results.map((r) => (
               <button key={r.id} className="result-item" onClick={() => addProduct(r)}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
                   {r.image ? (
@@ -1535,7 +1493,7 @@ Quotes ({quotationCount})
                 </div>
               </button>
             ))}
-            {filteredProducts.length === 0 && <div className="muted center pad">Type to search products</div>}
+            {results.length === 0 && <div className="muted center pad">Type to search products</div>}
           </div>
         </div>
 
