@@ -14,7 +14,16 @@
     "shifts": "Shifts",
     "returns": "Returns",
     "Udhaar": "Udhaar",
-    "barcode": "Barcode Labels"
+    "barcode": "Barcode Labels",
+    "expenses": "Expenses",
+    "commissions": "Commissions",
+    "customReports": "Custom Reports",
+    "quotations": "Quotations",
+    "invoiceAdmin": "Invoice Designer",
+    "branches": "Branches",
+    "quickSale": "Quick Sale",
+    "transfers": "Transfers",
+    "fifoStock": "FIFO Stock Report"
   },
   "buttons": {
     "save": "Save",

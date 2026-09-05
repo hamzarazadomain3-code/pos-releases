@@ -245,20 +245,17 @@ export async function shutdownWhatsAppGateway(): Promise<void> {
   // 1. Ask whatsapp-web.js to destroy the client (async, non-blocking)
   if (typeof whatsappClient.destroy === 'function') {
     try {
-      // Start the destroy but don't await it — we need to wait for the
-      // process exit event instead, because destroy() may return before
-      // Chrome actually exits.
-      whatsappClient.destroy();
+      await whatsappClient.destroy();
       destroyed = true;
     } catch {
       // ignore teardown errors
     }
   }
 
-  // 2. Wait for Chrome process to exit, with a 3-second timeout
+  // 2. Wait for Chrome process to exit, with a 5-second timeout
   if (pid) {
     const startTime = Date.now();
-    const timeout = 3000;
+    const timeout = 5000;
     while (Date.now() - startTime < timeout) {
       if (!isProcessAlive(pid)) {
         break;
@@ -268,17 +265,21 @@ export async function shutdownWhatsAppGateway(): Promise<void> {
 
     // 3. If still alive after timeout, force-kill the process tree
     if (isProcessAlive(pid)) {
-      killProcessTree(pid);
+      try {
+        const { execSync } = require('node:child_process');
+        execSync(`taskkill /pid ${pid} /T /F`, { stdio: 'pipe' });
+      } catch {
+        // force-kill may have already succeeded
+      }
       // Give it a moment to die
       const forceStart = Date.now();
-      while (Date.now() - forceStart < 1000) {
+      while (Date.now() - forceStart < 2000) {
         if (!isProcessAlive(pid)) break;
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
   } else if (destroyed) {
-    // No PID available; wait a generous period for any in-flight cleanup
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }
 
   whatsappClient = null;

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { FeatureToggleRow } from '../../../../shared/types';
+import { formatDateAdmin } from '../../utils/dateUtils';
 
 export default function FeatureToggles() {
   const [features, setFeatures] = useState<FeatureToggleRow[]>([]);
@@ -58,7 +59,7 @@ export default function FeatureToggles() {
             </div>
             {f.description && <p className="feature-desc muted small">{f.description}</p>}
             <div className="feature-meta muted small">
-              {f.updated_at && <span>Updated: {new Date(f.updated_at).toLocaleDateString()}</span>}
+              {f.updated_at && <span>Updated: {formatDateAdmin(f.updated_at)}</span>}
             </div>
           </div>
         ))}

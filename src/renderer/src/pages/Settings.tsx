@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ActivityRow, ScalePluMapping, SettingsMap, WhatsAppStatus } from '../../../shared/types';
+import { formatTimestamp, formatDateTimeAdmin } from '../utils/dateUtils';
 
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsMap>({});
@@ -155,6 +156,30 @@ export default function Settings() {
         </div>
 
         <div className="panel">
+          <div className="panel-title">Appearance</div>
+          <div className="settings-form">
+            <label className="field">
+              <span>Theme</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className={`btn btn-sm ${!document.body.classList.contains('theme-dark') ? 'btn-primary' : ''}`}
+                  onClick={() => { document.body.classList.remove('theme-dark'); localStorage.setItem('theme', 'light'); }}
+                >
+                  ☀ Light
+                </button>
+                <button
+                  className={`btn btn-sm ${document.body.classList.contains('theme-dark') ? 'btn-primary' : ''}`}
+                  onClick={() => { document.body.classList.add('theme-dark'); localStorage.setItem('theme', 'dark'); }}
+                >
+                  ☾ Dark
+                </button>
+              </div>
+              <span className="muted small">Switch between light and dark mode. Preference is saved locally.</span>
+            </label>
+          </div>
+        </div>
+
+        <div className="panel">
           <div className="panel-title">Backup</div>
           <div className="settings-form">
             <p className="muted small">
@@ -202,11 +227,11 @@ export default function Settings() {
               </div>
             )}
             <p className="muted small">
-              Last backup: {settings.last_backup ? new Date(settings.last_backup).toLocaleString() : 'never'}
+              Last backup: {settings.last_backup ? formatDateTimeAdmin(settings.last_backup) : 'never'}
             </p>
             <p className="muted small">
               Last cloud sync:{' '}
-              {settings.last_cloud_backup ? new Date(settings.last_cloud_backup).toLocaleString() : 'never'}
+              {settings.last_cloud_backup ? formatDateTimeAdmin(settings.last_cloud_backup) : 'never'}
             </p>
             <button
               className="btn btn-primary"
@@ -459,7 +484,7 @@ export default function Settings() {
             <tbody>
               {activity.map((a) => (
                 <tr key={a.id}>
-                  <td>{a.created_at ? new Date(a.created_at).toLocaleString() : '—'}</td>
+                  <td>{formatTimestamp(a.created_at)}</td>
                   <td>{a.username ?? '—'}</td>
                   <td>{actionLabel(a.action)}</td>
                   <td className="muted">{a.details ?? '—'}</td>

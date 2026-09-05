@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CashRefundRow, ReturnRow, Sale, SaleItem } from '../../../shared/types';
 import { DateRangePicker, SearchInput, FilterBar, FilterRow } from '../components/filters';
+import { formatDateTimeAdmin } from '../utils/dateUtils';
 
 export default function Returns() {
   const [sales, setSales] = useState<Sale[]>([]);
@@ -188,7 +189,7 @@ export default function Returns() {
               .map((s) => (
                 <tr key={s.id} className={selected?.id === s.id ? 'row-low' : ''}>
                   <td>{s.invoice_no}</td>
-                  <td>{new Date(s.created_at ?? '').toLocaleString()}</td>
+                  <td>{formatDateTimeAdmin(s.created_at ?? '')}</td>
                   <td>{s.customer_name ?? 'Walk-in'}</td>
                   <td>{s.total_amount.toFixed(2)}</td>
                   <td className={s.returned_amount ? 'text-warn' : ''}>{(s.returned_amount ?? 0).toFixed(2)}</td>
@@ -343,7 +344,7 @@ export default function Returns() {
               <tr key={r.id}>
                 <td>{r.id}</td>
                 <td>{r.invoice_no ?? '—'}</td>
-                <td>{new Date(r.created_at ?? '').toLocaleString()}</td>
+                <td>{formatDateTimeAdmin(r.created_at ?? '')}</td>
                 <td className="text-warn">({r.refund_amount.toFixed(2)})</td>
                 <td>{r.refund_mode}</td>
                 <td>{r.restock ? 'Yes' : 'No'}</td>
@@ -379,7 +380,7 @@ export default function Returns() {
             {cashRefunds.map((r) => (
               <tr key={r.id}>
                 <td>{r.id}</td>
-                <td>{new Date(r.created_at ?? '').toLocaleString()}</td>
+                <td>{formatDateTimeAdmin(r.created_at ?? '')}</td>
                 <td className="text-warn">({r.amount.toFixed(2)})</td>
                 <td>{r.username ?? '—'}</td>
                 <td>{r.reason ?? '—'}</td>

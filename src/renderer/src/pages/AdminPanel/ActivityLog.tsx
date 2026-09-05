@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ActivityLogEntry } from '../../../../shared/types';
+import { formatTimestamp } from '../../utils/dateUtils';
 
 export default function ActivityLog() {
   const [logs, setLogs] = useState<ActivityLogEntry[]>([]);
@@ -101,7 +102,7 @@ export default function ActivityLog() {
           <tbody>
             {logs.map((l) => (
               <tr key={l.id}>
-                <td className="muted small">{l.created_at ? new Date(l.created_at).toLocaleString() : '—'}</td>
+                <td className="muted small">{formatTimestamp(l.created_at)}</td>
                 <td>{l.username ?? '—'}</td>
                 <td><span className="badge">{formatAction(l.action)}</span></td>
                 <td className="muted small">{l.details ?? '—'}</td>

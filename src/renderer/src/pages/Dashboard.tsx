@@ -26,19 +26,35 @@ export default function Dashboard() {
     bill_count: 0,
     avg_bill: 0,
   });
+  const [lowStockCount, setLowStockCount] = useState(0);
+  const [outOfStockCount, setOutOfStockCount] = useState(0);
+  const [todayExpenses, setTodayExpenses] = useState(0);
+  const [udhaarDue, setUdhaarDue] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
-      const [trend, top, stats] = await Promise.all([
+      const [trend, top, stats, lowStock, inventory] = await Promise.all([
         window.api.reports.getDailySalesTrend(),
         window.api.reports.getTopProducts(5),
         window.api.reports.getDailyStats(),
+        window.api.inventory.lowStock().catch(() => []),
+        window.api.inventory.list().catch(() => []),
       ]);
       setSalesData(trend);
       setTopProducts(top);
       setDailyStats(stats);
+      setLowStockCount(lowStock.length);
+      setOutOfStockCount(inventory.filter((p: any) => p.stock_qty <= 0).length);
+
+      // Get expenses from dashboard API
+      const dashData = await (window.api as any).reports.dashboard?.().catch(() => null);
+      if (dashData) {
+        setTodayExpenses(dashData.today_expenses || 0);
+        setUdhaarDue(dashData.udhaar_due || 0);
+      }
+
       setLoaded(true);
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
@@ -82,6 +98,25 @@ export default function Dashboard() {
         <div className="stat-card">
           <div className="stat-label">Avg Bill Value</div>
           <div className="stat-value" style={{ color: '#e74c3c' }}>Rs {fmt(dailyStats.avg_bill)}</div>
+        </div>
+      </div>
+
+      <div className="stat-grid" style={{ marginTop: 12 }}>
+        <div className="stat-card" style={{ borderLeft: '4px solid #f39c12' }}>
+          <div className="stat-label">Low Stock Items</div>
+          <div className="stat-value" style={{ color: lowStockCount > 0 ? '#f39c12' : '#2ecc71' }}>{lowStockCount}</div>
+        </div>
+        <div className="stat-card" style={{ borderLeft: '4px solid #e74c3c' }}>
+          <div className="stat-label">Out of Stock</div>
+          <div className="stat-value" style={{ color: outOfStockCount > 0 ? '#e74c3c' : '#2ecc71' }}>{outOfStockCount}</div>
+        </div>
+        <div className="stat-card" style={{ borderLeft: '4px solid #9b59b6' }}>
+          <div className="stat-label">Today's Expenses</div>
+          <div className="stat-value" style={{ color: '#9b59b6' }}>Rs {fmt(todayExpenses)}</div>
+        </div>
+        <div className="stat-card" style={{ borderLeft: '4px solid #e67e22' }}>
+          <div className="stat-label">Udhaar Due</div>
+          <div className="stat-value" style={{ color: udhaarDue > 0 ? '#e67e22' : '#2ecc71' }}>Rs {fmt(udhaarDue)}</div>
         </div>
       </div>
 

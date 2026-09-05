@@ -2,6 +2,7 @@ import { Component, Suspense, lazy, useCallback, useEffect, useState, type React
 import { useTranslation } from 'react-i18next';
 import type { NavPage, UserRow } from '../../shared/types';
 import { resetFormatCache } from './utils/formatters';
+import { initDateUtils, resetDateUtils } from './utils/dateUtils';
 import Inventory from './pages/Inventory';
 import Billing from './pages/Billing';
 import Udhaar from './pages/Udhaar';
@@ -13,10 +14,19 @@ import Users from './pages/Users';
 import Audits from './pages/Audits';
 import Promotions from './pages/Promotions';
 import Shifts from './pages/Shifts';
+import Branches from './pages/Branches';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const BarcodeGenerator = lazy(() => import('./pages/BarcodeGenerator'));
 const AdminPanel = lazy(() => import('./pages/AdminPanel'));
+const Quotations = lazy(() => import('./pages/Quotations'));
+const InvoiceDesigner = lazy(() => import('./pages/InvoiceDesigner'));
+const QuickSaleGrid = lazy(() => import('./pages/QuickSaleGrid'));
+const Transfers = lazy(() => import('./pages/Transfers'));
+const Expenses = lazy(() => import('./pages/Expenses'));
+const Commissions = lazy(() => import('./pages/Commissions'));
+const CustomReports = lazy(() => import('./pages/CustomReports'));
+const FIFOStockReport = lazy(() => import('./pages/FIFOStockReport'));
 
 const SESSION_KEY = 'pos_session';
 const SESSION_MAX_AGE = 24 * 60 * 60 * 1000;
@@ -126,6 +136,11 @@ const ALL_NAV: { key: NavPage; labelKey: string; minRole: 'cashier' | 'manager' 
   { key: 'billing', labelKey: 'navigation.billing', minRole: 'cashier' },
   { key: 'dashboard', labelKey: 'navigation.dashboard', minRole: 'manager' },
   { key: 'inventory', labelKey: 'navigation.inventory', minRole: 'manager' },
+  { key: 'branches', labelKey: 'navigation.branches', minRole: 'owner' },
+  { key: 'quickSale', labelKey: 'navigation.quickSale', minRole: 'cashier' },
+  { key: 'transfers', labelKey: 'navigation.transfers', minRole: 'manager' },
+  { key: 'quotations', labelKey: 'navigation.quotations', minRole: 'manager' },
+  { key: 'invoiceAdmin', labelKey: 'navigation.invoiceAdmin', minRole: 'manager' },
   { key: 'barcode', labelKey: 'navigation.barcode', minRole: 'manager' },
   { key: 'audits', labelKey: 'navigation.audits', minRole: 'manager' },
   { key: 'promotions', labelKey: 'navigation.promotions', minRole: 'manager' },
@@ -134,6 +149,10 @@ const ALL_NAV: { key: NavPage; labelKey: string; minRole: 'cashier' | 'manager' 
   { key: 'returns', labelKey: 'navigation.returns', minRole: 'manager' },
   { key: 'shifts', labelKey: 'navigation.shifts', minRole: 'manager' },
   { key: 'reports', labelKey: 'navigation.reports', minRole: 'manager' },
+  { key: 'expenses', labelKey: 'navigation.expenses', minRole: 'manager' },
+  { key: 'commissions', labelKey: 'navigation.commissions', minRole: 'manager' },
+  { key: 'customReports', labelKey: 'navigation.customReports', minRole: 'manager' },
+  { key: 'fifoStock', labelKey: 'navigation.fifoStock', minRole: 'manager' },
   { key: 'settings', labelKey: 'navigation.settings', minRole: 'owner' },
   { key: 'users', labelKey: 'navigation.users', minRole: 'owner' },
   { key: 'admin', labelKey: 'navigation.admin', minRole: 'owner' },
@@ -153,6 +172,44 @@ function adjustColor(hex: string, amount: number): string {
 
 function navFor(role: string): { key: NavPage; label: string }[] {
   return ALL_NAV.filter((n) => ROLE_RANK[role] >= ROLE_RANK[n.minRole]).map(({ key, labelKey }) => ({ key, label: key }));
+}
+
+function BranchSelector() {
+  const { t } = useTranslation();
+  const [currentBranch, setCurrentBranch] = useState<any>(null);
+  const [branches, setBranches] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    window.api.branches.getCurrent().then((b) => { setCurrentBranch(b); });
+    window.api.branches.list().then((bs) => { setBranches(bs); setLoading(false); });
+  }, []);
+
+  const handleChange = async (branchId: number) => {
+    setLoading(true);
+    const res = await window.api.branches.setCurrent(branchId);
+    if (res.ok) {
+      const b = branches.find((br) => br.id === branchId);
+      setCurrentBranch(b);
+    }
+    setLoading(false);
+  };
+
+  if (loading || branches.length <= 1) return null;
+
+  return (
+    <select
+      value={currentBranch?.id || ''}
+      onChange={(e) => handleChange(Number(e.target.value))}
+      style={{ width: '100%', padding: '8px', borderRadius: 4, border: '1px solid #ddd' }}
+    >
+      {branches.map((b) => (
+        <option key={b.id} value={b.id}>
+          {b.name} {b.is_default ? '✓' : ''}
+        </option>
+      ))}
+    </select>
+  );
 }
 
 function LoginScreen({ onLogin, logo }: { onLogin: (user: UserRow, rememberMe: boolean) => void; logo?: string | null }) {
@@ -506,6 +563,7 @@ export default function App() {
       }
     }
     applySettings();
+    initDateUtils(); // Initialize date format settings
     return () => { mounted = false; };
   }, [i18n.language]);
 
@@ -513,6 +571,7 @@ export default function App() {
   useEffect(() => {
     const off = window.api.admin.settings.onChange?.(() => {
       resetFormatCache();
+      resetDateUtils();
     });
     return () => { if (off) off(); };
   }, []);
@@ -563,9 +622,23 @@ export default function App() {
     label: t(`navigation.${item.key}`, item.label),
   }));
 
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <button
+        className="sidebar-toggle"
+        onClick={() => setSidebarOpen(true)}
+        aria-label="Open navigation"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-brand">
           {shopLogo ? (
             <img src={shopLogo} alt="Shop logo" className="brand-logo" />
@@ -582,12 +655,19 @@ export default function App() {
             <button
               key={item.key}
               className={page === item.key ? 'nav-btn active' : 'nav-btn'}
-              onClick={() => setPage(item.key)}
+              onClick={() => { setPage(item.key); setSidebarOpen(false); }}
             >
               {item.label}
             </button>
           ))}
         </nav>
+
+        {/* Branch Selector */}
+        <div className="sidebar-branch" style={{ padding: 12, borderTop: '1px solid #eee' }}>
+          <div className="small muted" style={{ marginBottom: 8 }}>Current Branch</div>
+          <BranchSelector />
+        </div>
+
         <div className="sidebar-user">
           <div className="small muted">{user.username}</div>
           <div className="small muted" style={{ textTransform: 'capitalize' }}>{user.role}</div>
@@ -604,12 +684,20 @@ export default function App() {
           </button>
         </div>
       </aside>
+
+      <div className={`sidebar-overlay ${sidebarOpen ? 'open' : ''}`} onClick={() => setSidebarOpen(false)} />
+
       <main className="content">
         <ErrorBoundary>
           <Suspense fallback={<div className="page"><div className="muted center pad">Loading…</div></div>}>
           {page === 'billing' && <Billing />}
           {page === 'dashboard' && <Dashboard />}
           {page === 'inventory' && <Inventory />}
+          {page === 'branches' && <Branches />}
+          {page === 'quickSale' && <QuickSaleGrid />}
+          {page === 'transfers' && <Transfers />}
+          {page === 'quotations' && <Quotations />}
+          {page === 'invoiceAdmin' && <InvoiceDesigner />}
           {page === 'barcode' && <BarcodeGenerator />}
           {page === 'audits' && <Audits />}
           {page === 'promotions' && <Promotions />}
@@ -618,6 +706,10 @@ export default function App() {
           {page === 'returns' && <Returns />}
           {page === 'shifts' && <Shifts />}
           {page === 'reports' && <Reports />}
+          {page === 'expenses' && <Expenses />}
+          {page === 'commissions' && <Commissions />}
+          {page === 'customReports' && <CustomReports />}
+          {page === 'fifoStock' && <FIFOStockReport />}
           {page === 'settings' && <Settings />}
           {page === 'users' && <Users />}
           {page === 'admin' && <AdminPanel />}

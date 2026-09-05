@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ModalCloseButton } from '../../components/ModalCloseButton';
 import type { AdminRole, RolePermission } from '../../../../shared/types';
 
 const ALL_PERMISSIONS = [
@@ -114,7 +115,10 @@ export default function RolesPermissions() {
       {showCreate && (
         <div className="modal-overlay" onClick={() => setShowCreate(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Create New Role</h3>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3>Create New Role</h3>
+              <ModalCloseButton onClose={() => setShowCreate(false)} />
+            </div>
             <label className="field">
               <span>Role Name</span>
               <input value={newName} onChange={(e) => setNewName(e.target.value)} autoFocus />

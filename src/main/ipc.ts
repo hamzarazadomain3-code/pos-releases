@@ -142,6 +142,16 @@ import {
 } from './services/admin';
 import { is2FAEnabled, get2FAMethod, generateOtp, verifyOtp } from './services/twoFactorAuth';
 import { sendEmail, sendDailySalesReportEmail } from './services/emailService';
+import { quotationsService } from './services/quotations';
+import { invoiceTemplatesService } from './services/invoiceTemplates';
+import { variantsService } from './services/variants';
+import { creditLimitsService } from './services/creditLimits';
+import { branchesService } from './services/branches';
+import { transfersService } from './services/transfers';
+import { fifoEngine } from './services/fifoEngine';
+import { commissionsService } from './services/commissions';
+import { expensesService } from './services/expenses';
+import { customReportsService } from './services/customReports';
 
 export function registerIpcHandlers(): void {
   ipcMain.handle('inventory:list', (_e, search?: string, includeInactive?: boolean) =>
@@ -458,4 +468,114 @@ export function registerIpcHandlers(): void {
   // ── Email ──
   ipcMain.handle('email:send', (_e, options: { to: string | string[]; subject: string; text?: string; html?: string }) => sendEmail(options));
   ipcMain.handle('email:sendDailyReport', () => sendDailySalesReportEmail());
+
+  // ── Quotation Module ──
+  ipcMain.handle('quotations:list', (_e, filters?: { status?: string; customer_id?: number; from_date?: string; to_date?: string; search?: string }) =>
+    quotationsService.list(filters || {})
+  );
+  ipcMain.handle('quotations:get', (_e, id: number) => quotationsService.get(id));
+  ipcMain.handle('quotations:create', (_e, input) => quotationsService.create(input));
+  ipcMain.handle('quotations:updateStatus', (_e, id: number, status: string) => quotationsService.updateStatus(id, status));
+  ipcMain.handle('quotations:delete', (_e, id: number) => quotationsService.delete(id));
+  ipcMain.handle('quotations:convertToSale', (_e, id: number, actorUserId: number) => quotationsService.convertToSale(id, actorUserId));
+  ipcMain.handle('quotations:expireOld', () => ({ count: quotationsService.expireOld() }));
+
+  // ── Invoice Templates ──
+  ipcMain.handle('templates:list', (_e, type?: string) => invoiceTemplatesService.list(type));
+  ipcMain.handle('templates:get', (_e, id: number) => invoiceTemplatesService.get(id));
+  ipcMain.handle('templates:getDefault', (_e, type: string) => invoiceTemplatesService.getDefault(type));
+  ipcMain.handle('templates:create', (_e, input) => invoiceTemplatesService.create(input));
+  ipcMain.handle('templates:update', (_e, id: number, input) => invoiceTemplatesService.update(id, input));
+  ipcMain.handle('templates:delete', (_e, id: number) => invoiceTemplatesService.delete(id));
+  ipcMain.handle('templates:duplicate', (_e, id: number, newName: string) => invoiceTemplatesService.duplicate(id, newName));
+
+  // ── Products / Variants ──
+  ipcMain.handle('variants:list', (_e, productId: number) => variantsService.listVariantsForProduct(productId));
+  ipcMain.handle('variants:get', (_e, id: number) => variantsService.getVariant(id));
+  ipcMain.handle('variants:findByBarcode', (_e, barcode: string) => variantsService.findVariantByBarcode(barcode));
+  ipcMain.handle('variants:create', (_e, input) => variantsService.createVariant(input));
+  ipcMain.handle('variants:update', (_e, id: number, input) => variantsService.updateVariant(id, input));
+  ipcMain.handle('variants:delete', (_e, id: number) => variantsService.deleteVariant(id));
+  ipcMain.handle('variants:autoGenerate', (_e, input) => variantsService.autoGenerateVariants(input));
+
+  // ── Attributes ──
+  ipcMain.handle('attributes:list', () => variantsService.listAttributes());
+  ipcMain.handle('attributes:getValues', (_e, attributeId: number) => variantsService.getAttributeValues(attributeId));
+  ipcMain.handle('attributes:create', (_e, name: string) => variantsService.createAttribute(name));
+  ipcMain.handle('attributes:addValue', (_e, attributeId: number, value: string) => variantsService.addAttributeValue(attributeId, value));
+
+  // ── Credit Limits ──
+  ipcMain.handle('credits:check', (_e, customerId: number, additionalAmount?: number) =>
+    creditLimitsService.check(customerId, additionalAmount || 0)
+  );
+  ipcMain.handle('credits:setCustomerLimit', (_e, customerId: number, limit: number, blockOnExceed: boolean, reason?: string, warningThresholdPct?: number) =>
+    creditLimitsService.setCustomerLimit(customerId, limit, blockOnExceed, 1, reason, warningThresholdPct)
+  );
+  ipcMain.handle('credits:setSupplierLimit', (_e, supplierId: number, limit: number, blockOnExceed: boolean, warningThresholdPct?: number) =>
+    creditLimitsService.setSupplierLimit(supplierId, limit, blockOnExceed, warningThresholdPct)
+  );
+  ipcMain.handle('credits:history', (_e, customerId: number, limit?: number) => creditLimitsService.getHistory(customerId, limit));
+  ipcMain.handle('credits:listRisks', () => creditLimitsService.listRisks());
+
+  // ── Branches ──
+  ipcMain.handle('branches:list', () => branchesService.list());
+  ipcMain.handle('branches:get', (_e, id: number) => branchesService.get(id));
+  ipcMain.handle('branches:getDefault', () => branchesService.getDefault());
+  ipcMain.handle('branches:getCurrent', () => branchesService.getCurrent());
+  ipcMain.handle('branches:create', (_e, input) => branchesService.create(input));
+  ipcMain.handle('branches:update', (_e, id: number, input) => branchesService.update(id, input));
+  ipcMain.handle('branches:delete', (_e, id: number) => branchesService.delete(id));
+  ipcMain.handle('branches:setCurrent', (_e, branchId: number) => branchesService.setCurrent(branchId));
+
+  // ── Transfers ──
+  ipcMain.handle('transfers:party:list', () => transfersService.listPartyTransfers());
+  ipcMain.handle('transfers:party:create', (_e, input) => transfersService.createPartyTransfer(input));
+  ipcMain.handle('transfers:bank:accounts', () => transfersService.listBankAccounts());
+  ipcMain.handle('transfers:bank:createAccount', (_e, input) => transfersService.createBankAccount(input));
+  ipcMain.handle('transfers:bank:list', () => transfersService.listBankTransfers());
+  ipcMain.handle('transfers:bank:create', (_e, input) => transfersService.createBankTransfer(input));
+
+  // ── FIFO Stock Engine ──
+  ipcMain.handle('fifo:isEnabled', () => fifoEngine.isEnabled());
+  ipcMain.handle('fifo:isStrict', () => fifoEngine.isStrict());
+  ipcMain.handle('fifo:availableBatches', (_e, productId: number) => fifoEngine.getAvailableBatches(productId));
+  ipcMain.handle('fifo:allocate', (_e, productId: number, qty: number) => fifoEngine.allocateFIFO(productId, qty));
+  ipcMain.handle('fifo:stockReport', (_e, productId?: number) => fifoEngine.getFIFOStockReport(productId));
+
+  // ── Salesman Commissions ──
+  ipcMain.handle('commissions:rules', () => commissionsService.listRules());
+  ipcMain.handle('commissions:createRule', (_e, input) => commissionsService.createRule(input));
+  ipcMain.handle('commissions:updateRule', (_e, id: number, input) => commissionsService.updateRule(id, input));
+  ipcMain.handle('commissions:deleteRule', (_e, id: number) => commissionsService.deleteRule(id));
+  ipcMain.handle('commissions:salesmen', () => commissionsService.listSalesmen());
+  ipcMain.handle('commissions:calculate', (_e, saleId: number) => commissionsService.calculateCommissions(saleId));
+  ipcMain.handle('commissions:list', (_e, filters?: { salesman_id?: number; status?: string; from?: string; to?: string }) => commissionsService.listCommissions(filters || {}));
+  ipcMain.handle('commissions:updateStatus', (_e, id: number, status: string, userId: number) => commissionsService.updateCommissionStatus(id, status, userId));
+  ipcMain.handle('commissions:summary', (_e, salesmanId: number, from?: string, to?: string) => commissionsService.getSalesmanSummary(salesmanId, from, to));
+
+  // ── Expenses ──
+  ipcMain.handle('expenses:categories', () => expensesService.listCategories());
+  ipcMain.handle('expenses:createCategory', (_e, input) => expensesService.createCategory(input));
+  ipcMain.handle('expenses:updateCategory', (_e, id: number, input) => expensesService.updateCategory(id, input));
+  ipcMain.handle('expenses:deleteCategory', (_e, id: number) => expensesService.deleteCategory(id));
+  ipcMain.handle('expenses:list', (_e, filters?: { category_id?: number; user_id?: number; from?: string; to?: string; status?: string }) => expensesService.listExpenses(filters || {}));
+  ipcMain.handle('expenses:create', (_e, input) => expensesService.createExpense(input));
+  ipcMain.handle('expenses:get', (_e, id: number) => expensesService.getExpense(id));
+  ipcMain.handle('expenses:update', (_e, id: number, input) => expensesService.updateExpense(id, input));
+  ipcMain.handle('expenses:delete', (_e, id: number) => expensesService.deleteExpense(id));
+  ipcMain.handle('expenses:summary', (_e, from?: string, to?: string) => expensesService.getExpenseSummary(from, to));
+
+  // ── Custom Reports ──
+  ipcMain.handle('reports:custom:list', (_e, userId?: number) => customReportsService.list(userId));
+  ipcMain.handle('reports:custom:get', (_e, id: number) => customReportsService.get(id));
+  ipcMain.handle('reports:custom:create', (_e, input) => customReportsService.create(input));
+  ipcMain.handle('reports:custom:update', (_e, id: number, input) => customReportsService.update(id, input));
+  ipcMain.handle('reports:custom:delete', (_e, id: number) => customReportsService.delete(id));
+  ipcMain.handle('reports:custom:tables', () => customReportsService.listTables());
+  ipcMain.handle('reports:custom:schema', (_e, table: string) => customReportsService.getTableSchema(table));
+  ipcMain.handle('reports:custom:execute', (_e, id: number, limit?: number) => customReportsService.execute(id, limit));
+  ipcMain.handle('reports:custom:schedules', () => customReportsService.listSchedules());
+  ipcMain.handle('reports:custom:createSchedule', (_e, input) => customReportsService.createSchedule(input));
+  ipcMain.handle('reports:custom:updateSchedule', (_e, id: number, input) => customReportsService.updateSchedule(id, input));
+  ipcMain.handle('reports:custom:deleteSchedule', (_e, id: number) => customReportsService.deleteSchedule(id));
 }

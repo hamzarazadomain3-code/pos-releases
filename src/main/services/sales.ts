@@ -1,5 +1,5 @@
 import { getDb } from '../db';
-import { getProduct, recordMovement, getProductBatches, deductStockFIFO, roundStock } from './inventory';
+import { getProduct, recordMovement, getProductBatches, deductStockFIFO, recordFIFOAllocations, roundStock } from './inventory';
 import { getSetting } from './settings';
 import { logActivity } from './activity';
 import { getSessionUserId } from './auth';
@@ -186,6 +186,9 @@ export function createSale(input: SaleInput): SaleCreateResult {
       `INSERT INTO sale_items (sale_id, product_id, qty, unit_price, discount, tax_rate, line_total, promo_id, promo_name, batch_id, box_qty, unit_name, display_qty)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
+    // Track sale item IDs for FIFO recording
+    const saleItemIds: Map<number, number[]> = new Map();
+    
     for (const l of lines) {
       const promo = promoOf.get(l.product_id);
       const allocation = batchAllocations.get(l.product_id) || [];
@@ -195,7 +198,7 @@ export function createSale(input: SaleInput): SaleCreateResult {
       
       if (allocation.length === 1) {
         // Single batch - simple case
-        insItem.run(
+        const res = insItem.run(
           saleId,
           l.product_id,
           l.qty,
@@ -210,13 +213,16 @@ export function createSale(input: SaleInput): SaleCreateResult {
           unitName,
           displayQty
         );
+        const saleItemId = Number(res.lastInsertRowid);
+        if (!saleItemIds.has(l.product_id)) saleItemIds.set(l.product_id, []);
+        saleItemIds.get(l.product_id)!.push(saleItemId);
         recordMovement(l.product_id, -l.qty, 'Sale', 'sale', saleId, allocation[0].batchId);
       } else {
         // Multiple batches - need to split sale_items rows per batch
         for (const alloc of allocation) {
           const allocQty = alloc.qty;
           const allocLineTotal = (l.price * allocQty) + ((l.price * allocQty - l.line_discount * (allocQty / l.qty)) * l.tax_rate / 100);
-          insItem.run(
+          const res = insItem.run(
             saleId,
             l.product_id,
             allocQty,
@@ -231,7 +237,20 @@ export function createSale(input: SaleInput): SaleCreateResult {
             unitName,
             displayQty != null ? (allocQty / l.qty) * displayQty : null
           );
+          const saleItemId = Number(res.lastInsertRowid);
+          if (!saleItemIds.has(l.product_id)) saleItemIds.set(l.product_id, []);
+          saleItemIds.get(l.product_id)!.push(saleItemId);
           recordMovement(l.product_id, -allocQty, 'Sale', 'sale', saleId, alloc.batchId);
+        }
+      }
+    }
+
+    // Record FIFO allocations for each sale item
+    for (const [productId, saleItemIdsList] of saleItemIds.entries()) {
+      const allocation = batchAllocations.get(productId) || [];
+      if (allocation.length > 0) {
+        for (let i = 0; i < saleItemIdsList.length && i < allocation.length; i++) {
+          recordFIFOAllocations(saleItemIdsList[i], productId, [allocation[i]]);
         }
       }
     }
@@ -428,6 +447,10 @@ export function voidSale(id: number, reason: string): boolean {
         recordMovement(it.product_id, it.qty, 'Voided sale', 'sale', id);
       }
     }
+    // Release FIFO allocations
+    db.prepare(`DELETE FROM fifo_allocations WHERE sale_item_id IN (
+      SELECT id FROM sale_items WHERE sale_id = ?
+    )`).run(id);
     if (sale.customer_id) {
       const paid = sale.payments.reduce((s, p) => s + p.amount, 0);
       const saleBalance = Math.max(0, sale.total_amount - paid);

@@ -1,6 +1,6 @@
 {
   "name": "pos-app",
-  "version": "2.3.6",
+  "version": "2.4.0",
   "description": "Local Billing & Inventory POS System",
   "main": "dist/main/main.js",
   "author": "ShopKeeper POS",
@@ -95,7 +95,14 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "ShopKeeper POS",
-      "artifactName": "ShopKeeperPOS-Setup-${version}.${ext}"
+      "artifactName": "ShopKeeperPOS-Setup-${version}.${ext}",
+      "warningsAsErrors": false,
+      "include": "build/nsis-install.nsh",
+      "unicode": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
     }
   }
 }

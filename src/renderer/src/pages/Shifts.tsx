@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ShiftDetail, ShiftRow } from '../../../shared/types';
+import { formatDateTimeAdmin } from '../utils/dateUtils';
 
 export default function Shifts() {
   const [shifts, setShifts] = useState<ShiftRow[]>([]);
@@ -49,8 +50,8 @@ export default function Shifts() {
                 <tr key={s.id}>
                   <td>{s.id}</td>
                   <td>{s.username}</td>
-                  <td>{s.opened_at ? new Date(s.opened_at).toLocaleString() : '—'}</td>
-                  <td>{s.closed_at ? new Date(s.closed_at).toLocaleString() : '—'}</td>
+                  <td>{s.opened_at ? formatDateTimeAdmin(s.opened_at) : '—'}</td>
+                  <td>{s.closed_at ? formatDateTimeAdmin(s.closed_at) : '—'}</td>
                   <td>{s.start_cash.toFixed(2)}</td>
                   <td>{s.expected_cash !== null ? s.expected_cash.toFixed(2) : '—'}</td>
                   <td>{s.end_cash !== null ? s.end_cash.toFixed(2) : '—'}</td>
@@ -170,9 +171,9 @@ export default function Shifts() {
               Shift #{detail.id} — {detail.username}
             </h2>
             <p className="muted">
-              {detail.opened_at ? new Date(detail.opened_at).toLocaleString() : ''}
+              {detail.opened_at ? formatDateTimeAdmin(detail.opened_at) : ''}
               {' → '}
-              {detail.closed_at ? new Date(detail.closed_at).toLocaleString() : 'still open'}
+              {detail.closed_at ? formatDateTimeAdmin(detail.closed_at) : 'still open'}
               {detail.forced ? ' · force-closed' : ''}
               {detail.notes ? ` · ${detail.notes}` : ''}
             </p>
@@ -223,7 +224,7 @@ export default function Shifts() {
                   {detail.sales.map((s) => (
                     <tr key={s.id}>
                       <td>{s.invoice_no}</td>
-                      <td>{s.created_at ? new Date(s.created_at).toLocaleString() : '—'}</td>
+                      <td>{s.created_at ? formatDateTimeAdmin(s.created_at) : '—'}</td>
                       <td>{s.total_amount.toFixed(2)}</td>
                       <td>
                         <span className={`badge ${s.status === 'voided' ? 'badge-danger' : ''}`}>{s.status}</span>

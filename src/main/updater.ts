@@ -31,6 +31,12 @@ export function initUpdater(): void {
   if (initialized) return;
   initialized = true;
 
+  autoUpdater.setFeedURL({
+    provider: 'github',
+    owner: 'hamzarazadomain3-code',
+    repo: 'pos-releases',
+  });
+
   autoUpdater.on('checking-for-update', () => {
     log('Updater: checking for updates');
     sendStatus('checking');
@@ -86,6 +92,12 @@ export function initUpdater(): void {
         logError('updater shutdown', e);
       }
     }
+
+    // Additional cleanup: ensure all intervals are cleared
+    // This is handled in main.ts before-quit handler
+
+    // wait 500ms for any async cleanup to complete
+    await new Promise(r => setTimeout(r, 500));
 
     // quitAndInstall(isSilent, isForceRunAfter)
     autoUpdater.quitAndInstall(true, true);

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import { ModalCloseButton } from '../components/ModalCloseButton';
 import type { AuditItemRow, AuditRow, Category } from '../../../shared/types';
 import { DateRangePicker, SearchInput, MultiSelectDropdown, FilterBar, FilterRow, Pagination } from '../components/filters';
+import { formatDateTimeAdmin } from '../utils/dateUtils';
 
 export default function Audits() {
   const [tab, setTab] = useState<'active' | 'history'>('active');
@@ -282,7 +284,7 @@ export default function Audits() {
               {history.map((a) => (
                   <tr key={a.id}>
                     <td>AU-{String(a.id).padStart(4, '0')}</td>
-                    <td>{a.completed_at ? new Date(a.completed_at).toLocaleString() : '—'}</td>
+                    <td>{a.completed_at ? formatDateTimeAdmin(a.completed_at) : '—'}</td>
                     <td>{a.username ?? '—'}</td>
                     <td>{a.total_items}</td>
                     <td className="text-ok">+{(a.overage ?? 0).toFixed(2)}</td>
@@ -336,7 +338,7 @@ export default function Audits() {
                 {active.map((a) => (
                   <tr key={a.id}>
                     <td>AU-{String(a.id).padStart(4, '0')}</td>
-                    <td>{a.created_at ? new Date(a.created_at).toLocaleString() : '—'}</td>
+                    <td>{a.created_at ? formatDateTimeAdmin(a.created_at) : '—'}</td>
                     <td>{a.username ?? '—'}</td>
                     <td>
                       <button className="btn btn-sm btn-primary" onClick={() => openAudit(a.id)}>
@@ -366,7 +368,7 @@ export default function Audits() {
                 Audit AU-{String(current.id).padStart(4, '0')} — {current.username ?? ''}
               </h2>
               <p className="muted small">
-                Started {new Date(current.created_at ?? '').toLocaleString()} | Counted{' '}
+                Started {formatDateTimeAdmin(current.created_at ?? '')} | Counted{' '}
                 <strong>{countedCount}</strong> / {totalCount} items
               </p>
             </div>
@@ -468,9 +470,12 @@ export default function Audits() {
       {result && (
         <div className="modal-overlay">
           <div className="modal modal-wide">
-            <h2>Audit AU-{String(result.id).padStart(4, '0')} Completed</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>Audit AU-{String(result.id).padStart(4, '0')} Completed</h2>
+              <ModalCloseButton onClose={() => setResult(null)} />
+            </div>
             <p className="muted small">
-              {result.completed_at ? new Date(result.completed_at).toLocaleString() : ''} | by {result.username ?? '—'} |{' '}
+              {result.completed_at ? formatDateTimeAdmin(result.completed_at) : ''} | by {result.username ?? '—'} |{' '}
               {result.total_items} items counted
             </p>
             <div className="stat-grid" style={{ marginTop: 12 }}>
@@ -524,9 +529,12 @@ export default function Audits() {
       {detail && (
         <div className="modal-overlay">
           <div className="modal modal-wide">
-            <h2>Audit AU-{String(detail.id).padStart(4, '0')}</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>Audit AU-{String(detail.id).padStart(4, '0')}</h2>
+              <ModalCloseButton onClose={() => setDetail(null)} />
+            </div>
             <p className="muted small">
-              {detail.completed_at ? new Date(detail.completed_at).toLocaleString() : ''} | by {detail.username ?? '—'} |{' '}
+              {detail.completed_at ? formatDateTimeAdmin(detail.completed_at) : ''} | by {detail.username ?? '—'} |{' '}
               {detail.total_items} items counted | net variance {detail.total_variance.toFixed(2)}
             </p>
             <table className="tbl">

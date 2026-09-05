@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { ModalCloseButton } from '../components/ModalCloseButton';
 import type { UserInput, UserRole, UserRow } from '../../../shared/types';
 
 export default function Users() {
@@ -153,7 +154,10 @@ export default function Users() {
       {modal && (
         <div className="modal-overlay">
           <div className="modal">
-            <h2>{modal.mode === 'add' ? 'Add User' : `Edit — ${modal.user.username}`}</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>{modal.mode === 'add' ? 'Add User' : `Edit — ${modal.user.username}`}</h2>
+              <ModalCloseButton onClose={() => setModal(null)} />
+            </div>
             {modal.mode === 'add' && (
               <>
                 <label className="lbl">Username *</label>

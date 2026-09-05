@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { ModalCloseButton } from '../components/ModalCloseButton';
 import type { Category, Product, PromotionInput, PromotionRow } from '../../../shared/types';
 
 const emptyForm = (): PromotionInput => ({
@@ -229,7 +230,10 @@ export default function Promotions() {
       {modal && (
         <div className="modal-overlay">
           <div className="modal modal-wide">
-            <h2>{editing === null ? 'New Promotion' : 'Edit Promotion'}</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>{editing === null ? 'New Promotion' : 'Edit Promotion'}</h2>
+              <ModalCloseButton onClose={() => setModal(false)} />
+            </div>
             <label className="lbl">Name *</label>
             <input className="inp" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus />
 

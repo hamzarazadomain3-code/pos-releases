@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { AdminUserRow } from '../../../../shared/types';
+import { formatDateAdmin, formatDateTimeAdmin } from '../../utils/dateUtils';
 
 export default function UserManagement() {
   const [users, setUsers] = useState<AdminUserRow[]>([]);
@@ -73,8 +74,8 @@ export default function UserManagement() {
                     {u.active ? 'Active' : 'Inactive'}
                   </span>
                 </td>
-                <td className="muted small">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
-                <td className="muted small">{u.last_login ? new Date(u.last_login).toLocaleString() : 'Never'}</td>
+                <td className="muted small">{u.created_at ? formatDateAdmin(u.created_at) : '—'}</td>
+                <td className="muted small">{u.last_login ? formatDateTimeAdmin(u.last_login) : 'Never'}</td>
                 <td>
                   {showReset === u.id ? (
                     <div className="inline-row">

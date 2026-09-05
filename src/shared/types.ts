@@ -1,4 +1,4 @@
-export interface Category {
+﻿export interface Category {
   id: number;
   name: string;
   created_at?: string;
@@ -107,7 +107,7 @@ export interface StockMovement {
   product_name?: string | null;
 }
 
-export type NavPage = 'dashboard' | 'billing' | 'inventory' | 'audits' | 'promotions' | 'purchases' | 'udhaar' | 'returns' | 'shifts' | 'reports' | 'settings' | 'users' | 'barcode' | 'admin';
+export type NavPage = 'dashboard' | 'billing' | 'inventory' | 'audits' | 'promotions' | 'purchases' | 'udhaar' | 'returns' | 'shifts' | 'reports' | 'settings' | 'users' | 'barcode' | 'admin' | 'quotations' | 'invoiceAdmin' | 'branches' | 'quickSale' | 'transfers' | 'expenses' | 'commissions' | 'customReports' | 'fifoStock';
 
 export type UserRole = 'owner' | 'manager' | 'cashier';
 
@@ -1031,9 +1031,115 @@ export interface PosBridge {
     send: (options: { to: string | string[]; subject: string; text?: string; html?: string }) => Promise<{ ok: boolean; message: string }>;
     sendDailyReport: () => Promise<{ ok: boolean; message: string }>;
   };
+  quotations: {
+    list: (filters?: { status?: string; customer_id?: number; from_date?: string; to_date?: string; search?: string }) => Promise<QuotationRow[]>;
+    get: (id: number) => Promise<{ quotation: QuotationRow; items: QuotationItemRow[] } | null>;
+    create: (input: any) => Promise<{ ok: boolean; id?: number; quote_no?: string; message?: string }>;
+    updateStatus: (id: number, status: string) => Promise<{ ok: boolean; message?: string }>;
+    delete: (id: number) => Promise<{ ok: boolean; message?: string }>;
+    convertToSale: (id: number, actorUserId: number) => Promise<{ ok: boolean; sale_id?: number; invoice_no?: string; message?: string }>;
+    expireOld: () => Promise<{ count: number }>;
+  };
+  templates: {
+    list: (type?: string) => Promise<InvoiceTemplateRow[]>;
+    get: (id: number) => Promise<InvoiceTemplateRow | null>;
+    getDefault: (type: string) => Promise<InvoiceTemplateRow | null>;
+    create: (input: any) => Promise<{ ok: boolean; id?: number; message?: string }>;
+    update: (id: number, input: any) => Promise<{ ok: boolean; message?: string }>;
+    delete: (id: number) => Promise<{ ok: boolean; message?: string }>;
+    duplicate: (id: number, newName: string) => Promise<{ ok: boolean; new_id?: number; message?: string }>;
+  };
+  variants: {
+    list: (productId: number) => Promise<ProductVariantRow[]>;
+    get: (id: number) => Promise<ProductVariantRow | null>;
+    findByBarcode: (barcode: string) => Promise<ProductVariantRow | null>;
+    create: (input: any) => Promise<{ ok: boolean; id?: number; message?: string }>;
+    update: (id: number, input: any) => Promise<{ ok: boolean; message?: string }>;
+    delete: (id: number) => Promise<{ ok: boolean; message?: string }>;
+    autoGenerate: (input: any) => Promise<{ ok: boolean; count?: number; message?: string }>;
+  };
+  attributes: {
+    list: () => Promise<VariantAttributeRow[]>;
+    getValues: (attributeId: number) => Promise<VariantAttributeValueRow[]>;
+    create: (name: string) => Promise<{ ok: boolean; id?: number; message?: string }>;
+    addValue: (attributeId: number, value: string) => Promise<{ ok: boolean; id?: number; message?: string }>;
+  };
+  credits: {
+    check: (customerId: number, additionalAmount?: number) => Promise<CreditCheckResult>;
+    setCustomerLimit: (customerId: number, limit: number, blockOnExceed: boolean, reason?: string, warningThresholdPct?: number) => Promise<{ ok: boolean; message?: string }>;
+    setSupplierLimit: (supplierId: number, limit: number, blockOnExceed: boolean, warningThresholdPct?: number) => Promise<{ ok: boolean; message?: string }>;
+    history: (customerId: number, limit?: number) => Promise<CreditLimitHistoryRow[]>;
+    listRisks: () => Promise<any[]>;
+  };
+  branches: {
+    list: () => Promise<BranchRow[]>;
+    get: (id: number) => Promise<BranchRow | null>;
+    getDefault: () => Promise<BranchRow | null>;
+    getCurrent: () => Promise<BranchRow | null>;
+    create: (input: any) => Promise<{ ok: boolean; id?: number; message?: string }>;
+    update: (id: number, input: any) => Promise<{ ok: boolean; message?: string }>;
+    delete: (id: number) => Promise<{ ok: boolean; message?: string }>;
+    setCurrent: (branchId: number) => Promise<{ ok: boolean; message?: string }>;
+  };
+  transfers: {
+    party: {
+      list: () => Promise<PartyTransferRow[]>;
+      create: (input: any) => Promise<{ ok: boolean; message?: string }>;
+    };
+    bank: {
+      listAccounts: () => Promise<BankAccountRow[]>;
+      createAccount: (input: any) => Promise<{ ok: boolean; id?: number; message?: string }>;
+      list: () => Promise<BankTransferRow[]>;
+      create: (input: any) => Promise<{ ok: boolean; message?: string }>;
+    };
+  };
+  fifo: {
+    isEnabled: () => Promise<boolean>;
+    isStrict: () => Promise<boolean>;
+    availableBatches: (productId: number) => Promise<Array<{ id: number; batch_number: string; available_qty: number; unit_cost: number; expiry_date: string | null }>>;
+    allocate: (productId: number, qty: number) => Promise<{ allocations: Array<{ product_batch_id: number; batch_number: string; allocated_qty: number; unit_cost: number }>; totalCost: number; fullyAllocated: boolean }>;
+    stockReport: (productId?: number) => Promise<Array<{ product_id: number; product_name: string; batch_id: number; batch_number: string; total_qty: number; available_qty: number; unit_cost: number; total_value: number }>>;
+  };
+  commissions: {
+    rules: () => Promise<CommissionRuleRow[]>;
+    createRule: (input: any) => Promise<{ ok: boolean; id?: number; message?: string }>;
+    updateRule: (id: number, input: any) => Promise<{ ok: boolean; message?: string }>;
+    deleteRule: (id: number) => Promise<{ ok: boolean; message?: string }>;
+    salesmen: () => Promise<Array<{ id: number; username: string; commission_rate: number }>>;
+    calculate: (saleId: number) => Promise<{ count: number; total: number }>;
+    list: (filters?: { salesman_id?: number; status?: string; from?: string; to?: string }) => Promise<SalesmanCommissionRow[]>;
+    updateStatus: (id: number, status: string, userId: number) => Promise<{ ok: boolean; message?: string }>;
+    summary: (salesmanId: number, from?: string, to?: string) => Promise<{ total: number; pending: number; paid: number; count: number }>;
+  };
+  expenses: {
+    categories: () => Promise<ExpenseCategoryRow[]>;
+    createCategory: (input: any) => Promise<{ ok: boolean; id?: number; message?: string }>;
+    updateCategory: (id: number, input: any) => Promise<{ ok: boolean; message?: string }>;
+    deleteCategory: (id: number) => Promise<{ ok: boolean; message?: string }>;
+    list: (filters?: { category_id?: number; user_id?: number; from?: string; to?: string; status?: string }) => Promise<ExpenseRow[]>;
+    create: (input: any) => Promise<{ ok: boolean; id?: number; message?: string }>;
+    get: (id: number) => Promise<ExpenseRow | null>;
+    update: (id: number, input: any) => Promise<{ ok: boolean; message?: string }>;
+    delete: (id: number) => Promise<{ ok: boolean; message?: string }>;
+    summary: (from?: string, to?: string) => Promise<{ total: number; byCategory: Array<{ category: string; total: number; count: number }>; byStatus: Array<{ status: string; total: number; count: number }> }>;
+  };
+  customReports: {
+    list: (userId?: number) => Promise<CustomReportRow[]>;
+    get: (id: number) => Promise<CustomReportRow | null>;
+    create: (input: any) => Promise<{ ok: boolean; id?: number; message?: string }>;
+    update: (id: number, input: any) => Promise<{ ok: boolean; message?: string }>;
+    delete: (id: number) => Promise<{ ok: boolean; message?: string }>;
+    tables: () => Promise<string[]>;
+    schema: (table: string) => Promise<string[] | null>;
+    execute: (id: number, limit?: number) => Promise<{ columns: string[]; rows: any[][] } | null>;
+    schedules: () => Promise<ReportScheduleRow[]>;
+    createSchedule: (input: any) => Promise<{ ok: boolean; id?: number; message?: string }>;
+    updateSchedule: (id: number, input: any) => Promise<{ ok: boolean; message?: string }>;
+    deleteSchedule: (id: number) => Promise<{ ok: boolean; message?: string }>;
+  };
 };
 
-// ── v1.8.0 Advanced Reports types ──
+// â”€â”€ v1.8.0 Advanced Reports types â”€â”€
 
 export interface InventoryReportRow {
   id: number;
@@ -1193,7 +1299,7 @@ export interface DailySnapshotResult {
   date: string;
 }
 
-// ── v2.1.0 Admin Panel types ──
+// â”€â”€ v2.1.0 Admin Panel types â”€â”€
 
 export interface CashDrawerSession {
   id: number;
@@ -1298,3 +1404,306 @@ export interface ActivityFilters {
   limit?: number;
   offset?: number;
 }
+
+// â”€â”€ Phase 1: BILLTEN Parity Types â”€â”€
+
+export interface QuotationRow {
+  id: number;
+  quote_no: string;
+  customer_id: number | null;
+  customer_name?: string;
+  user_id: number;
+  username?: string;
+  shift_id: number | null;
+  valid_until: string | null;
+  status: 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired' | 'converted';
+  subtotal: number;
+  tax_amount: number;
+  discount_amount: number;
+  discount_pct: number;
+  total_amount: number;
+  notes: string | null;
+  terms: string | null;
+  converted_sale_id: number | null;
+  converted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  item_count?: number;
+}
+
+export interface QuotationItemRow {
+  id: number;
+  quotation_id: number;
+  product_id: number;
+  product_name?: string;
+  product_barcode?: string;
+  qty: number;
+  unit_price: number;
+  unit_cost: number;
+  discount: number;
+  discount_pct: number;
+  tax_rate: number;
+  line_total: number;
+}
+
+export type InvoiceTemplateType = 'sale' | 'purchase' | 'quotation' | 'payment' | 'return';
+
+export interface InvoiceTemplateRow {
+  id: number;
+  name: string;
+  type: InvoiceTemplateType;
+  paper_size: 'a4' | 'a5' | 'thermal58' | 'thermal80';
+  orientation: 'portrait' | 'landscape';
+  margin_top: number;
+  margin_bottom: number;
+  margin_left: number;
+  margin_right: number;
+  config_json: string;
+  is_default: number;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TemplateConfig {
+  showLogo: boolean;
+  showShopName: boolean;
+  showShopAddress: boolean;
+  showShopPhone: boolean;
+  showInvoiceNo: boolean;
+  showDate: boolean;
+  showCustomer: boolean;
+  showItemsTable: boolean;
+  showTotals: boolean;
+  showPaymentInfo: boolean;
+  showFooter: boolean;
+  boldInvoiceNo: boolean;
+  boldTotal: boolean;
+  boldGrandTotal: boolean;
+  fontSize: number;
+  primaryColor: string;
+  footerText: string;
+  headerLines: string[];
+  customFields?: Record<string, string>;
+}
+
+export interface ProductVariantRow {
+  id: number;
+  product_id: number;
+  variant_name: string;
+  sku: string | null;
+  barcode: string | null;
+  mrp: number;
+  sale_price: number;
+  purchase_price: number;
+  stock_qty: number;
+  low_stock_threshold: number;
+  weight: number;
+  image_url: string | null;
+  attributes_json: string | null;
+  is_active: number;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreditCheckResult {
+  allowed: boolean;
+  reason?: string;
+  severity: 'ok' | 'warning' | 'blocked';
+  current_balance: number;
+  credit_limit: number;
+  available: number;
+  utilization_pct: number;
+  warning_threshold_pct: number;
+}
+
+export interface CreditLimitHistoryRow {
+  id: number;
+  customer_id: number;
+  customer_name?: string;
+  old_limit: number | null;
+  new_limit: number | null;
+  old_block_flag: number | null;
+  new_block_flag: number | null;
+  reason: string | null;
+  changed_by: number | null;
+  changed_by_name?: string;
+  created_at: string;
+}
+
+export interface BranchRow {
+  id: number;
+  name: string;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  is_active: number;
+  is_default: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VariantAttributeRow {
+  id: number;
+  name: string;
+  sort_order: number;
+}
+
+export interface VariantAttributeValueRow {
+  id: number;
+  attribute_id: number;
+  value: string;
+  sort_order: number;
+}
+
+export interface PartyTransferRow {
+  id: number;
+  from_party_id: number;
+  from_party_type: 'customer' | 'supplier';
+  from_party_name?: string;
+  to_party_id: number;
+  to_party_type: 'customer' | 'supplier';
+  to_party_name?: string;
+  amount: number;
+  reference: string | null;
+  notes: string | null;
+  created_by: number | null;
+  created_by_name?: string;
+  created_at: string;
+}
+
+export interface BankAccountRow {
+  id: number;
+  name: string;
+  bank_name: string | null;
+  account_number: string | null;
+  iban: string | null;
+  branch: string | null;
+  currency: string;
+  current_balance: number;
+  is_active: number;
+  is_default?: number;
+  created_at: string;
+}
+
+export interface BankTransferRow {
+  id: number;
+  from_account_id: number;
+  from_account_name?: string;
+  to_account_id: number;
+  to_account_name?: string;
+  amount: number;
+  reference: string | null;
+  notes: string | null;
+  created_by: number | null;
+  created_by_name?: string;
+  created_at: string;
+}
+
+
+export interface CommissionRuleRow {
+  id: number;
+  name: string;
+  type: 'percent' | 'fixed';
+  value: number;
+  scope: 'global' | 'category' | 'product';
+  category_id: number | null;
+  product_id: number | null;
+  min_qty: number;
+  max_qty: number | null;
+  min_amount: number | null;
+  max_amount: number | null;
+  start_date: string | null;
+  end_date: string | null;
+  is_active: number;
+  priority: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SalesmanCommissionRow {
+  id: number;
+  sale_id: number;
+  sale_item_id: number | null;
+  salesman_id: number;
+  salesman_name?: string;
+  rule_id: number | null;
+  commission_amount: number;
+  base_amount: number;
+  commission_type: 'percent' | 'fixed';
+  commission_rate: number;
+  status: 'pending' | 'approved' | 'paid' | 'cancelled';
+  notes: string | null;
+  created_at: string;
+  approved_at: string | null;
+  approved_by: number | null;
+  paid_at: string | null;
+  paid_by: number | null;
+}
+
+
+
+export interface ExpenseCategoryRow {
+  id: number;
+  name: string;
+  description: string | null;
+  color: string;
+  is_active: number;
+  created_at: string;
+}
+
+export interface ExpenseRow {
+  id: number;
+  category_id: number;
+  category_name?: string;
+  category_color?: string;
+  user_id: number;
+  username?: string;
+  title: string;
+  description: string | null;
+  amount: number;
+  expense_date: string;
+  attachment_path: string | null;
+  is_recurring: number;
+  recurrence_type: 'daily' | 'weekly' | 'monthly' | null;
+  recurrence_end: string | null;
+  status: 'active' | 'paused' | 'cancelled';
+  created_at: string;
+  updated_at: string;
+}
+
+
+export interface CustomReportRow {
+  id: number;
+  name: string;
+  description: string | null;
+  base_table: string;
+  columns_json: string;
+  filters_json: string | null;
+  group_by_json: string | null;
+  order_by_json: string | null;
+  limit_rows: number | null;
+  is_public: number;
+  created_by: number;
+  created_by_name?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReportScheduleRow {
+  id: number;
+  report_id: number;
+  report_name?: string;
+  frequency: 'daily' | 'weekly' | 'monthly';
+  day_of_week: number | null;
+  day_of_month: number | null;
+  time_of_day: string;
+  format: 'xlsx' | 'csv' | 'pdf';
+  recipients_json: string | null;
+  is_active: number;
+  last_run: string | null;
+  next_run: string | null;
+  created_at: string;
+}
+

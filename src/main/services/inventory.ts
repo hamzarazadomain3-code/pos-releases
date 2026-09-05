@@ -425,6 +425,22 @@ export function deductStockFIFO(productId: number, qty: number): { batchId: numb
   return allocation;
 }
 
+/**
+ * Record FIFO allocations for a sale item (creates fifo_allocations records)
+ * Should be called after sale_items are inserted with known sale_item_id
+ */
+export function recordFIFOAllocations(saleItemId: number, productId: number, allocations: { batchId: number; qty: number }[]): void {
+  const db = getDb();
+  const ins = db.prepare(`
+    INSERT INTO fifo_allocations (sale_item_id, product_batch_id, allocated_qty, unit_cost)
+    VALUES (?, ?, ?, ?)
+  `);
+  for (const alloc of allocations) {
+    const batch = db.prepare(`SELECT cost_price FROM product_batches WHERE id = ?`).get(alloc.batchId) as { cost_price: number } | undefined;
+    ins.run(saleItemId, alloc.batchId, alloc.qty, batch?.cost_price ?? 0);
+  }
+}
+
 export function recordMovement(
   productId: number,
   changeQty: number,

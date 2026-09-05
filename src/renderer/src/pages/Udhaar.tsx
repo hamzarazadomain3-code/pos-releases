@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import { ModalCloseButton } from '../components/ModalCloseButton';
 import type { Customer, CustomerTransaction } from '../../../shared/types';
 import { DateRangePicker, SearchInput, FilterBar, FilterRow } from '../components/filters';
+import { formatDateTimeAdmin } from '../utils/dateUtils';
 
 export default function Udhaar() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -191,7 +193,10 @@ export default function Udhaar() {
       {addOpen && (
         <div className="modal-overlay">
           <div className="modal modal-sm">
-            <h2>Add Customer</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>Add Customer</h2>
+              <ModalCloseButton onClose={() => setAddOpen(false)} />
+            </div>
             <label className="field">
               <span>Name *</span>
               <input value={newName} onChange={(e) => setNewName(e.target.value)} />
@@ -237,7 +242,10 @@ export default function Udhaar() {
 {ledger && (
         <div className="modal-overlay">
           <div className="modal modal-wide">
-            <h2>Ledger — {ledger.customer.name}</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>Ledger — {ledger.customer.name}</h2>
+              <ModalCloseButton onClose={() => setLedger(null)} />
+            </div>
             {(() => {
               const limit = ledger.customer.credit_limit ?? 0;
               const over = limit > 0 && ledger.customer.balance > limit;
@@ -311,7 +319,7 @@ export default function Udhaar() {
                 <tbody>
                   {[...ledger.rows].reverse().map((r) => (
                     <tr key={r.id}>
-                      <td>{r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</td>
+                      <td>{r.created_at ? formatDateTimeAdmin(r.created_at) : '—'}</td>
                       <td>
                         {r.type.startsWith('payment') ? (
                           <span className="text-ok">Payment ({r.type.split(':')[1]})</span>

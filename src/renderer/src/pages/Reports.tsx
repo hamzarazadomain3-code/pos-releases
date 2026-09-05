@@ -37,6 +37,7 @@ import type {
   ProductPurchaseSummaryRow,
   DailySnapshotResult,
 } from '../../../shared/types';
+import { formatDateAdmin } from '../utils/dateUtils';
 
 type Tab =
   | 'sales'
@@ -1225,7 +1226,7 @@ export default function Reports() {
               <tbody>
                 {alerts.map((a) => (
                   <tr key={a.id} style={a.is_read ? { opacity: 0.6 } : undefined}>
-                    <td className="num">{a.created_at?.substring(0, 10)}</td>
+                    <td className="num">{a.created_at ? formatDateAdmin(a.created_at) : '—'}</td>
                     <td>{a.alert_type.replace('_', ' ')}</td>
                     <td>
                       <span

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import bwipjs from 'bwip-js';
+import { ModalCloseButton } from '../components/ModalCloseButton';
+import { formatDateTimeAdmin } from '../utils/dateUtils';
 import type { Category, ExpiringRow, Product, ProductImportResult, ProductInput, StockMovement, Unit } from '../../../shared/types';
 import { DateRangePicker, SearchInput, MultiSelectDropdown, FilterBar, FilterRow } from '../components/filters';
 
@@ -670,7 +672,10 @@ export default function Inventory() {
       {formOpen && (
         <div className="modal-overlay">
           <div className="modal">
-            <h2>{editing ? 'Edit Product' : 'Add Product'}</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>{editing ? 'Edit Product' : 'Add Product'}</h2>
+              <ModalCloseButton onClose={() => setFormOpen(false)} />
+            </div>
             <div className="form-grid">
               <label className="field span-2">
                 <span>Name *</span>
@@ -922,7 +927,10 @@ export default function Inventory() {
       {stockModal && (
         <div className="modal-overlay">
           <div className="modal modal-sm">
-            <h2>Stock Adjustment</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>Stock Adjustment</h2>
+              <ModalCloseButton onClose={() => setStockModal(null)} />
+            </div>
             <p className="muted">
               {stockModal.product.name} — current stock: <strong>{Number(stockModal.product.stock_qty.toFixed(3))}</strong>
             </p>
@@ -955,7 +963,10 @@ export default function Inventory() {
       {movements && (
         <div className="modal-overlay">
           <div className="modal">
-            <h2>Stock History — {movements.product.name}</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>Stock History — {movements.product.name}</h2>
+              <ModalCloseButton onClose={() => setMovements(null)} />
+            </div>
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
@@ -968,7 +979,7 @@ export default function Inventory() {
                 <tbody>
                   {movements.rows.map((m) => (
                     <tr key={m.id}>
-                      <td>{m.created_at ? new Date(m.created_at).toLocaleString() : '—'}</td>
+                      <td>{m.created_at ? formatDateTimeAdmin(m.created_at) : '—'}</td>
                       <td className={m.change_qty >= 0 ? 'text-ok' : 'text-warn'}>
                         {m.change_qty > 0 ? '+' : ''}
                         {m.change_qty}
@@ -997,7 +1008,10 @@ export default function Inventory() {
       {importResult && (
         <div className="modal-overlay">
           <div className="modal">
-            <h2>Import Result</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>Import Result</h2>
+              <ModalCloseButton onClose={() => setImportResult(null)} />
+            </div>
             <p>
               <strong>{importResult.inserted}</strong> product(s) imported successfully.
               {importResult.errors.length > 0 && (
@@ -1044,7 +1058,10 @@ export default function Inventory() {
       {batches && (
         <div className="modal-overlay">
           <div className="modal modal-wide">
-            <h2>Batch Details — {batches.product.name}</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>Batch Details — {batches.product.name}</h2>
+              <ModalCloseButton onClose={() => setBatches(null)} />
+            </div>
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
@@ -1063,7 +1080,7 @@ export default function Inventory() {
                       <td className="num">{b.quantity}</td>
                       <td className="num">{b.cost_price.toLocaleString()}</td>
                       <td>{b.expiry_date ?? '—'}</td>
-                      <td>{b.received_date ? new Date(b.received_date).toLocaleString() : '—'}</td>
+                      <td>{b.received_date ? formatDateTimeAdmin(b.received_date) : '—'}</td>
                     </tr>
                   ))}
                   {batches.rows.length === 0 && (
@@ -1086,7 +1103,10 @@ export default function Inventory() {
       {stockReceived && (
         <div className="modal-overlay">
           <div className="modal modal-wide">
-            <h2>Stock Received Log</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>Stock Received Log</h2>
+              <ModalCloseButton onClose={() => setStockReceived(null)} />
+            </div>
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
@@ -1107,7 +1127,7 @@ export default function Inventory() {
                         <td className="num">{b.quantity}</td>
                         <td className="num">{b.cost_price.toLocaleString()}</td>
                         <td>{b.expiry_date ?? '—'}</td>
-                        <td>{b.received_date ? new Date(b.received_date).toLocaleString() : '—'}</td>
+                        <td>{b.received_date ? formatDateTimeAdmin(b.received_date) : '—'}</td>
                       </tr>
                     ))}
                   {stockReceived.length === 0 && (

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { CashDrawerBreakdown, CashDrawerSession, ShiftRow, UserRow } from '../../../shared/types';
+import { formatDateTimeAdmin, formatTimeAdmin } from '../utils/dateUtils';
 
 interface Props {
   shift: ShiftRow;
@@ -87,8 +88,8 @@ export default function CashDrawer({ shift, onClose }: Props) {
       expected_cash: expectedBalance,
       actual_cash: actualCash,
       variance: actualCash - expectedBalance,
-      opened_at: new Date(session.opening_time).toLocaleString(),
-      closed_at: new Date().toLocaleString(),
+      opened_at: formatDateTimeAdmin(session.opening_time),
+      closed_at: formatDateTimeAdmin(new Date().toISOString()),
       cashier: user?.username ?? session.opened_by_name ?? '—',
       notes: notes.trim() || undefined,
     }).catch(() => setNotice('Print failed'));
@@ -153,7 +154,7 @@ export default function CashDrawer({ shift, onClose }: Props) {
               <div className="cash-drawer-grid">
                 <div className="cash-drawer-stat">
                   <span className="stat-label">Opening Time</span>
-                  <span className="stat-value">{new Date(session.opening_time).toLocaleString()}</span>
+                  <span className="stat-value">{formatDateTimeAdmin(session.opening_time)}</span>
                 </div>
                 <div className="cash-drawer-stat">
                   <span className="stat-label">Opening Cash</span>

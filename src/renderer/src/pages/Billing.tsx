@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CashDrawer from '../components/CashDrawer';
+import { ModalCloseButton } from '../components/ModalCloseButton';
+import { formatDateTimeAdmin, formatTimeAdmin, formatDateAdmin } from '../utils/dateUtils';
 import type {
   Customer,
   HeldBill,
@@ -32,6 +34,36 @@ interface CartLine {
   selected_unit_level: number;
   box_qty?: number;
   // BayLan Label Scale integration
+  scale_plu?: string;
+  scale_price?: number;
+  scale_weight_g?: number;
+  scale_weight_kg?: number;
+  // Optional unit display fields (for multi-unit products)
+  unit_name?: string | null;
+  display_qty?: number | null;
+  // Enhancement: Item notes
+  note?: string;
+  // Enhancement: Pinned/favorite
+  isPinned?: boolean;
+}
+
+interface CartLine {
+  product_id: number;
+  name: string;
+  qty: number;
+  price: number;
+  retail_price: number;
+  wholesale_price: number | null;
+  cost_price: number;
+  line_discount: number;
+  tax_rate: number;
+  expired: boolean;
+  shelf_location: string | null;
+  stock_qty: number;
+  units: ProductUnit[];
+  selected_unit_level: number;
+  box_qty?: number;
+  // BayLan Label Scale integration
   scale_plu?: string;         // PLU code from scale barcode
   scale_price?: number;       // decoded total price from scale barcode
   scale_weight_g?: number;    // weight in grams (computed from decoded price / per-kg price)
@@ -39,6 +71,36 @@ interface CartLine {
   // Optional unit display fields (for multi-unit products)
   unit_name?: string | null;
   display_qty?: number | null;
+}
+
+interface CartLine {
+  product_id: number;
+  name: string;
+  qty: number;
+  price: number;
+  retail_price: number;
+  wholesale_price: number | null;
+  cost_price: number;
+  line_discount: number;
+  tax_rate: number;
+  expired: boolean;
+  shelf_location: string | null;
+  stock_qty: number;
+  units: ProductUnit[];
+  selected_unit_level: number;
+  box_qty?: number;
+  // BayLan Label Scale integration
+  scale_plu?: string;         // PLU code from scale barcode
+  scale_price?: number;       // decoded total price from scale barcode
+  scale_weight_g?: number;    // weight in grams (computed from decoded price / per-kg price)
+  scale_weight_kg?: number;   // weight in kg (for backend inventory deduction)
+  // Optional unit display fields (for multi-unit products)
+  unit_name?: string | null;
+  display_qty?: number | null;
+  // Enhancement: Item notes
+  note?: string;
+  // Enhancement: Pinned/favorite
+  isPinned?: boolean;
 }
 
 function isExpired(dateStr: string | null): boolean {
@@ -164,18 +226,65 @@ export default function Billing() {
   const [cashDrawerOpen, setCashDrawerOpen] = useState(false);
   const [heldCount, setHeldCount] = useState(0);
   const [quotationCount, setQuotationCount] = useState(0);
-  const [currentHeldId, setCurrentHeldId] = useState<number | null>(null);
+const [currentHeldId, setCurrentHeldId] = useState<number | null>(null);
   const [inputDrafts, setInputDrafts] = useState<Record<string, string>>({});
   const [shortcutMap, setShortcutMap] = useState<Record<string, string>>({});
   const [autoPrintReceipt, setAutoPrintReceipt] = useState(false);
 
+  // Enhancement: Favorites/pinned products
+  const [favorites, setFavorites] = useState<number[]>([]);
+  const [showFavorites, setShowFavorites] = useState(false);
+
+  // Enhancement: Round-off settings
+  const [roundOffEnabled, setRoundOffEnabled] = useState(false);
+  const [roundOffValue, setRoundOffValue] = useState<'0.50' | '1.00'>('1.00');
+
+  // Enhancement: F1 shortcut modal
+  const [shortcutModalOpen, setShortcutModalOpen] = useState(false);
+
+  // Enhancement: Split bill
+  const [splitModalOpen, setSplitModalOpen] = useState(false);
+  const [splitItems, setSplitItems] = useState<Record<number, number>>({});
+
+  // Enhancement: Customer loyalty
+  const [selectedCustomerLoyalty, setSelectedCustomerLoyalty] = useState<{ points: number; tier: string } | null>(null);
+
+  // Enhancement: Express checkout
+  const [expressBusy, setExpressBusy] = useState(false);
+
+  // Enhancement: Repeat last sale
+  const [lastSaleItems, setLastSaleItems] = useState<CartLine[] | null>(null);
+  const [lastSaleCustomer, setLastSaleCustomer] = useState<string>('');
+
+  // Enhancement: Quick products
+  const [quickProducts, setQuickProducts] = useState<Product[]>([]);
+
+  // Enhancement: Return mode
+  const [returnMode, setReturnMode] = useState(false);
+
+  // Enhancement: Profit live (owner only)
+  const [profitLive, setProfitLive] = useState<{ cost: number; revenue: number; margin: number } | null>(null);
+
+  // Enhancement: Running total bar visibility
+  const [showRunningBar, setShowRunningBar] = useState(true);
+
   const searchRef = useRef<HTMLInputElement>(null);
   const totals = useMemo(() => lineTotals(items, Number(billDiscount) || 0, discountType, promoMap), [items, billDiscount, discountType, promoMap]);
-const serviceChargeAmt = serviceChargeType === 'percent'
-  ? (totals.total * (Number(serviceCharge) || 0)) / 100
-  : Number(serviceCharge) || 0;
-const freightAmt = Number(freight) || 0;
-const grandTotal = totals.total + serviceChargeAmt + freightAmt;
+  const serviceChargeAmt = serviceChargeType === 'percent'
+    ? (totals.total * (Number(serviceCharge) || 0)) / 100
+    : Number(serviceCharge) || 0;
+  const freightAmt = Number(freight) || 0;
+  const grandTotal = totals.total + serviceChargeAmt + freightAmt;
+
+  // Enhancement: Round-off calculation
+  const roundOffAmount = useMemo(() => {
+    if (!roundOffEnabled) return 0;
+    const roundTo = roundOffValue === '0.50' ? 0.5 : 1;
+    const rounded = Math.round(grandTotal / roundTo) * roundTo;
+    return Math.round((rounded - grandTotal) * 100) / 100;
+  }, [grandTotal, roundOffEnabled, roundOffValue]);
+
+  const finalTotal = grandTotal + roundOffAmount;
 
   const handleOpenCashDrawer = async () => {
     setCashDrawerOpen(true);
@@ -421,6 +530,9 @@ const grandTotal = totals.total + serviceChargeAmt + freightAmt;
         setItems([]);
         setBillDiscount('');
         setNotice('Bill held. Use "Held" to resume.');
+        // Save for repeat
+        setLastSaleItems([...items]);
+        setLastSaleCustomer(customerId);
       updateHeldCounts();
       })
       .catch((e) => setNotice(e.message));
@@ -510,6 +622,125 @@ useEffect(() => {
     };
   }, [search]);
 
+  // =====================================================================
+  // ENHANCEMENT FUNCTIONS
+  // =====================================================================
+
+  // Toggle favorite/pinned product
+  const toggleFavorite = useCallback((productId: number) => {
+    setFavorites((prev) =>
+      prev.includes(productId)
+        ? prev.filter((id) => id !== productId)
+        : [...prev, productId]
+    );
+  }, []);
+
+  // ── Express Checkout: one-click cash sale ──
+  const expressCheckout = useCallback(async () => {
+    if (items.length === 0 || expressBusy) return;
+    const expired = items.filter((i) => i.expired);
+    if (expired.length > 0) { setExpiredConfirm(expired); return; }
+    if (priceFloorEnabled) {
+      const belowCost = items.filter((i) => {
+        if (i.scale_price != null && i.scale_weight_kg != null && i.scale_weight_kg > 0) {
+          return i.price < i.cost_price * i.scale_weight_kg;
+        }
+        return i.price < i.cost_price;
+      });
+      if (belowCost.length > 0) { setBelowCostConfirm(belowCost); return; }
+    }
+    setExpressBusy(true);
+    try {
+      const rows = [{ mode: 'Cash', amount: finalTotal }];
+      const result = await window.api.sales.create({
+        items: items.map((i) => {
+          if (i.scale_price != null && i.scale_weight_kg != null && i.scale_weight_kg > 0) {
+            const pricePerKg = Math.round((i.scale_price / i.scale_weight_kg) * 100) / 100;
+            return { product_id: i.product_id, qty: Math.round(i.scale_weight_kg * 1000) / 1000, price: pricePerKg, line_discount: i.line_discount, tax_rate: i.tax_rate, box_qty: undefined, unit_name: 'Gram', display_qty: Math.round((i.scale_weight_g ?? 0) * 1000) / 1000 };
+          }
+          const units = i.units || [];
+          const sel = units[i.selected_unit_level] || units[0];
+          const mult = sel?.quantity_in_base_units || 1;
+          const raw = Math.round((i.qty / mult) * 1e9) / 1e9;
+          return { product_id: i.product_id, qty: i.qty, price: i.price, line_discount: i.line_discount, tax_rate: i.tax_rate, box_qty: i.box_qty, unit_name: sel?.name ?? null, display_qty: Math.round(raw * 1e6) / 1e6 };
+        }),
+        customer_id: customerId ? Number(customerId) : null,
+        bill_discount: Number(billDiscount) || 0, discount_type: discountType,
+        price_floor_override: priceFloorOverride, price_mode: priceMode,
+        service_charge: Number(serviceCharge) || 0, service_charge_type: serviceChargeType,
+        freight: freightAmt, payments: rows,
+      });
+      // Save for repeat
+      setLastSaleItems([...items]);
+      setLastSaleCustomer(customerId);
+      setSuccess(result);
+      setItems([]);
+      setBillDiscount('');
+      setPriceFloorOverride(false);
+      if (autoPrintReceipt && result.sale?.id) {
+        window.api.printing.printSale(result.sale.id).catch(() => undefined);
+      }
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExpressBusy(false);
+    }
+  }, [items, finalTotal, customerId, billDiscount, discountType, priceFloorOverride, priceMode, serviceCharge, serviceChargeType, freightAmt, autoPrintReceipt, expressBusy, priceFloorEnabled]);
+
+  // ── Repeat Last Sale (F7) ──
+  const repeatLastSale = useCallback(() => {
+    if (!lastSaleItems || lastSaleItems.length === 0) {
+      setNotice('No previous sale to repeat');
+      return;
+    }
+    setItems([...lastSaleItems]);
+    setCustomerId(lastSaleCustomer);
+    setNotice('Last sale loaded — press Charge to complete');
+  }, [lastSaleItems, lastSaleCustomer]);
+
+  // ── Customer phone lookup ──
+  const handlePhoneLookup = useCallback(async (query: string) => {
+    if (!query || query.length < 3) return;
+    const phoneMatch = query.replace(/\D/g, '');
+    if (phoneMatch.length >= 10) {
+      const cust = customers.find((c) => {
+        const cPhone = (c.phone || '').replace(/\D/g, '');
+        return cPhone.endsWith(phoneMatch.slice(-10));
+      });
+      if (cust) {
+        setCustomerId(String(cust.id));
+        setNotice(`Customer auto-selected: ${cust.name}`);
+      }
+    }
+  }, [customers]);
+
+  // ── Quick products: load most-sold products ──
+  useEffect(() => {
+    window.api.inventory.list().then((all) => {
+      // Sort by stock_qty descending as proxy for popularity, take top 6
+      const top = [...all].sort((a, b) => (b.stock_qty || 0) - (a.stock_qty || 0)).slice(0, 6);
+      setQuickProducts(top);
+    }).catch(() => {});
+  }, []);
+
+  // ── Profit calculation for owner ──
+  useEffect(() => {
+    if (userRole !== 'owner' || items.length === 0) { setProfitLive(null); return; }
+    let totalCost = 0;
+    let totalRevenue = 0;
+    for (const it of items) {
+      const promo = promoMap[it.product_id];
+      const unit = promo ? promo.effective_price : it.price;
+      totalCost += it.cost_price * it.qty;
+      totalRevenue += unit * it.qty - it.line_discount;
+    }
+    const margin = totalRevenue > 0 ? ((totalRevenue - totalCost) / totalRevenue) * 100 : 0;
+    setProfitLive({ cost: totalCost, revenue: totalRevenue, margin: Math.round(margin * 10) / 10 });
+  }, [items, promoMap, userRole]);
+
+  const payTotal = payRows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+
+  // ── Keyboard shortcuts handler ──
   useEffect(() => {
     let buffer = '';
     let last = 0;
@@ -558,9 +789,11 @@ useEffect(() => {
         return;
       }
 
-      // Fallback hardcoded keys (in case no shortcut configured)
+      // Fallback hardcoded keys
       if (e.key === 'F2') { e.preventDefault(); searchRef.current?.focus(); return; }
       if (e.key === 'F5') { e.preventDefault(); newBill(); return; }
+      if (e.key === 'F7') { e.preventDefault(); repeatLastSale(); return; }
+      if (e.key === 'F8') { e.preventDefault(); expressCheckout(); return; }
       if (e.key === 'F9') { e.preventDefault(); doHold(); return; }
       if (e.key === 'F12') { e.preventDefault(); openHeld('held'); return; }
       if (inField) return;
@@ -577,10 +810,7 @@ useEffect(() => {
         return;
       }
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (now - last > 150) {
-          buffer = '';
-          burstCount = 0;
-        }
+        if (now - last > 150) { buffer = ''; burstCount = 0; }
         buffer += e.key;
         last = now;
         burstCount++;
@@ -589,7 +819,74 @@ useEffect(() => {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [scanAdd, newBill, doHold, shortcutMap]);
+  }, [scanAdd, newBill, doHold, shortcutMap, repeatLastSale, expressCheckout, items, payTotal, shift]);
+
+  // Apply round-off
+  const applyRoundOff = useCallback(() => {
+    if (roundOffEnabled) {
+      const diff = finalTotal - grandTotal;
+      setFreight((prev) => {
+        const current = Number(prev) || 0;
+        return String(Math.round((current + diff) * 100) / 100);
+      });
+    }
+  }, [roundOffEnabled, finalTotal, grandTotal]);
+
+  // Toggle round-off
+  const toggleRoundOff = useCallback((enabled?: boolean) => {
+    const newEnabled = enabled ?? !roundOffEnabled;
+    setRoundOffEnabled(newEnabled);
+    if (newEnabled) {
+      applyRoundOff();
+    } else {
+      setFreight('0');
+    }
+  }, [roundOffEnabled, applyRoundOff]);
+
+  // Load customer loyalty when customer changes
+  useEffect(() => {
+    if (customerId) {
+      window.api.customers.list().then((custs) => {
+        const cust = custs.find((c) => String(c.id) === customerId);
+        if (cust) {
+          // Calculate loyalty based on purchase history (mock for now)
+          // In real implementation, this would come from a loyalty API
+          setSelectedCustomerLoyalty({ points: Math.floor(cust.balance / 100), tier: cust.balance > 10000 ? 'Gold' : cust.balance > 5000 ? 'Silver' : 'Bronze' });
+        }
+      }).catch(() => undefined);
+    } else {
+      setSelectedCustomerLoyalty(null);
+    }
+  }, [customerId]);
+
+  // Open shortcut modal
+  const openShortcutModal = useCallback(() => {
+    setShortcutModalOpen(true);
+  }, []);
+
+  // Open split bill modal
+  const openSplitModal = useCallback(() => {
+    if (items.length === 0) return;
+    const initialSplit: Record<number, number> = {};
+    items.forEach((_, idx) => { initialSplit[idx] = 1; });
+    setSplitItems(initialSplit);
+    setSplitModalOpen(true);
+  }, [items]);
+
+  // Calculate tax breakdown
+  const taxBreakdown = useMemo(() => {
+    const breakdown: Record<number, number> = {};
+    items.forEach((it) => {
+      const promo = promoMap[it.product_id];
+      const unit = promo ? promo.effective_price : it.price;
+      const taxable = unit * it.qty - it.line_discount;
+      const tax = (taxable * it.tax_rate) / 100;
+      if (tax > 0) {
+        breakdown[it.tax_rate] = (breakdown[it.tax_rate] || 0) + tax;
+      }
+    });
+    return breakdown;
+  }, [items, promoMap]);
 
   async function handleSearchEnter() {
     const q = search.trim();
@@ -626,12 +923,10 @@ function openPay() {
   }
   if (priceFloorEnabled) {
     const belowCost = items.filter((i) => {
-      // Scale item: price is decoded TOTAL, cost_price is per-KG → prorate cost by weight
       if (i.scale_price != null && i.scale_weight_kg != null && i.scale_weight_kg > 0) {
         const actualCost = i.cost_price * i.scale_weight_kg;
         return i.price < actualCost;
       }
-      // Normal item: both price and cost are per-unit
       return i.price < i.cost_price;
     });
     if (belowCost.length > 0) {
@@ -639,7 +934,7 @@ function openPay() {
       return;
     }
   }
-  setPayRows([{ mode: 'Cash', amount: grandTotal.toFixed(2) }]);
+  setPayRows([{ mode: 'Cash', amount: finalTotal.toFixed(2) }]);
   setPayOpen(true);
 }
 
@@ -656,13 +951,14 @@ function openPay() {
               const pricePerKg = Math.round((i.scale_price / i.scale_weight_kg) * 100) / 100;
               return {
                 product_id: i.product_id,
-                qty: Math.round(i.scale_weight_kg * 1000) / 1000,          // KG stored in DB
-                price: pricePerKg,               // price per KG (total / weight)
+                qty: Math.round(i.scale_weight_kg * 1000) / 1000,
+                price: pricePerKg,
                 line_discount: i.line_discount,
                 tax_rate: i.tax_rate,
                 box_qty: undefined,
                 unit_name: 'Gram',
-                display_qty: Math.round((i.scale_weight_g ?? 0) * 1000) / 1000,   // show "234 gram" on receipt
+                display_qty: Math.round((i.scale_weight_g ?? 0) * 1000) / 1000,
+                note: i.note || undefined,
               };
             }
             // --- Normal item ---
@@ -680,6 +976,7 @@ function openPay() {
               box_qty: i.box_qty,
               unit_name: sel?.name ?? null,
               display_qty: dq,
+              note: i.note || undefined,
             };
           }),
           customer_id: customerId ? Number(customerId) : null,
@@ -694,6 +991,9 @@ function openPay() {
         });
       setPayOpen(false);
       setSuccess(result);
+      // Save for repeat last sale
+      setLastSaleItems([...items]);
+      setLastSaleCustomer(customerId);
       setItems([]);
       setBillDiscount('');
       setPriceFloorOverride(false);
@@ -937,6 +1237,7 @@ setQuotationMode(false);
         selected_unit_level: unitLevel,
         unit_name: item.unit_name,
         display_qty: item.display_qty,
+        note: (item as any).note || undefined,
       });
     }
     
@@ -976,8 +1277,6 @@ setQuotationMode(false);
     }
   }
 
-  const payTotal = payRows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-
   async function doCloseShift() {
     if (!closeShiftModal) return;
     const counted = Number(countedCash);
@@ -1016,7 +1315,7 @@ return (
         {shift ? (
           <>
             <span>
-              Shift open · started {new Date(shift.opened_at).toLocaleTimeString()} · opening cash {shift.start_cash.toFixed(2)}
+              Shift open · started {formatTimeAdmin(shift.opened_at)} · opening cash {shift.start_cash.toFixed(2)}
             </span>
             <button
               className="btn btn-sm"
@@ -1044,12 +1343,29 @@ return (
         )}
       </div>
       <div className="billing-top">
+        {/* Quick Products Row */}
+        {quickProducts.length > 0 && (
+          <div className="quick-products-row" style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+            {quickProducts.map((qp) => (
+              <button
+                key={qp.id}
+                className="btn btn-sm"
+                style={{ fontSize: 11, padding: '4px 8px', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                onClick={() => addProduct(qp)}
+                title={`Add ${qp.name} — Rs ${qp.sale_price}`}
+              >
+                {qp.name} · Rs{qp.sale_price}
+              </button>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         <input
           ref={searchRef}
           className="search-input billing-search"
-          placeholder="Search or scan barcode... (F2)"
+          placeholder="Search, scan barcode, or type phone... (F2)"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => { setSearch(e.target.value); handlePhoneLookup(e.target.value); }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
@@ -1099,7 +1415,49 @@ Quotes ({quotationCount})
                 : 'Scanner: Connected')
             : 'Scanner: Not detected'}
         </span>
-      </div>
+        </div>
+        </div>
+
+        {/* Quick action buttons row */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            className="btn btn-sm"
+            style={{ background: 'var(--ok)', color: '#fff', fontWeight: 600 }}
+            disabled={items.length === 0 || expressBusy || !shift}
+            onClick={expressCheckout}
+            title="Express checkout — cash payment, one click (F8)"
+          >
+            {expressBusy ? 'Processing...' : '⚡ Express (F8)'}
+          </button>
+          <button
+            className="btn btn-sm"
+            disabled={!lastSaleItems}
+            onClick={repeatLastSale}
+            title="Repeat last sale items (F7)"
+          >
+            ↻ Repeat (F7)
+          </button>
+          <button
+            className={`btn btn-sm ${returnMode ? 'btn-danger active' : ''}`}
+            onClick={() => {
+              setReturnMode(!returnMode);
+              if (!returnMode) setNotice('Return mode ON — scan item to return');
+              else setNotice(null);
+            }}
+            title="Toggle return mode — scan items to return"
+          >
+            {returnMode ? '↩ Return ON' : '↩ Return'}
+          </button>
+          {profitLive && (
+            <span
+              className="badge"
+              style={{ background: profitLive.margin > 0 ? '#052e16' : '#450a0a', color: profitLive.margin > 0 ? '#22c55e' : '#ef4444', padding: '4px 8px', fontSize: 11 }}
+              title={`Cost: Rs ${profitLive.cost.toFixed(2)} | Revenue: Rs ${profitLive.revenue.toFixed(2)}`}
+            >
+              Profit: {profitLive.margin}%
+            </span>
+          )}
+        </div>
 
       {notice && (
         <div className="notice" onClick={() => setNotice(null)}>
@@ -1381,8 +1739,18 @@ const handleUnitChange = (newLevel: number) => {
                     </div>
                     {promo && <div className="small text-ok">Promo: {promo.promo_name}</div>}
                     {it.stock_qty != null && ((isScaleItem && (it.scale_weight_kg ?? 0) > it.stock_qty) || (!isScaleItem && it.qty > it.stock_qty)) && (
-                      <div className="small text-warn">
-                        Stock kam hai — sirf {isScaleItem ? Number(it.stock_qty.toFixed(3)) : availableLabel} {isScaleItem ? 'kg' : `${selectedUnit?.name || 'pcs'}`} available
+                      <div className="small text-warn" style={{ background: '#fef3c7', padding: '2px 6px', borderRadius: 4, marginTop: 2, fontWeight: 600 }}>
+                        ⚠ Stock kam hai — sirf {isScaleItem ? Number(it.stock_qty.toFixed(3)) : availableLabel} {isScaleItem ? 'kg' : `${selectedUnit?.name || 'pcs'}`} available
+                      </div>
+                    )}
+                    {it.stock_qty != null && it.stock_qty > 0 && !isScaleItem && it.qty > 0 && it.qty <= it.stock_qty && it.stock_qty <= 5 && (
+                      <div className="small" style={{ color: 'var(--warn)', marginTop: 2 }}>
+                        Low stock: {availableLabel} left
+                      </div>
+                    )}
+                    {it.stock_qty != null && it.stock_qty <= 0 && (
+                      <div className="small" style={{ color: 'var(--danger)', marginTop: 2, fontWeight: 600 }}>
+                        ✕ Out of stock!
                       </div>
                     )}
                     <div className="small">
@@ -1406,6 +1774,22 @@ const handleUnitChange = (newLevel: number) => {
                           );
                         }}
                         style={{ width: '60px' }}
+                      />
+                    </div>
+                    <div className="small" style={{ marginTop: 2 }}>
+                      <input
+                        type="text"
+                        className="line-price-input"
+                        value={it.note || ''}
+                        placeholder="Note..."
+                        maxLength={50}
+                        onChange={(e) => {
+                          setItems((prev) =>
+                            prev.map((x, i) => i === idx ? { ...x, note: e.target.value } : x)
+                          );
+                        }}
+                        style={{ width: '120px', fontSize: 11 }}
+                        title="Item note (e.g. Gift wrap, Extra spice)"
                       />
                     </div>
                   </div>
@@ -1550,18 +1934,32 @@ const handleUnitChange = (newLevel: number) => {
             </div>
           <div className="summary-row total">
             <span>Total</span>
-            <span>{grandTotal.toFixed(2)}</span>
+            <span>{finalTotal.toFixed(2)}</span>
           </div>
+          {roundOffEnabled && roundOffAmount !== 0 && (
+            <div className="summary-row">
+              <span className="muted small">Round-off</span>
+              <span className="muted small">{roundOffAmount > 0 ? '+' : ''}{roundOffAmount.toFixed(2)}</span>
+            </div>
+          )}
+          {profitLive && userRole === 'owner' && (
+            <div className="summary-row" style={{ borderTop: '1px dashed var(--border)', paddingTop: 6, marginTop: 6 }}>
+              <span className="small muted">Profit</span>
+              <span className="small" style={{ color: profitLive.margin > 0 ? 'var(--ok)' : 'var(--danger)', fontWeight: 600 }}>
+                Rs {(profitLive.revenue - profitLive.cost).toFixed(2)} ({profitLive.margin}%)
+              </span>
+            </div>
+          )}
           <div className="summary-actions">
             <button className="btn btn-primary btn-lg" onClick={quotationMode ? completeQuotation : openPay} disabled={items.length === 0 || busy || (!quotationMode && !shift)}>
-              {busy ? 'Working...' : quotationMode ? 'Save Quotation' : `Charge ${grandTotal.toFixed(2)}`}
+              {busy ? 'Working...' : quotationMode ? 'Save Quotation' : `Charge ${finalTotal.toFixed(2)}`}
             </button>
             <button className="btn btn-lg" onClick={doHold} disabled={items.length === 0}>
               Hold (F9)
             </button>
           </div>
           <div className="shortcuts muted small">
-            F2 search • F5 new bill • F9 hold • Enter adds item
+            F2 search · F5 new · F7 repeat · F8 express · F9 hold · F12 held
           </div>
         </div>
       </div>
@@ -1569,7 +1967,10 @@ const handleUnitChange = (newLevel: number) => {
       {expiredConfirm && (
         <div className="modal-overlay">
           <div className="modal modal-sm">
-            <h2 className="text-warn">Expired Items in Bill</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2 className="text-warn">Expired Items in Bill</h2>
+              <ModalCloseButton onClose={() => setExpiredConfirm(null)} />
+            </div>
             <p>The following items have passed their expiry date. Selling expired stock is not recommended:</p>
             <ul className="expired-confirm-list">
               {expiredConfirm.map((i) => (
@@ -1601,7 +2002,10 @@ const handleUnitChange = (newLevel: number) => {
       {payOpen && (
         <div className="modal-overlay">
           <div className="modal">
-            <h2>Payment — {grandTotal.toFixed(2)}</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>Payment — {grandTotal.toFixed(2)}</h2>
+              <ModalCloseButton onClose={() => setPayOpen(false)} />
+            </div>
             {payRows.map((r, idx) => (
               <div className="pay-row" key={idx}>
                 <select
@@ -1634,8 +2038,50 @@ const handleUnitChange = (newLevel: number) => {
               </div>
             ))}
             <button className="btn btn-sm" onClick={() => setPayRows((prev) => [...prev, { mode: 'Cash', amount: '0' }])}>
-              + Split payment
+              + Split Payment
             </button>
+            {/* Quick denomination buttons */}
+            <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+              <span className="muted small" style={{ width: '100%', marginBottom: 2 }}>Quick cash:</span>
+              {[100, 200, 500, 1000, 2000, 5000].map((denom) => (
+                <button
+                  key={denom}
+                  className="btn btn-sm"
+                  onClick={() => {
+                    const remaining = Math.max(0, finalTotal - payRows.slice(0, -1).reduce((s, r) => s + (Number(r.amount) || 0), 0));
+                    const amount = Math.min(denom, remaining);
+                    setPayRows((prev) => {
+                      const last = prev[prev.length - 1];
+                      const rest = prev.slice(0, -1);
+                      return [...rest, { ...last, amount: String(amount || denom) }];
+                    });
+                  }}
+                  style={{ fontSize: 12 }}
+                >
+                  Rs {denom}
+                </button>
+              ))}
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={() => {
+                  const remaining = Math.max(0, finalTotal - payRows.slice(0, -1).reduce((s, r) => s + (Number(r.amount) || 0), 0));
+                  setPayRows((prev) => {
+                    const last = prev[prev.length - 1];
+                    const rest = prev.slice(0, -1);
+                    return [...rest, { ...last, amount: String(remaining) }];
+                  });
+                }}
+                style={{ fontSize: 12 }}
+              >
+                Exact
+              </button>
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <span className={`muted small ${payTotal >= finalTotal ? 'text-ok' : 'text-warn'}`}>
+                Paid: {payTotal.toFixed(2)} / {finalTotal.toFixed(2)}
+                {payTotal > finalTotal ? ` (change: ${(payTotal - finalTotal).toFixed(2)})` : payTotal < finalTotal ? ` (due: ${(finalTotal - payTotal).toFixed(2)})` : ''}
+              </span>
+            </div>
             <div className="pay-info muted small">
               Total: {payTotal.toFixed(2)} {payTotal < grandTotal && !customerId && <b className="text-warn">(customer required for balance)</b>}
             </div>
@@ -1657,7 +2103,10 @@ const handleUnitChange = (newLevel: number) => {
       {success && (
         <div className="modal-overlay">
           <div className="modal modal-sm">
-            <h2 className="text-ok">Sale Completed</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2 className="text-ok">Sale Completed</h2>
+              <ModalCloseButton onClose={() => setSuccess(null)} />
+            </div>
             <p>
               <strong>Invoice:</strong> {success.sale.invoice_no}
             </p>
@@ -1741,7 +2190,10 @@ const handleUnitChange = (newLevel: number) => {
       {custModal && (
         <div className="modal-overlay">
           <div className="modal modal-sm">
-            <h2>New Customer</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>New Customer</h2>
+              <ModalCloseButton onClose={() => setCustModal(false)} />
+            </div>
             <label className="field">
               <span>Name *</span>
               <input value={newCustName} onChange={(e) => setNewCustName(e.target.value)} />
@@ -1788,7 +2240,10 @@ const handleUnitChange = (newLevel: number) => {
       {heldModal && (
         <div className="modal-overlay">
           <div className="modal">
-            <h2>{heldModal.tab === 'held' ? 'Held Bills' : 'Quotations'}</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>{heldModal.tab === 'held' ? 'Held Bills' : 'Quotations'}</h2>
+              <ModalCloseButton onClose={() => setHeldModal(null)} />
+            </div>
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
@@ -1804,7 +2259,7 @@ const handleUnitChange = (newLevel: number) => {
                     <tr key={h.id}>
                       <td>{h.id}</td>
                       <td>{h.label}</td>
-                      <td>{h.created_at ? new Date(h.created_at).toLocaleString() : '—'}</td>
+                      <td>{h.created_at ? formatDateTimeAdmin(h.created_at) : '—'}</td>
                       <td>
                         <div className="row-actions">
                           <button className="btn btn-sm" onClick={() => resumeHeld(h)}>
@@ -1854,6 +2309,7 @@ const handleUnitChange = (newLevel: number) => {
                   <option value="voided">Voided</option>
                   <option value="held">Held</option>
                 </select>
+                <ModalCloseButton onClose={() => setHistory(null)} />
               </div>
             </div>
             
@@ -1939,8 +2395,8 @@ const handleUnitChange = (newLevel: number) => {
                   {history.map((s) => (
                     <tr key={s.id} onClick={() => openSaleDetail(s.id)} style={{ cursor: 'pointer' }}>
                       <td>{s.invoice_no}</td>
-                      <td>{s.created_at ? new Date(s.created_at).toLocaleDateString() : '—'}</td>
-                      <td>{s.created_at ? new Date(s.created_at).toLocaleTimeString() : '—'}</td>
+                      <td>{s.created_at ? formatDateAdmin(s.created_at) : '—'}</td>
+                      <td>{s.created_at ? formatTimeAdmin(s.created_at) : '—'}</td>
                       <td>{s.invoice_no}</td>
                       <td>{s.customer_name ?? 'Walk-in'}</td>
                       <td>{s.cashier_name ?? '—'}</td>
@@ -2054,7 +2510,7 @@ const handleUnitChange = (newLevel: number) => {
             
             {/* Header Info */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '16px', padding: '12px', background: '#f8f9fa', borderRadius: '4px' }}>
-              <div><strong>Date:</strong> {saleDetail.created_at ? new Date(saleDetail.created_at).toLocaleString() : '—'}</div>
+              <div><strong>Date:</strong> {saleDetail.created_at ? formatDateTimeAdmin(saleDetail.created_at) : '—'}</div>
               <div><strong>Customer:</strong> {saleDetail.customer_name ?? 'Walk-in'}</div>
               <div><strong>Cashier:</strong> {saleDetail.cashier_name ?? '—'}</div>
               <div><strong>Status:</strong> <span className={`badge ${saleDetail.status === 'voided' ? 'badge-danger' : ''}`}>{saleDetail.status}</span></div>
@@ -2275,6 +2731,27 @@ const handleUnitChange = (newLevel: number) => {
 )}
   {cashDrawerOpen && shift && (
     <CashDrawer shift={shift} onClose={() => setCashDrawerOpen(false)} />
+  )}
+
+  {/* Running Total Fixed Bottom Bar */}
+  {items.length > 0 && (
+    <div className="running-total-bar" style={{
+      position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 900,
+      background: 'var(--primary)', color: '#fff', padding: '8px 20px',
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      boxShadow: '0 -2px 10px rgba(0,0,0,0.15)', fontSize: 14, fontWeight: 600,
+    }}>
+      <span>{items.length} item{items.length > 1 ? 's' : ''} in bill</span>
+      <span style={{ fontSize: 20, fontWeight: 700 }}>Rs {finalTotal.toFixed(2)}</span>
+      <button
+        className="btn btn-sm"
+        style={{ background: '#fff', color: 'var(--primary)', fontWeight: 700, border: 'none' }}
+        onClick={expressCheckout}
+        disabled={expressBusy || !shift}
+      >
+        ⚡ Pay Cash
+      </button>
+    </div>
   )}
   </>
 );

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import { ModalCloseButton } from '../components/ModalCloseButton';
 import type { Product, PurchaseItem, PurchaseOrder, PurchasePriceRow, Supplier, SupplierTransaction } from '../../../shared/types';
 import { DateRangePicker, SearchInput, FilterBar, FilterRow } from '../components/filters';
+import { formatDateTimeAdmin } from '../utils/dateUtils';
 
 type Tab = 'suppliers' | 'orders';
 
@@ -253,7 +255,7 @@ export default function Purchases() {
                 <tr key={o.id}>
                   <td>PO-{String(o.id).padStart(4, '0')}</td>
                   <td>{o.supplier_name ?? '—'}</td>
-                  <td>{o.created_at ? new Date(o.created_at).toLocaleString() : '—'}</td>
+                  <td>{o.created_at ? formatDateTimeAdmin(o.created_at) : '—'}</td>
                   <td>{o.total_amount.toFixed(2)}</td>
                   <td>
                     <span className={`badge ${o.status === 'received' ? 'ok' : o.status === 'cancelled' ? 'bad' : ''}`}>
@@ -292,7 +294,10 @@ export default function Purchases() {
       {supplierModal && (
         <div className="modal-overlay">
           <div className="modal">
-            <h2>Add Supplier</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>Add Supplier</h2>
+              <ModalCloseButton onClose={() => setSupplierModal(false)} />
+            </div>
             <label className="lbl">Name *</label>
             <input className="inp" value={sName} onChange={(e) => setSName(e.target.value)} autoFocus />
             <label className="lbl">Phone</label>
@@ -314,7 +319,10 @@ export default function Purchases() {
       {poModal && (
         <div className="modal-overlay">
           <div className="modal modal-wide">
-            <h2>New Purchase Order</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>New Purchase Order</h2>
+              <ModalCloseButton onClose={() => setPoModal(false)} />
+            </div>
             <label className="lbl">Supplier *</label>
             <select className="inp" value={poSupplier} onChange={(e) => setPoSupplier(e.target.value)}>
               <option value="">— select —</option>
@@ -424,11 +432,14 @@ export default function Purchases() {
       {poView && (
         <div className="modal-overlay">
           <div className="modal modal-wide">
-            <h2>
-              PO-{String(poView.order.id).padStart(4, '0')} — {poView.order.supplier_name ?? ''}
-            </h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>
+                PO-{String(poView.order.id).padStart(4, '0')} — {poView.order.supplier_name ?? ''}
+              </h2>
+              <ModalCloseButton onClose={() => setPoView(null)} />
+            </div>
             <p className="muted small">
-              {new Date(poView.order.created_at ?? '').toLocaleString()} | {statusLabel(poView.order.status)}
+              {formatDateTimeAdmin(poView.order.created_at ?? '')} | {statusLabel(poView.order.status)}
             </p>
             <table className="tbl">
               <thead>
@@ -473,7 +484,10 @@ export default function Purchases() {
       {ledger && (
         <div className="modal-overlay">
           <div className="modal modal-wide">
-            <h2>Supplier — {ledger.supplier.name}</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>Supplier — {ledger.supplier.name}</h2>
+              <ModalCloseButton onClose={() => setLedger(null)} />
+            </div>
             <div className="ledger-head">
               <span>
                 Payable: <strong>{ledger.supplier.balance.toFixed(2)}</strong>
@@ -511,7 +525,7 @@ export default function Purchases() {
               <tbody>
                 {ledger.rows.map((r) => (
                   <tr key={r.id}>
-                    <td>{new Date(r.created_at ?? '').toLocaleString()}</td>
+                    <td>{formatDateTimeAdmin(r.created_at ?? '')}</td>
                     <td>
                       {r.type.startsWith('payment')
                         ? 'Payment'
@@ -544,7 +558,10 @@ export default function Purchases() {
       {priceProd && (
         <div className="modal-overlay">
           <div className="modal">
-            <h2>Price History — {priceProd.name}</h2>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>Price History — {priceProd.name}</h2>
+              <ModalCloseButton onClose={() => setPriceProd(null)} />
+            </div>
             <table className="tbl">
               <thead>
                 <tr>
@@ -555,7 +572,7 @@ export default function Purchases() {
               <tbody>
                 {priceHist.map((h) => (
                   <tr key={h.id}>
-                    <td>{new Date(h.created_at ?? '').toLocaleString()}</td>
+                    <td>{formatDateTimeAdmin(h.created_at ?? '')}</td>
                     <td>{h.unit_cost.toFixed(2)}</td>
                   </tr>
                 ))}

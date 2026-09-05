@@ -14,7 +14,16 @@
     "shifts": "شفٹس",
     "returns": "ریٹرنز",
     "Udhaar": "ادھار",
-    "barcode": "بارکوڈ لیبلز"
+    "barcode": "بارکوڈ لیبلز",
+    "expenses": "اخراجات",
+    "commissions": "کمیشن",
+    "customReports": "حسب ضرورت ریپورٹس",
+    "quotations": "کوٹیشنز",
+    "invoiceAdmin": "انوائس ڈیزائنر",
+    "branches": "برانچیز",
+    "quickSale": "فوری فروخت",
+    "transfers": "ٹرانسفر",
+    "fifoStock": "FIFO اسٹاک رپورٹ"
   },
   "buttons": {
     "save": "محفوظ کریں",
