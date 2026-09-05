@@ -62,8 +62,7 @@ export function formatTimestamp(
 ): string {
   const date = parseTimestamp(ts);
   if (!date) return '—';
-  // Force Pakistan timezone for display
-  return date.toLocaleString('Asia/Karachi', options);
+  return date.toLocaleString(undefined, { timeZone: PAKISTAN_TZ, ...options });
 }
 
 /**
@@ -75,7 +74,7 @@ export function formatDateOnly(
 ): string {
   const date = parseTimestamp(ts);
   if (!date) return '—';
-  return date.toLocaleDateString('Asia/Karachi', options);
+  return date.toLocaleDateString(undefined, { timeZone: PAKISTAN_TZ, ...options });
 }
 
 /**
@@ -87,7 +86,7 @@ export function formatTimeOnly(
 ): string {
   const date = parseTimestamp(ts);
   if (!date) return '—';
-  return date.toLocaleTimeString('Asia/Karachi', options);
+  return date.toLocaleTimeString(undefined, { timeZone: PAKISTAN_TZ, ...options });
 }
 
 // ── Sync formatting functions that respect admin-configured formats ──
@@ -137,9 +136,9 @@ function formatDateSync(d: Date): string {
 
 function formatTimeSync(d: Date): string {
   if (_timeFormat === '12h') {
-    return d.toLocaleTimeString('Asia/Karachi', { hour: '2-digit', minute: '2-digit', hour12: true });
+    return d.toLocaleTimeString(undefined, { timeZone: PAKISTAN_TZ, hour: '2-digit', minute: '2-digit', hour12: true });
   }
-  return d.toLocaleTimeString('Asia/Karachi', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return d.toLocaleTimeString(undefined, { timeZone: PAKISTAN_TZ, hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 /**

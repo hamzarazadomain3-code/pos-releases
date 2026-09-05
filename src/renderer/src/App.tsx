@@ -516,8 +516,9 @@ export default function App() {
 
         // Wallpaper
         const wallpaper = settings.wallpaper_image;
+        // Always reset body opacity (old bug set it to 0, making body invisible)
+        document.body.style.opacity = '1';
         if (wallpaper) {
-          const opacity = (parseInt(settings.wallpaper_opacity || '100', 10) / 100);
           const blur = parseInt(settings.wallpaper_blur || '0', 10);
           const brightness = parseInt(settings.wallpaper_brightness || '100', 10);
           const saturation = parseInt(settings.wallpaper_saturation || '100', 10);
@@ -535,18 +536,22 @@ export default function App() {
           document.body.style.backgroundAttachment = 'fixed';
           (document.body.style as any).filter = blur > 0 || brightness !== 100 || saturation !== 100 || grayscale ? filters : '';
 
-          // Tint overlay — controls wallpaper visibility via its own opacity (never touch body.opacity)
-          const tintColor = settings.wallpaper_tint_color || '#000000';
+          // Tint overlay — optional color tint over wallpaper, NEVER touch body.opacity
+          const tintColor = settings.wallpaper_tint_color;
           const tintOpacity = parseInt(settings.wallpaper_tint_opacity || '0', 10) / 100;
           let tintEl = document.getElementById('wallpaper-tint-overlay') as HTMLElement;
-          if (!tintEl) {
-            tintEl = document.createElement('div');
-            tintEl.id = 'wallpaper-tint-overlay';
-            tintEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:0;';
-            document.body.appendChild(tintEl);
+          if (tintColor && tintOpacity > 0) {
+            if (!tintEl) {
+              tintEl = document.createElement('div');
+              tintEl.id = 'wallpaper-tint-overlay';
+              tintEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:0;';
+              document.body.appendChild(tintEl);
+            }
+            tintEl.style.backgroundColor = tintColor;
+            tintEl.style.opacity = String(tintOpacity);
+          } else if (tintEl) {
+            tintEl.style.opacity = '0';
           }
-          tintEl.style.backgroundColor = tintColor;
-          tintEl.style.opacity = String(opacity);
         } else {
           document.body.style.backgroundImage = '';
           document.body.style.backgroundSize = '';
