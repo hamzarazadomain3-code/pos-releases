@@ -428,6 +428,7 @@ export default function App() {
   const [mustChangePw, setMustChangePw] = useState(false);
   const [shopLogo, setShopLogo] = useState<string | null>(null);
   const [sessionRestoring, setSessionRestoring] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const nav = user ? navFor(user.role) : [];
 
   useEffect(() => {
@@ -532,10 +533,9 @@ export default function App() {
           document.body.style.backgroundPosition = posMap[pos] || 'center';
           document.body.style.backgroundRepeat = scale === 'tile' ? 'repeat' : 'no-repeat';
           document.body.style.backgroundAttachment = 'fixed';
-          document.body.style.opacity = String(opacity);
           (document.body.style as any).filter = blur > 0 || brightness !== 100 || saturation !== 100 || grayscale ? filters : '';
 
-          // Tint overlay
+          // Tint overlay — controls wallpaper visibility via its own opacity (never touch body.opacity)
           const tintColor = settings.wallpaper_tint_color || '#000000';
           const tintOpacity = parseInt(settings.wallpaper_tint_opacity || '0', 10) / 100;
           let tintEl = document.getElementById('wallpaper-tint-overlay') as HTMLElement;
@@ -546,14 +546,13 @@ export default function App() {
             document.body.appendChild(tintEl);
           }
           tintEl.style.backgroundColor = tintColor;
-          tintEl.style.opacity = String(tintOpacity);
+          tintEl.style.opacity = String(opacity);
         } else {
           document.body.style.backgroundImage = '';
           document.body.style.backgroundSize = '';
           document.body.style.backgroundPosition = '';
           document.body.style.backgroundRepeat = '';
           document.body.style.backgroundAttachment = '';
-          document.body.style.opacity = '';
           (document.body.style as any).filter = '';
           const tintEl = document.getElementById('wallpaper-tint-overlay');
           if (tintEl) tintEl.style.opacity = '0';
@@ -621,8 +620,6 @@ export default function App() {
     ...item,
     label: t(`navigation.${item.key}`, item.label),
   }));
-
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <div className="app-shell">

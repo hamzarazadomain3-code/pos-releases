@@ -8,13 +8,20 @@ function serverUrl(): string {
 
 const GRACE_DAYS = 15;
 const WARN_DAYS = 7;
-const CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000; // 12 h
+const CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000; // 12 h
+const FETCH_TIMEOUT_MS = 5000; // 5 s — never let a network call block startup
+
+function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  return fetch(url, { ...init, signal: ac.signal }).finally(() => clearTimeout(timer));
+}
 
 /** Activate a license key (online validation) */
 export async function activateLicense(key: string): Promise<void> {
   const shop = getAllSettings().shop_name || '';
   const payload = { key, shop };
-  const res = await fetch(`${serverUrl()}/api/validate`, {
+  const res = await fetchWithTimeout(`${serverUrl()}/api/validate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -49,7 +56,7 @@ export async function checkLicense(): Promise<void> {
     try {
       const shop = settings.shop_name || '';
       const payload = { key, shop };
-      const res = await fetch(`${serverUrl()}/api/validate`, {
+      const res = await fetchWithTimeout(`${serverUrl()}/api/validate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

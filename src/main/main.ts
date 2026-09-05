@@ -85,17 +85,21 @@ app.whenReady().then(async () => {
     ensureOtpTable();
       registerIpcHandlers();
       licensing.registerIpc();
-      try {
-        await licensing.checkLicense();
-      } catch (e) {
-        logError('license check', e);
-      }
   } catch (err) {
     logError('startup (db/ipc)', err);
     dialog.showErrorBox('ShopKeeper POS — Startup Error', String(err));
     app.exit(1);
     return;
   }
+
+  // Create window IMMEDIATELY — never block on network calls.
+  createWindow();
+  log('Window created');
+
+  // License check runs in background AFTER window is visible (non-blocking).
+  licensing.checkLicense()
+    .then(() => log('License check passed'))
+    .catch((e) => logError('license check', e));
 
   try {
     const adminSettings = getAllAdminSettings();
@@ -120,9 +124,6 @@ app.whenReady().then(async () => {
     }
     return;
   }
-
-  createWindow();
-  log('Window created');
 
   // WhatsApp gateway: lazy, non-blocking, fully independent of licensing.
   initWhatsAppGateway()
