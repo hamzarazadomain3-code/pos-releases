@@ -20,20 +20,20 @@ const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1'];
 
 const CardIcons = {
   sales: (
-    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <line x1="12" y1="1" x2="12" y2="23" />
       <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
     </svg>
   ),
   bills: (
-    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
       <path d="M8 10h8" />
       <path d="M8 14h4" />
     </svg>
   ),
   avg: (
-    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <rect x="4" y="2" width="16" height="20" rx="2" />
       <line x1="8" y1="6" x2="16" y2="6" />
       <line x1="8" y1="10" x2="16" y2="10" />
@@ -41,33 +41,53 @@ const CardIcons = {
     </svg>
   ),
   lowStock: (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
       <line x1="12" y1="9" x2="12" y2="13" />
       <line x1="12" y1="17" x2="12.01" y2="17" />
     </svg>
   ),
   outOfStock: (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
       <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
       <line x1="12" y1="22.08" x2="12" y2="12" />
     </svg>
   ),
   expenses: (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <line x1="12" y1="1" x2="12" y2="23" />
       <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
     </svg>
   ),
   udhaar: (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
       <circle cx="9" cy="7" r="4" />
       <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
     </svg>
   ),
+};
+
+const KPI_GRADIENTS = {
+  sales: 'linear-gradient(135deg, #10b981, #059669)',
+  bills: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+  avg: 'linear-gradient(135deg, #8b5cf6, #6d28d9)',
+  lowStock: 'linear-gradient(135deg, #f97316, #ea580c)',
+  outOfStock: 'linear-gradient(135deg, #ef4444, #dc2626)',
+  expenses: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+  udhaar: 'linear-gradient(135deg, #06b6d4, #0891b2)',
+};
+
+const KPI_SHADOWS = {
+  sales: '0 4px 12px rgba(16, 185, 129, 0.25)',
+  bills: '0 4px 12px rgba(59, 130, 246, 0.25)',
+  avg: '0 4px 12px rgba(139, 92, 246, 0.25)',
+  lowStock: '0 4px 12px rgba(249, 115, 22, 0.25)',
+  outOfStock: '0 4px 12px rgba(239, 68, 68, 0.25)',
+  expenses: '0 4px 12px rgba(139, 92, 246, 0.25)',
+  udhaar: '0 4px 12px rgba(6, 182, 212, 0.25)',
 };
 
 export default function Dashboard() {
@@ -120,6 +140,26 @@ export default function Dashboard() {
 
   const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
+  const KpiCard = ({ label, value, icon, gradient, shadow }: {
+    label: string;
+    value: string | number;
+    icon: React.ReactNode;
+    gradient: string;
+    shadow: string;
+  }) => (
+    <div
+      className="billten-kpi-card"
+      style={{
+        background: gradient,
+        boxShadow: shadow,
+      }}
+    >
+      <div className="billten-kpi-icon">{icon}</div>
+      <div className="billten-kpi-label">{label}</div>
+      <div className="billten-kpi-value">{value}</div>
+    </div>
+  );
+
   return (
     <div className="page">
       <div className="page-header">
@@ -137,138 +177,59 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="stat-grid">
-        <div
-          style={{
-            background: 'linear-gradient(135deg, #10b981, #059669)',
-            borderRadius: 16,
-            padding: 24,
-            boxShadow: '0 4px 20px rgba(16,185,129,0.25)',
-            position: 'relative',
-            overflow: 'hidden',
-          }}
-        >
-          <div style={{ position: 'absolute', top: 16, right: 16, opacity: 0.3, color: '#fff' }}>
-            {CardIcons.sales}
-          </div>
-          <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14, fontWeight: 500, marginBottom: 8 }}>
-            Today's Sales
-          </div>
-          <div style={{ color: '#fff', fontSize: 32, fontWeight: 700 }}>
-            Rs {fmt(dailyStats.total_sales)}
-          </div>
-        </div>
-
-        <div
-          style={{
-            background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-            borderRadius: 16,
-            padding: 24,
-            boxShadow: '0 4px 20px rgba(59,130,246,0.25)',
-            position: 'relative',
-            overflow: 'hidden',
-          }}
-        >
-          <div style={{ position: 'absolute', top: 16, right: 16, opacity: 0.3, color: '#fff' }}>
-            {CardIcons.bills}
-          </div>
-          <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14, fontWeight: 500, marginBottom: 8 }}>
-            Total Bills
-          </div>
-          <div style={{ color: '#fff', fontSize: 32, fontWeight: 700 }}>
-            {dailyStats.bill_count}
-          </div>
-        </div>
-
-        <div
-          style={{
-            background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
-            borderRadius: 16,
-            padding: 24,
-            boxShadow: '0 4px 20px rgba(139,92,246,0.25)',
-            position: 'relative',
-            overflow: 'hidden',
-          }}
-        >
-          <div style={{ position: 'absolute', top: 16, right: 16, opacity: 0.3, color: '#fff' }}>
-            {CardIcons.avg}
-          </div>
-          <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14, fontWeight: 500, marginBottom: 8 }}>
-            Avg Bill Value
-          </div>
-          <div style={{ color: '#fff', fontSize: 32, fontWeight: 700 }}>
-            Rs {fmt(dailyStats.avg_bill)}
-          </div>
-        </div>
+      <div className="billten-kpi-grid-row1">
+        <KpiCard
+          label="Today's Sales"
+          value={`Rs ${fmt(dailyStats.total_sales)}`}
+          icon={CardIcons.sales}
+          gradient={KPI_GRADIENTS.sales}
+          shadow={KPI_SHADOWS.sales}
+        />
+        <KpiCard
+          label="Total Bills"
+          value={dailyStats.bill_count}
+          icon={CardIcons.bills}
+          gradient={KPI_GRADIENTS.bills}
+          shadow={KPI_SHADOWS.bills}
+        />
+        <KpiCard
+          label="Avg Bill Value"
+          value={`Rs ${fmt(dailyStats.avg_bill)}`}
+          icon={CardIcons.avg}
+          gradient={KPI_GRADIENTS.avg}
+          shadow={KPI_SHADOWS.avg}
+        />
       </div>
 
-      <div className="stat-grid" style={{ marginTop: 12 }}>
-        {[
-          {
-            label: 'Low Stock Items',
-            value: lowStockCount,
-            accent: '#f59e0b',
-            icon: CardIcons.lowStock,
-            display: lowStockCount,
-          },
-          {
-            label: 'Out of Stock',
-            value: outOfStockCount,
-            accent: '#ef4444',
-            icon: CardIcons.outOfStock,
-            display: outOfStockCount,
-          },
-          {
-            label: "Today's Expenses",
-            value: todayExpenses,
-            accent: '#8b5cf6',
-            icon: CardIcons.expenses,
-            display: `Rs ${fmt(todayExpenses)}`,
-          },
-          {
-            label: 'Udhaar Due',
-            value: udhaarDue,
-            accent: '#f59e0b',
-            icon: CardIcons.udhaar,
-            display: `Rs ${fmt(udhaarDue)}`,
-          },
-        ].map((card) => (
-          <div
-            key={card.label}
-            style={{
-              background: '#fff',
-              borderLeft: `4px solid ${card.accent}`,
-              borderRadius: 14,
-              padding: 20,
-              boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: 16,
-              cursor: 'default',
-              transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)';
-              (e.currentTarget as HTMLDivElement).style.boxShadow = '0 6px 24px rgba(0,0,0,0.12)';
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
-              (e.currentTarget as HTMLDivElement).style.boxShadow = '0 2px 12px rgba(0,0,0,0.06)';
-            }}
-          >
-            <div style={{ color: card.accent, flexShrink: 0, marginTop: 2 }}>
-              {card.icon}
-            </div>
-            <div>
-              <div style={{ color: '#6b7280', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>
-                {card.label}
-              </div>
-              <div style={{ color: card.accent, fontSize: 26, fontWeight: 700 }}>
-                {card.display}
-              </div>
-            </div>
-          </div>
-        ))}
+      <div className="billten-kpi-grid-row2">
+        <KpiCard
+          label="Low Stock Items"
+          value={lowStockCount}
+          icon={CardIcons.lowStock}
+          gradient={KPI_GRADIENTS.lowStock}
+          shadow={KPI_SHADOWS.lowStock}
+        />
+        <KpiCard
+          label="Out of Stock"
+          value={outOfStockCount}
+          icon={CardIcons.outOfStock}
+          gradient={KPI_GRADIENTS.outOfStock}
+          shadow={KPI_SHADOWS.outOfStock}
+        />
+        <KpiCard
+          label="Today's Expenses"
+          value={`Rs ${fmt(todayExpenses)}`}
+          icon={CardIcons.expenses}
+          gradient={KPI_GRADIENTS.expenses}
+          shadow={KPI_SHADOWS.expenses}
+        />
+        <KpiCard
+          label="Udhaar Due"
+          value={`Rs ${fmt(udhaarDue)}`}
+          icon={CardIcons.udhaar}
+          gradient={KPI_GRADIENTS.udhaar}
+          shadow={KPI_SHADOWS.udhaar}
+        />
       </div>
 
       <div className="panel">

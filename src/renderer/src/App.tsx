@@ -454,7 +454,7 @@ export default function App() {
   const [shopLogo, setShopLogo] = useState<string | null>(null);
   const [sessionRestoring, setSessionRestoring] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarHovered, setSidebarHovered] = useState(false);
   const nav = user ? navFor(user.role) : [];
 
   useEffect(() => {
@@ -666,7 +666,11 @@ export default function App() {
         </svg>
       </button>
 
-      <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''} ${sidebarOpen ? 'open' : ''}`}>
+      <aside
+        className={`sidebar ${sidebarHovered ? 'expanded' : ''} ${sidebarOpen ? 'open' : ''}`}
+        onMouseEnter={() => setSidebarHovered(true)}
+        onMouseLeave={() => setSidebarHovered(false)}
+      >
         <div className="sidebar-brand">
           {shopLogo ? (
             <img src={shopLogo} alt="Shop logo" className="brand-logo" />
@@ -684,25 +688,19 @@ export default function App() {
               key={item.key}
               className={page === item.key ? 'nav-btn active' : 'nav-btn'}
               onClick={() => { setPage(item.key); setSidebarOpen(false); }}
-              title={sidebarCollapsed ? item.label : undefined}
+              title={!sidebarHovered ? item.label : undefined}
             >
               <span className="nav-icon">{NAV_ICONS[item.key] || null}</span>
-              {!sidebarCollapsed && <span className="nav-label">{item.label}</span>}
+              <span className="nav-label">{item.label}</span>
             </button>
           ))}
         </nav>
 
         {/* Branch Selector */}
-        <div className="sidebar-branch" style={{ padding: 12, borderTop: '1px solid #eee' }}>
+        <div className="sidebar-branch" style={{ padding: 12, borderTop: '1px solid rgba(129, 140, 248, 0.15)' }}>
           <div className="small muted" style={{ marginBottom: 8 }}>Current Branch</div>
           <BranchSelector />
         </div>
-
-        <button className="sidebar-collapse-btn" onClick={() => setSidebarCollapsed(!sidebarCollapsed)} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: sidebarCollapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s' }}>
-            <polyline points="15 18 9 12 15 6"></polyline>
-          </svg>
-        </button>
 
         <div className="sidebar-user">
           <div className="small muted">{user.username}</div>

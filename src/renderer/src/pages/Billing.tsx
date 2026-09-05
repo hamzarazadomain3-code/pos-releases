@@ -1960,7 +1960,14 @@ const handleUnitChange = (newLevel: number) => {
               <span className="bill-summary-label">Balance</span>
               <span className="bill-summary-value">{Math.max(0, finalTotal - payTotal).toFixed(2)}</span>
             </div>
-            <div className="bill-summary-item bill-return" style={{ gridColumn: '1 / -1' }}>
+            <div className="bill-summary-item bill-return">
+              <div className="bill-summary-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9 7 9-7"/><path d="M9 22V4"/></svg>
+              </div>
+              <span className="bill-summary-label">Return</span>
+              <span className="bill-summary-value">0</span>
+            </div>
+            <div className="bill-summary-item bill-items">
               <div className="bill-summary-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
               </div>
