@@ -37,15 +37,26 @@ exports.up = function (db) {
         expense_date DATE NOT NULL,
         attachment_path TEXT,
         is_recurring INTEGER DEFAULT 0,
-        recurrence_type TEXT,           -- 'daily' | 'weekly' | 'monthly'
+        recurrence_type TEXT,
         recurrence_end DATE,
-        status TEXT DEFAULT 'active',   -- 'active' | 'paused' | 'cancelled'
+        status TEXT DEFAULT 'active',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (category_id) REFERENCES expense_categories(id),
         FOREIGN KEY (user_id) REFERENCES users(id)
       )
     `);
+  } else {
+    const ensureCol = (t, c, def) => { if (!hasColumn(t, c)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${def}`); };
+    ensureCol('expenses', 'category_id', 'INTEGER NOT NULL DEFAULT 1');
+    ensureCol('expenses', 'user_id', 'INTEGER NOT NULL DEFAULT 1');
+    ensureCol('expenses', 'description', 'TEXT');
+    ensureCol('expenses', 'attachment_path', 'TEXT');
+    ensureCol('expenses', 'is_recurring', 'INTEGER DEFAULT 0');
+    ensureCol('expenses', 'recurrence_type', 'TEXT');
+    ensureCol('expenses', 'recurrence_end', 'DATE');
+    ensureCol('expenses', 'status', 'TEXT DEFAULT \'active\'');
+    ensureCol('expenses', 'updated_at', 'DATETIME DEFAULT CURRENT_TIMESTAMP');
   }
   db.exec('CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category_id)');
