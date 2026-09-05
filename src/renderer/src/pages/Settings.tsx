@@ -18,6 +18,8 @@ export default function Settings() {
   const [waBusy, setWaBusy] = useState(false);
   const [waConnecting, setWaConnecting] = useState(false);
   const [pluMappings, setPluMappings] = useState<ScalePluMapping[]>([]);
+  const [receiptTemplates, setReceiptTemplates] = useState<Array<{ id: string; name: string; description: string; width: string }>>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('standard');
 
   useEffect(() => {
     window.api.settings.getAll().then(setSettings).catch((e) => setNotice(e.message));
@@ -54,6 +56,10 @@ export default function Settings() {
 
   useEffect(() => {
     window.api.scaleBarcode.listPluMappings().then(setPluMappings).catch(() => setPluMappings([]));
+    window.api.receipt.getTemplates().then(setReceiptTemplates).catch(() => setReceiptTemplates([]));
+    window.api.admin.settings.get('receipt_template').then((v) => {
+      if (v) setSelectedTemplate(v);
+    }).catch(() => undefined);
   }, []);
 
   async function saveShop() {
@@ -150,6 +156,46 @@ export default function Settings() {
             <div className="modal-actions">
               <button className="btn btn-primary" onClick={saveShop}>
                 {saved ? 'Saved!' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-title">Receipt Template</div>
+          <div className="settings-form">
+            <p className="muted small">
+              Choose the receipt layout used when printing or previewing receipts. This affects the width, font, and overall design.
+            </p>
+            <label className="field">
+              <span>Template</span>
+              <select
+                value={selectedTemplate}
+                onChange={(e) => setSelectedTemplate(e.target.value)}
+              >
+                {receiptTemplates.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name} — {t.description}</option>
+                ))}
+              </select>
+            </label>
+            {receiptTemplates.filter((t) => t.id === selectedTemplate).map((t) => (
+              <div key={t.id} className="muted small" style={{ marginTop: 4 }}>
+                Width: {t.width}
+              </div>
+            ))}
+            <div className="modal-actions">
+              <button
+                className="btn btn-primary"
+                onClick={async () => {
+                  try {
+                    await window.api.admin.settings.set('receipt_template', selectedTemplate);
+                    setNotice('Receipt template saved!');
+                  } catch (e) {
+                    setNotice(e instanceof Error ? e.message : String(e));
+                  }
+                }}
+              >
+                Save Template
               </button>
             </div>
           </div>

@@ -37,6 +37,7 @@ import {
 } from './services/sales';
 import { getAllSettings, setSetting } from './services/settings';
 import { printLabel, printBarcodeLabel, printSale, previewReceipt, previewInvoice, printInvoice, openCashDrawer, printDrawerSummary } from './services/printing';
+import { getAvailableTemplates, type ReceiptTemplate } from './services/receiptTemplates';
 import {
   addExpense,
   bestSellers,
@@ -142,6 +143,7 @@ import {
 } from './services/admin';
 import { is2FAEnabled, get2FAMethod, generateOtp, verifyOtp } from './services/twoFactorAuth';
 import { sendEmail, sendDailySalesReportEmail } from './services/emailService';
+import { sendSmsReceipt, sendEmailReceipt } from './services/smsService';
 import { quotationsService } from './services/quotations';
 import { invoiceTemplatesService } from './services/invoiceTemplates';
 import { variantsService } from './services/variants';
@@ -211,12 +213,12 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('scaleBarcode:isScaleItem', (_e, barcode: string) => isScaleBarcode(barcode));
   ipcMain.handle('scaleBarcode:listPluMappings', () => listPluMappings());
 
-  ipcMain.handle('printing:printSale', (_e, saleId: number) => {
-    printSale(saleId);
+  ipcMain.handle('printing:printSale', (_e, saleId: number, template?: ReceiptTemplate) => {
+    printSale(saleId, template);
     return true;
   });
-  ipcMain.handle('printing:previewReceipt', (_e, saleId: number) => {
-    previewReceipt(saleId);
+  ipcMain.handle('printing:previewReceipt', (_e, saleId: number, template?: ReceiptTemplate) => {
+    previewReceipt(saleId, template);
     return true;
   });
   ipcMain.handle('printing:previewInvoice', (_e, saleId: number) => {
@@ -233,6 +235,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('printing:printDrawerSummary', (_e, data: Parameters<typeof printDrawerSummary>[0]) => {
     printDrawerSummary(data);
     return true;
+  });
+
+  ipcMain.handle('receipt:getTemplates', () => {
+    return getAvailableTemplates();
   });
 
   ipcMain.handle('reports:dashboard', () => dashboard());
@@ -578,4 +584,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('reports:custom:createSchedule', (_e, input) => customReportsService.createSchedule(input));
   ipcMain.handle('reports:custom:updateSchedule', (_e, id: number, input) => customReportsService.updateSchedule(id, input));
   ipcMain.handle('reports:custom:deleteSchedule', (_e, id: number) => customReportsService.deleteSchedule(id));
+
+  // ── Receipt: Email & SMS ──
+  ipcMain.handle('receipt:sendSms', (_e, saleId: number, phone: string) => sendSmsReceipt(saleId, phone));
+  ipcMain.handle('receipt:sendEmail', (_e, saleId: number, email: string) => sendEmailReceipt(saleId, email));
 }

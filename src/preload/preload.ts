@@ -68,14 +68,19 @@ const bridge: PosBridge = {
   },
   printing: {
     // existing printing methods
-    printSale: (saleId: number) => ipcRenderer.invoke('printing:printSale', saleId),
+    printSale: (saleId: number, template?: string) => ipcRenderer.invoke('printing:printSale', saleId, template),
     printLabel: (productId: number, copies?: number) => ipcRenderer.invoke('printing:printLabel', productId, copies),
     printBarcodeLabel: (productId: number, copies?: number) => ipcRenderer.invoke('printing:printBarcodeLabel', productId, copies),
     openCashDrawer: () => ipcRenderer.invoke('printing:openCashDrawer'),
-    previewReceipt: (saleId: number) => ipcRenderer.invoke('printing:previewReceipt', saleId),
+    previewReceipt: (saleId: number, template?: string) => ipcRenderer.invoke('printing:previewReceipt', saleId, template),
     previewInvoice: (saleId: number) => ipcRenderer.invoke('printing:previewInvoice', saleId),
     printInvoice: (saleId: number) => ipcRenderer.invoke('printing:printInvoice', saleId),
     printDrawerSummary: (data: { opening_cash: number; closing_cash: number; cash_sales: number; card_sales: number; udhaar_sales: number; other_payments: number; cash_refunds: number; cash_in: number; cash_out: number; expected_cash: number; actual_cash: number; variance: number; opened_at: string; closed_at: string; cashier: string; notes?: string }) => ipcRenderer.invoke('printing:printDrawerSummary', data),
+  },
+  receipt: {
+    getTemplates: () => ipcRenderer.invoke('receipt:getTemplates'),
+    sendSms: (saleId: number, phone: string) => ipcRenderer.invoke('receipt:sendSms', saleId, phone),
+    sendEmail: (saleId: number, email: string) => ipcRenderer.invoke('receipt:sendEmail', saleId, email),
   },
   licensing: {
     activate: (key: string) => ipcRenderer.invoke('licensing:activate', key),

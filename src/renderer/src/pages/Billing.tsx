@@ -231,6 +231,10 @@ const [currentHeldId, setCurrentHeldId] = useState<number | null>(null);
   const [shortcutMap, setShortcutMap] = useState<Record<string, string>>({});
   const [autoPrintReceipt, setAutoPrintReceipt] = useState(false);
 
+  // Receipt sending
+  const [emailToSend, setEmailToSend] = useState('');
+  const [smsToSend, setSmsToSend] = useState('');
+
   // Enhancement: Favorites/pinned products
   const [favorites, setFavorites] = useState<number[]>([]);
   const [showFavorites, setShowFavorites] = useState(false);
@@ -270,6 +274,10 @@ const [currentHeldId, setCurrentHeldId] = useState<number | null>(null);
 
   // Category quick-filter
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
+  // Receipt template selector
+  const [receiptTemplates, setReceiptTemplates] = useState<Array<{ id: string; name: string; description: string; width: string }>>([]);
+  const [receiptTemplate, setReceiptTemplate] = useState<string>('standard');
 
   const searchRef = useRef<HTMLInputElement>(null);
   const totals = useMemo(() => lineTotals(items, Number(billDiscount) || 0, discountType, promoMap), [items, billDiscount, discountType, promoMap]);
@@ -578,6 +586,10 @@ useEffect(() => {
     window.api.admin.settings.get('auto_print_receipt').then((v) => {
       setAutoPrintReceipt(v === 'true' || v === '1');
     }).catch(() => undefined);
+    window.api.receipt.getTemplates().then(setReceiptTemplates).catch(() => setReceiptTemplates([]));
+    window.api.admin.settings.get('receipt_template').then((v) => {
+      if (v) setReceiptTemplate(v);
+    }).catch(() => undefined);
     const off = window.api.admin.settings.onChange?.(() => {
       window.api.admin.shortcuts.getAll().then((rows) => {
         const map: Record<string, string> = {};
@@ -685,7 +697,7 @@ useEffect(() => {
       setBillDiscount('');
       setPriceFloorOverride(false);
       if (autoPrintReceipt && result.sale?.id) {
-        window.api.printing.printSale(result.sale.id).catch(() => undefined);
+        window.api.printing.printSale(result.sale.id, receiptTemplate).catch(() => undefined);
       }
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
@@ -1008,7 +1020,7 @@ function openPay() {
       setPriceFloorPin('');
       // Auto-print receipt if enabled
       if (autoPrintReceipt && result.sale?.id) {
-        window.api.printing.printSale(result.sale.id).catch(() => undefined);
+        window.api.printing.printSale(result.sale.id, receiptTemplate).catch(() => undefined);
       }
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
@@ -2199,10 +2211,23 @@ const handleUnitChange = (newLevel: number) => {
               <button className="btn" onClick={() => setSuccess(null)}>
                 Close
               </button>
+              {receiptTemplates.length > 1 && (
+                <select
+                  className="field-select"
+                  value={receiptTemplate}
+                  onChange={(e) => setReceiptTemplate(e.target.value)}
+                  style={{ fontSize: 12 }}
+                  title="Receipt template"
+                >
+                  {receiptTemplates.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              )}
                 <button
                   className="btn"
                   onClick={() => {
-                    window.api.printing.previewReceipt(success.sale.id).catch((e) => setNotice(e.message));
+                    window.api.printing.previewReceipt(success.sale.id, receiptTemplate).catch((e) => setNotice(e.message));
                   }}
                 >
                   Preview Receipt
@@ -2210,7 +2235,7 @@ const handleUnitChange = (newLevel: number) => {
                 <button
                   className="btn"
                   onClick={() => {
-                    window.api.printing.printSale(success.sale.id).catch((e) => setNotice(e.message));
+                    window.api.printing.printSale(success.sale.id, receiptTemplate).catch((e) => setNotice(e.message));
                   }}
                 >
                   Print Receipt
@@ -2251,6 +2276,34 @@ const handleUnitChange = (newLevel: number) => {
                     </button>
                   );
                 })()}
+                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                  <input
+                    type="email"
+                    placeholder="Customer email"
+                    value={emailToSend}
+                    onChange={e => setEmailToSend(e.target.value)}
+                    style={{ flex: 1, padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 13 }}
+                  />
+                  <button className="btn btn-sm" onClick={async () => {
+                    if (!emailToSend || !success?.sale?.id) return;
+                    const res = await window.api.receipt.sendEmail(success.sale.id, emailToSend);
+                    alert(res.message);
+                  }}>Email</button>
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                  <input
+                    type="tel"
+                    placeholder="Customer phone"
+                    value={smsToSend}
+                    onChange={e => setSmsToSend(e.target.value)}
+                    style={{ flex: 1, padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 13 }}
+                  />
+                  <button className="btn btn-sm" onClick={async () => {
+                    if (!smsToSend || !success?.sale?.id) return;
+                    const res = await window.api.receipt.sendSms(success.sale.id, smsToSend);
+                    alert(res.message);
+                  }}>SMS</button>
+                </div>
               <button className="btn btn-primary" onClick={newBill}>
                 New Bill
               </button>

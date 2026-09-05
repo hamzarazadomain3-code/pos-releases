@@ -84,6 +84,16 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    key: 'sms', label: 'SMS Receipt Settings',
+    settings: [
+      { key: 'sms_provider', label: 'SMS Provider', type: 'select', options: ['', 'twilio', 'textlocal', 'api'], hint: 'Select your SMS provider' },
+      { key: 'sms_api_key', label: 'SMS API Key / Account SID', type: 'text', hint: 'API key or Twilio Account SID' },
+      { key: 'sms_api_secret', label: 'SMS API Secret / Auth Token', type: 'text', hint: 'Twilio Auth Token (Twilio only)' },
+      { key: 'sms_sender', label: 'SMS Sender ID / From Number', type: 'text', hint: 'e.g. ShopKeeperPOS or +1234567890' },
+      { key: 'sms_api_url', label: 'Custom SMS API URL', type: 'text', hint: 'Use {phone}, {message}, {key} as placeholders (Custom API only)' },
+    ],
+  },
+  {
     key: 'alerts', label: 'Alerts & Notifications',
     settings: [
       { key: 'low_stock_alert_enabled', label: 'Low Stock Alert', type: 'toggle' },

@@ -813,11 +813,11 @@ export interface PosBridge {
     chooseCloudFolder: () => Promise<string | null>;
   };
   printing: {
-    printSale: (saleId: number) => Promise<boolean>;
+    printSale: (saleId: number, template?: string) => Promise<boolean>;
     printLabel: (productId: number, copies?: number) => Promise<boolean>;
     printBarcodeLabel: (productId: number, copies?: number) => Promise<boolean>;
     openCashDrawer: () => Promise<{ ok: boolean; message: string }>;
-    previewReceipt: (saleId: number) => Promise<boolean>;
+    previewReceipt: (saleId: number, template?: string) => Promise<boolean>;
     previewInvoice: (saleId: number) => Promise<boolean>;
     printInvoice: (saleId: number) => Promise<boolean>;
     printDrawerSummary: (data: { opening_cash: number; closing_cash: number; cash_sales: number; card_sales: number; udhaar_sales: number; other_payments: number; cash_refunds: number; cash_in: number; cash_out: number; expected_cash: number; actual_cash: number; variance: number; opened_at: string; closed_at: string; cashier: string; notes?: string }) => Promise<boolean>;
@@ -1032,6 +1032,11 @@ export interface PosBridge {
   email: {
     send: (options: { to: string | string[]; subject: string; text?: string; html?: string }) => Promise<{ ok: boolean; message: string }>;
     sendDailyReport: () => Promise<{ ok: boolean; message: string }>;
+  };
+  receipt: {
+    sendSms: (saleId: number, phone: string) => Promise<{ ok: boolean; message: string }>;
+    sendEmail: (saleId: number, email: string) => Promise<{ ok: boolean; message: string }>;
+    getTemplates: () => Promise<Array<{ id: string; name: string; description: string; width: string }>>;
   };
   quotations: {
     list: (filters?: { status?: string; customer_id?: number; from_date?: string; to_date?: string; search?: string }) => Promise<QuotationRow[]>;

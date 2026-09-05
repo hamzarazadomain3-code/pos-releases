@@ -7,6 +7,7 @@ import { getAllAdminSettings } from './admin';
 import { getProduct } from './inventory';
 import { getUser } from './auth';
 import { formatLocalString } from '../utils/timezone';
+import { buildReceiptHtml as buildReceiptFromTemplate, type ReceiptTemplate } from './receiptTemplates';
 
 function esc(s: string | null | undefined): string {
   return String(s ?? '')
@@ -52,91 +53,8 @@ function printHtml(html: string): void {
   win.webContents.on('did-fail-load', () => win.destroy());
 }
 
-export function buildReceiptHtml(saleId: number): string {
-  const sale = getSale(saleId);
-  if (!sale) throw new Error('Sale not found');
-  const s = getPrintSettings();
-  const currency = s.currency || 'Rs';
-  const fmt = (n: number) => `${currency} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const cashier = getUser(sale.user_id ?? 0);
-  const receiptWidth = s.receipt_width === '58mm' ? '220px' : '300px';
-  const fontSize = s.receipt_font_size === 'small' ? '10px' : s.receipt_font_size === 'large' ? '14px' : '12px';
-  const showTax = s.show_tax_on_receipt !== 'false';
-  const showDiscount = s.show_discount_breakdown !== 'false';
-  const showPaymentMethod = s.show_payment_method !== 'false';
-  const showCashierName = s.show_cashier_name !== 'false';
-  const headerText = s.receipt_header_text || '';
-  const footerText = s.receipt_footer_text || s.receipt_footer || '';
-  const rows = sale.items
-    .map((it) => {
-      const displayQty = it.display_qty;
-      const unitName = it.unit_name;
-      const useUnit = !!unitName && displayQty != null;
-      const qtyLabel = useUnit ? `${displayQty} ${unitName}` : String(it.qty);
-      const priceLabel =
-        useUnit && displayQty > 0 ? fmt(it.line_total / displayQty) : fmt(it.unit_price);
-      return `
-<tr>
-  <td class="item-name">${esc(it.product_name || `#${it.product_id}`)}</td>
-  <td class="r qty">${esc(qtyLabel)}</td>
-  <td class="r price">${priceLabel}</td>
-  <td class="r total">${fmt(it.line_total)}</td>
-</tr>
-${it.promo_name ? `<tr><td colspan="4" class="promo">Promo: ${esc(it.promo_name)}</td></tr>` : ''}`;
-    })
-    .join('');
-
-  const paymentRows = sale.payments
-    .map((p) => `<tr><td>${esc(p.mode)}</td><td class="r">${fmt(p.amount)}</td></tr>`)
-    .join('');
-
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-  body { font-family: 'Segoe UI', Arial, sans-serif; width: ${receiptWidth}; margin: 0 auto; font-size: ${fontSize}; color: #000; }
-  h1 { font-size: 15px; margin: 0 0 2px; text-align: center; }
-  .center { text-align: center; }
-  .addr { font-size: 11px; color: #444; }
-  table { width: 100%; border-collapse: collapse; margin: 6px 0; }
-  td { padding: 2px 0; vertical-align: top; }
-  td.r { text-align: right; }
-  .meta td { font-size: 11px; }
-  .totals td { font-weight: 600; }
-  .line { border-top: 1px dashed #000; margin: 6px 0; }
-  .footer { text-align: center; margin-top: 8px; font-size: 11px; }
-  .qty { color: #444; }
-  .promo { color: #16a34a; font-size: 10px; display: block; }
-</style>
-</head>
-  <body>
-    ${headerText ? `<div class="center" style="margin-bottom:4px">${esc(headerText)}</div>` : ''}
-    ${s.shop_logo ? `<img src="${esc(s.shop_logo)}" style="max-width:100%;height:auto;margin-bottom:4px;"/>` : ''}
-    <h1>${esc(s.shop_name)}</h1>
-    <div class="center addr">${esc(s.shop_address)}${s.shop_phone ? '<br>' + esc(s.shop_phone) : ''}</div>
-    <div class="line"></div>
-    <table class="meta">
-      <tr><td>Invoice</td><td class="r">${esc(sale.invoice_no)}</td></tr>
-      <tr><td>Date</td><td class="r">${sale.created_at ? formatLocalString(sale.created_at) : ''}</td></tr>
-      ${sale.customer_name ? `<tr><td>Customer</td><td class="r">${esc(sale.customer_name)}</td></tr>` : ''}
-      ${showCashierName ? `<tr><td>Cashier</td><td class="r">${esc(cashier?.username ?? '')}</td></tr>` : ''}
-    </table>
-    <div class="line"></div>
-    <table>${rows}</table>
-    <div class="line"></div>
-    <table class="totals">
-      <tr><td>Subtotal</td><td class="r">${fmt(sale.subtotal)}</td></tr>
-      ${showDiscount && sale.discount_amount > 0 ? `<tr><td>Discount</td><td class="r">-${fmt(sale.discount_amount)}</td></tr>` : ''}
-      ${showTax && sale.tax_amount > 0 ? `<tr><td>Tax</td><td class="r">${fmt(sale.tax_amount)}</td></tr>` : ''}
-      ${sale.service_charge && sale.service_charge > 0 ? `<tr><td>Service Charge</td><td class="r">${fmt(sale.service_charge)}</td></tr>` : ''}
-      ${sale.freight && sale.freight > 0 ? `<tr><td>Freight/Delivery</td><td class="r">${fmt(sale.freight)}</td></tr>` : ''}
-      <tr><td>TOTAL</td><td class="r">${fmt(sale.total_amount)}</td></tr>
-      ${showPaymentMethod ? paymentRows : ''}
-    </table>
-    <div class="footer">${esc(footerText)}</div>
-  </body>
-</html>`;
+export function buildReceiptHtml(saleId: number, template?: ReceiptTemplate): string {
+  return buildReceiptFromTemplate(saleId, template);
 }
 
 export function previewHtml(html: string): void {
@@ -190,12 +108,12 @@ export function buildReceiptText(saleId: number): string {
   return lines.join('\n');
 }
 
-export function previewReceipt(saleId: number): void {
-  previewHtml(buildReceiptHtml(saleId));
+export function previewReceipt(saleId: number, template?: ReceiptTemplate): void {
+  previewHtml(buildReceiptHtml(saleId, template));
 }
 
-export function printSale(saleId: number): void {
-  printHtml(buildReceiptHtml(saleId));
+export function printSale(saleId: number, template?: ReceiptTemplate): void {
+  printHtml(buildReceiptHtml(saleId, template));
 }
 
 export function buildInvoiceHtml(saleId: number): string {
