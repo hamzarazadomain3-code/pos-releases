@@ -67,19 +67,38 @@ process.on('unhandledRejection', (reason) => {
 // Store interval IDs for cleanup
 let dailySnapshotInterval: NodeJS.Timeout | null = null;
 let hourlyAlertInterval: NodeJS.Timeout | null = null;
+let isQuitting = false;
 
-app.on('before-quit', async () => {
-  // Cleanup WhatsApp gateway (Puppeteer/Chrome processes)
-  await shutdownWhatsAppGateway();
-  // Clear scheduler intervals
-  if (dailySnapshotInterval) clearInterval(dailySnapshotInterval);
-  if (hourlyAlertInterval) clearInterval(hourlyAlertInterval);
-  closeLogger();
+app.on('before-quit', (e) => {
+  if (isQuitting) return;
+  isQuitting = true;
+  e.preventDefault();
+
+  shutdownWhatsAppGateway()
+    .catch(() => {})
+    .finally(() => {
+      if (dailySnapshotInterval) clearInterval(dailySnapshotInterval);
+      if (hourlyAlertInterval) clearInterval(hourlyAlertInterval);
+      closeLogger();
+      app.quit();
+    });
 });
 
 app.whenReady().then(async () => {
   initLogger();
   log(`App ready. packaged=${app.isPackaged} version=${app.getVersion()}`);
+
+  // Kill orphan Chrome/Puppeteer processes from previous crashed/force-killed runs
+  try {
+    const { execSync } = require('node:child_process');
+    const result = execSync('tasklist /fi "IMAGENAME eq chrome.exe" /fo csv /nh', { encoding: 'utf8', timeout: 3000 });
+    const lines = result.trim().split('\n').filter((l: string) => l.includes('chrome.exe'));
+    if (lines.length > 0) {
+      log(`Cleaning ${lines.length} orphan Chrome processes from previous run`);
+      execSync('taskkill /f /im chrome.exe', { stdio: 'pipe', timeout: 5000 });
+    }
+  } catch { /* no chrome processes found or kill failed — fine */ }
+
   try {
     await initDatabase();
     log('Database initialized + migrations applied');
