@@ -122,7 +122,7 @@ export default function CashDrawer({ shift, onClose }: Props) {
               <div className="cash-drawer-grid">
                 <div className="cash-drawer-stat">
                   <span className="stat-label">Opening Time</span>
-                  <span className="stat-value">{now.toLocaleTimeString()}</span>
+                  <span className="stat-value">{now.toLocaleTimeString('en-US', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}</span>
                 </div>
                 <div className="cash-drawer-stat">
                   <span className="stat-label">Status</span>
@@ -166,7 +166,7 @@ export default function CashDrawer({ shift, onClose }: Props) {
                 </div>
                 <div className="cash-drawer-stat">
                   <span className="stat-label">Current Time</span>
-                  <span className="stat-value">{now.toLocaleTimeString()}</span>
+                  <span className="stat-value">{now.toLocaleTimeString('en-US', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}</span>
                 </div>
                 <div className="cash-drawer-stat">
                   <span className="stat-label">Status</span>

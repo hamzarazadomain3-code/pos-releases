@@ -1,6 +1,7 @@
 import { getDb } from '../db';
 import { logError } from '../logger';
 import { getAllSettings } from './settings';
+import { todayLocal, daysFromNow } from '../utils/timezone';
 
 export interface QuotationRow {
   id: number;
@@ -70,7 +71,7 @@ function generateQuoteNo(): string {
   const db = getDb();
   const settings = getAllSettings();
   const prefix = (settings.quotation_prefix as string) || 'QT-';
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const today = todayLocal().replace(/-/g, '');
   const last = db.prepare(
     `SELECT quote_no FROM quotations WHERE quote_no LIKE ? ORDER BY id DESC LIMIT 1`
   ).get(`${prefix}${today}-%`) as { quote_no: string } | undefined;
@@ -170,7 +171,7 @@ export function createQuotation(input: CreateQuotationInput): { ok: boolean; id?
 
     const settings = getAllSettings();
     const validDays = parseInt((settings.quotation_valid_days as string) || '7', 10);
-    const validUntil = input.valid_until || new Date(Date.now() + validDays * 86400000).toISOString().slice(0, 10);
+    const validUntil = input.valid_until || daysFromNow(validDays);
     const terms = input.terms || (settings.quotation_terms as string) || '';
 
     const quoteNo = generateQuoteNo();
@@ -252,14 +253,14 @@ export function convertToSale(quotationId: number, actorUserId: number): { ok: b
     const q = db.prepare(`SELECT * FROM quotations WHERE id = ?`).get(quotationId) as unknown as QuotationRow | undefined;
     if (!q) return { ok: false, message: 'Quotation not found' };
     if (q.converted_sale_id) return { ok: false, message: 'Quotation already converted' };
-    if (q.valid_until && new Date(q.valid_until) < new Date(new Date().toISOString().slice(0, 10))) {
+    if (q.valid_until && new Date(q.valid_until) < new Date(todayLocal())) {
       return { ok: false, message: 'Quotation has expired' };
     }
 
     const items = db.prepare(`SELECT * FROM quotation_items WHERE quotation_id = ?`).all(quotationId) as unknown as QuotationItemRow[];
 
     // Generate sale invoice number (same scheme as sales service)
-    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const today = todayLocal().replace(/-/g, '');
     const lastSale = db.prepare(`SELECT invoice_no FROM sales WHERE invoice_no LIKE ? ORDER BY id DESC LIMIT 1`).get(`INV-${today}-%`) as any;
     let seq = 1;
     if (lastSale) {
@@ -317,7 +318,7 @@ export function convertToSale(quotationId: number, actorUserId: number): { ok: b
 export function expireOldQuotations(): number {
   try {
     const db = getDb();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayLocal();
     const res = db.prepare(`
       UPDATE quotations
       SET status = 'expired', updated_at = datetime('now', 'utc') || 'Z'

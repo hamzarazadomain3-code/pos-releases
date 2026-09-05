@@ -1,4 +1,5 @@
 import { getDb } from '../db';
+import { formatDateYMD } from '../utils/timezone';
 
 // ── Types ──
 
@@ -262,7 +263,7 @@ export class InventoryReportsService {
     const end = new Date(weekEnd);
     const dates: string[] = [];
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      dates.push(d.toISOString().split('T')[0]);
+      dates.push(formatDateYMD(d));
     }
 
     const dailyData: Record<number, WeeklyInventoryRow> = {};
@@ -297,7 +298,7 @@ export class InventoryReportsService {
 
   getMonthlyInventory(year: number, month: number): MonthlyInventoryRow[] {
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+    const endDate = formatDateYMD(new Date(year, month, 0));
 
     const query = `
       SELECT
@@ -380,7 +381,7 @@ export class InventoryReportsService {
   getProductPurchaseSummary(productId: number, months: number = 3): ProductPurchaseSummaryRow[] {
     const cutoffDate = new Date();
     cutoffDate.setMonth(cutoffDate.getMonth() - months);
-    const dateStr = cutoffDate.toISOString().split('T')[0];
+    const dateStr = formatDateYMD(cutoffDate);
 
     const query = `
       SELECT

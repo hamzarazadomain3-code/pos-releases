@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { getAllAdminSettings } from './admin';
 import { getAllSettings } from './settings';
+import { todayLocal, formatLocalString } from '../utils/timezone';
 
 interface EmailOptions {
   to: string | string[];
@@ -67,7 +68,7 @@ export async function sendDailySalesReportEmail(): Promise<{ ok: boolean; messag
   const recipients = [admin.report_email, settings.alert_manager_email, settings.alert_owner_email].filter(Boolean) as string[];
   if (recipients.length === 0) return { ok: false, message: 'No email recipients configured in Admin > Reports' };
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocal();
   const { getDb } = require('../db');
   const db = getDb();
 
@@ -110,7 +111,7 @@ export async function sendDailySalesReportEmail(): Promise<{ ok: boolean; messag
     html += `</ul>`;
   }
 
-  html += `<p style="color:#888;font-size:12px;margin-top:24px">Sent by ShopKeeper POS at ${new Date().toLocaleString()}</p>`;
+  html += `<p style="color:#888;font-size:12px;margin-top:24px">Sent by ShopKeeper POS at ${formatLocalString(new Date())}</p>`;
 
   const text = `ShopKeeper POS — Daily Report\nDate: ${today}\nBills: ${stats.bill_count}\nTotal: Rs ${stats.total_sales.toFixed(2)}`;
 

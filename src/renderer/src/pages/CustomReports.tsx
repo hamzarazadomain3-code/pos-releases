@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { CustomReportRow, ReportScheduleRow } from '../../../shared/types';
+import { formatDateAdmin } from '../utils/dateUtils';
 
 export default function CustomReports() {
   const { t } = useTranslation();
@@ -217,7 +218,7 @@ export default function CustomReports() {
                 <td><span className="badge">{r.base_table}</span></td>
                 <td className="small muted">{JSON.parse(r.columns_json || '[]').length} cols</td>
                 <td>{r.is_public ? '✓' : ''}</td>
-                <td className="muted small">{r.created_at?.slice(0, 10)}</td>
+                <td className="muted small">{formatDateAdmin(r.created_at)}</td>
                 <td>
                   <button className="btn btn-sm" onClick={() => previewReport(r.id)}>Run</button>{' '}
                   <button className="btn btn-sm" onClick={() => openEdit(r)}>Edit</button>{' '}
@@ -240,7 +241,7 @@ export default function CustomReports() {
                 <td>{s.frequency}</td>
                 <td><span className="badge">{s.format?.toUpperCase()}</span></td>
                 <td>{s.is_active ? '✓' : ''}</td>
-                <td className="muted small">{s.last_run?.slice(0, 10) || 'Never'}</td>
+                <td className="muted small">{s.last_run ? formatDateAdmin(s.last_run) : 'Never'}</td>
               </tr>
             ))}
           </tbody>

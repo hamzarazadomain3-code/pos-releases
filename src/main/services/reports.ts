@@ -1,6 +1,7 @@
 import { getDb } from '../db';
 import { getAllSettings } from './settings';
 import { BrowserWindow, dialog } from 'electron';
+import { todayLocal, formatLocalString, daysAgo } from '../utils/timezone';
 import { createWriteStream } from 'fs';
 import type {
   SalesAnalysisResult,
@@ -169,8 +170,8 @@ export function salesReport(from?: string, to?: string): SalesDayRow[] {
 }
 
 export function profitLoss(from?: string, to?: string): ProfitLoss {
-  const fromD = from || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
-  const toD = to || new Date().toISOString().slice(0, 10);
+  const fromD = from || daysAgo(30);
+  const toD = to || todayLocal();
   const rev = one<{ total: number }>(
     `SELECT COALESCE(SUM(total_amount - COALESCE(returned_amount,0)),0) AS total FROM sales
      WHERE status='completed' AND date(created_at) BETWEEN date(?) AND date(?)`,
@@ -356,8 +357,8 @@ export function updateReceiptSetting(key: string, value: string): void {
 // ============================================================
 
 function dateRange(from?: string, to?: string): string[] {
-  const f = from || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
-  const t = to || new Date().toISOString().slice(0, 10);
+  const f = from || daysAgo(30);
+  const t = to || todayLocal();
   return [f, t];
 }
 
@@ -646,7 +647,7 @@ function pdfHeader(doc: PDFKit.PDFDocument, title: string): void {
   doc.fontSize(18).font('Helvetica-Bold').text(title, { align: 'center' });
   doc.moveDown(0.3);
   doc.fontSize(9).font('Helvetica').fillColor('#666')
-    .text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' });
+    .text(`Generated: ${formatLocalString(new Date())}`, { align: 'center' });
   doc.fillColor('#000').moveDown(0.8);
 }
 
@@ -694,7 +695,7 @@ function fmt(n: number): string {
 
 export async function exportReportPDF(reportType: string, data: unknown): Promise<string | null> {
   const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-  const defaultName = `${reportType}-report-${new Date().toISOString().slice(0, 10)}.pdf`;
+  const defaultName = `${reportType}-report-${todayLocal()}.pdf`;
   const result = win
     ? await dialog.showSaveDialog(win, {
         title: `Save ${reportType} report as PDF`,
@@ -810,7 +811,7 @@ export async function exportReportPDF(reportType: string, data: unknown): Promis
 
 export async function exportReportExcel(reportType: string, data: unknown): Promise<string | null> {
   const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-  const defaultName = `${reportType}-report-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const defaultName = `${reportType}-report-${todayLocal()}.xlsx`;
   const result = win
     ? await dialog.showSaveDialog(win, {
         title: `Save ${reportType} report as Excel`,

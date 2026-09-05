@@ -1,5 +1,6 @@
 import { getDb } from '../db';
 import { logError } from '../logger';
+import { todayLocal } from '../utils/timezone';
 
 export interface CommissionRuleRow {
   id: number;
@@ -137,7 +138,7 @@ export function listSalesmen(): Array<{ id: number; username: string; commission
 function findMatchingRule(productId: number, categoryId: number | null, qty: number, amount: number): CommissionRuleRow | null {
   try {
     const rules = listRules(true);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayLocal();
     for (const rule of rules) {
       if (rule.start_date && rule.start_date > today) continue;
       if (rule.end_date && rule.end_date < today) continue;

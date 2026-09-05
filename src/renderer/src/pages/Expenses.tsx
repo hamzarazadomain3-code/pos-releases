@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ExpenseCategoryRow, ExpenseRow } from '../../../shared/types';
+import { toLocalDateString, formatDateAdmin } from '../utils/dateUtils';
 
 const fmt = (n: number) => n?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? '0';
 
@@ -24,7 +25,7 @@ export default function Expenses() {
   const [formTitle, setFormTitle] = useState('');
   const [formDesc, setFormDesc] = useState('');
   const [formAmount, setFormAmount] = useState('');
-  const [formDate, setFormDate] = useState(new Date().toISOString().slice(0, 10));
+  const [formDate, setFormDate] = useState(toLocalDateString(new Date()));
   const [formRecurring, setFormRecurring] = useState(false);
   const [formRecType, setFormRecType] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
 
@@ -62,7 +63,7 @@ export default function Expenses() {
 
   const resetForm = () => {
     setFormOpen(false); setEditId(null); setFormCat(''); setFormTitle('');
-    setFormDesc(''); setFormAmount(''); setFormDate(new Date().toISOString().slice(0, 10));
+    setFormDesc(''); setFormAmount(''); setFormDate(toLocalDateString(new Date()));
     setFormRecurring(false); setFormRecType('monthly');
   };
 
@@ -265,7 +266,7 @@ export default function Expenses() {
             {expenses.length === 0 && <tr><td colSpan={7} className="center muted">No expenses found</td></tr>}
             {expenses.map((e) => (
               <tr key={e.id}>
-                <td>{e.expense_date?.slice(0, 10)}</td>
+                <td>{formatDateAdmin(e.expense_date)}</td>
                 <td>{e.title}</td>
                 <td>
                   <span className="badge" style={{ background: e.category_color || '#6B7280', color: '#fff' }}>

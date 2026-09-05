@@ -2,6 +2,7 @@ import { dialog, BrowserWindow } from 'electron';
 import fs from 'node:fs';
 import * as XLSX from 'xlsx';
 import { getDb } from '../db';
+import { formatDateYMD } from '../utils/timezone';
 import { createProduct, listProducts } from './inventory';
 import { listSales } from './sales';
 import { listCustomers } from './sales';
@@ -39,12 +40,12 @@ export interface XlsxSheet {
 
 function toDateValue(v: unknown): string | null {
   if (v === null || v === undefined || v === '') return null;
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (v instanceof Date) return formatDateYMD(v);
   const s = String(v);
   const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
   const d = new Date(s);
-  return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+  return isNaN(d.getTime()) ? null : formatDateYMD(d);
 }
 
 export function saveXlsx(win: BrowserWindow | null, defaultName: string, sheets: XlsxSheet[]): Promise<boolean> {

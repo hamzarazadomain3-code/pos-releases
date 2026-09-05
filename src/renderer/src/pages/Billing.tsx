@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CashDrawer from '../components/CashDrawer';
 import { ModalCloseButton } from '../components/ModalCloseButton';
-import { formatDateTimeAdmin, formatTimeAdmin, formatDateAdmin } from '../utils/dateUtils';
+import { formatDateTimeAdmin, formatTimeAdmin, formatDateAdmin, toLocalDateString } from '../utils/dateUtils';
 import type {
   Customer,
   HeldBill,
@@ -1139,7 +1139,7 @@ setQuotationMode(false);
         setDatePreset('custom');
         return;
     }
-    setHistoryFilters(f => ({ ...f, from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) }));
+    setHistoryFilters(f => ({ ...f, from: toLocalDateString(from), to: toLocalDateString(to) }));
     setDatePreset(preset);
   }
 

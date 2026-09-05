@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { toLocalDateString } from '../../utils/dateUtils';
 
 type Preset = 'today' | 'yesterday' | 'week' | 'month' | 'lastmonth' | 'custom';
 
@@ -65,8 +66,8 @@ export function DateRangePicker({
       case 'custom':
         return;
     }
-    const fromStr = newFrom.toISOString().slice(0, 10);
-    const toStr = newTo.toISOString().slice(0, 10);
+    const fromStr = toLocalDateString(newFrom);
+    const toStr = toLocalDateString(newTo);
     setLocalFrom(fromStr);
     setLocalTo(toStr);
     onChange(fromStr, toStr);

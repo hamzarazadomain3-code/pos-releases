@@ -9,6 +9,14 @@
 
 const PAKISTAN_TZ = 'Asia/Karachi';
 
+/** Convert Date to local YYYY-MM-DD string (avoids UTC offset issues of toISOString). */
+export function toLocalDateString(d: Date): string {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 /**
  * Parse a timestamp string that may be malformed.
  * Returns a Date object (in local time) or null if unparseable.

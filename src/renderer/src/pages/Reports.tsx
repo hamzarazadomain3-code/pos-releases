@@ -37,7 +37,7 @@ import type {
   ProductPurchaseSummaryRow,
   DailySnapshotResult,
 } from '../../../shared/types';
-import { formatDateAdmin } from '../utils/dateUtils';
+import { formatDateAdmin, toLocalDateString } from '../utils/dateUtils';
 
 type Tab =
   | 'sales'
@@ -52,9 +52,11 @@ type Tab =
   | 'profitability';
 
 function daysAgo(n: number): string {
-  return new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return toLocalDateString(d);
 }
-const today = (): string => new Date().toISOString().slice(0, 10);
+const today = (): string => toLocalDateString(new Date());
 
 const PIE_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#a4de6c'];
 
@@ -109,7 +111,7 @@ export default function Reports() {
           ws.setDate(ws.getDate() - 7);
           const we = new Date();
           setProfitData(await window.api.profitability.weekly(
-            ws.toISOString().split('T')[0], we.toISOString().split('T')[0]
+            toLocalDateString(ws), toLocalDateString(we)
           ));
           break;
         case 'monthly':
@@ -187,8 +189,8 @@ export default function Reports() {
         weekStart.setDate(weekStart.getDate() - 7);
         const weekEnd = new Date();
         setWeeklyInv(await window.api.inventoryReports.weeklyInventory(
-          weekStart.toISOString().split('T')[0],
-          weekEnd.toISOString().split('T')[0]
+          toLocalDateString(weekStart),
+          toLocalDateString(weekEnd)
         ));
       } else if (invSubTab === 'monthly') {
         const now = new Date();

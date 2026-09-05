@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { CommissionRuleRow, SalesmanCommissionRow } from '../../../shared/types';
+import { formatDateAdmin } from '../utils/dateUtils';
 
 const fmt = (n: number) => n?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? '0';
 
@@ -242,7 +243,7 @@ export default function Commissions() {
             {commissions.length === 0 && <tr><td colSpan={8} className="center muted">No commissions found</td></tr>}
             {commissions.map((c) => (
               <tr key={c.id}>
-                <td>{c.created_at?.slice(0, 10)}</td>
+                <td>{formatDateAdmin(c.created_at)}</td>
                 <td>{c.salesman_name}</td>
                 <td>#{c.sale_id}</td>
                 <td>Rs {fmt(c.base_amount)}</td>

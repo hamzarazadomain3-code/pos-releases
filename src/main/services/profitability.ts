@@ -1,4 +1,5 @@
 import { getDb } from '../db';
+import { formatDateYMD } from '../utils/timezone';
 
 export interface ProductProfitRow {
   product_id: number;
@@ -128,7 +129,7 @@ export class ProfitabilityService {
 
   getMonthlyProfitability(year: number, month: number): ProductProfitRow[] {
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+    const endDate = formatDateYMD(new Date(year, month, 0));
     return this.computeProfitability(startDate, endDate);
   }
 
@@ -309,7 +310,7 @@ export class ProfitabilityService {
 
   computePeriodProfitability(date: string): Promise<void> {
     const start = `${date.substring(0, 8)}01`;
-    const end = new Date(Number(date.substring(0, 4)), Number(date.substring(5, 7)), 0).toISOString().split('T')[0];
+    const end = formatDateYMD(new Date(Number(date.substring(0, 4)), Number(date.substring(5, 7)), 0));
 
     const data = this.computeProfitability(start, end);
 

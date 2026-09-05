@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { PartyTransferRow, BankAccountRow, BankTransferRow, Customer, Supplier } from '../../../shared/types';
+import { formatDateAdmin } from '../utils/dateUtils';
 
 type Tab = 'party' | 'bank';
 
@@ -207,7 +208,7 @@ export default function Transfers() {
                         <td>{fmt(t.amount)}</td>
                         <td>{t.reference || '—'}</td>
                         <td>{t.created_by_name || '—'}</td>
-                        <td>{new Date(t.created_at).toLocaleDateString()}</td>
+                        <td>{formatDateAdmin(t.created_at)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -320,7 +321,7 @@ export default function Transfers() {
                         <td>{fmt(t.amount)}</td>
                         <td>{t.reference || '—'}</td>
                         <td>{t.created_by_name || '—'}</td>
-                        <td>{new Date(t.created_at).toLocaleDateString()}</td>
+                        <td>{formatDateAdmin(t.created_at)}</td>
                       </tr>
                     ))}
                   </tbody>

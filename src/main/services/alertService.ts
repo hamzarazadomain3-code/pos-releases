@@ -1,5 +1,6 @@
 import { getDb } from '../db';
 import { getAllSettings } from './settings';
+import { todayLocal, formatLocalString } from '../utils/timezone';
 
 export interface AlertRow {
   id: number;
@@ -256,7 +257,7 @@ export class AlertService {
     if (alerts.length === 0) return { sent: 0, errors: 0 };
 
     const lines = alerts.map((a) => `${a.severity === 'critical' ? '🔴' : '⚠️'} ${a.message}`);
-    const text = `*ShopKeeper POS Alerts*\n\n${lines.join('\n')}\n\n_Sent at ${new Date().toLocaleString()}_`;
+    const text = `*ShopKeeper POS Alerts*\n\n${lines.join('\n')}\n\n_Sent at ${formatLocalString(new Date())}_`;
 
     let sent = 0;
     let errors = 0;
@@ -283,7 +284,7 @@ export class AlertService {
 
     const { sendWhatsAppReceipt } = await import('../whatsapp-gateway');
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayLocal();
     const stats = this.db.prepare(`
       SELECT
         COUNT(*) as bill_count,

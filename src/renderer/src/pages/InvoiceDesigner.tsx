@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { InvoiceTemplateRow } from '../../../shared/types';
+import { formatDateAdmin } from '../utils/dateUtils';
 
 const TYPE_LABELS: Record<string, string> = {
   sale: 'Sale Invoice', purchase: 'Purchase Order', quotation: 'Quotation',
@@ -219,7 +220,7 @@ export default function InvoiceDesigner() {
               </div>
               <hr style={{ border: 'none', borderTop: '1px solid #ddd', margin: '8px 0' }} />
               <div style={{ marginBottom: 4 }}>Invoice #: INV-001</div>
-              <div style={{ marginBottom: 8 }}>Date: {new Date().toLocaleDateString()}</div>
+              <div style={{ marginBottom: 8 }}>Date: {formatDateAdmin(new Date().toISOString())}</div>
               <table style={{ width: '100%', fontSize: fontSize - 2 }}>
                 <tbody>
                   <tr><td>Sample Product</td><td style={{ textAlign: 'right' }}>2 × 500</td><td style={{ textAlign: 'right' }}>1,000</td></tr>

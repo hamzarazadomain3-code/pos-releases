@@ -6,6 +6,7 @@ import { getReceiptSettings } from './reports';
 import { getAllAdminSettings } from './admin';
 import { getProduct } from './inventory';
 import { getUser } from './auth';
+import { formatLocalString } from '../utils/timezone';
 
 function esc(s: string | null | undefined): string {
   return String(s ?? '')
@@ -117,7 +118,7 @@ ${it.promo_name ? `<tr><td colspan="4" class="promo">Promo: ${esc(it.promo_name)
     <div class="line"></div>
     <table class="meta">
       <tr><td>Invoice</td><td class="r">${esc(sale.invoice_no)}</td></tr>
-      <tr><td>Date</td><td class="r">${sale.created_at ? new Date(sale.created_at).toLocaleString() : ''}</td></tr>
+      <tr><td>Date</td><td class="r">${sale.created_at ? formatLocalString(sale.created_at) : ''}</td></tr>
       ${sale.customer_name ? `<tr><td>Customer</td><td class="r">${esc(sale.customer_name)}</td></tr>` : ''}
       ${showCashierName ? `<tr><td>Cashier</td><td class="r">${esc(cashier?.username ?? '')}</td></tr>` : ''}
     </table>
@@ -162,7 +163,7 @@ export function buildReceiptText(saleId: number): string {
   if (s.shop_phone) lines.push(s.shop_phone);
   lines.push('----------------------------');
   lines.push(`Invoice: ${sale.invoice_no}`);
-  lines.push(`Date: ${sale.created_at ? new Date(sale.created_at).toLocaleString() : ''}`);
+  lines.push(`Date: ${sale.created_at ? formatLocalString(sale.created_at) : ''}`);
   if (sale.customer_name) lines.push(`Customer: ${sale.customer_name}`);
   lines.push(`Cashier: ${cashier?.username ?? ''}`);
   lines.push('----------------------------');
@@ -256,7 +257,7 @@ ${it.promo_name ? `<tr><td colspan="6" class="promo">Promo: ${esc(it.promo_name)
   <div class="line"></div>
   <table class="meta">
     <tr><td>Invoice</td><td class="r">${esc(sale.invoice_no)}</td></tr>
-    <tr><td>Date</td><td class="r">${sale.created_at ? new Date(sale.created_at).toLocaleString() : ''}</td></tr>
+    <tr><td>Date</td><td class="r">${sale.created_at ? formatLocalString(sale.created_at) : ''}</td></tr>
     ${sale.customer_name ? `<tr><td>Customer</td><td class="r">${esc(sale.customer_name)}</td></tr>` : ''}
     <tr><td>Cashier</td><td class="r">${esc(cashier?.username ?? '')}</td></tr>
   </table>

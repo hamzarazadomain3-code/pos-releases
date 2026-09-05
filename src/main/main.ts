@@ -12,6 +12,7 @@ import { initWhatsAppGateway, shutdownWhatsAppGateway } from './whatsapp-gateway
 import { getInventoryReports } from './services/inventoryReports';
 import { getAlertService } from './services/alertService';
 import { ensureOtpTable } from './services/twoFactorAuth';
+import { todayLocal } from './utils/timezone';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -103,7 +104,7 @@ app.whenReady().then(async () => {
 
   try {
     const adminSettings = getAllAdminSettings();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayLocal();
     if (!adminSettings.backup_last || !adminSettings.backup_last.startsWith(today)) {
       const res = runBackup();
       log(`Daily backup done${res.cloudOk ? (res.cloudPath ? ' + cloud copy' : ' (cloud not configured)') : ` + cloud FAILED: ${res.cloudError}`}`);
@@ -184,7 +185,7 @@ function scheduleDailySnapshot(): void {
 
 function runSnapshot(): void {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayLocal();
     const result = getInventoryReports().createDailySnapshot(today);
     log(`Daily snapshot created: ${result.created} products on ${result.date}`);
   } catch (err) {

@@ -40,9 +40,9 @@ export async function formatTime(input: string | Date | null | undefined): Promi
   const d = typeof input === 'string' ? new Date(input) : input;
   if (isNaN(d.getTime())) return String(input);
   if (cachedTime === '12h') {
-    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    return d.toLocaleTimeString('en-US', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', hour12: true });
   }
-  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return d.toLocaleTimeString('en-US', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 export async function formatDateTime(input: string | Date | null | undefined): Promise<string> {
