@@ -667,20 +667,13 @@ export default function App() {
       </button>
 
       <aside
-        className={`sidebar ${sidebarHovered ? 'expanded' : ''} ${sidebarOpen ? 'open' : ''}`}
+        className={`sidebar bilten-sidebar ${sidebarOpen ? 'open' : ''}`}
+        style={{ width: '50px', minWidth: '50px', flex: '0 0 50px' }}
         onMouseEnter={() => setSidebarHovered(true)}
         onMouseLeave={() => setSidebarHovered(false)}
       >
-        <div className="sidebar-brand">
-          {shopLogo ? (
-            <img src={shopLogo} alt="Shop logo" className="brand-logo" />
-          ) : (
-            <span className="brand-dot">SK</span>
-          )}
-          <span>ShopKeeper {i18n.language === 'ur' ? 'پوز' : 'POS'}</span>
-          <span className="lang-switcher" style={{ marginLeft: 'auto' }} onClick={() => handleLanguageChange(i18n.language === 'en' ? 'ur' : 'en')}>
-            {i18n.language === 'en' ? 'اردو' : 'English'}
-          </span>
+        <div className="sidebar-brand" style={{ padding: '12px', textAlign: 'center' }}>
+          <span className="brand-icon" style={{ fontSize: 28 }}>SK</span>
         </div>
         <nav className="sidebar-nav">
           {activeNav.map((item) => (
@@ -688,33 +681,47 @@ export default function App() {
               key={item.key}
               className={page === item.key ? 'nav-btn active' : 'nav-btn'}
               onClick={() => { setPage(item.key); setSidebarOpen(false); }}
-              title={!sidebarHovered ? item.label : undefined}
+              title={item.label}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '50px',
+                height: '50px',
+                borderRadius: '8px',
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+                color: 'var(--text)',
+                fontSize: '20px',
+                margin: '4px auto',
+              }}
             >
               <span className="nav-icon">{NAV_ICONS[item.key] || null}</span>
-              <span className="nav-label">{item.label}</span>
             </button>
           ))}
         </nav>
 
-        {/* Branch Selector */}
-        <div className="sidebar-branch" style={{ padding: 12, borderTop: '1px solid rgba(129, 140, 248, 0.15)' }}>
-          <div className="small muted" style={{ marginBottom: 8 }}>Current Branch</div>
-          <BranchSelector />
-        </div>
-
-        <div className="sidebar-user">
-          <div className="small muted">{user.username}</div>
-          <div className="small muted" style={{ textTransform: 'capitalize' }}>{user.role}</div>
+        <div className="sidebar-bottom" style={{ marginTop: 'auto', padding: '8px' }}>
           <button
-            className="btn btn-sm"
-            style={{ width: '100%', marginTop: 8 }}
-            onClick={async () => {
-              await window.api.auth.logout();
-              localStorage.removeItem(SESSION_KEY);
-              setUser(null);
-            }}
+            onClick={() => handleLanguageChange(i18n.language === 'en' ? 'ur' : 'en')}
+            title={i18n.language === 'en' ? 'اردو (Urdu)' : 'English'}
+            className="urdu-btn-icon-only"
           >
-            {t('buttons.Logout')}
+            <span role="img" aria-label="urdu">اردو</span>
+          </button>
+          <button
+            onClick={() => {
+              if (user?.role === 'owner') {
+                window.api.auth.logout();
+                localStorage.removeItem(SESSION_KEY);
+                setUser(null);
+              }
+            }}
+            title="Logout"
+            className="urdu-btn-icon-only"
+          >
+            🚪
           </button>
         </div>
       </aside>

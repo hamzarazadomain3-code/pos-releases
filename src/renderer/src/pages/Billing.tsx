@@ -47,62 +47,6 @@ interface CartLine {
   isPinned?: boolean;
 }
 
-interface CartLine {
-  product_id: number;
-  name: string;
-  qty: number;
-  price: number;
-  retail_price: number;
-  wholesale_price: number | null;
-  cost_price: number;
-  line_discount: number;
-  tax_rate: number;
-  expired: boolean;
-  shelf_location: string | null;
-  stock_qty: number;
-  units: ProductUnit[];
-  selected_unit_level: number;
-  box_qty?: number;
-  // BayLan Label Scale integration
-  scale_plu?: string;         // PLU code from scale barcode
-  scale_price?: number;       // decoded total price from scale barcode
-  scale_weight_g?: number;    // weight in grams (computed from decoded price / per-kg price)
-  scale_weight_kg?: number;   // weight in kg (for backend inventory deduction)
-  // Optional unit display fields (for multi-unit products)
-  unit_name?: string | null;
-  display_qty?: number | null;
-}
-
-interface CartLine {
-  product_id: number;
-  name: string;
-  qty: number;
-  price: number;
-  retail_price: number;
-  wholesale_price: number | null;
-  cost_price: number;
-  line_discount: number;
-  tax_rate: number;
-  expired: boolean;
-  shelf_location: string | null;
-  stock_qty: number;
-  units: ProductUnit[];
-  selected_unit_level: number;
-  box_qty?: number;
-  // BayLan Label Scale integration
-  scale_plu?: string;         // PLU code from scale barcode
-  scale_price?: number;       // decoded total price from scale barcode
-  scale_weight_g?: number;    // weight in grams (computed from decoded price / per-kg price)
-  scale_weight_kg?: number;   // weight in kg (for backend inventory deduction)
-  // Optional unit display fields (for multi-unit products)
-  unit_name?: string | null;
-  display_qty?: number | null;
-  // Enhancement: Item notes
-  note?: string;
-  // Enhancement: Pinned/favorite
-  isPinned?: boolean;
-}
-
 function isExpired(dateStr: string | null): boolean {
   if (!dateStr) return false;
   const today = new Date();
@@ -1469,8 +1413,8 @@ Quotes ({quotationCount})
         </div>
       )}
 
-      <div className="billing-body">
-<div className="panel panel-results">
+      <div className="billen-billing-body">
+<div className="panel panel-results" style={{ display: 'none' }}>
           <div className="panel-title" style={{ borderBottom: '2px solid transparent', backgroundImage: 'linear-gradient(var(--card-bg), var(--card-bg)), linear-gradient(90deg, var(--primary), var(--primary-light))', backgroundOrigin: 'border-box', backgroundClip: 'padding-box, border-box' }}>Products ({results.length})</div>
           <div className="result-list">
             {results.map((r) => (

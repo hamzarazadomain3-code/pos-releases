@@ -955,6 +955,16 @@ body.theme-dark ::-webkit-scrollbar-thumb:hover {
   font-size: 13px;
 }
 
+.expiry-warning-banner {
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  color: #991b1b;
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin: 0 12px 12px;
+  font-size: 13px;
+}
+
 .cart-row-expired { background: #fef2f2; border-color: #fecaca; }
 .expired-confirm-list { margin: 8px 0 12px 20px; }
 
@@ -962,6 +972,226 @@ body.theme-dark ::-webkit-scrollbar-thumb:hover {
 .barcode-canvas { max-width: 110px; height: auto; display: block; }
 
 .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* BILTEN Billing Table Styles */
+.billten-cart-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.billten-cart-table th {
+  background: var(--gradient-primary);
+  color: #fff;
+  text-align: left;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.billten-cart-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+  font-size: 13px;
+}
+
+.billten-cart-table tbody tr:nth-child(even) td {
+  background: #f8fafc;
+}
+
+.billten-cart-table tbody tr:hover td {
+  background: #eff6ff;
+}
+
+.billten-cart-table tr:last-child td { border-bottom: none; }
+
+.billten-cart-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cart-info-cell {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* BILTEEN Bill Summary Grid */
+.bilten-bill-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.bilten-bill-summary-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 20px;
+  border-radius: 14px;
+  min-height: 120px;
+  overflow: hidden;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.bilten-bill-summary-item:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.bilten-bill-summary-icon {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 48px;
+  height: 48px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.9;
+}
+
+.bilten-bill-summary-icon svg {
+  width: 28px;
+  height: 28px;
+  color: #fff;
+}
+
+.bilten-bill-summary-label {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 500;
+  opacity: 0.9;
+}
+
+.bilten-bill-summary-value {
+  font-size: 28px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.bilten-sub-total {
+  background: linear-gradient(135deg, #64748b, #475569);
+}
+
+.bilten-net-total {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+}
+
+.bilten-paid {
+  background: linear-gradient(135deg, #10b981, #059669);
+}
+
+.bilten-balance {
+  background: linear-gradient(135deg, #f97316, #d97706);
+}
+
+.bilten-items {
+  background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+}
+
+.bilten-return {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+}
+
+body.theme-dark .bilten-bill-summary-item {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+@media (max-width: 1100px) {
+  .bilten-bill-summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .bilten-bill-summary-grid {
+    grid-template-columns: 1fr;
+  }
+  .bilten-bill-summary-item {
+    min-height: 100px;
+    padding: 18px;
+  }
+  .bilten-bill-summary-value {
+    font-size: 24px;
+  }
+  .bilten-bill-summary-icon {
+    width: 40px;
+    height: 40px;
+  }
+  .bilten-bill-summary-icon svg {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+/* Urdu Button Styles */
+.urdu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, #8e44ad, #7e38c8);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin: 2px;
+}
+
+.urdu-btn:hover {
+  background: linear-gradient(135deg, #7e38c8, #6d28d9);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(126, 58, 234, 0.4);
+}
+
+.urdu-btn span {
+  font-size: 16px;
+  color: #fff;
+  font-weight: 600;
+}
+
+.urdu-btn-icon-only {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, #8e44ad, #7e38c8);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.urdu-btn-icon-only:hover {
+  background: linear-gradient(135deg, #7e38c8, #6d28d9);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(126, 58, 234, 0.4);
+}
+
+.urdu-btn-icon-only svg {
+  width: 20px;
+  height: 20px;
+  color: #fff;
+}
 
 /* ═══════════════════════════════════════════
    MODAL
@@ -1248,6 +1478,25 @@ body.theme-dark ::-webkit-scrollbar-thumb:hover {
   gap: 16px;
   flex: 1;
   min-height: 0;
+}
+
+.billten-billing-body {
+  display: grid;
+  grid-template-columns: 1fr 350px;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+}
+
+.billten-billing-cart {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.billten-billing-summary {
+  min-width: 340px;
 }
 
 .panel {
@@ -1577,6 +1826,20 @@ input.qty-val::-webkit-inner-spin-button {
   margin-bottom: 20px;
 }
 
+.billten-kpi-grid-row3 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.billten-kpi-grid-row4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
 .billten-kpi-card {
   position: relative;
   border-radius: 14px;
@@ -1636,14 +1899,18 @@ input.qty-val::-webkit-inner-spin-button {
   .billten-kpi-grid-row1 {
     grid-template-columns: repeat(2, 1fr);
   }
-  .billten-kpi-grid-row2 {
+  .billten-kpi-grid-row2,
+  .billten-kpi-grid-row3,
+  .billten-kpi-grid-row4 {
     grid-template-columns: repeat(2, 1fr);
   }
 }
 
 @media (max-width: 768px) {
   .billten-kpi-grid-row1,
-  .billten-kpi-grid-row2 {
+  .billten-kpi-grid-row2,
+  .billten-kpi-grid-row3,
+  .billten-kpi-grid-row4 {
     grid-template-columns: 1fr;
   }
   .billten-kpi-card {
@@ -3457,3 +3724,203 @@ input[type="range"]::-moz-range-thumb {
   object-fit: cover;
   border: 1px solid var(--border);
 }
+
+/* ═══════════════════════════════════════════
+   BILTEN BILLING TABLE LAYOUT
+   ═══════════════════════════════════════════ */
+
+.billten-billing-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+}
+
+.billten-cart-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.billten-cart-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.billten-cart-table th,
+.billten-cart-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+  font-size: 13px;
+}
+
+.billten-cart-table th {
+  background: var(--gradient-primary);
+  color: #fff;
+  text-align: left;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.billten-cart-table tbody tr:nth-child(even) td {
+  background: #f8fafc;
+}
+
+.billen-cart-table tbody tr:hover td {
+  background: #eff6ff;
+}
+
+.billten-cart-table tr:last-child td {
+  border-bottom: none;
+}
+
+.billten-cart-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.billten-cart-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.billten-action-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.billten-action-btn.reset {
+  background: #f3f4f6;
+  color: var(--text);
+}
+
+.billten-action-btn.hold {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+}
+
+.billten-action-btn.save {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+}
+
+.billten-action-btn.pay {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  color: #fff;
+}
+
+.billten-left-section {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.billten-right-section {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.billten-left-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.billen-left-grid-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.billen-left-grid-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+}
+
+.billen-left-grid-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+/* Urdu button styling */
+.urdu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, #8e44ad, #7e38c8);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin: 2px;
+}
+
+.urdu-btn:hover {
+  background: linear-gradient(135deg, #7e38c8, #6d28d9);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(126, 58, 234, 0.4);
+}
+
+.urdu-btn span {
+  font-size: 16px;
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Urdu button icon-only style */
+.urdu-btn-icon-only {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, #8e44ad, #7e38c8);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.urdu-btn-icon-only:hover {
+  background: linear-gradient(135deg, #7e38c8, #6d28d9);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(126, 58, 234, 0.4);
+}
+
+.urdu-btn-icon-only svg {
+  width: 20px;
+  height: 20px;
+  color: #fff;
+}
+
