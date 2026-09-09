@@ -3,6 +3,7 @@ import CashDrawer from '../components/CashDrawer';
 import { ModalCloseButton } from '../components/ModalCloseButton';
 import { formatDateTimeAdmin, formatTimeAdmin, formatDateAdmin, toLocalDateString } from '../utils/dateUtils';
 import type {
+  Category,
   Customer,
   HeldBill,
   Product,
@@ -54,6 +55,12 @@ function isExpired(dateStr: string | null): boolean {
   return new Date(dateStr + 'T00:00:00').getTime() < today.getTime();
 }
 
+function formatStockQty(qty: number): string {
+  return Number(qty.toFixed(2)).toString();
+}
+
+const LOW_STOCK_THRESHOLD = 10;
+
 interface PayRow {
   mode: string;
   amount: string;
@@ -87,7 +94,11 @@ function lineTotals(
 export default function Billing() {
   const [items, setItems] = useState<CartLine[]>([]);
   const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [results, setResults] = useState<Product[]>([]);
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [browseCategory, setBrowseCategory] = useState<number | 'all'>('all');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerId, setCustomerId] = useState<string>('');
   const [quotationMode, setQuotationMode] = useState(false);
@@ -164,6 +175,10 @@ export default function Billing() {
   const [serviceCharge, setServiceCharge] = useState('');
   const [serviceChargeType, setServiceChargeType] = useState<'amount' | 'percent'>('amount');
   const [freight, setFreight] = useState('');
+  const [billRemarks, setBillRemarks] = useState('');
+  const [quickAmount, setQuickAmount] = useState('');
+  const [payModeQuick, setPayModeQuick] = useState('Cash');
+  const [stylesOpen, setStylesOpen] = useState(false);
   const [scannerLastSeen, setScannerLastSeen] = useState<number | null>(null);
   const [scannerConnected, setScannerConnected] = useState(false);
   const [drawerBusy, setDrawerBusy] = useState(false);
@@ -174,6 +189,8 @@ const [currentHeldId, setCurrentHeldId] = useState<number | null>(null);
   const [inputDrafts, setInputDrafts] = useState<Record<string, string>>({});
   const [shortcutMap, setShortcutMap] = useState<Record<string, string>>({});
   const [autoPrintReceipt, setAutoPrintReceipt] = useState(false);
+  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
+  const [flashingItemId, setFlashingItemId] = useState<number | null>(null);
 
   // Receipt sending
   const [emailToSend, setEmailToSend] = useState('');
@@ -219,6 +236,17 @@ const [currentHeldId, setCurrentHeldId] = useState<number | null>(null);
 
   const searchRef = useRef<HTMLInputElement>(null);
   const totals = useMemo(() => lineTotals(items, Number(billDiscount) || 0, discountType, promoMap), [items, billDiscount, discountType, promoMap]);
+  // Reuses the same active+category filter logic as the (removed) quick-sale grid:
+  // a category click populates this grid immediately with matching active products.
+  const browseProducts = useMemo(
+    () =>
+      allProducts.filter(
+        (p) =>
+          (browseCategory === 'all' || Number(p.category_id) === Number(browseCategory)) &&
+          Number(p.active) === 1
+      ),
+    [allProducts, browseCategory]
+  );
   const serviceChargeAmt = serviceChargeType === 'percent'
     ? (totals.total * (Number(serviceCharge) || 0)) / 100
     : Number(serviceCharge) || 0;
@@ -510,6 +538,24 @@ useEffect(() => {
     .then((u) => setUserRole(u?.role ?? null))
     .catch(() => setUserRole(null));
 }, []);
+
+  // Load inventory categories + all active products for the browse panel on the bill screen
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      window.api.inventory.list(),
+      window.api.inventory.categories(),
+    ])
+      .then(([prods, cats]) => {
+        if (cancelled) return;
+        setAllProducts(prods);
+        setCategories(cats);
+      })
+      .catch((e) => {
+        if (!cancelled) setNotice(e instanceof Error ? e.message : String(e));
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   // ── Load shortcuts + auto-print setting from admin settings ──
   useEffect(() => {
@@ -879,7 +925,11 @@ function openPay() {
       return;
     }
   }
-  setPayRows([{ mode: 'Cash', amount: finalTotal.toFixed(2) }]);
+  if (quickAmount && Number(quickAmount) > 0) {
+    setPayRows([{ mode: payModeQuick, amount: Number(quickAmount).toFixed(2) }]);
+  } else {
+    setPayRows([{ mode: 'Cash', amount: finalTotal.toFixed(2) }]);
+  }
   setPayOpen(true);
 }
 
@@ -1256,156 +1306,146 @@ setQuotationMode(false);
 return (
   <>
     <div className="page billing-page">
-      <div className={shift ? 'shift-bar ok' : 'shift-bar warn'} style={{
-        background: shift ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #f59e0b, #d97706)',
-        color: '#fff', borderRadius: 8, padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10,
-      }}>
-        {shift ? (
-          <>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              Shift open · started {formatTimeAdmin(shift.opened_at)} · opening cash {shift.start_cash.toFixed(2)}
-            </span>
-            <button
-              className="btn btn-sm"
-              onClick={async () => {
-                try {
-                  const d = await window.api.shifts.get(shift.id);
-                  setCloseShiftModal(d);
-                  setCountedCash('');
-                  setCloseNotes('');
-                } catch (e) {
-                  setNotice(e instanceof Error ? e.message : String(e));
-                }
-              }}
-            >
-              Close Shift
-            </button>
-          </>
-        ) : (
-          <>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              No open shift — you must open one before charging sales.
-            </span>
-            <button className="btn btn-sm" onClick={() => setOpenShiftModal(true)}>
-              Open Shift
-            </button>
-          </>
-        )}
-      </div>
-      <div className="sale-invoice-bar">
+      <div className="sale-invoice-bar merged-header">
         <div className="sale-invoice-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
           <span>Sale Invoice</span>
         </div>
-        <div className="sale-invoice-actions">
-          <button className="sale-inv-icon-btn" title="Refresh" onClick={() => window.location.reload()}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          </button>
-          <span className="sale-inv-clock">{new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}</span>
+        <div className="billing-search-wrap" style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+          <input
+            ref={searchRef}
+            className="search-input billing-search"
+            placeholder="Search, scan barcode, or type phone... (F2)"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); handlePhoneLookup(e.target.value); }}
+            onFocus={() => setSearchOpen(true)}
+            onBlur={() => window.setTimeout(() => setSearchOpen(false), 180)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleSearchEnter();
+              }
+            }}
+          />
+          {searchOpen && search.trim() !== '' && (
+            <div className="product-search-dropdown">
+              {results.length === 0 ? (
+                <div className="psd-empty">Type to search or press F2...</div>
+              ) : (
+                results.slice(0, 40).map((r) => (
+                  <button
+                    key={r.id}
+                    className="product-search-result"
+                    onClick={() => { addProduct(r); setSearch(''); }}
+                  >
+                    <span className="psr-name">{r.name}</span>
+                    <span className="psr-meta">
+                      {r.sale_price}
+                      {r.wholesale_price != null ? ` • W ${r.wholesale_price}` : ''}
+                      {r.shelf_location ? ` • ${r.shelf_location}` : ''}
+                      {r.stock_qty > 0 ? ` • ${Number(r.stock_qty.toFixed(3))} in stock` : ' • out'}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
         </div>
-      </div>
-      <div className="billing-top">
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input
-          ref={searchRef}
-          className="search-input billing-search"
-          placeholder="Search, scan barcode, or type phone... (F2)"
-          value={search}
-          onChange={(e) => { setSearch(e.target.value); handlePhoneLookup(e.target.value); }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              handleSearchEnter();
-            }
-          }}
-        />
-        <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className="field-select">
+        <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className="field-select" style={{ maxWidth: 140 }}>
           <option value="">No customer (Cash)</option>
           {customers.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name} {c.balance > 0 ? `(due ${c.balance})` : ''}
+              {c.name}{c.balance > 0 ? ` (due ${c.balance})` : ''}
             </option>
           ))}
         </select>
-        <button className="btn btn-sm" onClick={() => setCustModal(true)}>
-          + Customer
+        <span className={`shift-pill ${shift ? 'ok' : 'warn'}`}>
+          {shift
+            ? <>Shift · {formatTimeAdmin(shift.opened_at)} · {shift.start_cash.toFixed(2)}</>
+            : 'No shift'}
+        </span>
+        {shift ? (
+          <button className="shift-close-btn" onClick={async () => {
+            try {
+              const d = await window.api.shifts.get(shift.id);
+              setCloseShiftModal(d); setCountedCash(''); setCloseNotes('');
+            } catch (e) { setNotice(e instanceof Error ? e.message : String(e)); }
+          }}>Close</button>
+        ) : (
+          <button className="shift-open-btn" onClick={() => setOpenShiftModal(true)}>Open</button>
+        )}
+        <button className="sale-inv-icon-btn" title="Refresh" onClick={() => window.location.reload()}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
         </button>
+        <span className="sale-inv-clock">{new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}</span>
+      </div>
+
+      {/* ─── Toolbar row 2: actions ─── */}
+      <div className="billing-top">
+        <button className="btn btn-sm" onClick={() => setCustModal(true)}>+ Customer</button>
         <button className={quotationMode ? 'btn btn-sm btn-quote active' : 'btn btn-sm btn-quote'} onClick={() => setQuotationMode(!quotationMode)}>
           {quotationMode ? 'Quotation ON' : 'Quotation'}
         </button>
-        <button className="btn btn-sm" onClick={() => openHeld('held')}>
-          Held ({heldCount})
-        </button>
-        <button className="btn btn-sm" onClick={() => openHeld('quotation')}>
-Quotes ({quotationCount})
-        </button>
-        <button className="btn btn-sm" onClick={openHistory}>
-          History
-        </button>
+        <button className="btn btn-sm" onClick={() => openHeld('held')}>Held ({heldCount})</button>
+        <button className="btn btn-sm" onClick={() => openHeld('quotation')}>Quotes ({quotationCount})</button>
+        <button className="btn btn-sm" onClick={openHistory}>History</button>
         <button
           className="btn btn-sm"
           onClick={handleOpenCashDrawer}
           disabled={drawerBusy}
-          title="Opens the cash drawer via the receipt printer (ESC/POS kick)"
+          title="Open cash drawer via receipt printer"
         >
           {drawerBusy ? 'Opening…' : 'Cash Drawer'}
         </button>
-        <button className="btn btn-sm" onClick={newBill}>
-          New (F5)
-        </button>
-        <span className={`scanner-ind ${scannerConnected ? 'ok' : ''}`} title={scannerConnected ? 'Barcode scanner activity detected' : 'No barcode scanner activity — scan a barcode to connect'}>
+        <button className="btn btn-sm" onClick={newBill}>New (F5)</button>
+        <span className={`scanner-ind ${scannerConnected ? 'ok' : ''}`} title={scannerConnected ? 'Barcode scanner connected' : 'No barcode scanner detected'}>
           <span className="scanner-dot" />
           {scannerConnected
-            ? (scannerLastSeen && (Date.now() - scannerLastSeen < 5000)
-                ? 'Scanner: Active'
-                : 'Scanner: Connected')
+            ? (scannerLastSeen && (Date.now() - scannerLastSeen < 5000) ? 'Scanner: Active' : 'Scanner: Connected')
             : 'Scanner: Not detected'}
         </span>
-        </div>
-        </div>
+      </div>
 
-        {/* Quick action buttons row */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <button
-            className="btn btn-sm"
-            style={{ background: 'var(--ok)', color: '#fff', fontWeight: 600 }}
-            disabled={items.length === 0 || expressBusy || !shift}
-            onClick={expressCheckout}
-            title="Express checkout — cash payment, one click (F8)"
+      {/* ─── Toolbar row 3: express / repeat / return ─── */}
+      <div className="billing-top">
+        <button
+          className="btn btn-sm"
+          style={{ background: 'var(--ok)', color: '#fff', fontWeight: 600 }}
+          disabled={items.length === 0 || expressBusy || !shift}
+          onClick={expressCheckout}
+          title="Express checkout — cash payment, one click (F8)"
+        >
+          {expressBusy ? 'Processing...' : '⚡ Express (F8)'}
+        </button>
+        <button
+          className="btn btn-sm"
+          disabled={!lastSaleItems}
+          onClick={repeatLastSale}
+          title="Repeat last sale items (F7)"
+        >
+          ↻ Repeat (F7)
+        </button>
+        <button
+          className={`btn btn-sm ${returnMode ? 'btn-danger active' : ''}`}
+          onClick={() => {
+            setReturnMode(!returnMode);
+            if (!returnMode) setNotice('Return mode ON — scan item to return');
+            else setNotice(null);
+          }}
+          title="Toggle return mode — scan items to return"
+        >
+          {returnMode ? '↩ Return ON' : '↩ Return'}
+        </button>
+        {profitLive && (
+          <span
+            className="badge"
+            style={{ background: profitLive.margin > 0 ? '#052e16' : '#450a0a', color: profitLive.margin > 0 ? '#22c55e' : '#ef4444', padding: '2px 6px', fontSize: 10 }}
+            title={`Cost: Rs ${profitLive.cost.toFixed(2)} | Revenue: Rs ${profitLive.revenue.toFixed(2)}`}
           >
-            {expressBusy ? 'Processing...' : '⚡ Express (F8)'}
-          </button>
-          <button
-            className="btn btn-sm"
-            disabled={!lastSaleItems}
-            onClick={repeatLastSale}
-            title="Repeat last sale items (F7)"
-          >
-            ↻ Repeat (F7)
-          </button>
-          <button
-            className={`btn btn-sm ${returnMode ? 'btn-danger active' : ''}`}
-            onClick={() => {
-              setReturnMode(!returnMode);
-              if (!returnMode) setNotice('Return mode ON — scan item to return');
-              else setNotice(null);
-            }}
-            title="Toggle return mode — scan items to return"
-          >
-            {returnMode ? '↩ Return ON' : '↩ Return'}
-          </button>
-          {profitLive && (
-            <span
-              className="badge"
-              style={{ background: profitLive.margin > 0 ? '#052e16' : '#450a0a', color: profitLive.margin > 0 ? '#22c55e' : '#ef4444', padding: '4px 8px', fontSize: 11 }}
-              title={`Cost: Rs ${profitLive.cost.toFixed(2)} | Revenue: Rs ${profitLive.revenue.toFixed(2)}`}
-            >
-              Profit: {profitLive.margin}%
-            </span>
-          )}
-        </div>
+            Profit: {profitLive.margin}%
+          </span>
+        )}
+      </div>
 
       {notice && (
         <div className="notice" onClick={() => setNotice(null)}>
@@ -1413,35 +1453,78 @@ Quotes ({quotationCount})
         </div>
       )}
 
-      <div className="billen-billing-body">
-<div className="panel panel-results" style={{ display: 'none' }}>
-          <div className="panel-title" style={{ borderBottom: '2px solid transparent', backgroundImage: 'linear-gradient(var(--card-bg), var(--card-bg)), linear-gradient(90deg, var(--primary), var(--primary-light))', backgroundOrigin: 'border-box', backgroundClip: 'padding-box, border-box' }}>Products ({results.length})</div>
-          <div className="result-list">
-            {results.map((r) => (
-              <button key={r.id} className="result-item" onClick={() => addProduct(r)}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
-                  {r.image ? (
-                    <img src={r.image} alt="" className="product-thumb" />
-                  ) : (
-                    <div className="product-thumb-placeholder">🖼</div>
-                  )}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <span className="result-name">{r.name}</span>
-                    <span className="result-meta">
-                      {r.sale_price}
-                      {r.wholesale_price != null ? ` • W ${r.wholesale_price}` : ''}
-                      {r.shelf_location ? ` • ${r.shelf_location}` : ''}
-                       {r.stock_qty > 0 ? ` • ${Number(r.stock_qty.toFixed(3))} in stock` : ' • out of stock'}
+      <div className="browse-cats-wrapper card">
+        <div className="browse-cats">
+          <button
+            className={`btn btn-sm browse-chip ${browseCategory === 'all' ? 'active' : ''}`}
+            onClick={() => setBrowseCategory('all')}
+          >
+            All Products
+          </button>
+          {categories.map((c) => (
+            <button
+              key={c.id}
+              className={`btn btn-sm browse-chip ${browseCategory === c.id ? 'active' : ''}`}
+              onClick={() => setBrowseCategory(c.id)}
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="billing-row">
+        <div className="billing-browse card">
+          <div className="browse-list">
+          {browseProducts.length === 0 ? (
+            <div className="muted center pad">
+              {browseCategory !== 'all'
+                ? 'No products in this category.'
+                : 'No products found'}
+            </div>
+          ) : (
+            browseProducts.map((p) => {
+              const displayPrice = priceMode === 'wholesale' && p.wholesale_price != null
+                ? p.wholesale_price
+                : p.sale_price;
+              const isLowStock = p.stock_qty > 0 && p.stock_qty < LOW_STOCK_THRESHOLD;
+              const isFlashing = flashingItemId === p.id;
+              return (
+              <button
+                key={p.id}
+                className={`browse-item${isFlashing ? ' browse-item-flash' : ''}`}
+                onClick={() => { addProduct(p); setFlashingItemId(p.id); setTimeout(() => setFlashingItemId(null), 250); }}
+                title={`Add ${p.name} to bill`}
+              >
+                <div className="browse-thumb">
+                  {p.image ? <img src={p.image} alt="" /> : <span className="thumb-placeholder">📦</span>}
+                </div>
+                <div className="browse-item-content">
+                  <div className="browse-item-line1">
+                    <span className="browse-item-name">{p.name}</span>
+                    <span className="browse-item-price">Rs {displayPrice.toLocaleString()}</span>
+                  </div>
+                  <div className="browse-item-stock-row">
+                    {priceMode === 'wholesale' && p.wholesale_price != null && p.wholesale_price !== p.sale_price && (
+                      <span className="browse-item-wholesale-badge">W</span>
+                    )}
+                    {isLowStock && (
+                      <span className="browse-item-low-stock-dot" title={`Low stock: ${formatStockQty(p.stock_qty)}`} />
+                    )}
+                    <span
+                      className={`browse-item-stock${isLowStock ? ' low-stock' : ''}${p.stock_qty <= 0 ? ' out-of-stock' : ''}`}
+                    >
+                      {p.stock_qty > 0 ? `${formatStockQty(p.stock_qty)} in stock` : 'Out of stock'}
                     </span>
                   </div>
                 </div>
               </button>
-            ))}
-            {results.length === 0 && <div className="muted center pad">Type to search products</div>}
-          </div>
+              );
+            })
+          )}
         </div>
-
-        <div className="panel panel-cart">
+      </div>
+      <div className="panel panel-cart">
           <div className="panel-title" style={{ borderBottom: '2px solid transparent', backgroundImage: 'linear-gradient(var(--card-bg), var(--card-bg)), linear-gradient(90deg, var(--primary), var(--primary-light))', backgroundOrigin: 'border-box', backgroundClip: 'padding-box, border-box' }}>
             Current Bill {quotationMode && <span className="badge badge-quote">Quotation</span>}
 <span className="mode-toggle">
@@ -1817,15 +1900,21 @@ const handleUnitChange = (newLevel: number) => {
               );
             })}
             {items.length === 0 && (
-              <div className="muted center pad">
-                Bill is empty — search products or scan barcodes.
+              <div className="muted center pad" style={{ padding: '24px 8px' }}>
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.35, marginBottom: 8 }}>
+                  <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+                  <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+                </svg>
+                <div>Bill is empty — search products or scan barcodes.</div>
               </div>
             )}
-          </div>
+            </div>
         </div>
+      </div>
+      </div>
 
+<div className="billen-billing-body">
         <div className="panel panel-summary">
-          <div className="panel-title" style={{ borderBottom: '2px solid transparent', backgroundImage: 'linear-gradient(var(--card-bg), var(--card-bg)), linear-gradient(90deg, var(--primary), var(--primary-light))', backgroundOrigin: 'border-box', backgroundClip: 'padding-box, border-box' }}>Summary</div>
           {items.some((i) => i.expired) && (
             <div className="expiry-warning-banner">
               <strong>Warning:</strong> This bill contains expired item(s):{' '}
@@ -1833,129 +1922,239 @@ const handleUnitChange = (newLevel: number) => {
               confirm before charging.
             </div>
           )}
-          <div className="bill-summary-grid">
-            <div className="bill-summary-item bill-sub-total">
-              <div className="bill-summary-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          <div className="billten-summary-wrap">
+            <div className="billten-summary-fields">
+              <div className="bsf-grid">
+                <label className="bsf-field">
+                  <span className="bsf-label">Discount %</span>
+                  <input
+                    className="bsf-input"
+                    type="number"
+                    value={discountType === 'percent' ? billDiscount : ''}
+                    placeholder="0"
+                    onChange={(e) => { setBillDiscount(e.target.value); setDiscountType('percent'); }}
+                  />
+                </label>
+                <label className="bsf-field">
+                  <span className="bsf-label">Discount Currency</span>
+                  <input
+                    className="bsf-input"
+                    type="number"
+                    value={discountType === 'amount' ? billDiscount : ''}
+                    placeholder="0"
+                    onChange={(e) => { setBillDiscount(e.target.value); setDiscountType('amount'); }}
+                  />
+                </label>
+                <label className="bsf-field">
+                  <span className="bsf-label">Tax</span>
+                  <div className="bsf-input-group">
+                    <input
+                      className="bsf-input"
+                      type="number"
+                      value={serviceCharge}
+                      placeholder="0"
+                      onChange={(e) => setServiceCharge(e.target.value)}
+                    />
+                    <select className="bsf-select" value={serviceChargeType} onChange={(e) => setServiceChargeType(e.target.value as 'amount' | 'percent')}>
+                      <option value="amount">Rs</option>
+                      <option value="percent">%</option>
+                    </select>
+                  </div>
+                </label>
+                <label className="bsf-field">
+                  <span className="bsf-label">Payment Type</span>
+                  <select className="bsf-input bsf-select-full" value={payModeQuick} onChange={(e) => setPayModeQuick(e.target.value)}>
+                    {paymentModes.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </label>
+                <label className="bsf-field">
+                  <span className="bsf-label">Enter Remarks</span>
+                  <input
+                    className="bsf-input"
+                    value={billRemarks}
+                    placeholder="Note..."
+                    onChange={(e) => setBillRemarks(e.target.value)}
+                  />
+                </label>
+                <label className="bsf-field">
+                  <span className="bsf-label">Enter Amount</span>
+                  <input
+                    className="bsf-input"
+                    type="number"
+                    value={quickAmount}
+                    placeholder={finalTotal.toFixed(2)}
+                    title="Pre-fills the paid amount when pressing Pay & Save"
+                    onChange={(e) => setQuickAmount(e.target.value)}
+                  />
+                </label>
               </div>
-              <span className="bill-summary-label">Sub Total</span>
-              <span className="bill-summary-value">{totals.subtotal.toFixed(2)}</span>
-            </div>
-            <div className="bill-summary-item bill-net-total">
-              <div className="bill-summary-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-              </div>
-              <span className="bill-summary-label">Net Total</span>
-              <span className="bill-summary-value">{finalTotal.toFixed(2)}</span>
-            </div>
-            <div className="bill-summary-item bill-paid">
-              <div className="bill-summary-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-              </div>
-              <span className="bill-summary-label">Paid</span>
-              <span className="bill-summary-value">{payTotal.toFixed(2)}</span>
-            </div>
-            <div className="bill-summary-item bill-balance">
-              <div className="bill-summary-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-              </div>
-              <span className="bill-summary-label">Balance</span>
-              <span className="bill-summary-value">{Math.max(0, finalTotal - payTotal).toFixed(2)}</span>
-            </div>
-            <div className="bill-summary-item bill-return">
-              <div className="bill-summary-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9 7 9-7"/><path d="M9 22V4"/></svg>
-              </div>
-              <span className="bill-summary-label">Return</span>
-              <span className="bill-summary-value">0</span>
-            </div>
-            <div className="bill-summary-item bill-items">
-              <div className="bill-summary-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-              </div>
-              <span className="bill-summary-label">Items</span>
-              <span className="bill-summary-value">{items.reduce((s, c) => s + c.qty, 0)}</span>
-            </div>
-          </div>
-            <div className="summary-row">
-              <span>Discount</span>
-              <div className="discount-input">
-                <input
-                  type="number"
-                  value={billDiscount}
-                  onChange={(e) => setBillDiscount(e.target.value)}
-                  placeholder="0"
-                />
-                <select value={discountType} onChange={(e) => setDiscountType(e.target.value as 'amount' | 'percent')}>
-                  <option value="amount">Rs</option>
-                  <option value="percent">%</option>
-                </select>
-              </div>
-            </div>
-            <div className="summary-row">
-              <span>Service Charge</span>
-              <div className="discount-input">
-                <input
-                  type="number"
-                  value={serviceCharge}
-                  onChange={(e) => setServiceCharge(e.target.value)}
-                  placeholder="0"
-                />
-                <select value={serviceChargeType} onChange={(e) => setServiceChargeType(e.target.value as 'amount' | 'percent')}>
-                  <option value="amount">Rs</option>
-                  <option value="percent">%</option>
-                </select>
-              </div>
-            </div>
-            <div className="summary-row">
-              <span>Freight/Delivery</span>
-              <div className="discount-input">
-                <input
-                  type="number"
-                  value={freight}
-                  onChange={(e) => setFreight(e.target.value)}
-                  placeholder="0"
-                />
-                <span className="discount-input-unit">Rs</span>
+              <div className="bsf-freight">
+                <span className="bsf-label">Freight/Delivery</span>
+                <div className="bsf-input-group">
+                  <input
+                    className="bsf-input"
+                    type="number"
+                    value={freight}
+                    placeholder="0"
+                    onChange={(e) => setFreight(e.target.value)}
+                  />
+                  <span className="bsf-unit">Rs</span>
+                </div>
               </div>
             </div>
-          <div className="summary-row total">
-            <span>Total</span>
-            <span>{finalTotal.toFixed(2)}</span>
-          </div>
-          {roundOffEnabled && roundOffAmount !== 0 && (
-            <div className="summary-row">
-              <span className="muted small">Round-off</span>
-              <span className="muted small">{roundOffAmount > 0 ? '+' : ''}{roundOffAmount.toFixed(2)}</span>
+
+            <div className="billten-summary-right">
+              <div className="billten-summary-head">
+                <span className="billten-summary-title">Bill Summary</span>
+                <div className="billten-styles-wrap">
+                  <button className="btn btn-sm billten-styles-btn" onClick={() => setStylesOpen(!stylesOpen)}>
+                    Styles ▾
+                  </button>
+                  {stylesOpen && (
+                    <div className="billten-styles-menu">
+                      {receiptTemplates.length === 0 && <div className="psd-empty">No templates</div>}
+                      {receiptTemplates.map((t) => (
+                        <button
+                          key={t.id}
+                          className={`billten-styles-opt ${receiptTemplate === t.id ? 'active' : ''}`}
+                          onClick={() => { setReceiptTemplate(t.id); setStylesOpen(false); }}
+                        >
+                          {t.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="billten-summary-body">
+                <div className="billten-cards-col">
+                  <div className="bill-summary-grid">
+                    <div className="bill-summary-item bill-sub-total">
+                      <div className="bill-summary-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                      </div>
+                      <span className="bill-summary-label">Sub Total</span>
+                      <span className="bill-summary-value">{totals.subtotal.toFixed(2)}</span>
+                    </div>
+                    <div className="bill-summary-item bill-net-total">
+                      <div className="bill-summary-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      </div>
+                      <span className="bill-summary-label">Net Total</span>
+                      <span className="bill-summary-value">{finalTotal.toFixed(2)}</span>
+                    </div>
+                    <div className="bill-summary-item bill-paid">
+                      <div className="bill-summary-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                      </div>
+                      <span className="bill-summary-label">Paid</span>
+                      <span className="bill-summary-value">{payTotal.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className="bill-summary-grid">
+                    <div className="bill-summary-item bill-balance">
+                      <div className="bill-summary-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                      </div>
+                      <span className="bill-summary-label">Balance</span>
+                      <span className="bill-summary-value">{Math.max(0, finalTotal - payTotal).toFixed(2)}</span>
+                    </div>
+                    <div className="bill-summary-item bill-return">
+                      <div className="bill-summary-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9 7 9-7"/><path d="M9 22V4"/></svg>
+                      </div>
+                      <span className="bill-summary-label">Return</span>
+                      <span className="bill-summary-value">0</span>
+                    </div>
+                    <div className="bill-summary-item bill-items">
+                      <div className="bill-summary-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                      </div>
+                      <span className="bill-summary-label">Total Item</span>
+                      <span className="bill-summary-value">{items.reduce((s, c) => s + c.qty, 0)}</span>
+                    </div>
+                  </div>
+                  <div className="billten-extra">
+                    {roundOffEnabled && roundOffAmount !== 0 && (
+                      <div className="billten-extra-row">
+                        <span className="muted small">Round-off</span>
+                        <span className="muted small">{roundOffAmount > 0 ? '+' : ''}{roundOffAmount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {profitLive && userRole === 'owner' && (
+                      <div className="billten-extra-row">
+                        <span className="small muted">Profit</span>
+                        <span className="small" style={{ color: profitLive.margin > 0 ? 'var(--ok)' : 'var(--danger)', fontWeight: 600 }}>
+                          Rs {(profitLive.revenue - profitLive.cost).toFixed(2)} ({profitLive.margin}%)
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="billten-actions-col">
+                  <button className="action-btn-pay-save" onClick={quotationMode ? completeQuotation : openPay} disabled={items.length === 0 || busy || (!quotationMode && !shift)}>
+                    {busy ? 'Working...' : quotationMode ? 'Save Quotation' : 'Pay & Save'}
+                  </button>
+                  <button className="action-btn-save" onClick={quotationMode ? completeQuotation : openPay} disabled={items.length === 0 || busy || (!quotationMode && !shift)}>
+                    Save
+                  </button>
+                  <button className="action-btn-hold" onClick={doHold} disabled={items.length === 0}>
+                    Hold
+                  </button>
+                  <button className="action-btn-reset" onClick={() => { setItems([]); setCustomerId(''); setBillDiscount(''); setDiscountType('amount'); setServiceCharge(''); setFreight(''); }}>
+                    Reset
+                  </button>
+                </div>
+              </div>
+              <div className="shortcuts muted small" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <span>F2 search · F5 new · F7 repeat · F8 express · F9 hold · F12 held</span>
+                <button
+                  className="btn btn-sm"
+                  style={{ width: 18, height: 18, borderRadius: '50%', padding: 0, fontSize: 11, fontWeight: 700, lineHeight: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--muted-bg, #e5e7eb)', color: 'var(--muted, #6b7280)', border: 'none', cursor: 'pointer', flexShrink: 0 }}
+                  onClick={() => setShowShortcutsModal(true)}
+                  title="Keyboard shortcuts"
+                >?</button>
+              </div>
             </div>
-          )}
-          {profitLive && userRole === 'owner' && (
-            <div className="summary-row" style={{ borderTop: '1px dashed var(--border)', paddingTop: 6, marginTop: 6 }}>
-              <span className="small muted">Profit</span>
-              <span className="small" style={{ color: profitLive.margin > 0 ? 'var(--ok)' : 'var(--danger)', fontWeight: 600 }}>
-                Rs {(profitLive.revenue - profitLive.cost).toFixed(2)} ({profitLive.margin}%)
-              </span>
-            </div>
-          )}
-          <div className="summary-actions-vertical">
-            <button className="action-btn-pay-save" onClick={quotationMode ? completeQuotation : openPay} disabled={items.length === 0 || busy || (!quotationMode && !shift)}>
-              {busy ? 'Working...' : quotationMode ? 'Save Quotation' : 'Pay & Save'}
-            </button>
-            <button className="action-btn-save" onClick={quotationMode ? completeQuotation : openPay} disabled={items.length === 0 || busy || (!quotationMode && !shift)}>
-              Save
-            </button>
-            <button className="action-btn-hold" onClick={doHold} disabled={items.length === 0}>
-              Hold
-            </button>
-            <button className="action-btn-reset" onClick={() => { setItems([]); setCustomerId(''); setBillDiscount(''); setDiscountType('amount'); setServiceCharge(''); setFreight(''); }}>
-              Reset
-            </button>
-          </div>
-          <div className="shortcuts muted small">
-            F2 search · F5 new · F7 repeat · F8 express · F9 hold · F12 held
           </div>
         </div>
       </div>
+
+      {showShortcutsModal && (
+        <div className="modal-overlay" onClick={() => setShowShortcutsModal(false)}>
+          <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>Keyboard Shortcuts</h2>
+              <ModalCloseButton onClose={() => setShowShortcutsModal(false)} />
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr', gap: '2px 12px' }}>
+                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>F2</kbd><span>Focus search / barcode input</span>
+                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>F5</kbd><span>New bill (clear cart)</span>
+                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>F7</kbd><span>Repeat last sale</span>
+                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>F8</kbd><span>Express checkout (cash)</span>
+                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>F9</kbd><span>Hold current bill</span>
+                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>F12</kbd><span>Open held bills list</span>
+                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>Enter</kbd><span>Confirm payment / search</span>
+                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>Escape</kbd><span>Close modal / cancel</span>
+              </div>
+              {Object.keys(shortcutMap).length > 0 && (
+                <>
+                  <div style={{ marginTop: 12, marginBottom: 4, fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)' }}>Custom shortcuts</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr', gap: '2px 12px' }}>
+                    {Object.entries(shortcutMap).map(([action, key]) => (
+                      <div key={action} style={{ display: 'contents' }}>
+                        <kbd style={{ fontWeight: 600, textAlign: 'right' }}>{key.toUpperCase()}</kbd>
+                        <span>{action.replace(/_/g, ' ')}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {expiredConfirm && (
         <div className="modal-overlay">
@@ -2406,8 +2605,8 @@ const handleUnitChange = (newLevel: number) => {
               </div>
             </div>
 
-            <div className="table-wrap">
-              <table className="data-table">
+            <div className="table-wrap" style={{ overflow: 'auto', maxHeight: '60vh' }}>
+              <table className="data-table" style={{ minWidth: '1200px' }}>
                 <thead>
                   <tr>
                     <th>Invoice</th>
@@ -2722,7 +2921,6 @@ const handleUnitChange = (newLevel: number) => {
           </div>
         </div>
       )}
-    </div>
 {priceEditUnlockOpen && (
   <div className="modal-overlay">
     <div className="modal modal-sm">

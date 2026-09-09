@@ -454,7 +454,6 @@ export default function App() {
   const [shopLogo, setShopLogo] = useState<string | null>(null);
   const [sessionRestoring, setSessionRestoring] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarHovered, setSidebarHovered] = useState(false);
   const nav = user ? navFor(user.role) : [];
 
   useEffect(() => {
@@ -668,44 +667,39 @@ export default function App() {
 
       <aside
         className={`sidebar bilten-sidebar ${sidebarOpen ? 'open' : ''}`}
-        style={{ width: '50px', minWidth: '50px', flex: '0 0 50px' }}
-        onMouseEnter={() => setSidebarHovered(true)}
-        onMouseLeave={() => setSidebarHovered(false)}
       >
-        <div className="sidebar-brand" style={{ padding: '12px', textAlign: 'center' }}>
-          <span className="brand-icon" style={{ fontSize: 28 }}>SK</span>
+        <div className="sidebar-brand">
+          <span className="brand-icon">SK</span>
+          <span className="nav-label sidebar-brand-label">ShopKeeper</span>
         </div>
         <nav className="sidebar-nav">
           {activeNav.map((item) => (
             <button
               key={item.key}
               className={page === item.key ? 'nav-btn active' : 'nav-btn'}
-              onClick={() => { setPage(item.key); setSidebarOpen(false); }}
-              title={item.label}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '50px',
-                height: '50px',
-                borderRadius: '8px',
-                border: 'none',
-                background: 'transparent',
-                cursor: 'pointer',
-                color: 'var(--text)',
-                fontSize: '20px',
-                margin: '4px auto',
-              }}
+              onClick={() => { setPage(item.key); }}
+              aria-label={item.label}
+              data-label={item.label}
             >
               <span className="nav-icon">{NAV_ICONS[item.key] || null}</span>
+              <span className="nav-label">{item.label}</span>
             </button>
           ))}
         </nav>
 
-        <div className="sidebar-bottom" style={{ marginTop: 'auto', padding: '8px' }}>
+        <div className="sidebar-bottom">
+          <button
+            className="sidebar-collapse-btn"
+            onClick={() => setSidebarOpen((o) => !o)}
+            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+          >
+            <span className="collapse-glyph">{sidebarOpen ? '◀' : '▶'}</span>
+            <span className="nav-label collapse-label">Collapse</span>
+          </button>
           <button
             onClick={() => handleLanguageChange(i18n.language === 'en' ? 'ur' : 'en')}
-            title={i18n.language === 'en' ? 'اردو (Urdu)' : 'English'}
+            aria-label={i18n.language === 'en' ? 'اردو (Urdu)' : 'English'}
             className="urdu-btn-icon-only"
           >
             <span role="img" aria-label="urdu">اردو</span>
@@ -718,7 +712,7 @@ export default function App() {
                 setUser(null);
               }
             }}
-            title="Logout"
+            aria-label="Logout"
             className="urdu-btn-icon-only"
           >
             🚪

@@ -1,6 +1,6 @@
 {
   "name": "pos-app",
-  "version": "2.4.2",
+  "version": "2.4.3",
   "description": "Local Billing & Inventory POS System",
   "main": "dist/main/main.js",
   "author": "ShopKeeper POS",
@@ -9,7 +9,7 @@
   "scripts": {
     "dev:vite": "vite",
     "dev:main": "tsc -p tsconfig.main.json -w",
-    "dev:electron": "wait-on tcp:5173 && wait-on dist/main/main.js && cross-env NODE_ENV=development electron .",
+    "dev:electron": "wait-on tcp:5173 && wait-on dist/main/main.js dist/preload/preload.js && cross-env NODE_ENV=development electron .",
     "dev": "concurrently -k -n vite,main,electron -c blue,green,magenta \"npm:dev:vite\" \"npm:dev:main\" \"npm:dev:electron\"",
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",

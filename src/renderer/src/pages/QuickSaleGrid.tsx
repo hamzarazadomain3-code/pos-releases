@@ -10,6 +10,10 @@ interface CartItem {
   line_total: number;
 }
 
+function formatStockQty(qty: number): string {
+  return Number(qty.toFixed(2)).toString();
+}
+
 export default function QuickSaleGrid() {
   const { t } = useTranslation();
   const [products, setProducts] = useState<Product[]>([]);
@@ -39,9 +43,9 @@ export default function QuickSaleGrid() {
   }, []);
 
   const filteredProducts = products.filter((p) => {
-    if (selectedCategory !== 'all' && p.category_id !== selectedCategory) return false;
+    if (selectedCategory !== 'all' && Number(p.category_id) !== Number(selectedCategory)) return false;
     if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;
-    return p.active === 1 && p.stock_qty > 0;
+    return Number(p.active) === 1;
   });
 
   const addToCart = (product: Product) => {
@@ -164,7 +168,11 @@ export default function QuickSaleGrid() {
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {filteredProducts.length === 0 ? (
-            <p className="muted center pad">No products found</p>
+            <p className="muted center pad">
+              {selectedCategory !== 'all'
+                ? `No products in this category${search ? ` matching "${search}"` : ''}.`
+                : 'No products found'}
+            </p>
           ) : (
             <div style={{
               display: 'grid',
@@ -191,11 +199,11 @@ export default function QuickSaleGrid() {
                   <div style={{ fontWeight: 600, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {p.name}
                   </div>
-                  <div style={{ color: '#16a34a', fontWeight: 700, marginTop: 4 }}>
+                  <div style={{ color: p.stock_qty > 0 ? '#16a34a' : '#dc2626', fontWeight: 700, marginTop: 4 }}>
                     Rs {p.sale_price.toLocaleString()}
                   </div>
-                  <div className="muted small" style={{ marginTop: 4 }}>
-                    Stock: {p.stock_qty}
+                  <div className="muted small" style={{ marginTop: 4, color: p.stock_qty > 0 ? undefined : '#dc2626', fontWeight: p.stock_qty > 0 ? 400 : 600 }}>
+                    {p.stock_qty > 0 ? `Stock: ${formatStockQty(p.stock_qty)}` : 'Out of stock'}
                   </div>
                 </div>
               ))}
