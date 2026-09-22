@@ -1,4 +1,4 @@
-# ShopKeeper POS — Manual Test Checklist
+# Rokar POS — Manual Test Checklist
 
 Release: v1.5.0 (from v1.0) — covers everything shipped since v1.0, including this release's new features.
 

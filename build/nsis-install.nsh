@@ -1,4 +1,4 @@
-; Custom NSIS install logic for ShopKeeper POS
+; Custom NSIS install logic for Rokar POS
 ; Deletes old desktop and start-menu shortcuts so that fresh shortcuts
 ; with correct icons are recreated by electron-builder during install/update.
 
@@ -10,9 +10,12 @@ RequestExecutionLevel user
   Delete "$DESKTOP\ShopKeeper POS.lnk"
   Delete "$DESKTOP\ShopKeeper POS (x86).lnk"
   Delete "$DESKTOP\ShopKeeper.POS.lnk"
+  Delete "$DESKTOP\Rokar POS.lnk"
   ; Remove stale start-menu shortcuts
   Delete "$SMPROGRAMS\ShopKeeper POS.lnk"
   Delete "$SMPROGRAMS\ShopKeeper POS (x86).lnk"
+  Delete "$SMPROGRAMS\Rokar POS.lnk"
   ; Also clear any within a product folder (older installers used a sub-directory)
   RMDir /r "$SMPROGRAMS\ShopKeeper POS"
+  RMDir /r "$SMPROGRAMS\Rokar POS"
 !macroend

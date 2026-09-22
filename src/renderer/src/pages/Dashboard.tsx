@@ -15,6 +15,7 @@ import {
   YAxis,
 } from 'recharts';
 import type { DailyStats, HourlyTrendRow, TopProductRow } from '../../../shared/types';
+import { formatMoney, getCurrencySymbol } from '../utils/currency';
 
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1'];
 
@@ -297,14 +298,14 @@ export default function Dashboard() {
       <div className="billten-kpi-grid-row1">
         <KpiCard
           label="Today's Sales"
-          value={`Rs ${fmt(dailyStats.total_sales)}`}
+          value={formatMoney(dailyStats.total_sales)}
           icon={CardIcons.sales}
           gradient={KPI_GRADIENTS.sales}
           shadow={KPI_SHADOWS.sales}
         />
         <KpiCard
           label="Total Sale"
-          value={`Rs ${fmt(dailyStats.total_sales)}`}
+          value={formatMoney(dailyStats.total_sales)}
           icon={CardIcons.sales}
           gradient={KPI_GRADIENTS.totalSale}
           shadow={KPI_SHADOWS.totalSale}
@@ -318,7 +319,7 @@ export default function Dashboard() {
         />
         <KpiCard
           label="Avg Bill Value"
-          value={`Rs ${fmt(dailyStats.avg_bill)}`}
+          value={formatMoney(dailyStats.avg_bill)}
           icon={CardIcons.avg}
           gradient={KPI_GRADIENTS.avg}
           shadow={KPI_SHADOWS.avg}
@@ -350,7 +351,7 @@ export default function Dashboard() {
         />
         <KpiCard
           label="Sale Return"
-          value={`Rs ${fmt(saleReturnAmount)}`}
+          value={formatMoney(saleReturnAmount)}
           icon={CardIcons.saleReturn}
           gradient={KPI_GRADIENTS.saleReturn}
           shadow={KPI_SHADOWS.saleReturn}
@@ -361,28 +362,28 @@ export default function Dashboard() {
       <div className="billten-kpi-grid-row3">
         <KpiCard
           label="Payment In"
-          value={`Rs ${fmt(paymentInAmount)}`}
+          value={formatMoney(paymentInAmount)}
           icon={CardIcons.paymentIn}
           gradient={KPI_GRADIENTS.paymentIn}
           shadow={KPI_SHADOWS.paymentIn}
         />
         <KpiCard
           label="Payment Out"
-          value={`Rs ${fmt(paymentOutAmount)}`}
+          value={formatMoney(paymentOutAmount)}
           icon={CardIcons.paymentOut}
           gradient={KPI_GRADIENTS.paymentOut}
           shadow={KPI_SHADOWS.paymentOut}
         />
         <KpiCard
           label="Total Payable"
-          value={`Rs ${fmt(payableBalance)}`}
+          value={formatMoney(payableBalance)}
           icon={CardIcons.payable}
           gradient={KPI_GRADIENTS.payable}
           shadow={KPI_SHADOWS.payable}
         />
         <KpiCard
           label="Total Receivable"
-          value={`Rs ${fmt(receivableBalance)}`}
+          value={formatMoney(receivableBalance)}
           icon={CardIcons.receivable}
           gradient={KPI_GRADIENTS.receivable}
           shadow={KPI_SHADOWS.receivable}
@@ -393,7 +394,7 @@ export default function Dashboard() {
       <div className="billten-kpi-grid-row4">
         <KpiCard
           label="Total Expense"
-          value={`Rs ${fmt(todayExpenses)}`}
+          value={formatMoney(todayExpenses)}
           icon={CardIcons.expense}
           gradient={KPI_GRADIENTS.expense}
           shadow={KPI_SHADOWS.expense}
@@ -432,7 +433,7 @@ export default function Dashboard() {
                 <YAxis />
                 <Tooltip />
                 <Legend />
-                <Line type="monotone" dataKey="amount" stroke="#8884d8" strokeWidth={2} name="Sales (Rs)" />
+                <Line type="monotone" dataKey="amount" stroke="#8884d8" strokeWidth={2} name={`Sales (${getCurrencySymbol()})`} />
               </LineChart>
             </ResponsiveContainer>
           </div>

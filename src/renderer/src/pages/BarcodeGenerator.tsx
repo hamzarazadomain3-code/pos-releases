@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import JsBarcode from 'jsbarcode';
 import type { Product } from '../../../shared/types';
+import { formatMoney, getCurrencySymbol } from '../utils/currency';
 
 type LabelSize = '38x25' | '50x30' | '100x50';
 
@@ -20,6 +21,7 @@ export default function BarcodeGenerator() {
   const [labelSize, setLabelSize] = useState<LabelSize>('38x25');
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [shopName, setShopName] = useState('');
   const printAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -27,9 +29,27 @@ export default function BarcodeGenerator() {
       .list()
       .then(setProducts)
       .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
+    window.api.settings
+      .getAll()
+      .then((s) => setShopName(s['shop_name'] || ''))
+      .catch(() => undefined);
   }, []);
 
   const barcodeText = (p: Product) => p.sku || p.barcode || String(p.id);
+
+  const fmtExpiry = (d?: string | null): string => {
+    if (!d) return '';
+    const parts = d.slice(0, 10).split('-');
+    return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : d;
+  };
+
+  const todayStr = () => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${day}/${m}/${y}`;
+  };
 
   const renderBarcodes = () => {
     for (const id of selectedProducts) {
@@ -141,7 +161,7 @@ export default function BarcodeGenerator() {
             />
             <span className="result-name">{p.name}</span>
             <span className="result-meta">
-              Rs {p.sale_price.toFixed(2)}
+              {formatMoney(p.sale_price)}
               {p.barcode ? ` • ${p.barcode}` : p.sku ? ` • ${p.sku}` : ' • no barcode'}
               {p.stock_qty > 0 ? ` • ${Number(p.stock_qty.toFixed(3))} in stock` : ' • out of stock'}
             </span>
@@ -171,30 +191,79 @@ export default function BarcodeGenerator() {
                     width: LABEL_W[labelSize],
                     height: LABEL_H[labelSize],
                     border: '1px solid #ccc',
-                    padding: '2mm',
+                    padding: '1.5mm',
                     display: 'flex',
                     flexDirection: 'column',
-                    justifyContent: 'center',
+                    justifyContent: 'space-between',
                     alignItems: 'center',
                     textAlign: 'center',
-                    fontSize: labelSize === '38x25' ? '7pt' : '9pt',
+                    overflow: 'hidden',
+                    fontSize: labelSize === '38x25' ? '6pt' : '9pt',
                     fontFamily: 'Arial, sans-serif',
                     pageBreakInside: 'avoid',
                   }}
                 >
-                  <div style={{ fontWeight: 'bold', marginBottom: '1mm', overflow: 'hidden' }}>
-                    {p.name.substring(0, 15)}
+                  <div
+                    style={{
+                      fontSize: labelSize === '38x25' ? '5pt' : '7pt',
+                      lineHeight: 1.1,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.02em',
+                      fontWeight: 600,
+                      maxWidth: '100%',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {shopName || p.name}
+                  </div>
+                  <div
+                    style={{
+                      fontWeight: 'bold',
+                      fontSize: labelSize === '38x25' ? '6.5pt' : '9pt',
+                      lineHeight: 1.15,
+                      maxWidth: '100%',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {p.name}
                   </div>
                   <svg
                     id={`barcode-${p.id}`}
                     style={{
-                      maxHeight: labelSize === '38x25' ? '12mm' : '18mm',
+                      maxHeight: labelSize === '38x25' ? '10mm' : '18mm',
                       maxWidth: '100%',
-                      margin: '1mm 0',
                     }}
                   />
-                  <div style={{ fontWeight: 'bold', fontSize: labelSize === '38x25' ? '6pt' : '8pt' }}>
-                    Rs {p.sale_price.toFixed(2)}
+                  <div
+                    style={{
+                      fontSize: labelSize === '38x25' ? '5pt' : '7pt',
+                      lineHeight: 1,
+                      fontFamily: 'monospace',
+                      fontStyle: 'italic',
+                    }}
+                  >
+                    {barcodeText(p)}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: labelSize === '38x25' ? '5.5pt' : '8pt',
+                      lineHeight: 1.2,
+                      fontWeight: 'bold',
+                      maxWidth: '100%',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {formatMoney(p.sale_price)}
+                    {fmtExpiry(p.expiry_date) ? ` | Exp: ${fmtExpiry(p.expiry_date)}` : ''}
+                  </div>
+                  <div style={{ fontSize: labelSize === '38x25' ? '4.5pt' : '6.5pt', lineHeight: 1 }}>
+                    {todayStr()}
                   </div>
                 </div>
               ))}

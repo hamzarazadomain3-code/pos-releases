@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ExpenseCategoryRow, ExpenseRow } from '../../../shared/types';
 import { toLocalDateString, formatDateAdmin } from '../utils/dateUtils';
+import { formatMoney, getCurrencySymbol } from '../utils/currency';
 
 const fmt = (n: number) => n?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? '0';
 
@@ -134,12 +135,12 @@ export default function Expenses() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
         <div className="card" style={{ textAlign: 'center' }}>
           <div className="small muted">Total Expenses</div>
-          <div style={{ fontSize: 22, fontWeight: 700 }}>Rs {fmt(summary.total)}</div>
+          <div style={{ fontSize: 22, fontWeight: 700 }}>{formatMoney(summary.total)}</div>
         </div>
         {summary.byCategory.slice(0, 4).map((c) => (
           <div key={c.category} className="card" style={{ textAlign: 'center' }}>
             <div className="small muted">{c.category}</div>
-            <div style={{ fontSize: 18, fontWeight: 600 }}>Rs {fmt(c.total)}</div>
+            <div style={{ fontSize: 18, fontWeight: 600 }}>{formatMoney(c.total)}</div>
             <div className="small muted">{c.count} items</div>
           </div>
         ))}
@@ -189,7 +190,7 @@ export default function Expenses() {
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label>Amount (Rs)</label>
+                  <label>Amount ({getCurrencySymbol()})</label>
                   <input type="number" step="0.01" value={formAmount} onChange={(e) => setFormAmount(e.target.value)} />
                 </div>
                 <div className="form-group">
@@ -273,7 +274,7 @@ export default function Expenses() {
                     {e.category_name}
                   </span>
                 </td>
-                <td style={{ fontWeight: 600 }}>Rs {fmt(e.amount)}</td>
+                <td style={{ fontWeight: 600 }}>{formatMoney(e.amount)}</td>
                 <td className="muted">{e.username}</td>
                 <td><span className={`badge ${e.status === 'active' ? 'badge-ok' : 'badge-warn'}`}>{e.status}</span></td>
                 <td>

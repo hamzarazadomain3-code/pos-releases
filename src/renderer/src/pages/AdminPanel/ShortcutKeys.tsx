@@ -8,6 +8,24 @@ export default function ShortcutKeys() {
   const [search, setSearch] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [newAction, setNewAction] = useState('');
+  const [newKey, setNewKey] = useState('');
+
+  const addShortcut = async () => {
+    if (!newAction.trim() || !newKey.trim()) { setNotice('Enter an action and a key'); return; }
+    setBusy(true);
+    setNotice(null);
+    try {
+      await window.api.admin.shortcuts.add(newAction.trim(), newKey.trim());
+      await load();
+      setNewAction(''); setNewKey('');
+      setNotice('Shortcut added');
+      setTimeout(() => setNotice(null), 2000);
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e));
+    }
+    setBusy(false);
+  };
 
   const load = async () => {
     try {
@@ -77,6 +95,22 @@ export default function ShortcutKeys() {
       </div>
 
       {notice && <div className="notice" onClick={() => setNotice(null)}>{notice}</div>}
+
+      <div className="shortcut-add-row">
+        <input
+          className="search-input shortcut-add-action"
+          placeholder="New action (e.g. nudge_left)"
+          value={newAction}
+          onChange={(e) => setNewAction(e.target.value)}
+        />
+        <input
+          className="shortcut-input shortcut-add-key"
+          placeholder="e.g. Alt+N"
+          value={newKey}
+          onChange={(e) => setNewKey(e.target.value)}
+        />
+        <button className="btn" disabled={busy} onClick={addShortcut}>+ Add Shortcut</button>
+      </div>
 
       <div className="shortcut-list">
         {filtered.map((s) => (

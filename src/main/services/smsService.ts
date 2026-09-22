@@ -12,7 +12,7 @@ export async function sendSmsReceipt(saleId: number, phoneNumber: string): Promi
   const admin = getAllAdminSettings();
   const smsProvider = admin.sms_provider;
   const smsApiKey = admin.sms_api_key;
-  const smsSender = admin.sms_sender || 'ShopKeeperPOS';
+  const smsSender = admin.sms_sender || 'Rokar';
 
   if (!smsProvider || !smsApiKey) {
     return { ok: false, message: 'SMS not configured - set SMS settings in Admin > Settings' };
@@ -24,7 +24,7 @@ export async function sendSmsReceipt(saleId: number, phoneNumber: string): Promi
 
   const text = buildReceiptText(saleId);
   const settings = getAllSettings();
-  const message = `${settings.shop_name || 'ShopKeeper POS'}\n\n${text}`;
+  const message = `${settings.shop_name || 'Rokar'}\n\n${text}`;
 
   try {
     if (smsProvider === 'twilio') {
@@ -75,7 +75,7 @@ async function sendTwilioSms(to: string, body: string, admin: Record<string, str
 
 async function sendTextLocalSms(to: string, body: string, admin: Record<string, string>): Promise<SmsResult> {
   const apiKey = admin.sms_api_key;
-  const sender = admin.sms_sender || 'ShopKeeperPOS';
+  const sender = admin.sms_sender || 'Rokar';
 
   const params = new URLSearchParams();
   params.append('apiKey', apiKey);
@@ -123,7 +123,7 @@ export async function sendEmailReceipt(saleId: number, email: string): Promise<{
 
   return sendEmail({
     to: email,
-    subject: `Receipt from ${settings.shop_name || 'ShopKeeper POS'} - ${sale.invoice_no}`,
+    subject: `Receipt from ${settings.shop_name || 'Rokar'} - ${sale.invoice_no}`,
     text,
     html,
   });

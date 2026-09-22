@@ -11,7 +11,7 @@ const TEST_DB = path.join(__dirname, '..', 'test_admin_panel.db');
 // Clean up any previous test DB
 if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB);
 
-console.log('=== ShopKeeper POS — Admin Panel Test Suite ===\n');
+console.log('=== Rokar POS — Admin Panel Test Suite ===\n');
 
 // Initialize database with migrations
 const db = new DatabaseSync(TEST_DB);

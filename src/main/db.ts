@@ -76,3 +76,14 @@ export function getDbPath(): string {
   }
   return dbPathValue;
 }
+
+export function closeDb(): void {
+  if (dbInstance) {
+    try {
+      dbInstance.close();
+    } catch (_) {
+      /* ignore close errors during teardown */
+    }
+    dbInstance = null;
+  }
+}

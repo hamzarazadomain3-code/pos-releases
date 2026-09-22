@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { CashDrawerBreakdown, CashDrawerSession, ShiftRow, UserRow } from '../../../shared/types';
 import { formatDateTimeAdmin, formatTimeAdmin } from '../utils/dateUtils';
+import { formatMoney, getCurrencySymbol } from '../utils/currency';
 
 interface Props {
   shift: ShiftRow;
@@ -92,7 +93,7 @@ export default function CashDrawer({ shift, onClose }: Props) {
       closed_at: formatDateTimeAdmin(new Date().toISOString()),
       cashier: user?.username ?? session.opened_by_name ?? '—',
       notes: notes.trim() || undefined,
-    }).catch(() => setNotice('Print failed'));
+    }).then((r) => { if (r && r.ok === false) setNotice(r.message); }).catch(() => setNotice('Print failed'));
   };
 
   const totalReceived = breakdown
@@ -130,7 +131,7 @@ export default function CashDrawer({ shift, onClose }: Props) {
                 </div>
               </div>
               <label className="field" style={{ marginTop: 12 }}>
-                <span>Opening Cash (Rs)</span>
+                <span>Opening Cash ({getCurrencySymbol()})</span>
                 <input
                   type="number"
                   min="0"
@@ -158,7 +159,7 @@ export default function CashDrawer({ shift, onClose }: Props) {
                 </div>
                 <div className="cash-drawer-stat">
                   <span className="stat-label">Opening Cash</span>
-                  <span className="stat-value">Rs {session.opening_cash.toFixed(2)}</span>
+                  <span className="stat-value">{formatMoney(session.opening_cash)}</span>
                 </div>
                 <div className="cash-drawer-stat">
                   <span className="stat-label">Opened By</span>
@@ -174,7 +175,7 @@ export default function CashDrawer({ shift, onClose }: Props) {
                 </div>
                 <div className="cash-drawer-stat">
                   <span className="stat-label">Expected Balance</span>
-                  <span className="stat-value">Rs {expectedBalance.toFixed(2)}</span>
+                  <span className="stat-value">{formatMoney(expectedBalance)}</span>
                 </div>
               </div>
             </div>
@@ -186,7 +187,7 @@ export default function CashDrawer({ shift, onClose }: Props) {
                 <div className="cash-drawer-grid">
                   <div className="cash-drawer-stat">
                     <span className="stat-label">Total Sales Today</span>
-                    <span className="stat-value">Rs {totalReceived.toFixed(2)}</span>
+                    <span className="stat-value">{formatMoney(totalReceived)}</span>
                   </div>
                   <div className="cash-drawer-stat">
                     <span className="stat-label">Total Bills</span>
@@ -194,7 +195,7 @@ export default function CashDrawer({ shift, onClose }: Props) {
                   </div>
                   <div className="cash-drawer-stat">
                     <span className="stat-label">Average Bill</span>
-                    <span className="stat-value">Rs {breakdown.average_bill.toFixed(2)}</span>
+                    <span className="stat-value">{formatMoney(breakdown.average_bill)}</span>
                   </div>
                 </div>
                 <div style={{ marginTop: 12 }}>
@@ -210,31 +211,31 @@ export default function CashDrawer({ shift, onClose }: Props) {
                 <div className="cash-drawer-breakdown">
                   <div className="breakdown-row">
                     <span>Cash Sales</span>
-                    <span className="num">Rs {breakdown.cash_sales.toFixed(2)}</span>
+                    <span className="num">{formatMoney(breakdown.cash_sales)}</span>
                   </div>
                   <div className="breakdown-row">
                     <span>Card Sales</span>
-                    <span className="num">Rs {breakdown.card_sales.toFixed(2)}</span>
+                    <span className="num">{formatMoney(breakdown.card_sales)}</span>
                   </div>
                   <div className="breakdown-row">
                     <span>Cheques</span>
-                    <span className="num">Rs {breakdown.cheque_sales.toFixed(2)}</span>
+                    <span className="num">{formatMoney(breakdown.cheque_sales)}</span>
                   </div>
                   <div className="breakdown-row">
                     <span>Easypaisa</span>
-                    <span className="num">Rs {breakdown.easypaisa_sales.toFixed(2)}</span>
+                    <span className="num">{formatMoney(breakdown.easypaisa_sales)}</span>
                   </div>
                   <div className="breakdown-row">
                     <span>JazzCash</span>
-                    <span className="num">Rs {breakdown.jazzcash_sales.toFixed(2)}</span>
+                    <span className="num">{formatMoney(breakdown.jazzcash_sales)}</span>
                   </div>
                   <div className="breakdown-row">
                     <span>Udhaar / Credit</span>
-                    <span className="num">Rs {breakdown.udhaar_sales.toFixed(2)}</span>
+                    <span className="num">{formatMoney(breakdown.udhaar_sales)}</span>
                   </div>
                   <div className="breakdown-row total">
                     <span>Refunds</span>
-                    <span className="num text-warn">-Rs {breakdown.refunds.toFixed(2)}</span>
+                    <span className="num text-warn">-{formatMoney(breakdown.refunds)}</span>
                   </div>
                 </div>
               </div>
@@ -245,7 +246,7 @@ export default function CashDrawer({ shift, onClose }: Props) {
               <div className="cash-drawer-section">
                 <div className="section-title">Close Drawer</div>
                 <label className="field">
-                  <span>Counted Cash (Rs)</span>
+                  <span>Counted Cash ({getCurrencySymbol()})</span>
                   <input
                     type="number"
                     min="0"
@@ -270,7 +271,7 @@ export default function CashDrawer({ shift, onClose }: Props) {
                       Number(closingCash) - expectedBalance === 0 ? 'text-ok' :
                       Number(closingCash) - expectedBalance > 0 ? 'text-ok' : 'text-warn'
                     }>
-                      Rs {(Number(closingCash) - expectedBalance).toFixed(2)}
+                      {formatMoney(Number(closingCash) - expectedBalance)}
                       {Number(closingCash) - expectedBalance === 0 ? ' (Exact)' :
                        Number(closingCash) - expectedBalance > 0 ? ' (Over)' : ' (Short)'}
                     </span>

@@ -38,7 +38,7 @@ export async function sendEmail(options: EmailOptions): Promise<{ ok: boolean; m
   if (!transport) return { ok: false, message: 'Email not configured — set SMTP settings in Admin > Reports' };
 
   const admin = getAllAdminSettings();
-  const from = admin.email_from || getAllSettings().shop_name || 'ShopKeeper POS';
+  const from = admin.email_from || getAllSettings().shop_name || 'Rokar POS';
 
   const recipients = Array.isArray(options.to) ? options.to : [options.to];
   const validRecipients = recipients.filter(Boolean);
@@ -93,7 +93,7 @@ export async function sendDailySalesReportEmail(): Promise<{ ok: boolean; messag
     LIMIT 10
   `).all() as Array<{ name: string; stock_qty: number }>;
 
-  let html = `<h2>ShopKeeper POS — Daily Report</h2>`;
+  let html = `<h2>Rokar POS — Daily Report</h2>`;
   html += `<p><strong>Date:</strong> ${today}</p>`;
   html += `<h3>Sales</h3><ul>`;
   html += `<li>Bills: ${stats.bill_count}</li>`;
@@ -111,13 +111,13 @@ export async function sendDailySalesReportEmail(): Promise<{ ok: boolean; messag
     html += `</ul>`;
   }
 
-  html += `<p style="color:#888;font-size:12px;margin-top:24px">Sent by ShopKeeper POS at ${formatLocalString(new Date())}</p>`;
+  html += `<p style="color:#888;font-size:12px;margin-top:24px">Sent by Rokar POS at ${formatLocalString(new Date())}</p>`;
 
-  const text = `ShopKeeper POS — Daily Report\nDate: ${today}\nBills: ${stats.bill_count}\nTotal: Rs ${stats.total_sales.toFixed(2)}`;
+  const text = `Rokar POS — Daily Report\nDate: ${today}\nBills: ${stats.bill_count}\nTotal: Rs ${stats.total_sales.toFixed(2)}`;
 
   return sendEmail({
     to: recipients,
-    subject: `ShopKeeper POS Daily Report — ${today}`,
+    subject: `Rokar POS Daily Report — ${today}`,
     text,
     html,
   });

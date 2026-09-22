@@ -751,9 +751,15 @@ export interface BackupResult {
   cloudError: string | null;
 }
 
+export interface PrintResult {
+  ok: boolean;
+  message: string;
+}
+
 export interface PosBridge {
   app: {
     getVersion: () => Promise<string>;
+    quit: () => Promise<void>;
   };
   scaleBarcode: {
     parse: (barcode: string) => Promise<ScaleBarcodeResult>;
@@ -813,14 +819,14 @@ export interface PosBridge {
     chooseCloudFolder: () => Promise<string | null>;
   };
   printing: {
-    printSale: (saleId: number, template?: string) => Promise<boolean>;
-    printLabel: (productId: number, copies?: number) => Promise<boolean>;
-    printBarcodeLabel: (productId: number, copies?: number) => Promise<boolean>;
+    printSale: (saleId: number, template?: string) => Promise<PrintResult>;
+    printLabel: (productId: number, copies?: number) => Promise<PrintResult>;
+    printBarcodeLabel: (productId: number, copies?: number) => Promise<PrintResult>;
     openCashDrawer: () => Promise<{ ok: boolean; message: string }>;
     previewReceipt: (saleId: number, template?: string) => Promise<boolean>;
     previewInvoice: (saleId: number) => Promise<boolean>;
-    printInvoice: (saleId: number) => Promise<boolean>;
-    printDrawerSummary: (data: { opening_cash: number; closing_cash: number; cash_sales: number; card_sales: number; udhaar_sales: number; other_payments: number; cash_refunds: number; cash_in: number; cash_out: number; expected_cash: number; actual_cash: number; variance: number; opened_at: string; closed_at: string; cashier: string; notes?: string }) => Promise<boolean>;
+    printInvoice: (saleId: number) => Promise<PrintResult>;
+    printDrawerSummary: (data: { opening_cash: number; closing_cash: number; cash_sales: number; card_sales: number; udhaar_sales: number; other_payments: number; cash_refunds: number; cash_in: number; cash_out: number; expected_cash: number; actual_cash: number; variance: number; opened_at: string; closed_at: string; cashier: string; notes?: string }) => Promise<PrintResult>;
   };
   licensing: {
     activate: (key: string) => Promise<string>;
@@ -889,6 +895,7 @@ export interface PosBridge {
 
   backup: {
     run: () => Promise<BackupResult>;
+    restore: () => Promise<{ ok: boolean; message: string }>;
   };
   exportData: {
     saveCsv: (defaultName: string, headers: string[], rows: (string | number)[][]) => Promise<boolean>;
@@ -990,6 +997,7 @@ export interface PosBridge {
     shortcuts: {
       getAll: () => Promise<ShortcutRow[]>;
       update: (action: string, key: string) => Promise<ShortcutRow>;
+      add: (action: string, key: string) => Promise<ShortcutRow>;
       reset: () => Promise<boolean>;
     };
     features: {

@@ -1,4 +1,5 @@
 import { BrowserWindow } from 'electron';
+import { execFile } from 'node:child_process';
 import bwipjs from 'bwip-js';
 import { getSale } from './sales';
 import { getAllSettings } from './settings';
@@ -7,7 +8,8 @@ import { getAllAdminSettings } from './admin';
 import { getProduct } from './inventory';
 import { getUser } from './auth';
 import { formatLocalString } from '../utils/timezone';
-import { buildReceiptHtml as buildReceiptFromTemplate, type ReceiptTemplate } from './receiptTemplates';
+import { log } from '../logger';
+import { buildReceiptHtml as buildReceiptFromTemplate, getAvailableTemplates, type ReceiptTemplate } from './receiptTemplates';
 
 function esc(s: string | null | undefined): string {
   return String(s ?? '')
@@ -15,6 +17,21 @@ function esc(s: string | null | undefined): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function todayLabel(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${day}/${m}/${y}`;
+}
+
+function fmtExpiryDate(expiry?: string | null): string {
+  if (!expiry) return '';
+  const parts = expiry.slice(0, 10).split('-');
+  if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return expiry;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
 function getPrintSettings(): Record<string, string> {
@@ -37,34 +54,154 @@ function getPrintSettings(): Record<string, string> {
   }
 }
 
-function printHtml(html: string): void {
+interface PrintOptions {
+  width?: number;
+  height?: number;
+  forceDialog?: boolean;
+}
+
+export interface PrintResult {
+  ok: boolean;
+  message: string;
+}
+
+function getDefaultPrinterName(): Promise<string> {
+  return new Promise((resolve) => {
+    const script = `Get-CimInstance Win32_Printer | Where-Object { $_.Default -eq $true } | Select-Object -First 1 -ExpandProperty Name`;
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 10000, windowsHide: true }, (err, stdout) => {
+      if (err) { resolve(''); return; }
+      resolve(String(stdout || '').trim());
+    });
+  });
+}
+
+async function printHtml(html: string, opts: PrintOptions = {}): Promise<PrintResult> {
+  const admin = getAllAdminSettings();
+  const forceDialog = !!opts.forceDialog;
+  const mode = forceDialog || admin.print_mode === 'dialog' ? 'dialog' : 'silent';
   const win = new BrowserWindow({
     show: false,
+    width: Math.max(220, opts.width ?? 300) + 32,
+    height: opts.height ?? 800,
+    useContentSize: true,
     webPreferences: { sandbox: true },
   });
   win.webContents.setBackgroundThrottling(false);
-  win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
-  win.webContents.once('did-finish-load', () => {
-    win.webContents.print(
-      { silent: false, printBackground: true },
-      () => win.destroy()
-    );
+  try {
+    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+  } catch {
+    win.destroy();
+    return { ok: false, message: 'Could not render the document for printing.' };
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (r: PrintResult) => {
+      if (settled) return;
+      settled = true;
+      win.destroy();
+      resolve(r);
+    };
+    const doPrint = (silent: boolean, deviceName: string) => {
+      try {
+        win.webContents.print(
+          { silent, printBackground: true, deviceName },
+          (success, failureReason) => {
+            if (success) {
+              finish({ ok: true, message: 'Printed' });
+              return;
+            }
+            if (!silent) {
+              finish({ ok: false, message: failureReason || 'Print failed — check that the printer is online.' });
+              return;
+            }
+            // Silent print failed — fall back to the system dialog so the user can
+            // pick a printer manually (rejects the phantom "Notepad" default path).
+            log(`Silent print failed (${failureReason || 'unknown reason'}), retrying with print dialog`);
+            doPrint(false, '');
+          }
+        );
+      } catch (e) {
+        if (!silent) {
+          finish({ ok: false, message: e instanceof Error ? e.message : String(e) });
+        } else {
+          doPrint(false, '');
+        }
+      }
+    };
+    (async () => {
+      let silent = mode === 'silent';
+      let deviceName = '';
+      if (silent) {
+        try {
+          deviceName = await getDefaultPrinterName();
+          if (!deviceName) {
+            const printers = await win.webContents.getPrintersAsync();
+            deviceName = printers[0]?.name ?? '';
+          }
+        } catch {
+          deviceName = '';
+        }
+        if (!deviceName) {
+          // No default printer available for silent printing —
+          // fall back to the system print dialog so the user can still choose a target.
+          silent = false;
+        }
+      }
+      doPrint(silent, deviceName);
+    })();
   });
-  win.webContents.on('did-fail-load', () => win.destroy());
+}
+
+function templateWidthFor(template?: ReceiptTemplate): number {
+  if (template) {
+    const match = getAvailableTemplates().find((t) => t.id === template);
+    if (match) {
+      const px = parseInt(match.width, 10);
+      if (px > 0) return px;
+    }
+  }
+  const s = getPrintSettings();
+  return s.receipt_width === '58mm' ? 220 : 300;
+}
+
+function templateHeightFor(template?: ReceiptTemplate): number {
+  if (template === 'a4') return 1123;
+  return 800;
 }
 
 export function buildReceiptHtml(saleId: number, template?: ReceiptTemplate): string {
   return buildReceiptFromTemplate(saleId, template);
 }
 
-export function previewHtml(html: string): void {
+export function previewHtml(html: string, size: { width?: number; height?: number } = {}): void {
   const win = new BrowserWindow({
     show: true,
-    width: 400,
-    height: 600,
+    width: size.width ?? 400,
+    height: size.height ?? 600,
     webPreferences: { sandbox: true },
   });
+  win.webContents.setBackgroundThrottling(false);
   win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+  win.webContents.on('did-finish-load', () => {
+    win.webContents
+      .executeJavaScript(`
+        (() => {
+          const bar = document.createElement('div');
+          bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;display:flex;gap:10px;align-items:center;justify-content:center;padding:8px;background:#111827;color:#fff;font:600 13px Segoe UI,Arial,sans-serif;box-shadow:0 2px 6px rgba(0,0,0,.35)';
+          const lbl = document.createElement('span');
+          lbl.textContent = 'Print Preview';
+          const btn = document.createElement('button');
+          btn.textContent = 'Print';
+          btn.style.cssText = 'padding:6px 18px;border:none;border-radius:4px;background:#2563eb;color:#fff;font:600 13px Segoe UI,Arial,sans-serif;cursor:pointer';
+          btn.onclick = () => { window.print(); };
+          bar.appendChild(lbl);
+          bar.appendChild(btn);
+          document.body.style.paddingTop = '44px';
+          document.body.appendChild(bar);
+        })();
+      `)
+      .catch(() => undefined);
+  });
 }
 
 export function buildReceiptText(saleId: number): string {
@@ -112,11 +249,11 @@ export function previewReceipt(saleId: number, template?: ReceiptTemplate): void
   previewHtml(buildReceiptHtml(saleId, template));
 }
 
-export function printSale(saleId: number, template?: ReceiptTemplate): void {
-  printHtml(buildReceiptHtml(saleId, template));
+export function printSale(saleId: number, template?: ReceiptTemplate): Promise<PrintResult> {
+  return printHtml(buildReceiptHtml(saleId, template), { width: templateWidthFor(template) });
 }
 
-export function buildInvoiceHtml(saleId: number): string {
+export async function buildInvoiceHtml(saleId: number): Promise<string> {
   const sale = getSale(saleId);
   if (!sale) throw new Error('Sale not found');
   const s = getPrintSettings();
@@ -148,6 +285,34 @@ ${it.promo_name ? `<tr><td colspan="6" class="promo">Promo: ${esc(it.promo_name)
     .map((p) => `<tr><td>${esc(p.mode)}</td><td class="r">${fmt(p.amount)}</td></tr>`)
     .join('');
 
+  let barcodeHtml = '';
+  if (sale.invoice_no) {
+    const barcode = await toDataUrl({
+      bcid: 'code128',
+      text: sale.invoice_no,
+      scale: 3,
+      height: 24,
+      includetext: true,
+      textxalign: 'center',
+    });
+    if (barcode) {
+      const printerName = await getDefaultPrinterName();
+      barcodeHtml = `
+  <div class="barcode-block">
+    <div class="barcode-brand">Rokar POS</div>
+    <table class="barcode-meta">
+      <tr><td>Invoice</td><td class="r">${esc(sale.invoice_no)}</td></tr>
+      <tr><td>Date</td><td class="r">${sale.created_at ? formatLocalString(sale.created_at) : ''}</td></tr>
+      ${sale.customer_name ? `<tr><td>Customer</td><td class="r">${esc(sale.customer_name)}</td></tr>` : ''}
+      <tr><td>Total</td><td class="r">${fmt(sale.total_amount)}</td></tr>
+      <tr><td>Cashier</td><td class="r">${esc(cashier?.username ?? '')}</td></tr>
+    </table>
+    <img class="barcode-img" src="${barcode}" alt="barcode" />
+    <div class="barcode-footer">Printed on ${todayLabel()}${printerName ? ' · ' + esc(printerName) : ''}</div>
+  </div>`;
+    }
+  }
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -166,6 +331,11 @@ ${it.promo_name ? `<tr><td colspan="6" class="promo">Promo: ${esc(it.promo_name)
   .footer { text-align: center; margin-top: 12px; font-size: 13px; }
   .promo { color: #16a34a; font-size: 12px; display: block; }
   .signature { margin-top: 30px; font-size: 13px; }
+  .barcode-block { margin-top: 26px; border: 1px solid #000; border-radius: 6px; padding: 12px; }
+  .barcode-brand { text-align: center; font-weight: 700; letter-spacing: 0.2em; font-size: 13px; }
+  .barcode-meta { margin: 8px 0 4px; font-size: 13px; }
+  .barcode-img { display: block; margin: 6px auto; max-width: 100%; height: auto; }
+  .barcode-footer { text-align: center; font-size: 11px; color: #444; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -205,17 +375,22 @@ ${it.promo_name ? `<tr><td colspan="6" class="promo">Promo: ${esc(it.promo_name)
     <div>Cashier Signature: ______________________</div>
     <div>Customer Signature: ______________________</div>
   </div>
+  ${barcodeHtml}
   <div class="footer">${esc(s.receipt_footer)}</div>
 </body>
 </html>`;
 }
 
-export function previewInvoice(saleId: number): void {
-  previewHtml(buildInvoiceHtml(saleId));
+export async function previewInvoice(saleId: number): Promise<void> {
+  previewHtml(await buildInvoiceHtml(saleId), { width: 794, height: 1123 });
 }
 
-export function printInvoice(saleId: number): void {
-  printHtml(buildInvoiceHtml(saleId));
+export async function printInvoice(saleId: number): Promise<PrintResult> {
+  return printHtml(await buildInvoiceHtml(saleId), {
+    width: templateWidthFor('a4'),
+    height: templateHeightFor('a4'),
+    forceDialog: true,
+  });
 }
 
 
@@ -237,6 +412,7 @@ export async function buildLabelHtml(productId: number, copies = 1): Promise<str
   const s = getPrintSettings();
   const currency = s.currency || 'Rs';
   const price = `${currency} ${product.sale_price.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  const expiry = fmtExpiryDate(product.expiry_date);
 
   let barcode = '';
   if (product.barcode) {
@@ -254,58 +430,11 @@ export async function buildLabelHtml(productId: number, copies = 1): Promise<str
     .map(
       () => `
       <div class="label">
+        <div class="brand">${esc(s.shop_name || '')}</div>
         <div class="name">${esc(product.name)}</div>
-        <div class="price">${esc(price)}</div>
         ${barcode ? `<img src="${barcode}" alt="barcode" />` : `<div class="nobc">${esc(product.sku ?? product.barcode ?? '')}</div>`}
-      </div>`
-    )
-    .join('');
-
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-  body { font-family: 'Segoe UI', Arial, sans-serif; }
-  .label { width: 250px; border: 1px dashed #999; padding: 8px 10px; margin: 4px; display: inline-block; text-align: center; page-break-inside: avoid; }
-  .name { font-size: 11px; font-weight: 600; margin-bottom: 4px; }
-  .price { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
-  img { max-width: 100%; height: auto; }
-  .nobc { font-size: 10px; color: #444; }
-</style>
-</head>
-<body>
-${labels}
-</body>
-</html>`;
-}
-
-export async function printLabel(productId: number, copies = 1): Promise<boolean> {
-  printHtml(await buildLabelHtml(productId, copies));
-  return true;
-}
-
-export async function buildBarcodeLabelHtml(productId: number, copies = 1): Promise<string> {
-  const product = getProduct(productId);
-  if (!product) throw new Error('Product not found');
-
-  let barcode = '';
-  if (product.barcode) {
-    barcode = await toDataUrl({
-      bcid: 'ean13',
-      text: product.barcode,
-      scale: 3,
-      height: 12,
-      includetext: true,
-      textxalign: 'center',
-    });
-  }
-
-  const labels = Array.from({ length: Math.max(1, copies) })
-    .map(
-      () => `
-      <div class="label">
-        ${barcode ? `<img src="${barcode}" alt="barcode" />` : `<div class="nobc">${esc(product.sku ?? product.barcode ?? 'no barcode')}</div>`}
+        <div class="meta">${esc(price)}${expiry ? ` / Exp ${esc(expiry)}` : ''}</div>
+        <div class="date">${todayLabel()}</div>
       </div>`
     )
     .join('');
@@ -317,8 +446,13 @@ export async function buildBarcodeLabelHtml(productId: number, copies = 1): Prom
 <style>
   body { font-family: 'Segoe UI', Arial, sans-serif; }
   .label { width: 250px; border: 1px dashed #999; padding: 6px 10px; margin: 4px; display: inline-block; text-align: center; page-break-inside: avoid; }
+  .brand { font-size: 8px; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  .name { font-size: 11px; font-weight: 600; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  .price { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
   img { max-width: 100%; height: auto; }
   .nobc { font-size: 10px; color: #444; }
+  .meta { font-size: 10px; font-weight: 700; margin-top: 4px; }
+  .date { font-size: 8px; color: #555; margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -327,9 +461,66 @@ ${labels}
 </html>`;
 }
 
-export async function printBarcodeLabel(productId: number, copies = 1): Promise<boolean> {
-  printHtml(await buildBarcodeLabelHtml(productId, copies));
-  return true;
+export async function printLabel(productId: number, copies = 1): Promise<PrintResult> {
+  return printHtml(await buildLabelHtml(productId, copies), { width: 250 });
+}
+
+export async function buildBarcodeLabelHtml(productId: number, copies = 1): Promise<string> {
+  const product = getProduct(productId);
+  if (!product) throw new Error('Product not found');
+  const s = getPrintSettings();
+  const currency = s.currency || 'Rs';
+  const price = `${currency} ${product.sale_price.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  const expiry = fmtExpiryDate(product.expiry_date);
+
+  let barcode = '';
+  if (product.barcode) {
+    barcode = await toDataUrl({
+      bcid: 'ean13',
+      text: product.barcode,
+      scale: 3,
+      height: 12,
+      includetext: true,
+      textxalign: 'center',
+    });
+  }
+
+  const labels = Array.from({ length: Math.max(1, copies) })
+    .map(
+      () => `
+      <div class="label">
+        <div class="brand">${esc(s.shop_name || '')}</div>
+        <div class="name">${esc(product.name)}</div>
+        ${barcode ? `<img src="${barcode}" alt="barcode" />` : `<div class="nobc">${esc(product.sku ?? product.barcode ?? 'no barcode')}</div>`}
+        <div class="meta">${esc(price)}${expiry ? ` | Exp ${esc(expiry)}` : ''}</div>
+        <div class="date">${todayLabel()}</div>
+      </div>`
+    )
+    .join('');
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; }
+  .label { width: 250px; border: 1px dashed #999; padding: 6px 10px; margin: 4px; display: inline-block; text-align: center; page-break-inside: avoid; }
+  .brand { font-size: 8px; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  .name { font-size: 11px; font-weight: 600; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  img { max-width: 100%; height: auto; }
+  .nobc { font-size: 10px; color: #444; }
+  .meta { font-size: 10px; font-weight: 700; margin-top: 4px; }
+  .date { font-size: 8px; color: #555; margin-top: 2px; }
+</style>
+</head>
+<body>
+${labels}
+</body>
+</html>`;
+}
+
+export async function printBarcodeLabel(productId: number, copies = 1): Promise<PrintResult> {
+  return printHtml(await buildBarcodeLabelHtml(productId, copies), { width: 250 });
 }
 
 export async function openCashDrawer(): Promise<{ ok: boolean; message: string }> {
@@ -468,6 +659,8 @@ export function buildDrawerSummaryHtml(data: {
 </body></html>`;
 }
 
-export function printDrawerSummary(data: Parameters<typeof buildDrawerSummaryHtml>[0]): void {
-  printHtml(buildDrawerSummaryHtml(data));
+export function printDrawerSummary(data: Parameters<typeof buildDrawerSummaryHtml>[0]): Promise<PrintResult> {
+  const s = getPrintSettings();
+  const width = s.receipt_width === '58mm' ? 220 : 300;
+  return printHtml(buildDrawerSummaryHtml(data), { width });
 }

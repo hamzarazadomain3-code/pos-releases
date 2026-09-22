@@ -1,4 +1,4 @@
-# ShopKeeper POS
+# Rokar POS
 
 Local Billing & Inventory Management System for small retail shops.
 
@@ -73,7 +73,7 @@ Creates an NSIS installer in `release/`.
 
 ## Database
 
-- Stored at `%APPDATA%\ShopKeeper POS\pos.db` (Windows)
+- Stored at `%APPDATA%\ShopKeeper POS\pos.db` (Windows). The internal folder name predates the Rokar rebrand — your data is safe here.
 - Migrations live in `migrations/` and run automatically on app start.
 
 ## Roadmap (MVP)

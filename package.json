@@ -1,9 +1,9 @@
 {
   "name": "pos-app",
-  "version": "2.4.3",
+  "version": "2.8.0",
   "description": "Local Billing & Inventory POS System",
   "main": "dist/main/main.js",
-  "author": "ShopKeeper POS",
+  "author": "Rokar POS",
   "license": "Commercial",
   "private": true,
   "scripts": {
@@ -56,7 +56,7 @@
   },
   "build": {
     "appId": "com.shopkeeper.pos",
-    "productName": "ShopKeeper POS",
+    "productName": "Rokar POS",
     "publish": [
       {
         "provider": "github",
@@ -84,7 +84,16 @@
       }
     ],
     "win": {
-      "target": "nsis",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
       "icon": "build/icon.ico",
       "signAndEditExecutable": false
     },
@@ -94,8 +103,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "ShopKeeper POS",
-      "artifactName": "ShopKeeperPOS-Setup-${version}.${ext}",
+      "shortcutName": "Rokar POS",
+      "artifactName": "RokarPOS-Setup-${version}.${ext}",
       "warningsAsErrors": false,
       "include": "build/nsis-install.nsh",
       "unicode": true,
@@ -103,6 +112,9 @@
       "uninstallerIcon": "build/icon.ico",
       "deleteAppDataOnUninstall": false,
       "runAfterFinish": true
+    },
+    "portable": {
+      "artifactName": "RokarPOS-Portable-${version}.${ext}"
     }
   }
 }

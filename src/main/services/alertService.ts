@@ -257,7 +257,7 @@ export class AlertService {
     if (alerts.length === 0) return { sent: 0, errors: 0 };
 
     const lines = alerts.map((a) => `${a.severity === 'critical' ? '🔴' : '⚠️'} ${a.message}`);
-    const text = `*ShopKeeper POS Alerts*\n\n${lines.join('\n')}\n\n_Sent at ${formatLocalString(new Date())}_`;
+    const text = `*Rokar POS Alerts*\n\n${lines.join('\n')}\n\n_Sent at ${formatLocalString(new Date())}_`;
 
     let sent = 0;
     let errors = 0;
@@ -312,7 +312,7 @@ export class AlertService {
       LIMIT 5
     `).all() as Array<{ name: string; stock_qty: number }>;
 
-    let text = `*ShopKeeper POS — Daily Summary*\n`;
+    let text = `*Rokar POS — Daily Summary*\n`;
     text += `📅 ${today}\n\n`;
     text += `*Sales:*\n`;
     text += `• Bills: ${stats.bill_count}\n`;

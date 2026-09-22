@@ -1,7 +1,8 @@
 import { app } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
-import { getDb, getDbPath } from '../db';
+import { DatabaseSync } from 'node:sqlite';
+import { getDb, getDbPath, closeDb, initDatabase } from '../db';
 import { setAdminSetting, getAdminSetting } from './admin';
 import { getAllSettings, setSetting } from './settings';
 
@@ -101,4 +102,56 @@ export function runBackup(): BackupResult {
     cloudOk: cloud.ok,
     cloudError: cloud.error,
   };
+}
+
+function looksLikeSqlite(filePath: string): boolean {
+  const buf = Buffer.alloc(16);
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const read = fs.readSync(fd, buf, 0, 16, 0);
+    if (read < 16) return false;
+  } finally {
+    fs.closeSync(fd);
+  }
+  return buf.toString('utf8', 0, 16) === 'SQLite format 3\u0000';
+}
+
+export async function restoreBackup(sourcePath: string): Promise<{ ok: boolean; message: string }> {
+  if (!sourcePath || !fs.existsSync(sourcePath)) {
+    return { ok: false, message: 'Backup file not found.' };
+  }
+  if (!looksLikeSqlite(sourcePath)) {
+    return { ok: false, message: 'Not a valid SQLite database file.' };
+  }
+  try {
+    const db = getDb();
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  } catch (_) {
+    /* fresh instance — nothing to checkpoint */
+  }
+
+  const destination = getDbPath();
+
+  // Safety copy: verify the backup can be opened before touching the live db
+  try {
+    const probe = new DatabaseSync(sourcePath, { readOnly: true });
+    probe.exec('PRAGMA integrity_check');
+    probe.close();
+  } catch (e) {
+    return { ok: false, message: `Backup file failed validation: ${e instanceof Error ? e.message : String(e)}` };
+  }
+
+  closeDb();
+  try {
+    fs.copyFileSync(sourcePath, destination);
+    // Drop stale WAL/SHM so the copied main file is authoritative
+    for (const suffix of ['-wal', '-shm']) {
+      try { fs.unlinkSync(destination + suffix); } catch (_) { /* not present */ }
+    }
+  } catch (e) {
+    return { ok: false, message: `Restore failed while copying: ${e instanceof Error ? e.message : String(e)}` };
+  }
+
+  await initDatabase();
+  return { ok: true, message: 'Backup restored successfully. Please restart the app so all screens reload.' };
 }

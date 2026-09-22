@@ -1,14 +1,14 @@
-# Build script with file-lock handling for ShopKeeper POS
+# Build script with file-lock handling for Rokar POS
 $ErrorActionPreference = "Stop"
 
-Write-Host "=== ShopKeeper POS Build with NSIS ===" -ForegroundColor Cyan
+Write-Host "=== Rokar POS Build with NSIS ===" -ForegroundColor Cyan
 
-# 1. Kill any running ShopKeeper POS processes
-Write-Host "Step 1: Killing existing ShopKeeper POS processes..." -ForegroundColor Yellow
-$shopkeeperProcesses = Get-Process -Name "ShopKeeper POS" -ErrorAction SilentlyContinue
-if ($shopkeeperProcesses) {
-    $shopkeeperProcesses | Stop-Process -Force
-    Write-Host "  Killed $($shopkeeperProcesses.Count) process(es)" -ForegroundColor Green
+# 1. Kill any running Rokar POS processes
+Write-Host "Step 1: Killing existing Rokar POS processes..." -ForegroundColor Yellow
+$rokarProcesses = Get-Process -Name "Rokar POS" -ErrorAction SilentlyContinue
+if ($rokarProcesses) {
+    $rokarProcesses | Stop-Process -Force
+    Write-Host "  Killed $($rokarProcesses.Count) process(es)" -ForegroundColor Green
     Start-Sleep 2
 } else {
     Write-Host "  No processes found" -ForegroundColor Green

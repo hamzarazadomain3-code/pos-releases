@@ -6,6 +6,7 @@ interface SearchInputProps {
   placeholder?: string;
   debounceMs?: number;
   showClear?: boolean;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
 }
 
 export function SearchInput({
@@ -14,6 +15,7 @@ export function SearchInput({
   placeholder = 'Search...',
   debounceMs = 300,
   showClear = true,
+  onKeyDown,
 }: SearchInputProps) {
   const [localValue, setLocalValue] = useState(value);
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -47,6 +49,7 @@ export function SearchInput({
         placeholder={placeholder}
         value={localValue}
         onChange={handleChange}
+        onKeyDown={onKeyDown}
         style={{ paddingRight: showClear && localValue ? '32px' : '12px' }}
       />
       {showClear && localValue && (

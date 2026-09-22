@@ -30,7 +30,7 @@ child.on('error', (err) => {
 });
 
 setInterval(() => {
-  const exe = path.join(__dirname, 'dist_release', 'ShopKeeperPOS-Setup-1.8.7.exe');
+  const exe = path.join(__dirname, 'dist_release', `RokarPOS-Setup-${require('../package.json').version}.exe`);
   if (fs.existsSync(exe)) {
     const stat = fs.statSync(exe);
     write(`Installer found: ${(stat.size / 1024 / 1024).toFixed(1)} MB`);

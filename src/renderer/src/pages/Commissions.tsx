@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { CommissionRuleRow, SalesmanCommissionRow } from '../../../shared/types';
 import { formatDateAdmin } from '../utils/dateUtils';
+import { formatMoney, getCurrencySymbol } from '../utils/currency';
 
 const fmt = (n: number) => n?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? '0';
 
@@ -120,15 +121,15 @@ export default function Commissions() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
         <div className="card" style={{ textAlign: 'center' }}>
           <div className="small muted">Total Commissions</div>
-          <div style={{ fontSize: 20, fontWeight: 700 }}>Rs {fmt(summary.total)}</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>{formatMoney(summary.total)}</div>
         </div>
         <div className="card" style={{ textAlign: 'center' }}>
           <div className="small muted">Pending</div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--warn)' }}>Rs {fmt(summary.pending)}</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--warn)' }}>{formatMoney(summary.pending)}</div>
         </div>
         <div className="card" style={{ textAlign: 'center' }}>
           <div className="small muted">Paid</div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--ok)' }}>Rs {fmt(summary.paid)}</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--ok)' }}>{formatMoney(summary.paid)}</div>
         </div>
         <div className="card" style={{ textAlign: 'center' }}>
           <div className="small muted">Transactions</div>
@@ -179,7 +180,7 @@ export default function Commissions() {
                   <label>Type</label>
                   <select value={ruleType} onChange={(e) => setRuleType(e.target.value as any)}>
                     <option value="percent">Percent (%)</option>
-                    <option value="fixed">Fixed (Rs)</option>
+                    <option value="fixed">Fixed ({getCurrencySymbol()})</option>
                   </select>
                 </div>
                 <div className="form-group">
@@ -222,7 +223,7 @@ export default function Commissions() {
               <tr key={r.id}>
                 <td>{r.name}</td>
                 <td><span className="badge">{r.type}</span></td>
-                <td style={{ fontWeight: 600 }}>{r.type === 'percent' ? `${r.value}%` : `Rs ${fmt(r.value)}`}</td>
+                <td style={{ fontWeight: 600 }}>{r.type === 'percent' ? `${r.value}%` : formatMoney(r.value)}</td>
                 <td>{r.scope}</td>
                 <td>{r.priority}</td>
                 <td><span className={`badge ${r.is_active ? 'badge-ok' : 'badge-warn'}`}>{r.is_active ? 'Active' : 'Inactive'}</span></td>
@@ -246,9 +247,9 @@ export default function Commissions() {
                 <td>{formatDateAdmin(c.created_at)}</td>
                 <td>{c.salesman_name}</td>
                 <td>#{c.sale_id}</td>
-                <td>Rs {fmt(c.base_amount)}</td>
-                <td>{c.commission_type === 'percent' ? `${c.commission_rate}%` : `Rs ${fmt(c.commission_rate)}`}</td>
-                <td style={{ fontWeight: 600, color: 'var(--ok)' }}>Rs {fmt(c.commission_amount)}</td>
+                <td>{formatMoney(c.base_amount)}</td>
+                <td>{c.commission_type === 'percent' ? `${c.commission_rate}%` : formatMoney(c.commission_rate)}</td>
+                <td style={{ fontWeight: 600, color: 'var(--ok)' }}>{formatMoney(c.commission_amount)}</td>
                 <td><span className={`badge badge-${c.status === 'paid' ? 'ok' : c.status === 'cancelled' ? 'warn' : ''}`}>{c.status}</span></td>
                 <td>
                   {c.status === 'pending' && <>

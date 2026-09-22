@@ -2,7 +2,9 @@ import { Component, Suspense, lazy, useCallback, useEffect, useState, type React
 import { useTranslation } from 'react-i18next';
 import type { NavPage, UserRow } from '../../shared/types';
 import { resetFormatCache } from './utils/formatters';
+import { initCurrency } from './utils/currency';
 import { initDateUtils, resetDateUtils } from './utils/dateUtils';
+import rokarSidebarIcon from './assets/rokar-sidebar-icon.png';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Inventory = lazy(() => import('./pages/Inventory'));
 const Billing = lazy(() => import('./pages/Billing'));
@@ -330,7 +332,7 @@ function LoginScreen({ onLogin, logo }: { onLogin: (user: UserRow, rememberMe: b
     <div className="lock-overlay">
       <div className="lock-box">
         {logo && <img src={logo} alt="Shop logo" className="lock-logo" />}
-        <h2>ShopKeeper POS</h2>
+        <h2>Rokar POS</h2>
         <p className="muted">{t('messages.sign_in_to_continue')}</p>
         {!pinMode && (
           <input
@@ -358,10 +360,10 @@ function LoginScreen({ onLogin, logo }: { onLogin: (user: UserRow, rememberMe: b
         </label>
         {err && <p className="text-warn small">{err}</p>}
         <button className="btn btn-primary btn-lg" disabled={!secret || busy} onClick={doLogin}>
-          {pinMode ? t('buttons.login_with_pin') : t('buttons.Login')}
+          {pinMode ? t('buttons.Login_with_PIN') : t('buttons.Login')}
         </button>
         <button className="btn" onClick={() => { setPinMode(!pinMode); setSecret(''); setErr(null); }}>
-        {pinMode ? t('buttons.Use_username_&_password') : t('buttons.Cashier?_Login_with_PIN')}
+          {pinMode ? t('buttons.Login_with_username_&_password') : t('buttons.Cashier__Login_with_PIN')}
         </button>
       </div>
     </div>
@@ -391,7 +393,7 @@ function LockScreen({ user, onUnlock, logo }: { user: UserRow; onUnlock: () => v
     <div className="lock-overlay">
       <div className="lock-box">
         {logo && <img src={logo} alt="Shop logo" className="lock-logo" />}
-        <h2>ShopKeeper POS</h2>
+        <h2>Rokar POS</h2>
         <p className="muted">
           {t('messages.locked')}{' '}— {user.username} ({user.role}). {t('messages.enter_password_or_pin')}
         </p>
@@ -539,6 +541,8 @@ export default function App() {
           localStorage.setItem('language', adminLang);
         }
 
+        initCurrency().catch(() => undefined);
+
         // Wallpaper
         const wallpaper = settings.wallpaper_image;
         // Always reset body opacity (old bug set it to 0, making body invisible)
@@ -616,6 +620,14 @@ export default function App() {
     }
   }, []);
 
+  const handleLogout = useCallback(() => {
+    if (user?.role === 'owner') {
+      window.api.auth.logout();
+      localStorage.removeItem(SESSION_KEY);
+      setUser(null);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (user && !nav.some((n) => n.key === page)) setPage('billing');
     const savedLang = localStorage.getItem('language') || 'en';
@@ -669,8 +681,8 @@ export default function App() {
         className={`sidebar bilten-sidebar ${sidebarOpen ? 'open' : ''}`}
       >
         <div className="sidebar-brand">
-          <span className="brand-icon">SK</span>
-          <span className="nav-label sidebar-brand-label">ShopKeeper</span>
+          <img src={rokarSidebarIcon} alt="" className="brand-icon" />
+          <span className="nav-label sidebar-brand-label">Rokar</span>
         </div>
         <nav className="sidebar-nav">
           {activeNav.map((item) => (
@@ -705,13 +717,7 @@ export default function App() {
             <span role="img" aria-label="urdu">اردو</span>
           </button>
           <button
-            onClick={() => {
-              if (user?.role === 'owner') {
-                window.api.auth.logout();
-                localStorage.removeItem(SESSION_KEY);
-                setUser(null);
-              }
-            }}
+            onClick={handleLogout}
             aria-label="Logout"
             className="urdu-btn-icon-only"
           >
@@ -725,7 +731,7 @@ export default function App() {
       <main className="content">
         <ErrorBoundary>
           <Suspense fallback={<div className="page"><div className="muted center pad">Loading…</div></div>}>
-          {page === 'billing' && <Billing />}
+          {page === 'billing' && <Billing onNavigate={setPage} onLogout={handleLogout} />}
           {page === 'dashboard' && <Dashboard />}
           {page === 'inventory' && <Inventory />}
           {page === 'branches' && <Branches />}

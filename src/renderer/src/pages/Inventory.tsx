@@ -4,6 +4,7 @@ import { ModalCloseButton } from '../components/ModalCloseButton';
 import { formatDateTimeAdmin } from '../utils/dateUtils';
 import type { Category, ExpiringRow, Product, ProductImportResult, ProductInput, StockMovement, Unit } from '../../../shared/types';
 import { DateRangePicker, SearchInput, MultiSelectDropdown, FilterBar, FilterRow } from '../components/filters';
+import { useBarcodeScan } from '../hooks/useBarcodeScan';
 
 interface ProductBatch {
   id: number;
@@ -102,6 +103,11 @@ export default function Inventory() {
   const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([]);
   const [lowStockCount, setLowStockCount] = useState(0);
   const [search, setSearch] = useState('');
+  // ── Staged search (Enter 1x select, 2x open Edit) + barcode scan ──
+  const [searchStage, setSearchStage] = useState<'idle' | 'select'>('idle');
+  const [searchSelIdx, setSearchSelIdx] = useState(-1);
+  const [scanHighlight, setScanHighlight] = useState<number | null>(null);
+  const scanTimerRef = useRef<number | null>(null);
   const [categoryId, setCategoryId] = useState<number | ''>('');
   const [stockStatus, setStockStatus] = useState<'in_stock' | 'low_stock' | 'out_of_stock' | ''>('');
   const [supplierId, setSupplierId] = useState<number | ''>('');
@@ -183,9 +189,9 @@ export default function Inventory() {
     load().catch((e) => setNotice(e.message));
   }, [load]);
 
-  function openCreate() {
+  function openCreate(prefillBarcode = '') {
     setEditing(null);
-    setForm(EMPTY_FORM);
+    setForm(prefillBarcode ? { ...EMPTY_FORM, barcode: prefillBarcode } : EMPTY_FORM);
     setFormOpen(true);
   }
 
@@ -433,6 +439,95 @@ export default function Inventory() {
     return list;
   })();
 
+  const flashRow = (id: number) => {
+    setScanHighlight(null);
+    requestAnimationFrame(() => setScanHighlight(id));
+    if (scanTimerRef.current) window.clearTimeout(scanTimerRef.current);
+    scanTimerRef.current = window.setTimeout(() => setScanHighlight(null), 2500) as unknown as number;
+  };
+
+  const scrollToRow = (id: number) => {
+    const el = document.querySelector(`[data-row-id="${id}"]`);
+    (el as HTMLElement | undefined)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+
+  useBarcodeScan({
+    enabled: true,
+    onScan: async (code) => {
+      if (formOpen || stockModal || movements || batches || stockReceived || importResult) return;
+      try {
+        const p = await window.api.inventory.getByBarcode(code.trim());
+        if (!p) {
+          const ok = window.confirm(`Barcode "${code}" not found. Add a new product with this barcode?`);
+          if (ok) openCreate(code.trim());
+          return;
+        }
+        setSearch('');
+        setCategoryId('');
+        setStockStatus('');
+        setSupplierId('');
+        setExpiryFrom('');
+        setExpiryTo('');
+        setSearchStage('idle');
+        setSearchSelIdx(-1);
+        const fresh = await window.api.inventory.list();
+        setProducts(fresh);
+        requestAnimationFrame(() => {
+          flashRow(p.id);
+          scrollToRow(p.id);
+        });
+        openEdit(p);
+      } catch (e) {
+        setNotice(e instanceof Error ? e.message : String(e));
+      }
+    },
+  });
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      const count = shown.length;
+      if (count === 0) return;
+      e.preventDefault();
+      setSearchSelIdx((prev) => {
+        const base = prev < 0 ? 0 : prev;
+        const next = e.key === 'ArrowDown' ? (base + 1) % count : (base - 1 + count) % count;
+        const el = document.querySelector(`[data-row-id="${shown[next].id}"]`);
+        (el as HTMLElement | undefined)?.scrollIntoView({ block: 'nearest' });
+        return next;
+      });
+      setSearchStage('idle');
+      return;
+    }
+    if (e.key === 'Enter' || e.key === '\r' || e.key === '\n') {
+      if (shown.length === 0) return;
+      e.preventDefault();
+      if (searchStage === 'select' && searchSelIdx >= 0 && searchSelIdx < shown.length) {
+        openEdit(shown[searchSelIdx]);
+        setSearchStage('idle');
+        setSearchSelIdx(-1);
+        return;
+      }
+      const sel = searchSelIdx >= 0 && searchSelIdx < shown.length ? searchSelIdx : 0;
+      setSearchSelIdx(sel);
+      const el = document.querySelector(`[data-row-id="${shown[sel].id}"]`);
+      (el as HTMLElement | undefined)?.scrollIntoView({ block: 'nearest' });
+      flashRow(shown[sel].id);
+      setSearchStage('select');
+      return;
+    }
+    if (e.key === 'Escape' || e.key === 'Esc') {
+      setSearchStage('idle');
+      setSearchSelIdx(-1);
+    }
+  };
+
+  const selectedShownProduct = () => {
+    if (searchStage === 'idle') return undefined;
+    const sel = searchSelIdx >= 0 && searchSelIdx < shown.length ? shown[searchSelIdx] : undefined;
+    if (sel) return sel;
+    return shown.length > 0 ? shown[0] : undefined;
+  };
+
   const categoryOptions = categories.map(c => ({ value: c.id, label: c.name }));
   const stockStatusOptions = [
     { value: 'in_stock', label: 'In Stock' },
@@ -461,9 +556,14 @@ export default function Inventory() {
           <FilterRow>
             <SearchInput
               value={search}
-              onChange={setSearch}
-              placeholder="Search name, SKU, barcode..."
+              onChange={(e) => {
+                setSearch(e);
+                setSearchStage('idle');
+                setSearchSelIdx(-1);
+              }}
+              placeholder="Search name, SKU, barcode... (Enter: select, Enter again: Edit)"
               debounceMs={300}
+              onKeyDown={handleSearchKeyDown}
             />
             <select
               className="field-select"
@@ -531,7 +631,7 @@ export default function Inventory() {
             <button className="btn btn-sm" onClick={openStockReceived}>
               Stock Received
             </button>
-            <button className="btn btn-primary" onClick={openCreate}>
+            <button className="btn btn-primary" onClick={() => openCreate()}>
               + Add Product
             </button>
           </FilterRow>
@@ -576,6 +676,16 @@ export default function Inventory() {
         </div>
       )}
 
+      {searchStage === 'select' && selectedShownProduct() && (
+        <div className="search-result-item highlighted">
+          <span className="psr-name">{selectedShownProduct()!.name}</span>
+          <span className="psr-meta">
+            {selectedShownProduct()!.stock_qty} in stock • barcode {selectedShownProduct()!.barcode ?? '—'}
+          </span>
+          <span className="search-hint">Enter ×1 = selected, press Enter again to open Edit</span>
+        </div>
+      )}
+
       <div className="table-wrap">
         <table className="data-table">
           <thead>
@@ -597,12 +707,17 @@ export default function Inventory() {
           <tbody>
             {shown.map((p) => {
               const dn = daysUntil(p.expiry_date);
+              const isHighlight = scanHighlight === p.id;
               return (
-                <tr key={p.id} className={expiryClass(p.expiry_date) || (low(p) ? 'row-low' : '')}>
+                <tr
+                  key={p.id}
+                  data-row-id={p.id}
+                  className={`${expiryClass(p.expiry_date) || (low(p) ? 'row-low' : '')}${isHighlight ? ' row-highlight' : ''}`}
+                >
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       {p.image ? (
-                        <img src={p.image} alt="" className="product-thumb" />
+                        <img src={p.image} alt="" className="product-thumb" loading="lazy" />
                       ) : (
                         <div className="product-thumb-placeholder">🖼</div>
                       )}

@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   ShopKeeper POS — Modern Design System
+   Rokar POS — Modern Design System
    ═══════════════════════════════════════════════════════════════ */
 
 :root {
@@ -1102,10 +1102,26 @@ body.theme-dark .bilten-bill-summary-item {
 }
 
 /* ─── Browse item stock row (low-stock + wholesale badge) ─── */
+.browse-item-selected {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  background: rgba(99, 102, 241, 0.08);
+  position: relative;
+}
+.browse-item-qty-badge {
+  margin-left: auto;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 8px;
+  line-height: 16px;
+}
 .browse-item-stock-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 .browse-item-wholesale-badge {
   display: inline-flex;
@@ -1935,6 +1951,17 @@ body:has(.billing-page) {
 .product-search-result:hover {
   background: rgba(99, 102, 241, 0.12);
 }
+.product-search-result.active {
+  background: var(--gradient-primary, linear-gradient(135deg, #4f46e5, #7c3aed));
+  color: #fff;
+}
+.product-search-result.active .psr-name,
+.product-search-result.active .psr-meta {
+  color: inherit;
+}
+.product-search-result.active:hover {
+  background: var(--gradient-primary, linear-gradient(135deg, #4f46e5, #7c3aed));
+}
 .psr-name {
   font-size: 13px;
   font-weight: 600;
@@ -1949,6 +1976,81 @@ body:has(.billing-page) {
   font-size: 13px;
   color: var(--muted);
   text-align: center;
+}
+
+/* ═══ Staged search + barcode scan (Enter 1x select, 2x qty, 3x add) ═══ */
+.search-result-dropdown {
+  position: absolute;
+  z-index: 30;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--card-bg, #fff);
+  border: 1px solid rgba(120, 120, 120, 0.25);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+}
+.search-result-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+.search-result-item:hover {
+  background: rgba(99, 102, 241, 0.12);
+}
+.search-result-item.highlighted {
+  background: rgba(99, 102, 241, 0.14);
+  box-shadow: inset 2px 0 0 0 var(--primary, #4f46e5);
+}
+.search-result-item.selected {
+  background: var(--gradient-primary, linear-gradient(135deg, #4f46e5, #7c3aed));
+  color: #fff;
+}
+.search-result-item.selected .psr-name,
+.search-result-item.selected .psr-meta,
+.search-result-item.selected .search-hint {
+  color: inherit;
+}
+.search-hint {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.quantity-input-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.06);
+  font-size: 13px;
+}
+.quantity-input-box input[type='number'] {
+  width: 80px;
+  padding: 6px 8px;
+  border: 1px solid rgba(120, 120, 120, 0.35);
+  border-radius: 6px;
+}
+.row-highlight {
+  animation: row-highlight-flash 2.5s ease-out;
+  background: rgba(99, 102, 241, 0.18) !important;
+}
+@keyframes row-highlight-flash {
+  0% { background: rgba(99, 102, 241, 0.45); }
+  100% { background: rgba(99, 102, 241, 0.12); }
 }
 
 /* ═══════════════════════════════════════════
@@ -2056,43 +2158,10 @@ body:has(.billing-page) {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.billten-styles-wrap {
-  position: relative;
-}
-.billten-styles-btn {
+.billten-styles-select {
+  max-width: 180px;
   font-size: 12px;
-  padding: 4px 10px;
-}
-.billten-styles-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 300;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-lg);
-  min-width: 150px;
-  padding: 4px;
-}
-.billten-styles-opt {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 7px 10px;
-  font-size: 12px;
-  border: none;
-  background: transparent;
-  border-radius: 6px;
-  cursor: pointer;
-  color: var(--text);
-}
-.billten-styles-opt:hover {
-  background: rgba(99, 102, 241, 0.12);
-}
-.billten-styles-opt.active {
-  background: var(--gradient-primary);
-  color: #fff;
+  padding: 4px 8px;
 }
 .billten-summary-body {
   display: flex;
@@ -2196,6 +2265,8 @@ body:has(.billing-page) {
   padding: 28px;
   width: 640px;
   max-width: 100%;
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
   box-shadow: var(--shadow-lg), 0 0 40px rgba(0, 0, 0, 0.08);
   animation: modalScaleIn 0.25s ease;
   border: 1px solid rgba(226, 232, 240, 0.6);
@@ -2223,9 +2294,22 @@ body:has(.billing-page) {
 
 .modal-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
   margin-top: 20px;
+}
+
+.modal-action-row {
+  display: flex;
+  flex: 1 1 100%;
+  gap: 6px;
+  margin-top: 8px;
+  min-width: 0;
+}
+
+.modal-action-row > * {
+  min-width: 0;
 }
 
 /* ═══════════════════════════════════════════
@@ -4481,6 +4565,7 @@ input[type="range"]::-moz-range-thumb {
   height: 32px;
   flex-shrink: 0;
   border-radius: 9px;
+  object-fit: contain;
   background: linear-gradient(135deg, #6366f1, #4f46e5);
   color: #fff;
   font-size: 15px;
@@ -4757,6 +4842,12 @@ input[type="range"]::-moz-range-thumb {
   font-weight: 600;
   opacity: 0.9;
   font-variant-numeric: tabular-nums;
+}
+
+.sale-inv-date {
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.75;
 }
 
 /* Vertical action buttons */

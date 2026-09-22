@@ -1,4 +1,4 @@
-## ShopKeeper POS v2.0.0
+## Rokar POS v2.0.0
 
 ### Fixes
 - **Scanner Detection:** Buffer gap 80->150ms, suffix support, 3x retry, improved indicator
@@ -9,4 +9,4 @@
 - **Time-based Triggers:** 7AM udhaar reminder, 6PM expiry check, 10PM daily report
 
 ### Installer
-Download `ShopKeeperPOS-Setup-2.0.0.exe`
+Download `RokarPOS-Setup-2.0.0.exe`

@@ -4,6 +4,7 @@ import type { PosBridge } from '../shared/types';
 const bridge: PosBridge = {
   app: {
     getVersion: () => ipcRenderer.invoke('app:get-version'),
+    quit: () => ipcRenderer.invoke('app:quit'),
   },
   updater: {
     check: () => ipcRenderer.invoke('updater:check'),
@@ -158,6 +159,7 @@ const bridge: PosBridge = {
 
   backup: {
     run: () => ipcRenderer.invoke('backup:run'),
+    restore: () => ipcRenderer.invoke('backup:restore'),
   },
   exportData: {
     saveCsv: (defaultName: string, headers: string[], rows: (string | number)[][]) =>
@@ -259,6 +261,7 @@ const bridge: PosBridge = {
     shortcuts: {
       getAll: () => ipcRenderer.invoke('admin:shortcuts:getAll'),
       update: (action: string, key: string) => ipcRenderer.invoke('admin:shortcuts:update', action, key),
+      add: (action: string, key: string) => ipcRenderer.invoke('admin:shortcuts:add', action, key),
       reset: () => ipcRenderer.invoke('admin:shortcuts:reset'),
     },
     features: {

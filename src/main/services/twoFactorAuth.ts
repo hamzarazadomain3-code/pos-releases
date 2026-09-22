@@ -55,9 +55,9 @@ export async function generateOtp(userId: number): Promise<{ ok: boolean; method
       const { sendEmail } = require('./emailService');
       await sendEmail({
         to: email,
-        subject: 'ShopKeeper POS — Your Login Code',
+        subject: 'Rokar — Your Login Code',
         text: `Your verification code is: ${otp}\n\nThis code expires in ${OTP_EXPIRY_MINUTES} minutes.`,
-        html: `<div style="font-family:sans-serif;text-align:center;padding:24px"><h2>ShopKeeper POS</h2><p>Your login verification code is:</p><div style="font-size:32px;font-weight:bold;letter-spacing:8px;margin:16px 0;color:#2563eb">${otp}</div><p style="color:#888;font-size:12px">Expires in ${OTP_EXPIRY_MINUTES} minutes</p></div>`,
+        html: `<div style="font-family:sans-serif;text-align:center;padding:24px"><h2>Rokar</h2><p>Your login verification code is:</p><div style="font-size:32px;font-weight:bold;letter-spacing:8px;margin:16px 0;color:#2563eb">${otp}</div><p style="color:#888;font-size:12px">Expires in ${OTP_EXPIRY_MINUTES} minutes</p></div>`,
       });
     }
     return { ok: true, method: 'email', message: `OTP sent to ${email || 'configured email'}` };
@@ -69,7 +69,7 @@ export async function generateOtp(userId: number): Promise<{ ok: boolean; method
     const settings = require('./settings').getAllSettings();
     const phone = settings.alert_owner_phone || settings.alert_manager_phone;
     if (phone) {
-      await sendWhatsAppReceipt(phone, `ShopKeeper POS Login Code: ${otp}\nExpires in ${OTP_EXPIRY_MINUTES} minutes.`);
+      await sendWhatsAppReceipt(phone, `Rokar Login Code: ${otp}\nExpires in ${OTP_EXPIRY_MINUTES} minutes.`);
     }
     return { ok: true, method: 'sms', message: `OTP sent to ${phone || 'configured phone'}` };
   }

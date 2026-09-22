@@ -3,6 +3,7 @@ dist/
 dist_release/
 release/
 *.log
+*.err
 .DS_Store
 .vscode/
 .idea/

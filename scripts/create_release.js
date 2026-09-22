@@ -88,7 +88,7 @@ function uploadAsset(releaseId, filePath, assetName, contentType) {
     const created = await api('POST', `/repos/${OWNER}/${REPO}/releases`, {
       tag_name: tag,
        name: `${tag} - Advanced Inventory & Profitability Reports`,
-      body: `## ShopKeeper POS v${version}
+      body: `## Rokar POS v${version}
 
 ### Advanced Inventory + Profitability Reports (v1.8.0)
 
@@ -152,7 +152,7 @@ function uploadAsset(releaseId, filePath, assetName, contentType) {
   }
 
   // Upload assets
-  const exeName = `ShopKeeperPOS-Setup-${version}.exe`;
+  const exeName = `RokarPOS-Setup-${version}.exe`;
   const exePath = path.join(process.cwd(), 'dist_release', exeName);
   const ymlPath = path.join(process.cwd(), 'dist_release', 'latest.yml');
 

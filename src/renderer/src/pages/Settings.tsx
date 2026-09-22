@@ -14,7 +14,7 @@ export default function Settings() {
   const [waStatus, setWaStatus] = useState<WhatsAppStatus | null>(null);
   const [waQr, setWaQr] = useState<string | null>(null);
   const [waTestPhone, setWaTestPhone] = useState('');
-  const [waTestText, setWaTestText] = useState('Test message from ShopKeeper POS ✓');
+  const [waTestText, setWaTestText] = useState('Test message from Rokar POS ✓');
   const [waBusy, setWaBusy] = useState(false);
   const [waConnecting, setWaConnecting] = useState(false);
   const [pluMappings, setPluMappings] = useState<ScalePluMapping[]>([]);
@@ -209,18 +209,26 @@ export default function Settings() {
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
                   className={`btn btn-sm ${!document.body.classList.contains('theme-dark') ? 'btn-primary' : ''}`}
-                  onClick={() => { document.body.classList.remove('theme-dark'); localStorage.setItem('theme', 'light'); }}
+                  onClick={() => {
+                    document.body.classList.remove('theme-dark');
+                    localStorage.setItem('theme', 'light');
+                    window.api.admin.settings.set('theme', 'light').catch(() => undefined);
+                  }}
                 >
                   ☀ Light
                 </button>
                 <button
                   className={`btn btn-sm ${document.body.classList.contains('theme-dark') ? 'btn-primary' : ''}`}
-                  onClick={() => { document.body.classList.add('theme-dark'); localStorage.setItem('theme', 'dark'); }}
+                  onClick={() => {
+                    document.body.classList.add('theme-dark');
+                    localStorage.setItem('theme', 'dark');
+                    window.api.admin.settings.set('theme', 'dark').catch(() => undefined);
+                  }}
                 >
                   ☾ Dark
                 </button>
               </div>
-              <span className="muted small">Switch between light and dark mode. Preference is saved locally.</span>
+              <span className="muted small">Switch between light and dark mode. Your choice is saved and applied app-wide.</span>
             </label>
           </div>
         </div>
@@ -300,6 +308,24 @@ export default function Settings() {
               Backup Now
             </button>
             {backupPath && <p className="small text-ok">Saved: {backupPath}</p>}
+            <p className="muted small" style={{ marginTop: 14 }}>
+              Restore replaces ALL current data with a previously saved backup file. The main process will verify the file
+              first and ask you to confirm before anything is overwritten.
+            </p>
+            <button
+              className="btn"
+              onClick={async () => {
+                try {
+                  setNotice(null);
+                  const r = await window.api.backup.restore();
+                  setNotice(r.message);
+                } catch (e) {
+                  setNotice(e instanceof Error ? e.message : String(e));
+                }
+              }}
+            >
+              Restore Backup…
+            </button>
         </div>
       </div>
     </div>

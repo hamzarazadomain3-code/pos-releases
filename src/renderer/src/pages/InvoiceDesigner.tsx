@@ -213,7 +213,7 @@ export default function InvoiceDesigner() {
               fontFamily: 'monospace', fontSize, background: '#fafafa',
             }}>
               <div style={{ color: primaryColor, fontWeight: 'bold', fontSize: fontSize + 4, marginBottom: 8 }}>
-                ShopKeeper POS
+                Rokar POS
               </div>
               <div style={{ fontSize: fontSize - 2, color: '#666', marginBottom: 8 }}>
                 Shop Address • Phone

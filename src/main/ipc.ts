@@ -79,7 +79,7 @@ import {
   can,
   defaultPasswordActive,
 } from './services/auth';
-import { runBackup } from './services/backup';
+import { runBackup, restoreBackup } from './services/backup';
 import { openShift, closeShift, forceCloseShift, currentShift, listShifts, getShift } from './services/shifts';
 import { saveCsv, saveXlsx, exportProductsXlsx, exportSalesXlsx, exportCustomersXlsx, exportPurchaseOrdersXlsx, exportExpensesXlsx, downloadProductTemplate, importProductsFromExcel } from './services/export';
 import {
@@ -122,6 +122,7 @@ import {
   getAllShortcuts,
   updateShortcut,
   resetShortcuts,
+  createShortcut,
   getAllFeatures,
   toggleFeature,
   isFeatureEnabled,
@@ -156,8 +157,8 @@ import { expensesService } from './services/expenses';
 import { customReportsService } from './services/customReports';
 
 export function registerIpcHandlers(): void {
-  ipcMain.handle('inventory:list', (_e, search?: string, includeInactive?: boolean) =>
-    listProducts(search, includeInactive)
+  ipcMain.handle('inventory:list', (_e, search?: string, includeInactive?: boolean, categoryId?: number, stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock', supplierId?: number, expiryFrom?: string, expiryTo?: string) =>
+    listProducts(search, includeInactive, categoryId, stockStatus, supplierId, expiryFrom, expiryTo)
   );
   ipcMain.handle('inventory:get', (_e, id: number) => getProduct(id));
   ipcMain.handle('inventory:getByBarcode', (_e, barcode: string) => getProductByBarcode(barcode));
@@ -213,28 +214,53 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('scaleBarcode:isScaleItem', (_e, barcode: string) => isScaleBarcode(barcode));
   ipcMain.handle('scaleBarcode:listPluMappings', () => listPluMappings());
 
-  ipcMain.handle('printing:printSale', (_e, saleId: number, template?: ReceiptTemplate) => {
-    printSale(saleId, template);
-    return true;
+ipcMain.handle('printing:printSale', async (_e, saleId: number, template?: ReceiptTemplate) => {
+    try {
+      return await printSale(saleId, template);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
   });
   ipcMain.handle('printing:previewReceipt', (_e, saleId: number, template?: ReceiptTemplate) => {
     previewReceipt(saleId, template);
     return true;
   });
-  ipcMain.handle('printing:previewInvoice', (_e, saleId: number) => {
-    previewInvoice(saleId);
-    return true;
+  ipcMain.handle('printing:previewInvoice', async (_e, saleId: number) => {
+    try {
+      await previewInvoice(saleId);
+      return true;
+    } catch (e) {
+      return false;
+    }
   });
-  ipcMain.handle('printing:printLabel', (_e, productId: number, copies?: number) => printLabel(productId, copies ?? 1));
-  ipcMain.handle('printing:printBarcodeLabel', (_e, productId: number, copies?: number) => printBarcodeLabel(productId, copies ?? 1));
+  ipcMain.handle('printing:printLabel', async (_e, productId: number, copies?: number) => {
+    try {
+      return await printLabel(productId, copies ?? 1);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  ipcMain.handle('printing:printBarcodeLabel', async (_e, productId: number, copies?: number) => {
+    try {
+      return await printBarcodeLabel(productId, copies ?? 1);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
   ipcMain.handle('printing:openCashDrawer', () => openCashDrawer());
-  ipcMain.handle('printing:printInvoice', (_e, saleId: number) => {
-    printInvoice(saleId);
-    return true;
+  ipcMain.handle('printing:printInvoice', async (_e, saleId: number) => {
+    try {
+      return await printInvoice(saleId);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
   });
-  ipcMain.handle('printing:printDrawerSummary', (_e, data: Parameters<typeof printDrawerSummary>[0]) => {
-    printDrawerSummary(data);
-    return true;
+  ipcMain.handle('printing:printDrawerSummary', async (_e, data: Parameters<typeof printDrawerSummary>[0]) => {
+    try {
+      return await printDrawerSummary(data);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
   });
 
   ipcMain.handle('receipt:getTemplates', () => {
@@ -311,6 +337,29 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('backup:run', () => {
     if (!can('owner')) throw new Error('Only the owner can run backups');
     return runBackup();
+  });
+
+  ipcMain.handle('backup:restore', async () => {
+    if (!can('owner')) throw new Error('Only the owner can restore backups');
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const picked = await dialog.showOpenDialog(win, {
+      title: 'Select a backup to restore',
+      properties: ['openFile'],
+      filters: [{ name: 'SQLite Database', extensions: ['db'] }, { name: 'All Files', extensions: ['*'] }],
+    });
+    if (picked.canceled || picked.filePaths.length === 0) return { ok: false, message: 'Restore cancelled.' };
+    const filePath = picked.filePaths[0];
+    const confirm = await dialog.showMessageBox(win, {
+      type: 'warning',
+      title: 'Restore backup?',
+      message: 'Restore will replace ALL current data with the backup contents.',
+      detail: `${filePath}\n\nThis cannot be undone. Make sure you have a fresh backup of the current data first.`,
+      buttons: ['Cancel', 'Restore'],
+      defaultId: 0,
+      cancelId: 0,
+    });
+    if (confirm.response !== 1) return { ok: false, message: 'Restore cancelled.' };
+    return restoreBackup(filePath);
   });
 
   ipcMain.handle('export:saveCsv', (_e, defaultName: string, headers: string[], rows: (string | number)[][]) =>
@@ -412,6 +461,7 @@ export function registerIpcHandlers(): void {
   // ── Admin: Shortcuts ──
   ipcMain.handle('admin:shortcuts:getAll', () => getAllShortcuts());
   ipcMain.handle('admin:shortcuts:update', (_e, action: string, key: string) => updateShortcut(action, key));
+  ipcMain.handle('admin:shortcuts:add', (_e, action: string, key: string) => createShortcut(action, key));
   ipcMain.handle('admin:shortcuts:reset', () => { resetShortcuts(); return true; });
 
   // ── Admin: Feature Toggles ──

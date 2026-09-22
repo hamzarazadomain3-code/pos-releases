@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CashRefundRow, ReturnRow, Sale, SaleItem } from '../../../shared/types';
 import { DateRangePicker, SearchInput, FilterBar, FilterRow } from '../components/filters';
 import { formatDateTimeAdmin } from '../utils/dateUtils';
+import { formatMoney, getCurrencySymbol } from '../utils/currency';
 
 export default function Returns() {
   const [sales, setSales] = useState<Sale[]>([]);
@@ -93,7 +94,7 @@ export default function Returns() {
     setCfBusy(true);
     try {
       const r = await window.api.returns.createCashRefund(amount, cfReason.trim() || undefined, 'cash');
-      setSuccess(`Cash refund #${r.id} recorded — Rs ${r.amount.toFixed(2)}`);
+      setSuccess(`Cash refund #${r.id} recorded — ${formatMoney(r.amount)}`);
       setCfAmount('');
       setCfReason('');
       await load();
@@ -305,7 +306,7 @@ export default function Returns() {
         </div>
         <div className="expense-form">
           <input
-            placeholder="Amount (Rs)"
+            placeholder={`Amount (${getCurrencySymbol()})`}
             type="number"
             min="0"
             step="0.01"

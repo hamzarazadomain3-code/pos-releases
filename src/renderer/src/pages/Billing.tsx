@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CashDrawer from '../components/CashDrawer';
+import LiveClock from '../components/LiveClock';
 import { ModalCloseButton } from '../components/ModalCloseButton';
 import { formatDateTimeAdmin, formatTimeAdmin, formatDateAdmin, toLocalDateString } from '../utils/dateUtils';
+import { getCurrencySymbol, formatMoney } from '../utils/currency';
+import { eventCombo, matchesShortcut } from '../utils/shortcutKeys';
 import type {
   Category,
   Customer,
   HeldBill,
+  NavPage,
   Product,
   ProductUnit,
   ResolvedPromotion,
@@ -91,7 +95,12 @@ function lineTotals(
   return { subtotal: gross, tax, discount, total, promoSavings };
 }
 
-export default function Billing() {
+interface BillingProps {
+  onNavigate?: (page: NavPage) => void;
+  onLogout?: () => void;
+}
+
+export default function Billing({ onNavigate, onLogout }: BillingProps) {
   const [items, setItems] = useState<CartLine[]>([]);
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -178,19 +187,82 @@ export default function Billing() {
   const [billRemarks, setBillRemarks] = useState('');
   const [quickAmount, setQuickAmount] = useState('');
   const [payModeQuick, setPayModeQuick] = useState('Cash');
-  const [stylesOpen, setStylesOpen] = useState(false);
   const [scannerLastSeen, setScannerLastSeen] = useState<number | null>(null);
   const [scannerConnected, setScannerConnected] = useState(false);
   const [drawerBusy, setDrawerBusy] = useState(false);
   const [cashDrawerOpen, setCashDrawerOpen] = useState(false);
   const [heldCount, setHeldCount] = useState(0);
   const [quotationCount, setQuotationCount] = useState(0);
-const [currentHeldId, setCurrentHeldId] = useState<number | null>(null);
   const [inputDrafts, setInputDrafts] = useState<Record<string, string>>({});
   const [shortcutMap, setShortcutMap] = useState<Record<string, string>>({});
   const [autoPrintReceipt, setAutoPrintReceipt] = useState(false);
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
   const [flashingItemId, setFlashingItemId] = useState<number | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [activeSearchIndex, setActiveSearchIndex] = useState(0);
+
+  // Browse-grid keyboard navigation + quick quantity entry
+  const [browseIndex, setBrowseIndex] = useState(-1);
+  const [pendingQty, setPendingQty] = useState(1);
+  const [qtyDialog, setQtyDialog] = useState<{ product: Product } | null>(null);
+  const [qtyDialogValue, setQtyDialogValue] = useState('1');
+  const pendingQtyRef = useRef(1);
+  pendingQtyRef.current = pendingQty;
+  const browseListRef = useRef<HTMLDivElement>(null);
+  const clickTimer = useRef<number | null>(null);
+  const bufferGapRef = useRef(150);
+  const lastCtrlPRef = useRef(0);
+  const printInvoiceBtnRef = useRef<HTMLButtonElement>(null);
+  const lastCtrlSRef = useRef(0);
+  const saveChordPendingRef = useRef(false);
+  const saveChordTimerRef = useRef<number | null>(null);
+
+  // ── Keyboard zone navigation (search → browse → cart → summary → buttons) ──
+  const [kbZone, setKbZone] = useState<'none' | 'search' | 'browse' | 'cart' | 'summary' | 'buttons'>('none');
+  const [cartSelIdx, setCartSelIdx] = useState(-1);
+  const [summarySelIdx, setSummarySelIdx] = useState(-1);
+  const [btnSelIdx, setBtnSelIdx] = useState(-1);
+  const cartListRef = useRef<HTMLDivElement>(null);
+  const cartRowRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const summaryFieldsRef = useRef<Array<HTMLInputElement | HTMLSelectElement | null>>([]);
+  const actionBtnsRef = useRef<Array<HTMLButtonElement | null>>([]);
+  const actionPanelRef = useRef<HTMLDivElement>(null);
+
+  const focusBrowseItem = useCallback((idx: number) => {
+    const els = browseListRef.current?.querySelectorAll<HTMLButtonElement>('.browse-item');
+    if (!els || idx < 0 || idx >= els.length) return;
+    els[idx].focus();
+    els[idx].scrollIntoView({ block: 'nearest' });
+  }, []);
+
+  const focusCartRow = useCallback((idx: number) => {
+    const el = cartRowRefs.current[idx];
+    if (!el) return;
+    el.focus();
+    el.scrollIntoView({ block: 'nearest' });
+  }, []);
+
+  const focusSummaryField = useCallback((idx: number) => {
+    const el = summaryFieldsRef.current[idx];
+    if (!el) return;
+    el.focus();
+    el.scrollIntoView?.({ block: 'nearest' });
+  }, []);
+
+  const focusActionBtn = useCallback((idx: number) => {
+    const el = actionBtnsRef.current[idx];
+    if (!el) return;
+    el.focus();
+    el.scrollIntoView({ block: 'nearest' });
+  }, []);
+
+  const adjustLineQty = useCallback((idx: number, newQty: number) => {
+    setItems((prev) => prev.map((x, i) => (i === idx ? { ...x, qty: Math.max(1, newQty) } : x)));
+  }, []);
+
+  const removeCartLine = useCallback((idx: number) => {
+    setItems((prev) => prev.filter((_, i) => i !== idx));
+  }, []);
 
   // Receipt sending
   const [emailToSend, setEmailToSend] = useState('');
@@ -299,8 +371,9 @@ const handleOpenCashDrawer = async () => {
   }, [items]);
 
   const addProduct = useCallback(
-     (p: Product, scaleOpts?: { scale_plu: string; scale_price: number }) => {
+     (p: Product, scaleOpts?: { scale_plu: string; scale_price: number }, qty = 1) => {
       const expired = isExpired(p.expiry_date);
+      const addQty = Math.max(1, Math.floor(qty) || 1);
       setItems((prev) => {
         const units = (p as any).units ?? [];
 
@@ -340,18 +413,17 @@ const handleOpenCashDrawer = async () => {
         if (found) {
           return prev.map((i) =>
             i.product_id === p.id && !i.scale_weight_kg
-              ? { ...i, qty: i.qty + 1, expired: expired || i.expired }
+              ? { ...i, qty: i.qty + addQty, expired: expired || i.expired }
               : i
           );
         }
-        const qty = 1;
         const price = (p as any).sale_price;
         return [
           ...prev,
           {
             product_id: p.id,
             name: p.name,
-            qty,
+            qty: addQty,
             price,
             retail_price: p.sale_price,
             wholesale_price: p.wholesale_price,
@@ -369,6 +441,27 @@ const handleOpenCashDrawer = async () => {
     },
     []
   );
+
+  const openQtyDialog = useCallback((p: Product) => {
+    setQtyDialogValue(String(pendingQtyRef.current));
+    setQtyDialog({ product: p });
+  }, []);
+
+  const confirmQtyDialog = useCallback(() => {
+    if (!qtyDialog) return;
+    const n = parseInt(qtyDialogValue, 10);
+    const q = Number.isFinite(n) && n > 0 ? n : 1;
+    addProduct(qtyDialog.product, undefined, q);
+    setQtyDialog(null);
+  }, [qtyDialog, qtyDialogValue, addProduct]);
+
+  useEffect(() => {
+    if (browseProducts.length === 0) {
+      setBrowseIndex(-1);
+    } else if (browseIndex > browseProducts.length - 1) {
+      setBrowseIndex(browseProducts.length - 1);
+    }
+  }, [browseProducts, browseIndex]);
 
   const switchPriceMode = useCallback((mode: 'retail' | 'wholesale') => {
     setPriceMode(mode);
@@ -567,6 +660,10 @@ useEffect(() => {
     window.api.admin.settings.get('auto_print_receipt').then((v) => {
       setAutoPrintReceipt(v === 'true' || v === '1');
     }).catch(() => undefined);
+    window.api.admin.settings.get('scanner_buffer_gap').then((v) => {
+      const n = Number(v);
+      if (Number.isFinite(n) && n > 0) bufferGapRef.current = n;
+    }).catch(() => undefined);
     window.api.receipt.getTemplates().then(setReceiptTemplates).catch(() => setReceiptTemplates([]));
     window.api.admin.settings.get('receipt_template').then((v) => {
       if (v) setReceiptTemplate(v);
@@ -580,11 +677,41 @@ useEffect(() => {
       window.api.admin.settings.get('auto_print_receipt').then((v) => {
         setAutoPrintReceipt(v === 'true' || v === '1');
       }).catch(() => undefined);
+      window.api.admin.settings.get('scanner_buffer_gap').then((v) => {
+        const n = Number(v);
+        if (Number.isFinite(n) && n > 0) bufferGapRef.current = n;
+      }).catch(() => undefined);
     });
     return () => { if (off) off(); };
   }, []);
 
   useEffect(() => { updateHeldCounts(); }, []);
+
+  // ── Soft refresh: reload data without a full page reload (avoids hangs) ──
+  const refreshData = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const [prods, cats, custs, sh] = await Promise.all([
+        window.api.inventory.list(),
+        window.api.inventory.categories(),
+        window.api.customers.list(),
+        window.api.shifts.current().catch(() => null),
+      ]);
+      setAllProducts(prods);
+      setCategories(cats);
+      setCustomers(custs);
+      setShift(sh ?? null);
+      const held = await window.api.sales.heldBills('held');
+      setHeldCount(held.length);
+      const quotes = await window.api.sales.heldBills('quotation');
+      setQuotationCount(quotes.length);
+      setNotice('Data refreshed');
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   // adjust price‑edit enable flag when role changes
   useEffect(() => {
@@ -606,11 +733,12 @@ useEffect(() => {
 
   useEffect(() => {
     let cancelled = false;
+    setActiveSearchIndex(0);
     const t = window.setTimeout(() => {
       window.api.inventory
         .list(search.trim() || undefined)
         .then((r) => {
-          if (!cancelled) setResults(r);
+          if (!cancelled) { setResults(r); }
         })
         .catch((e) => {
           if (!cancelled) setNotice(e.message);
@@ -636,10 +764,10 @@ useEffect(() => {
   }, []);
 
   // ── Express Checkout: one-click cash sale ──
-  const expressCheckout = useCallback(async () => {
-    if (items.length === 0 || expressBusy) return;
+  const expressCheckout = useCallback(async (opts?: { forcePrint?: boolean; silent?: boolean }) => {
+    if (items.length === 0 || expressBusy) return false;
     const expired = items.filter((i) => i.expired);
-    if (expired.length > 0) { setExpiredConfirm(expired); return; }
+    if (expired.length > 0) { setExpiredConfirm(expired); return false; }
     if (priceFloorEnabled) {
       const belowCost = items.filter((i) => {
         if (i.scale_price != null && i.scale_weight_kg != null && i.scale_weight_kg > 0) {
@@ -647,7 +775,7 @@ useEffect(() => {
         }
         return i.price < i.cost_price;
       });
-      if (belowCost.length > 0) { setBelowCostConfirm(belowCost); return; }
+      if (belowCost.length > 0) { setBelowCostConfirm(belowCost); return false; }
     }
     setExpressBusy(true);
     try {
@@ -673,19 +801,23 @@ useEffect(() => {
       // Save for repeat
       setLastSaleItems([...items]);
       setLastSaleCustomer(customerId);
-      setSuccess(result);
+      if (!opts?.silent) setSuccess(result);
       setItems([]);
       setBillDiscount('');
       setPriceFloorOverride(false);
-      if (autoPrintReceipt && result.sale?.id) {
-        window.api.printing.printSale(result.sale.id, receiptTemplate).catch(() => undefined);
+      if ((autoPrintReceipt || opts?.forcePrint) && result.sale?.id) {
+        window.api.printing.printSale(result.sale.id, receiptTemplate)
+          .then((r) => { if (r && r.ok === false) setNotice(`Auto-print failed: ${r.message}`); })
+          .catch(() => undefined);
       }
+      return true;
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
+      return false;
     } finally {
       setExpressBusy(false);
     }
-  }, [items, finalTotal, customerId, billDiscount, discountType, priceFloorOverride, priceMode, serviceCharge, serviceChargeType, freightAmt, autoPrintReceipt, expressBusy, priceFloorEnabled]);
+  }, [items, finalTotal, customerId, billDiscount, discountType, priceFloorOverride, priceMode, serviceCharge, serviceChargeType, freightAmt, autoPrintReceipt, expressBusy, priceFloorEnabled, receiptTemplate]);
 
   // ── Repeat Last Sale (F7) ──
   const repeatLastSale = useCallback(() => {
@@ -731,62 +863,369 @@ useEffect(() => {
 
   const payTotal = payRows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
 
+  // ── Print Invoice — shared by the "Print Invoice" button and Ctrl+P double-press ──
+  const handlePrintInvoice = useCallback(() => {
+    if (!success?.sale?.id) return;
+    window.api.printing
+      .printInvoice(success.sale.id)
+      .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+      .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
+  }, [success]);
+
   // ── Keyboard shortcuts handler ──
   useEffect(() => {
     let buffer = '';
     let last = 0;
     let burstCount = 0;
+
+    const closeTopModal = (): boolean => {
+      if (splitModalOpen) { setSplitModalOpen(false); return true; }
+      if (payOpen) { setPayOpen(false); return true; }
+      if (success) { setSuccess(null); return true; }
+      if (voidTarget) { setVoidTarget(null); return true; }
+      if (expiredConfirm) { setExpiredConfirm(null); return true; }
+      if (belowCostConfirm) { setBelowCostConfirm(null); return true; }
+      if (priceEditUnlockOpen) { setPriceEditUnlockOpen(false); return true; }
+      if (heldModal) { setHeldModal(null); return true; }
+      if (showShortcutsModal) { setShowShortcutsModal(false); return true; }
+      if (shortcutModalOpen) { setShortcutModalOpen(false); return true; }
+      if (cashDrawerOpen) { setCashDrawerOpen(false); return true; }
+      if (openShiftModal) { setOpenShiftModal(false); return true; }
+      if (closeShiftModal) { setCloseShiftModal(null); return true; }
+      if (custModal) { setCustModal(false); return true; }
+      if (qtyDialog) { setQtyDialog(null); return true; }
+      if (searchOpen) { setSearchOpen(false); return true; }
+      return false;
+    };
+
+    const dispatchAction = (action: string) => {
+      const desc = shortcutMap[action];
+      switch (action) {
+        case 'new_sale':
+          newBill();
+          searchRef.current?.focus();
+          break;
+        case 'hold_bill':
+          if (items.length === 0) setNotice('Cart is empty — nothing to hold');
+          else doHold();
+          break;
+        case 'recall_bill':
+          openHeld('held');
+          break;
+        case 'search':
+          searchRef.current?.focus();
+          break;
+        case 'duplicate_sale':
+          repeatLastSale();
+          break;
+        case 'cash_drawer':
+          if (!shift) setNotice('No open shift for this cash drawer');
+          else setCashDrawerOpen(true);
+          break;
+        case 'logout':
+          onLogout?.();
+          break;
+        case 'quit':
+          window.api.app.quit();
+          break;
+        case 'admin_panel':
+          onNavigate?.('admin');
+          break;
+        case 'reports':
+          onNavigate?.('reports');
+          break;
+        case 'settings':
+          onNavigate?.('settings');
+          break;
+        case 'save':
+          if (busy) break;
+          if (items.length === 0) {
+            setNotice('Cart is empty — nothing to save');
+          } else if (quotationMode) {
+            completeQuotation();
+          } else {
+            openPay();
+          }
+          break;
+        case 'print':
+          if (success) {
+            window.api.printing
+              .printSale(success.sale.id, receiptTemplate)
+              .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+              .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
+          } else {
+            setNotice('No completed sale to print');
+          }
+          break;
+        default:
+          setNotice(`Shortcut "${desc || action}" is not available on the billing screen`);
+      }
+    };
+
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
       const inField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
-      const key = e.key.toLowerCase();
-      const ctrl = e.ctrlKey || e.metaKey;
-      const combo = ctrl ? `ctrl+${key}` : key;
 
-      // Dynamic shortcuts from admin settings
-      if (shortcutMap['focus_search'] && combo === shortcutMap['focus_search'].toLowerCase()) {
-        e.preventDefault();
-        searchRef.current?.focus();
-        return;
-      }
-      if (shortcutMap['new_bill'] && combo === shortcutMap['new_bill'].toLowerCase()) {
-        e.preventDefault();
-        newBill();
-        return;
-      }
-      if (shortcutMap['hold_bill'] && combo === shortcutMap['hold_bill'].toLowerCase()) {
-        e.preventDefault();
-        doHold();
-        return;
-      }
-      if (shortcutMap['hold_list'] && combo === shortcutMap['hold_list'].toLowerCase()) {
-        e.preventDefault();
-        openHeld('held');
-        return;
-      }
-      if (shortcutMap['payment'] && combo === shortcutMap['payment'].toLowerCase()) {
-        e.preventDefault();
-        if (items.length > 0 && payTotal > 0) setPayOpen(true);
-        return;
-      }
-      if (shortcutMap['price_mode'] && combo === shortcutMap['price_mode'].toLowerCase()) {
-        e.preventDefault();
-        setPriceMode((m) => m === 'retail' ? 'wholesale' : 'retail');
-        return;
-      }
-      if (shortcutMap['cash_drawer'] && combo === shortcutMap['cash_drawer'].toLowerCase()) {
-        e.preventDefault();
-        if (shift) setCashDrawerOpen(true);
+      // 1) Escape closes the top-most open modal before any other shortcut runs
+      if (e.key === 'Escape') {
+        if (closeTopModal()) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
         return;
       }
 
-      // Fallback hardcoded keys
-      if (e.key === 'F2') { e.preventDefault(); searchRef.current?.focus(); return; }
-      if (e.key === 'F5') { e.preventDefault(); newBill(); return; }
-      if (e.key === 'F7') { e.preventDefault(); repeatLastSale(); return; }
-      if (e.key === 'F8') { e.preventDefault(); expressCheckout(); return; }
-      if (e.key === 'F9') { e.preventDefault(); doHold(); return; }
-      if (e.key === 'F12') { e.preventDefault(); openHeld('held'); return; }
+      // 2) Enter confirms payment while the Payment modal is open
+      if ((e.key === 'Enter' || e.key === '\r' || e.key === '\n') && payOpen) {
+        if (payTotal > 0 && !busy) {
+          e.preventDefault();
+          completeSale();
+        }
+        return;
+      }
+
+      // 2.5) Ctrl+P — Sale Completed print dialog / direct invoice print.
+      //      Single press focuses "Print Invoice"; a second press within 600ms
+      //      prints the invoice immediately without needing the dialog.
+      //      preventDefault() suppresses the browser/Electron native print dialog.
+      //      If a Ctrl+S chord is pending, this is Ctrl+S+P → save & print receipt.
+      if (e.ctrlKey && (e.key === 'p' || e.key === 'P')) {
+        e.preventDefault();
+        e.stopPropagation();
+        const now = Date.now();
+        if (saveChordPendingRef.current && now - lastCtrlSRef.current < 600) {
+          if (saveChordTimerRef.current) window.clearTimeout(saveChordTimerRef.current);
+          saveChordTimerRef.current = null;
+          saveChordPendingRef.current = false;
+          if (quotationMode) completeQuotation();
+          else if (items.length === 0) setNotice('Cart is empty — nothing to save');
+          else expressCheckout({ forcePrint: true, silent: true }).then((ok) => { if (ok) newBill(); });
+          return;
+        }
+        const isDouble = now - lastCtrlPRef.current < 600;
+        lastCtrlPRef.current = now;
+        if (success) {
+          if (isDouble) handlePrintInvoice();
+          else printInvoiceBtnRef.current?.focus();
+        }
+        return;
+      }
+
+      // 2.6) Ctrl+S chords — hold Ctrl and tap S twice (Ctrl+S+S) saves & charges
+      //      in one shot; a single Ctrl+S keeps the original Save behavior.
+      if (e.ctrlKey && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        e.stopPropagation();
+        const now = Date.now();
+        if (saveChordPendingRef.current && now - lastCtrlSRef.current < 600) {
+          if (saveChordTimerRef.current) window.clearTimeout(saveChordTimerRef.current);
+          saveChordTimerRef.current = null;
+          saveChordPendingRef.current = false;
+          if (quotationMode) completeQuotation();
+          else if (items.length === 0) setNotice('Cart is empty — nothing to save');
+          else expressCheckout({ silent: true }).then((ok) => { if (ok) newBill(); });
+          return;
+        }
+        lastCtrlSRef.current = now;
+        saveChordPendingRef.current = true;
+        if (saveChordTimerRef.current) window.clearTimeout(saveChordTimerRef.current);
+        saveChordTimerRef.current = window.setTimeout(() => {
+          saveChordTimerRef.current = null;
+          if (!saveChordPendingRef.current) return;
+          saveChordPendingRef.current = false;
+          if (busy) return;
+          if (items.length === 0) setNotice('Cart is empty — nothing to save');
+          else if (quotationMode) completeQuotation();
+          else openPay();
+        }, 600);
+        return;
+      }
+
+      // 3) Core billing shortcut keys take precedence over admin-assigned keys
+      const combo = eventCombo(e);
+      if (combo === 'f2') { e.preventDefault(); searchRef.current?.focus(); return; }
+      if (combo === 'f5') {
+        e.preventDefault();
+        if (items.length === 0) setNotice('Cart is empty — nothing to clear');
+        else { newBill(); setNotice('New bill started'); }
+        return;
+      }
+      if (combo === 'f7') { e.preventDefault(); repeatLastSale(); return; }
+      if (combo === 'f8') {
+        e.preventDefault();
+        if (items.length === 0) setNotice('Cart is empty — add items before Express Checkout');
+        else expressCheckout();
+        return;
+      }
+      if (combo === 'f9') {
+        e.preventDefault();
+        if (items.length === 0) setNotice('Cart is empty — nothing to hold');
+        else doHold();
+        return;
+      }
+      if (combo === 'f12') { e.preventDefault(); openHeld('held'); return; }
+
+      // 4) Admin-configured shortcuts (Alt / Ctrl / Shift combos now match correctly)
+      const action = Object.keys(shortcutMap).find((a) => matchesShortcut(shortcutMap[a], e));
+      if (action) {
+        e.preventDefault();
+        dispatchAction(action);
+        return;
+      }
+
+      // 4.5) Browse-grid keyboard navigation (mouse-free POS mode)
+      if (!inField) {
+        const bpCount = browseProducts.length;
+        if (bpCount > 0 && (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+          e.preventDefault();
+          const base = browseIndex < 0 ? 0 : browseIndex;
+          const idx = (e.key === 'ArrowUp' || e.key === 'ArrowLeft')
+            ? (base - 1 + bpCount) % bpCount
+            : (base + 1) % bpCount;
+          setBrowseIndex(idx);
+          setPendingQty(1);
+          const els = browseListRef.current?.querySelectorAll<HTMLButtonElement>('.browse-item');
+          els?.[idx]?.scrollIntoView({ block: 'nearest' });
+          return;
+        }
+        if (browseIndex >= 0 && browseIndex < bpCount && (e.key === '+' || e.key === '=' || e.key === '-')) {
+          e.preventDefault();
+          setPendingQty((q) => Math.max(1, Math.min(999, q + (e.key === '-' ? -1 : 1))));
+          return;
+        }
+        if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'Enter' || e.key === '\r' || e.key === '\n')) {
+          if (browseIndex >= 0 && browseIndex < bpCount) {
+            e.preventDefault();
+            openQtyDialog(browseProducts[browseIndex]);
+            return;
+          }
+        }
+      }
+
+      // 4.6) Zone navigation — mouse-free chain: search ⇄ browse ⇄ cart ⇄ summary ⇄ buttons
+      if (!inField) {
+        const rows = Array.from(cartListRef.current?.querySelectorAll<HTMLElement>('.cart-row') ?? []).filter((el) => !(el as HTMLElement).dataset.staged);
+
+        // Tab / Shift+Tab transitions between zones
+        if (e.key === 'Tab') {
+          if (kbZone === 'browse') {
+            e.preventDefault();
+            if (e.shiftKey) { searchRef.current?.focus(); setKbZone('search'); }
+            else if (rows.length > 0) { setKbZone('cart'); setCartSelIdx(0); focusCartRow(0); }
+            return;
+          }
+          if (kbZone === 'cart') {
+            e.preventDefault();
+            if (e.shiftKey) return; // Shift+Tab on cart handled separately below
+            setKbZone('summary'); setSummarySelIdx(0); focusSummaryField(0);
+            return;
+          }
+          if (kbZone === 'summary') {
+            e.preventDefault();
+            setKbZone('buttons'); setBtnSelIdx(0); focusActionBtn(0);
+            return;
+          }
+          if (kbZone === 'buttons') {
+            e.preventDefault();
+            setKbZone('search'); setCartSelIdx(-1); searchRef.current?.focus();
+            return;
+          }
+        }
+
+        // Browse last->first boundary & first->search boundary (wraps preserved for grid, edges route zones)
+        const bpCount = browseProducts.length;
+        if (kbZone === 'browse') {
+          if (e.key === 'ArrowDown' && browseIndex >= bpCount - 1) {
+            if (rows.length > 0) { e.preventDefault(); setKbZone('cart'); setCartSelIdx(0); focusCartRow(0); }
+            return;
+          }
+        }
+
+        // Cart zone
+        if (kbZone === 'cart' && cartSelIdx >= 0 && cartSelIdx < rows.length) {
+          const cur = rows[cartSelIdx];
+          const qtyEl = cur.querySelector<HTMLInputElement>('.line-qty-input, .qty-input, input[type=number]');
+          if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (cartSelIdx === 0) {
+              if (bpCount > 0) { setKbZone('browse'); setBrowseIndex(bpCount - 1); setPendingQty(1); focusBrowseItem(bpCount - 1); }
+              else { setKbZone('search'); setCartSelIdx(-1); searchRef.current?.focus(); }
+            } else { setCartSelIdx(cartSelIdx - 1); focusCartRow(cartSelIdx - 1); }
+            return;
+          }
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (cartSelIdx === rows.length - 1) {
+              setKbZone('summary'); setSummarySelIdx(0); focusSummaryField(0);
+            } else { setCartSelIdx(cartSelIdx + 1); focusCartRow(cartSelIdx + 1); }
+            return;
+          }
+          if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            const it = items[cartSelIdx];
+            if (it) adjustLineQty(cartSelIdx, (it.qty ?? 1) + 1);
+            return;
+          }
+          if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            const it = items[cartSelIdx];
+            if (it) adjustLineQty(cartSelIdx, Math.max(1, (it.qty ?? 1) - 1));
+            return;
+          }
+          if ((e.key === 'Enter' || e.key === '\r' || e.key === '\n') || e.key === ' ') {
+            e.preventDefault();
+            setKbZone('cart');
+            if (e.key === 'Enter' || e.key === '\r' || e.key === '\n') {
+              qtyEl?.focus();
+              qtyEl?.select?.();
+            }
+            return;
+          }
+          if (e.key === 'Delete' || e.key === 'Backspace') {
+            e.preventDefault();
+            removeCartLine(cartSelIdx);
+            setCartSelIdx(Math.min(cartSelIdx, rows.length - 2));
+            return;
+          }
+          if (e.key === 'Tab' && !e.shiftKey) {
+            e.preventDefault();
+            setKbZone('summary'); setSummarySelIdx(0); focusSummaryField(0);
+            return;
+          }
+          if (e.key === 'Tab' && e.shiftKey) {
+            e.preventDefault();
+            if (bpCount > 0) { setKbZone('browse'); setBrowseIndex(bpCount - 1); setPendingQty(1); focusBrowseItem(bpCount - 1); }
+            return;
+          }
+        }
+
+        // Buttons zone
+        if (kbZone === 'buttons' && btnSelIdx >= 0) {
+          const btns = Array.from(actionPanelRef.current?.querySelectorAll<HTMLElement>('[data-btn-idx]') ?? []);
+          if (btns.length === 0) return;
+          if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+            e.preventDefault();
+            const next = (e.key === 'ArrowRight' ? btnSelIdx + 1 : btnSelIdx - 1 + btns.length) % btns.length;
+            setBtnSelIdx(next); focusActionBtn(next);
+            return;
+          }
+          if (e.key === 'Enter' || e.key === '\r' || e.key === '\n' || e.key === ' ') {
+            e.preventDefault();
+            (btns[btnSelIdx] as HTMLElement)?.click();
+            return;
+          }
+          if (e.key === 'Tab' && !e.shiftKey) {
+            e.preventDefault(); setKbZone('search'); setCartSelIdx(-1); searchRef.current?.focus();
+            return;
+          }
+          if (e.key === 'Tab' && e.shiftKey) {
+            e.preventDefault(); setKbZone('summary'); setSummarySelIdx(0); focusSummaryField(0);
+            return;
+          }
+        }
+      }
+
+      // 5) Barcode / scanner buffer for bare keystrokes outside fields
       if (inField) return;
       const now = Date.now();
       if (e.key === 'Enter' || e.key === '\r' || e.key === '\n') {
@@ -801,7 +1240,7 @@ useEffect(() => {
         return;
       }
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (now - last > 150) { buffer = ''; burstCount = 0; }
+        if (now - last > bufferGapRef.current) { buffer = ''; burstCount = 0; }
         buffer += e.key;
         last = now;
         burstCount++;
@@ -809,8 +1248,13 @@ useEffect(() => {
       }
     };
     window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [scanAdd, newBill, doHold, shortcutMap, repeatLastSale, expressCheckout, items, payTotal, shift]);
+    return () => {
+      window.removeEventListener('keydown', handler);
+      if (saveChordTimerRef.current) window.clearTimeout(saveChordTimerRef.current);
+      saveChordTimerRef.current = null;
+      saveChordPendingRef.current = false;
+    };
+  }, [scanAdd, newBill, doHold, shortcutMap, repeatLastSale, expressCheckout, items, payTotal, shift, payOpen, success, heldModal, expiredConfirm, belowCostConfirm, showShortcutsModal, splitModalOpen, cashDrawerOpen, busy, receiptTemplate, completeSale, openHeld, onNavigate, onLogout, voidTarget, priceEditUnlockOpen, shortcutModalOpen, openShiftModal, closeShiftModal, custModal, searchOpen, quotationMode, openPay, completeQuotation, browseProducts, browseIndex, openQtyDialog, handlePrintInvoice]);
 
   // Apply round-off
   const applyRoundOff = useCallback(() => {
@@ -879,13 +1323,14 @@ useEffect(() => {
     return breakdown;
   }, [items, promoMap]);
 
-  async function handleSearchEnter() {
+  async function handleSearchEnter(index = 0) {
     const q = search.trim();
     if (!q) return;
     const exact = results.find((r) => r.barcode === q || r.sku === q);
     if (exact) {
       addProduct(exact);
       setSearch('');
+      setActiveSearchIndex(0);
       return;
     }
     try {
@@ -893,18 +1338,29 @@ useEffect(() => {
       if (byBarcode) {
         addProduct(byBarcode);
         setSearch('');
+        setActiveSearchIndex(0);
         return;
       }
     } catch {
       /* ignore */
     }
-    if (results[0]) {
-      addProduct(results[0]);
+    const target = results.length > 0 ? results[Math.min(Math.max(0, index), results.length - 1)] : undefined;
+    if (target) {
+      addProduct(target);
       setSearch('');
+      setActiveSearchIndex(0);
     } else {
       setNotice(`No product found for "${q}"`);
     }
   }
+
+  // ── Receipt style: update state, persist to settings, show feedback ──
+  const applyReceiptTemplate = useCallback((id: string) => {
+    setReceiptTemplate(id);
+    const name = receiptTemplates.find((t) => t.id === id)?.name || id;
+    setNotice(`Receipt style set to ${name}`);
+    window.api.admin.settings.set('receipt_template', id).catch(() => undefined);
+  }, [receiptTemplates]);
 
 function openPay() {
   const expired = items.filter((i) => i.expired);
@@ -996,7 +1452,9 @@ function openPay() {
       setPriceFloorPin('');
       // Auto-print receipt if enabled
       if (autoPrintReceipt && result.sale?.id) {
-        window.api.printing.printSale(result.sale.id, receiptTemplate).catch(() => undefined);
+        window.api.printing.printSale(result.sale.id, receiptTemplate)
+          .then((r) => { if (r && r.ok === false) setNotice(`Auto-print failed: ${r.message}`); })
+          .catch(() => undefined);
       }
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
@@ -1321,9 +1779,16 @@ return (
             onFocus={() => setSearchOpen(true)}
             onBlur={() => window.setTimeout(() => setSearchOpen(false), 180)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                 e.preventDefault();
-                handleSearchEnter();
+                const count = results.slice(0, 40).length;
+                if (count === 0) return;
+                setActiveSearchIndex((prev) =>
+                  e.key === 'ArrowDown' ? (prev + 1) % count : (prev - 1 + count) % count
+                );
+              } else if (e.key === 'Enter') {
+                e.preventDefault();
+                handleSearchEnter(activeSearchIndex);
               }
             }}
           />
@@ -1332,11 +1797,12 @@ return (
               {results.length === 0 ? (
                 <div className="psd-empty">Type to search or press F2...</div>
               ) : (
-                results.slice(0, 40).map((r) => (
+                results.slice(0, 40).map((r, i) => (
                   <button
                     key={r.id}
-                    className="product-search-result"
-                    onClick={() => { addProduct(r); setSearch(''); }}
+                    className={`product-search-result${i === activeSearchIndex ? ' active' : ''}`}
+                    onMouseEnter={() => setActiveSearchIndex(i)}
+                    onClick={() => { addProduct(r); setSearch(''); setActiveSearchIndex(0); }}
                   >
                     <span className="psr-name">{r.name}</span>
                     <span className="psr-meta">
@@ -1374,10 +1840,10 @@ return (
         ) : (
           <button className="shift-open-btn" onClick={() => setOpenShiftModal(true)}>Open</button>
         )}
-        <button className="sale-inv-icon-btn" title="Refresh" onClick={() => window.location.reload()}>
+        <button className="sale-inv-icon-btn" title={refreshing ? 'Refreshing…' : 'Refresh'} onClick={() => { void refreshData(); }} disabled={refreshing}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
         </button>
-        <span className="sale-inv-clock">{new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}</span>
+        <LiveClock refreshing={refreshing} />
       </div>
 
       {/* ─── Toolbar row 2: actions ─── */}
@@ -1412,7 +1878,7 @@ return (
           className="btn btn-sm"
           style={{ background: 'var(--ok)', color: '#fff', fontWeight: 600 }}
           disabled={items.length === 0 || expressBusy || !shift}
-          onClick={expressCheckout}
+          onClick={() => expressCheckout()}
           title="Express checkout — cash payment, one click (F8)"
         >
           {expressBusy ? 'Processing...' : '⚡ Express (F8)'}
@@ -1440,7 +1906,7 @@ return (
           <span
             className="badge"
             style={{ background: profitLive.margin > 0 ? '#052e16' : '#450a0a', color: profitLive.margin > 0 ? '#22c55e' : '#ef4444', padding: '2px 6px', fontSize: 10 }}
-            title={`Cost: Rs ${profitLive.cost.toFixed(2)} | Revenue: Rs ${profitLive.revenue.toFixed(2)}`}
+            title={`Cost: ${formatMoney(profitLive.cost)} | Revenue: ${formatMoney(profitLive.revenue)}`}
           >
             Profit: {profitLive.margin}%
           </span>
@@ -1475,7 +1941,7 @@ return (
 
       <div className="billing-row">
         <div className="billing-browse card">
-          <div className="browse-list">
+          <div className="browse-list" ref={browseListRef}>
           {browseProducts.length === 0 ? (
             <div className="muted center pad">
               {browseCategory !== 'all'
@@ -1483,26 +1949,40 @@ return (
                 : 'No products found'}
             </div>
           ) : (
-            browseProducts.map((p) => {
+            browseProducts.map((p, idx) => {
               const displayPrice = priceMode === 'wholesale' && p.wholesale_price != null
                 ? p.wholesale_price
                 : p.sale_price;
               const isLowStock = p.stock_qty > 0 && p.stock_qty < LOW_STOCK_THRESHOLD;
               const isFlashing = flashingItemId === p.id;
+              const isSelected = browseIndex === idx;
               return (
               <button
                 key={p.id}
-                className={`browse-item${isFlashing ? ' browse-item-flash' : ''}`}
-                onClick={() => { addProduct(p); setFlashingItemId(p.id); setTimeout(() => setFlashingItemId(null), 250); }}
-                title={`Add ${p.name} to bill`}
+                data-index={idx}
+                className={`browse-item${isSelected ? ' browse-item-selected' : ''}${isFlashing ? ' browse-item-flash' : ''}`}
+                onClick={() => {
+                  if (clickTimer.current) return;
+                  clickTimer.current = window.setTimeout(() => {
+                    clickTimer.current = null;
+                    addProduct(p);
+                    setFlashingItemId(p.id);
+                    setTimeout(() => setFlashingItemId(null), 250);
+                  }, 220);
+                }}
+                onDoubleClick={() => {
+                  if (clickTimer.current) { window.clearTimeout(clickTimer.current); clickTimer.current = null; }
+                  openQtyDialog(p);
+                }}
+                title={`Add ${p.name} to bill (double-click for quantity)`}
               >
                 <div className="browse-thumb">
-                  {p.image ? <img src={p.image} alt="" /> : <span className="thumb-placeholder">📦</span>}
+                  {p.image ? <img src={p.image} alt="" loading="lazy" /> : <span className="thumb-placeholder">📦</span>}
                 </div>
                 <div className="browse-item-content">
                   <div className="browse-item-line1">
                     <span className="browse-item-name">{p.name}</span>
-                    <span className="browse-item-price">Rs {displayPrice.toLocaleString()}</span>
+                    <span className="browse-item-price">{getCurrencySymbol()} {displayPrice.toLocaleString()}</span>
                   </div>
                   <div className="browse-item-stock-row">
                     {priceMode === 'wholesale' && p.wholesale_price != null && p.wholesale_price !== p.sale_price && (
@@ -1516,6 +1996,7 @@ return (
                     >
                       {p.stock_qty > 0 ? `${formatStockQty(p.stock_qty)} in stock` : 'Out of stock'}
                     </span>
+                    {isSelected && <span className="browse-item-qty-badge">× {pendingQty}</span>}
                   </div>
                 </div>
               </button>
@@ -1681,7 +2162,14 @@ const handleUnitChange = (newLevel: number) => {
               };
 
               return (
-                <div className={it.expired ? 'cart-row cart-row-expired' : 'cart-row'} key={`${it.product_id}-${idx}`}>
+                <div
+                  className={`cart-row${it.expired ? ' cart-row-expired' : ''}${cartSelIdx === idx ? ' cart-row-selected' : ''}`}
+                  data-cart-idx={idx}
+                  tabIndex={-1}
+                  ref={(el) => (cartRowRefs.current[idx] = el)}
+                  onFocus={() => setCartSelIdx(idx)}
+                  key={`${it.product_id}-${idx}`}
+                >
                   <div className="cart-info">
                     <strong>{it.name}</strong>
                     {it.scale_weight_g != null && (
@@ -1928,7 +2416,9 @@ const handleUnitChange = (newLevel: number) => {
                 <label className="bsf-field">
                   <span className="bsf-label">Discount %</span>
                   <input
-                    className="bsf-input"
+                    className={`bsf-input${summarySelIdx === 0 ? ' summary-field-selected' : ''}`}
+                    data-summary-idx={0}
+                    ref={(el) => (summaryFieldsRef.current[0] = el)}
                     type="number"
                     value={discountType === 'percent' ? billDiscount : ''}
                     placeholder="0"
@@ -1938,7 +2428,9 @@ const handleUnitChange = (newLevel: number) => {
                 <label className="bsf-field">
                   <span className="bsf-label">Discount Currency</span>
                   <input
-                    className="bsf-input"
+                    className={`bsf-input${summarySelIdx === 1 ? ' summary-field-selected' : ''}`}
+                    data-summary-idx={1}
+                    ref={(el) => (summaryFieldsRef.current[1] = el)}
                     type="number"
                     value={discountType === 'amount' ? billDiscount : ''}
                     placeholder="0"
@@ -1948,29 +2440,33 @@ const handleUnitChange = (newLevel: number) => {
                 <label className="bsf-field">
                   <span className="bsf-label">Tax</span>
                   <div className="bsf-input-group">
-                    <input
-                      className="bsf-input"
-                      type="number"
-                      value={serviceCharge}
+                  <input
+                    className={`bsf-input${summarySelIdx === 2 ? ' summary-field-selected' : ''}`}
+                    data-summary-idx={2}
+                    ref={(el) => (summaryFieldsRef.current[2] = el)}
+                    type="number"
+                    value={serviceCharge}
                       placeholder="0"
                       onChange={(e) => setServiceCharge(e.target.value)}
                     />
                     <select className="bsf-select" value={serviceChargeType} onChange={(e) => setServiceChargeType(e.target.value as 'amount' | 'percent')}>
-                      <option value="amount">Rs</option>
+                      <option value="amount">{getCurrencySymbol()}</option>
                       <option value="percent">%</option>
                     </select>
                   </div>
                 </label>
                 <label className="bsf-field">
                   <span className="bsf-label">Payment Type</span>
-                  <select className="bsf-input bsf-select-full" value={payModeQuick} onChange={(e) => setPayModeQuick(e.target.value)}>
+                  <select className={`bsf-input bsf-select-full${summarySelIdx === 3 ? ' summary-field-selected' : ''}`} data-summary-idx={3} ref={(el) => (summaryFieldsRef.current[3] = el)} value={payModeQuick} onChange={(e) => setPayModeQuick(e.target.value)}>
                     {paymentModes.map((m) => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </label>
                 <label className="bsf-field">
                   <span className="bsf-label">Enter Remarks</span>
                   <input
-                    className="bsf-input"
+                    className={`bsf-input${summarySelIdx === 4 ? ' summary-field-selected' : ''}`}
+                    data-summary-idx={4}
+                    ref={(el) => (summaryFieldsRef.current[4] = el)}
                     value={billRemarks}
                     placeholder="Note..."
                     onChange={(e) => setBillRemarks(e.target.value)}
@@ -1979,7 +2475,9 @@ const handleUnitChange = (newLevel: number) => {
                 <label className="bsf-field">
                   <span className="bsf-label">Enter Amount</span>
                   <input
-                    className="bsf-input"
+                    className={`bsf-input${summarySelIdx === 5 ? ' summary-field-selected' : ''}`}
+                    data-summary-idx={5}
+                    ref={(el) => (summaryFieldsRef.current[5] = el)}
                     type="number"
                     value={quickAmount}
                     placeholder={finalTotal.toFixed(2)}
@@ -1992,13 +2490,15 @@ const handleUnitChange = (newLevel: number) => {
                 <span className="bsf-label">Freight/Delivery</span>
                 <div className="bsf-input-group">
                   <input
-                    className="bsf-input"
+                    className={`bsf-input${summarySelIdx === 6 ? ' summary-field-selected' : ''}`}
+                    data-summary-idx={6}
+                    ref={(el) => (summaryFieldsRef.current[6] = el)}
                     type="number"
                     value={freight}
                     placeholder="0"
                     onChange={(e) => setFreight(e.target.value)}
                   />
-                  <span className="bsf-unit">Rs</span>
+                  <span className="bsf-unit">{getCurrencySymbol()}</span>
                 </div>
               </div>
             </div>
@@ -2006,25 +2506,19 @@ const handleUnitChange = (newLevel: number) => {
             <div className="billten-summary-right">
               <div className="billten-summary-head">
                 <span className="billten-summary-title">Bill Summary</span>
-                <div className="billten-styles-wrap">
-                  <button className="btn btn-sm billten-styles-btn" onClick={() => setStylesOpen(!stylesOpen)}>
-                    Styles ▾
-                  </button>
-                  {stylesOpen && (
-                    <div className="billten-styles-menu">
-                      {receiptTemplates.length === 0 && <div className="psd-empty">No templates</div>}
-                      {receiptTemplates.map((t) => (
-                        <button
-                          key={t.id}
-                          className={`billten-styles-opt ${receiptTemplate === t.id ? 'active' : ''}`}
-                          onClick={() => { setReceiptTemplate(t.id); setStylesOpen(false); }}
-                        >
-                          {t.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                {receiptTemplates.length > 0 && (
+                  <select
+                    className="field-select billten-styles-select"
+                    value={receiptTemplate}
+                    onChange={(e) => applyReceiptTemplate(e.target.value)}
+                    title="Receipt template"
+                    aria-label="Receipt style"
+                  >
+                    {receiptTemplates.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div className="billten-summary-body">
                 <div className="billten-cards-col">
@@ -2085,7 +2579,7 @@ const handleUnitChange = (newLevel: number) => {
                       <div className="billten-extra-row">
                         <span className="small muted">Profit</span>
                         <span className="small" style={{ color: profitLive.margin > 0 ? 'var(--ok)' : 'var(--danger)', fontWeight: 600 }}>
-                          Rs {(profitLive.revenue - profitLive.cost).toFixed(2)} ({profitLive.margin}%)
+                          {formatMoney(profitLive.revenue - profitLive.cost)} ({profitLive.margin}%)
                         </span>
                       </div>
                     )}
@@ -2107,7 +2601,7 @@ const handleUnitChange = (newLevel: number) => {
                 </div>
               </div>
               <div className="shortcuts muted small" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                <span>F2 search · F5 new · F7 repeat · F8 express · F9 hold · F12 held</span>
+                <span>F2 search · F5 new · F7 repeat · F8 express · F9 hold · F12 held · Ctrl+S+S save · Ctrl+S+P save+print</span>
                 <button
                   className="btn btn-sm"
                   style={{ width: 18, height: 18, borderRadius: '50%', padding: 0, fontSize: 11, fontWeight: 700, lineHeight: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--muted-bg, #e5e7eb)', color: 'var(--muted, #6b7280)', border: 'none', cursor: 'pointer', flexShrink: 0 }}
@@ -2137,6 +2631,9 @@ const handleUnitChange = (newLevel: number) => {
                 <kbd style={{ fontWeight: 600, textAlign: 'right' }}>F12</kbd><span>Open held bills list</span>
                 <kbd style={{ fontWeight: 600, textAlign: 'right' }}>Enter</kbd><span>Confirm payment / search</span>
                 <kbd style={{ fontWeight: 600, textAlign: 'right' }}>Escape</kbd><span>Close modal / cancel</span>
+                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>Ctrl+P</kbd><span>Focus print invoice (double-press = print)</span>
+                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>Ctrl+S+S</kbd><span>Save &amp; charge in one shot</span>
+                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>Ctrl+S+P</kbd><span>Save &amp; print receipt</span>
               </div>
               {Object.keys(shortcutMap).length > 0 && (
                 <>
@@ -2250,7 +2747,7 @@ const handleUnitChange = (newLevel: number) => {
                   }}
                   style={{ fontSize: 12 }}
                 >
-                  Rs {denom}
+                  {getCurrencySymbol()} {denom}
                 </button>
               ))}
               <button
@@ -2323,7 +2820,7 @@ const handleUnitChange = (newLevel: number) => {
                 <select
                   className="field-select"
                   value={receiptTemplate}
-                  onChange={(e) => setReceiptTemplate(e.target.value)}
+                  onChange={(e) => applyReceiptTemplate(e.target.value)}
                   style={{ fontSize: 12 }}
                   title="Receipt template"
                 >
@@ -2343,7 +2840,9 @@ const handleUnitChange = (newLevel: number) => {
                 <button
                   className="btn"
                   onClick={() => {
-                    window.api.printing.printSale(success.sale.id, receiptTemplate).catch((e) => setNotice(e.message));
+                    window.api.printing.printSale(success.sale.id, receiptTemplate)
+                      .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+                      .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
                   }}
                 >
                   Print Receipt
@@ -2358,9 +2857,8 @@ const handleUnitChange = (newLevel: number) => {
                 </button>
                 <button
                   className="btn btn-primary"
-                  onClick={() => {
-                    window.api.printing.printInvoice(success.sale.id).catch((e) => setNotice(e.message));
-                  }}
+                  ref={printInvoiceBtnRef}
+                  onClick={handlePrintInvoice}
                 >
                   Print Invoice
                 </button>
@@ -2384,7 +2882,7 @@ const handleUnitChange = (newLevel: number) => {
                     </button>
                   );
                 })()}
-                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <div className="modal-action-row">
                   <input
                     type="email"
                     placeholder="Customer email"
@@ -2398,7 +2896,7 @@ const handleUnitChange = (newLevel: number) => {
                     alert(res.message);
                   }}>Email</button>
                 </div>
-                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <div className="modal-action-row">
                   <input
                     type="tel"
                     placeholder="Customer phone"
@@ -2414,6 +2912,50 @@ const handleUnitChange = (newLevel: number) => {
                 </div>
               <button className="btn btn-primary" onClick={newBill}>
                 New Bill
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {qtyDialog && (
+        <div className="modal-overlay">
+          <div className="modal modal-sm">
+            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>Quantity — {qtyDialog.product.name}</h2>
+              <ModalCloseButton onClose={() => setQtyDialog(null)} />
+            </div>
+            <label className="field">
+              <span>Quantity (Enter ↑ / ↓ for quick adjust)</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                autoFocus
+                value={qtyDialogValue}
+                onChange={(e) => setQtyDialogValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === '\r' || e.key === '\n') {
+                    e.preventDefault();
+                    confirmQtyDialog();
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setQtyDialogValue((v) => String((parseInt(v, 10) || 1) + 1));
+                  } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setQtyDialogValue((v) => String(Math.max(1, (parseInt(v, 10) || 1) - 1)));
+                  } else if (e.key === 'Escape') {
+                    setQtyDialog(null);
+                  }
+                }}
+              />
+            </label>
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setQtyDialog(null)}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={confirmQtyDialog}>
+                Add {qtyDialogValue || '1'}
               </button>
             </div>
           </div>
@@ -2436,7 +2978,7 @@ const handleUnitChange = (newLevel: number) => {
               <input value={newCustPhone} onChange={(e) => setNewCustPhone(e.target.value)} />
             </label>
             <label className="field">
-              <span>Opening Balance (Rs)</span>
+              <span>Opening Balance ({getCurrencySymbol()})</span>
               <input
                 type="number"
                 min="0"
@@ -2974,11 +3516,11 @@ const handleUnitChange = (newLevel: number) => {
       boxShadow: '0 -4px 20px rgba(79, 70, 229, 0.3)', fontSize: 14, fontWeight: 600,
     }}>
       <span>{items.length} item{items.length > 1 ? 's' : ''} in bill</span>
-      <span style={{ fontSize: 20, fontWeight: 700 }}>Rs {finalTotal.toFixed(2)}</span>
+      <span style={{ fontSize: 20, fontWeight: 700 }}>{formatMoney(finalTotal)}</span>
       <button
         className="btn btn-sm"
         style={{ background: '#fff', color: 'var(--primary)', fontWeight: 700, border: 'none' }}
-        onClick={expressCheckout}
+        onClick={() => expressCheckout()}
         disabled={expressBusy || !shift}
       >
         ⚡ Pay Cash

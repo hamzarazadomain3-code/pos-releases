@@ -3,6 +3,7 @@ import { ModalCloseButton } from '../components/ModalCloseButton';
 import type { Customer, CustomerTransaction } from '../../../shared/types';
 import { DateRangePicker, SearchInput, FilterBar, FilterRow } from '../components/filters';
 import { formatDateTimeAdmin } from '../utils/dateUtils';
+import { getCurrencySymbol } from '../utils/currency';
 
 export default function Udhaar() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -206,7 +207,7 @@ export default function Udhaar() {
               <input value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
             </label>
             <label className="field">
-              <span>Opening Balance (Rs)</span>
+              <span>Opening Balance ({getCurrencySymbol()})</span>
               <input
                 type="number"
                 min="0"

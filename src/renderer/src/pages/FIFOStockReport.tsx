@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Product } from '../../../shared/types';
+import { formatMoney } from '../utils/currency';
 
 const fmt = (n: number) => n?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? '0';
 
@@ -73,7 +74,7 @@ export default function FIFOStockReport() {
           Strict Mode: {fifoStrict ? 'ON' : 'OFF'}
         </span>
         <span className="badge">
-          Total Value: Rs {fmt(grandTotal)}
+          Total Value: {formatMoney(grandTotal)}
         </span>
       </div>
 
@@ -95,7 +96,7 @@ export default function FIFOStockReport() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
               <h3 style={{ margin: 0 }}>{group.name}</h3>
               <span className="badge badge-ok">
-                {fmt(group.totalAvail)} avail · Rs {fmt(group.totalValue)}
+                {fmt(group.totalAvail)} avail · {formatMoney(group.totalValue)}
               </span>
             </div>
             <table className="data-table">
@@ -116,8 +117,8 @@ export default function FIFOStockReport() {
                     <td>{fmt(b.total_qty)}</td>
                     <td style={{ fontWeight: 600 }}>{fmt(b.available_qty)}</td>
                     <td>{fmt(b.total_qty - b.available_qty)}</td>
-                    <td>Rs {fmt(b.unit_cost)}</td>
-                    <td>Rs {fmt(b.total_value)}</td>
+                    <td>{formatMoney(b.unit_cost)}</td>
+                    <td>{formatMoney(b.total_value)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -1,12 +1,12 @@
 # 📊 GAP ANALYSIS & UPGRADE PLAN
-**ShopKeeper POS vs BILLTEN POS Feature Comparison**
+**Rokar POS vs BILLTEN POS Feature Comparison**
 
 ---
 
 ## 📋 EXECUTIVE SUMMARY
 
 ### Key Findings
-| Metric | BILLTEN | ShopKeeper POS | Gap |
+| Metric | BILLTEN | Rokar POS | Gap |
 |--------|---------|----------------|-----|
 | Sections Analyzed | 14 | 21 | +7 |
 | Lines of Analysis | 972 | ~3500 | +260% |
@@ -20,7 +20,7 @@
 | Shifts | Basic | Full (cash drawer ops) | ✓ |
 
 ### Overall Assessment
-**ShopKeeper POS is SIGNIFICANTLY more feature-rich than BILLTEN**, with comprehensive enhancements in:
+**Rokar POS is SIGNIFICANTLY more feature-rich than BILLTEN**, with comprehensive enhancements in:
 - Multi-language support (Urdu RTL)
 - Dark mode capabilities
 - Advanced inventory (batches, expiry, multi-unit)
@@ -36,17 +36,17 @@
 ### How to Read This Table
 | Status | Meaning |
 |--------|---------|
-| ✅ | Fully implemented in ShopKeeper |
+| ✅ | Fully implemented in Rokar |
 | ⚠️ | Partially implemented / buggy |
-| ❌ | Missing in ShopKeeper |
-| 🆕 | New feature in ShopKeeper |
+| ❌ | Missing in Rokar |
+| 🆕 | New feature in Rokar |
 
 ---
 
 ## 🔴 HIGH PRIORITY GAPS (Must Fix/Implement)
 
 ### 1. Mobile Responsiveness
-| Aspect | BILLTEN | ShopKeeper | Status | Priority | Impact |
+| Aspect | BILLTEN | Rokar | Status | Priority | Impact |
 |--------|---------|------------|--------|----------|--------|
 | Mobile layout | Not tested | Desktop-focused | ❌ | HIGH | Daily usage on phones/tablets |
 | Touch optimization | N/A | Not optimized | ❌ | HIGH | Poor UX on mobile |
@@ -55,7 +55,7 @@
 **Recommendation**: Implement responsive breakpoints and touch-friendly controls
 
 ### 2. Performance Optimization
-| Aspect | BILLTEN | ShopKeeper | Status | Priority | Impact |
+| Aspect | BILLTEN | Rokar | Status | Priority | Impact |
 |--------|---------|------------|--------|----------|--------|
 | Large dataset handling | Basic | Slow queries | ⚠️ | HIGH | 10k+ products sluggish |
 | Search speed | Fast | UI lag | ⚠️ | HIGH | Daily operation impact |
@@ -64,7 +64,7 @@
 **Recommendation**: Add server-side pagination, optimize SQLite queries
 
 ### 3. API Documentation
-| Aspect | BILLTEN | ShopKeeper | Status | Priority | Impact |
+| Aspect | BILLTEN | Rokar | Status | Priority | Impact |
 |--------|---------|------------|--------|----------|--------|
 | Developer docs | Missing | None | ❌ | HIGH | Maintenance difficulty |
 
@@ -75,21 +75,21 @@
 ## 🟠 MEDIUM PRIORITY GAPS
 
 ### 4. UI/UX Enhancements
-| Feature | BILLTEN | ShopKeeper | Status | Priority | Notes |
+| Feature | BILLTEN | Rokar | Status | Priority | Notes |
 |---------|---------|------------|--------|----------|-------|
 | **Animations** | Basic (hover) | Smooth (300ms) | 🆕 | MEDIUM | More advanced than BILLTEN |
 | **Skeleton screens** | Missing | Not implemented | ❌ | MEDIUM | Loading UX improve |
 | **Dark theme icons** | N/A | Not adapted | ⚠️ | MEDIUM | Icons may not show in dark |
 
 ### 5. Backup & Cloud Sync
-| Feature | BILLTEN | ShopKeeper | Status | Priority | Notes |
+| Feature | BILLTEN | Rokar | Status | Priority | Notes |
 |---------|---------|------------|--------|----------|-------|
 | Backup scheduling | N/A | Manual only | ⚠️ | MEDIUM | Auto-backup toggle needed |
 | Cloud restore | N/A | Supported | 🆕 | LOW | But no restore verification |
 | Backup encryption | N/A | Not verified | ❌ | MEDIUM | Security concern |
 
 ### 6. Test Coverage
-| | BILLTEN | ShopKeeper | Status | Priority |
+| | BILLTEN | Rokar | Status | Priority |
 |--|---------|------------|--------|----------|
 | Unit tests | Missing | Minimal | ❌ | MEDIUM |
 | Integration tests | Missing | None | ❌ | MEDIUM |
@@ -99,8 +99,8 @@
 
 ## 🟢 LOW PRIORITY / NICE TO HAVE
 
-### 7. Features ShopKeeper Has (Better than BILLTEN)
-| Feature | BILLTEN | ShopKeeper | Advantage |
+### 7. Features Rokar Has (Better than BILLTEN)
+| Feature | BILLTEN | Rokar | Advantage |
 |---------|---------|------------|-----------|
 | Price Look Up (PLU) | ❌ | ✅ (scaleBarcode) | Better retail ops |
 | Multi-unit conversion | ❌ | ✅ (Piece → Box → Gram) | Flexible inventory |
@@ -109,18 +109,18 @@
 | Social media sharing | ❌ | ❌ | Same |
 
 ### 8. Alternative Approaches
-| Feature | BILLTEN Approach | ShopKeeper Approach | Verdict |
+| Feature | BILLTEN Approach | Rokar Approach | Verdict |
 |---------|----------------|---------------------|---------|
-| Tax calculation | Simple rate | Multi-tax engine | ShopKeeper better |
-| CRD cards | Standard | WhatsApp integration | ShopKeeper better |
-| Reports export | Not shown | PDF + Excel | ShopKeeper better |
+| Tax calculation | Simple rate | Multi-tax engine | Rokar better |
+| CRD cards | Standard | WhatsApp integration | Rokar better |
+| Reports export | Not shown | PDF + Excel | Rokar better |
 
 ---
 
 ## 🎨 UI/UX COMPARISON
 
 ### Color Schemes
-| Property | BILLTEN | ShopKeeper | Difference |
+| Property | BILLTEN | Rokar | Difference |
 |----------|---------|------------|------------|
 | Primary Color | Red (#DC3545) | Blue (#3498db) | Mood change |
 | Secondary | Dark Navy | Darker bgcolor | Theme depth |
@@ -128,7 +128,7 @@
 | Contrast | Good | Excellent | WCAG compliant |
 
 ### Layout Differences
-| Element | BILLTEN | ShopKeeper | Notes |
+| Element | BILLTEN | Rokar | Notes |
 |---------|---------|------------|-------|
 | Sidebar | Tabs + Sidebar | Pure Sidebar | Cleaner on small screens |
 | Headers | Top tabs | Menu items | More organized |
@@ -196,10 +196,10 @@
 Copy and send this to OpenCode:
 
 ```
-# IMPLEMENTATION PROMPT: ShopKeeper POS Upgrade
+# IMPLEMENTATION PROMPT: Rokar POS Upgrade
 
 ## Objective
-Complete the full analysis and implement all missing features to bring ShopKeeper POS to production-ready status.
+Complete the full analysis and implement all missing features to bring Rokar POS to production-ready status.
 
 ## Tasks
 
@@ -287,6 +287,6 @@ Create: IMPLEMENTATION_REPORT.md with:
 **Comparison Date**: 2026-09-04
 **Sources**: 
 - BILLTEN: `/Users/[name]/Downloads/BILLTEN_COMPLETE_ANALYSIS.md`
-- ShopKeeper: Full codebase analysis (97 files)
+- Rokar: Full codebase analysis (97 files)
 
-> **Verdict**: ShopKeeper POS is already superior to BILLTEN in most aspects. Focus on performance optimization, mobile UX, and documentation to complete the upgrade.
+> **Verdict**: Rokar POS is already superior to BILLTEN in most aspects. Focus on performance optimization, mobile UX, and documentation to complete the upgrade.

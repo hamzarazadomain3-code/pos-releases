@@ -12,7 +12,7 @@ export function initLogger(): void {
   const day = todayLocal();
   logFile = path.join(logsDir, `app-${day}.log`);
   stream = fs.createWriteStream(logFile, { flags: 'a' });
-  log('=== ShopKeeper POS starting ===');
+  log('=== Rokar POS starting ===');
 }
 
 export function log(message: string): void {

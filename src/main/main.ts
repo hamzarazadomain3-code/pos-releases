@@ -37,6 +37,7 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      backgroundThrottling: false,
     },
   });
 
@@ -108,7 +109,7 @@ app.whenReady().then(async () => {
       licensing.registerIpc();
   } catch (err) {
     logError('startup (db/ipc)', err);
-    dialog.showErrorBox('ShopKeeper POS — Startup Error', String(err));
+    dialog.showErrorBox('Rokar POS — Startup Error', String(err));
     app.exit(1);
     return;
   }
@@ -184,6 +185,7 @@ app.on('window-all-closed', () => {
 
 ipcMain.handle('app:get-version', () => app.getVersion());
 ipcMain.handle('app:getLogPath', () => require('./logger').getLogFilePath());
+ipcMain.handle('app:quit', () => app.quit());
 
 // ── v1.8.0 Background Scheduler ──
 

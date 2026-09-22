@@ -37,6 +37,24 @@ export function updateShortcut(action: string, newKey: string): ShortcutRow {
   return db.prepare('SELECT * FROM shortcuts WHERE action = ?').get(action) as unknown as ShortcutRow;
 }
 
+export function createShortcut(action: string, shortcutKey: string): ShortcutRow {
+  if (!can('owner')) throw new Error('Only the owner can add shortcuts');
+  const db = getDb();
+
+  const existing = db.prepare('SELECT id FROM shortcuts WHERE action = ?').get(action) as { id: number } | undefined;
+  if (existing) {
+    throw new Error(`A shortcut for "${action}" already exists. Edit it instead.`);
+  }
+  const dupKey = db.prepare('SELECT id FROM shortcuts WHERE shortcut_key = ? AND is_active = 1').get(shortcutKey) as { id: number } | undefined;
+  if (dupKey) {
+    throw new Error(`Shortcut "${shortcutKey}" is already assigned to another action`);
+  }
+
+  db.prepare('INSERT INTO shortcuts (action, shortcut_key, is_active, updated_at) VALUES (?, ?, 1, CURRENT_TIMESTAMP)').run(action, shortcutKey);
+  logActivity('shortcut_created', 'shortcut', null, `action=${action} key=${shortcutKey}`);
+  return db.prepare('SELECT * FROM shortcuts WHERE action = ?').get(action) as unknown as ShortcutRow;
+}
+
 export function resetShortcuts(): void {
   if (!can('owner')) throw new Error('Only the owner can reset shortcuts');
   const db = getDb();
@@ -44,7 +62,7 @@ export function resetShortcuts(): void {
     ['new_sale', 'F2'],
     ['new_product', 'F5'],
     ['new_customer', 'F9'],
-    ['cash_drawer', 'F12'],
+    ['cash_drawer', 'Ctrl+D'],
     ['save', 'Ctrl+S'],
     ['print', 'Ctrl+P'],
     ['quit', 'Ctrl+Q'],

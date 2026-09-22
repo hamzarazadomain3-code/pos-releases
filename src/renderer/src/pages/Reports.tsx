@@ -38,6 +38,7 @@ import type {
   DailySnapshotResult,
 } from '../../../shared/types';
 import { formatDateAdmin, toLocalDateString } from '../utils/dateUtils';
+import { formatMoney, getCurrencySymbol } from '../utils/currency';
 
 type Tab =
   | 'sales'
@@ -379,7 +380,7 @@ export default function Reports() {
                   <YAxis />
                   <Tooltip formatter={(v: number) => fmt(v)} />
                   <Legend />
-                  <Line type="monotone" dataKey="total" stroke="#8884d8" strokeWidth={2} name="Sales (Rs)" />
+                  <Line type="monotone" dataKey="total" stroke="#8884d8" strokeWidth={2} name={`Sales (${getCurrencySymbol()})`} />
                </LineChart>
              </ResponsiveContainer>
            </div>
@@ -467,7 +468,7 @@ export default function Reports() {
                   <YAxis />
                   <Tooltip formatter={(v: number) => fmt(v)} />
                   <Legend />
-                  <Bar dataKey="revenue" fill="#8884d8" name="Revenue (Rs)" />
+                  <Bar dataKey="revenue" fill="#8884d8" name={`Revenue (${getCurrencySymbol()})`} />
                   <Bar dataKey="qty_sold" fill="#82ca9d" name="Units Sold" />
                </BarChart>
              </ResponsiveContainer>
@@ -969,7 +970,7 @@ export default function Reports() {
                 data={tax}
                 xlsx={{
                   name: 'tax-report',
-                  headers: ['Category', 'Sales (Rs)', 'Est. GST 17% (Rs)'],
+                  headers: [`Category`, `Sales (${getCurrencySymbol()})`, `Est. GST 17% (${getCurrencySymbol()})`],
                   rows: tax.taxByCategory.map((t) => [
                     t.category ?? 'Uncategorised',
                     t.sales,
@@ -983,8 +984,8 @@ export default function Reports() {
                 <thead>
                   <tr>
                     <th>Category</th>
-                    <th className="num">Sales (Rs</th>
-                    <th className="num">Est. GST 17% (Rs</th>
+                    <th className="num">Sales ({getCurrencySymbol()})</th>
+                    <th className="num">Est. GST 17% ({getCurrencySymbol()})</th>
                  </tr>
                </thead>
                 <tbody>

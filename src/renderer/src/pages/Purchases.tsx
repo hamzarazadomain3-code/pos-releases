@@ -3,6 +3,7 @@ import { ModalCloseButton } from '../components/ModalCloseButton';
 import type { Product, PurchaseItem, PurchaseOrder, PurchasePriceRow, Supplier, SupplierTransaction } from '../../../shared/types';
 import { DateRangePicker, SearchInput, FilterBar, FilterRow } from '../components/filters';
 import { formatDateTimeAdmin } from '../utils/dateUtils';
+import { useBarcodeScan } from '../hooks/useBarcodeScan';
 
 type Tab = 'suppliers' | 'orders';
 
@@ -30,6 +31,67 @@ export default function Purchases() {
   const [poSupplier, setPoSupplier] = useState('');
   const [lines, setLines] = useState<{ product_id: number; qty: string; unit_cost: string }[]>([]);
   const [poView, setPoView] = useState<{ order: PurchaseOrder; items: PurchaseItem[] } | null>(null);
+
+  // ── PO product search: staged Enter (1x select, 2x qty, 3x add) + barcode scan ──
+  const [poSearch, setPoSearch] = useState('');
+  const [poSearchStage, setPoSearchStage] = useState<'idle' | 'select' | 'qty'>('idle');
+  const [poSelIdx, setPoSelIdx] = useState(-1);
+  const [poQty, setPoQty] = useState('1');
+
+  const poMatches = products.filter((p) => {
+    if (!poSearch) return true;
+    const q = poSearch.trim().toLowerCase();
+    return (
+      p.name.toLowerCase().includes(q) ||
+      (p.sku ?? '').toLowerCase().includes(q) ||
+      (p.barcode ?? '').toLowerCase().includes(q)
+    );
+  });
+
+  const selectedPoProduct = () => {
+    if (poSearchStage === 'idle') return undefined;
+    const sel = poSelIdx >= 0 && poSelIdx < poMatches.length ? poMatches[poSelIdx] : undefined;
+    if (sel) return sel;
+    return poMatches.length > 0 ? poMatches[0] : undefined;
+  };
+
+  const addLineForProduct = (p: Product, qty = 1) => {
+    const existing = lines.findIndex((l) => l.product_id === p.id);
+    if (existing >= 0) {
+      const n = [...lines];
+      n[existing] = { ...n[existing], qty: String((Number(n[existing].qty) || 0) + qty) };
+      setLines(n);
+    } else {
+      setLines([...lines, { product_id: p.id, qty: String(qty), unit_cost: String(p.cost_price || '') }]);
+    }
+  };
+
+  const confirmPoAdd = () => {
+    const p = selectedPoProduct();
+    if (!p) return;
+    addLineForProduct(p, Math.max(1, Math.floor(Number(poQty)) || 1));
+    setPoSearch('');
+    setPoSearchStage('idle');
+    setPoSelIdx(-1);
+    setPoQty('1');
+  };
+
+  useBarcodeScan({
+    enabled: poModal,
+    onScan: (code) => {
+      window.api.inventory
+        .getByBarcode(code.trim())
+        .then((p) => {
+          if (!p) return setErr(`No product found for barcode "${code}"`);
+          addLineForProduct(p, 1);
+          setPoSearch('');
+          setPoSearchStage('idle');
+          setPoSelIdx(-1);
+          setPoQty('1');
+        })
+        .catch((e) => setErr(String(e)));
+    },
+  });
 
   const [priceHist, setPriceHist] = useState<PurchasePriceRow[]>([]);
   const [priceProd, setPriceProd] = useState<{ id: number; name: string } | null>(null);
@@ -101,6 +163,13 @@ export default function Purchases() {
 
   const poTotal = lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.unit_cost) || 0), 0);
 
+  const resetStagedSearch = () => {
+    setPoSearch('');
+    setPoSearchStage('idle');
+    setPoSelIdx(-1);
+    setPoQty('1');
+  };
+
   const savePo = async () => {
     if (!poSupplier) return setErr('Select a supplier');
     const items = lines
@@ -112,6 +181,7 @@ export default function Purchases() {
       setPoModal(false);
       setPoSupplier('');
       setLines([]);
+      resetStagedSearch();
       await load();
     } catch (e) {
       setErr(String(e));
@@ -234,7 +304,7 @@ export default function Purchases() {
               <button className="btn btn-sm" onClick={() => window.api.excel.exportPurchaseOrders({ status: status || undefined, from: from || undefined, to: to || undefined, supplierId: supplierId || undefined }).catch((e) => setErr(String(e)))}>
                 Export Excel
               </button>
-              <button className="btn btn-primary" onClick={() => setPoModal(true)}>
+              <button className="btn btn-primary" onClick={() => { resetStagedSearch(); setPoModal(true); }}>
                 New Purchase Order
               </button>
             </FilterRow>
@@ -319,10 +389,10 @@ export default function Purchases() {
       {poModal && (
         <div className="modal-overlay">
           <div className="modal modal-wide">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>New Purchase Order</h2>
-              <ModalCloseButton onClose={() => setPoModal(false)} />
-            </div>
+<div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <h2>New Purchase Order</h2>
+                <ModalCloseButton onClose={() => { resetStagedSearch(); setPoModal(false); }} />
+              </div>
             <label className="lbl">Supplier *</label>
             <select className="inp" value={poSupplier} onChange={(e) => setPoSupplier(e.target.value)}>
               <option value="">— select —</option>
@@ -332,6 +402,107 @@ export default function Purchases() {
                 </option>
               ))}
             </select>
+            <div style={{ marginTop: 12 }}>
+              <label className="lbl">Search / scan product (Enter 1× select, 2× qty, 3× add)</label>
+              <input
+                className="inp"
+                placeholder="Type name, SKU or barcode, or scan…"
+                value={poSearch}
+                onChange={(e) => {
+                  setPoSearch(e.target.value);
+                  setPoSearchStage('idle');
+                  setPoSelIdx(-1);
+                  setPoQty('1');
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    const count = poMatches.length;
+                    if (count === 0) return;
+                    e.preventDefault();
+                    setPoSelIdx((prev) => {
+                      const base = prev < 0 ? 0 : prev;
+                      const next = e.key === 'ArrowDown' ? (base + 1) % count : (base - 1 + count) % count;
+                      const el = document.querySelector(`[data-po-index="${next}"]`);
+                      (el as HTMLElement | undefined)?.scrollIntoView({ block: 'nearest' });
+                      return next;
+                    });
+                    setPoSearchStage('idle');
+                    return;
+                  }
+                  if (e.key === 'Enter' || e.key === '\r' || e.key === '\n') {
+                    e.preventDefault();
+                    if (poMatches.length === 0) return;
+                    if (poSearchStage === 'select') {
+                      setPoSearchStage('qty');
+                      return;
+                    }
+                    const sel = poSelIdx >= 0 && poSelIdx < poMatches.length ? poSelIdx : 0;
+                    setPoSelIdx(sel);
+                    const el = document.querySelector(`[data-po-index="${sel}"]`);
+                    (el as HTMLElement | undefined)?.scrollIntoView({ block: 'nearest' });
+                    setPoSearchStage('select');
+                    return;
+                  }
+                  if (e.key === 'Escape' || e.key === 'Esc') {
+                    setPoSearch('');
+                    setPoSearchStage('idle');
+                    setPoSelIdx(-1);
+                    setPoQty('1');
+                  }
+                }}
+              />
+              {poSearch && poMatches.length > 0 && (
+                <div className="search-result-dropdown">
+                  {poMatches.slice(0, 30).map((p, i) => (
+                    <button
+                      key={p.id}
+                      data-po-index={i}
+                      type="button"
+                      className={`search-result-item${i === poSelIdx ? ' highlighted' : ''}${poSearchStage === 'select' && poSelIdx === i ? ' selected' : ''}`}
+                      onMouseEnter={() => setPoSelIdx(i)}
+                      onClick={() => {
+                        if (poSearchStage === 'select' && poSelIdx === i) setPoSearchStage('qty');
+                        else {
+                          setPoSelIdx(i);
+                          setPoSearchStage('qty');
+                        }
+                      }}
+                    >
+                      <span className="psr-name">{p.name}</span>
+                      <span className="psr-meta">
+                        cost {p.cost_price}
+                        {p.barcode ? ` • ${p.barcode}` : p.sku ? ` • ${p.sku}` : ''}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {poSearchStage === 'qty' && selectedPoProduct() && (
+                <div className="quantity-input-box">
+                  <span>{selectedPoProduct()!.name} — Qty:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={9999}
+                    autoFocus
+                    value={poQty}
+                    onChange={(e) => setPoQty(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === '\r' || e.key === '\n') {
+                        e.preventDefault();
+                        confirmPoAdd();
+                        return;
+                      }
+                      if (e.key === 'Escape' || e.key === 'Esc') setPoSearchStage('select');
+                    }}
+                  />
+                  <button className="btn btn-sm btn-primary" onClick={confirmPoAdd}>
+                    Add {Math.max(1, Math.floor(Number(poQty)) || 1)}
+                  </button>
+                  <button className="btn btn-sm" onClick={() => setPoSearchStage('select')}>Cancel</button>
+                </div>
+              )}
+            </div>
             <table className="tbl">
               <thead>
                 <tr>
@@ -420,6 +591,7 @@ export default function Purchases() {
                   setPoModal(false);
                   setPoSupplier('');
                   setLines([]);
+                  resetStagedSearch();
                 }}
               >
                 Cancel
