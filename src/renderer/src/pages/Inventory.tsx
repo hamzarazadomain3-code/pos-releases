@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import bwipjs from 'bwip-js';
 import { ModalCloseButton } from '../components/ModalCloseButton';
 import { formatDateTimeAdmin } from '../utils/dateUtils';
@@ -103,7 +103,7 @@ export default function Inventory() {
   const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([]);
   const [lowStockCount, setLowStockCount] = useState(0);
   const [search, setSearch] = useState('');
-  // ── Staged search (Enter 1x select, 2x open Edit) + barcode scan ──
+  // â”€â”€ Staged search (Enter 1x select, 2x open Edit) + barcode scan â”€â”€
   const [searchStage, setSearchStage] = useState<'idle' | 'select'>('idle');
   const [searchSelIdx, setSearchSelIdx] = useState(-1);
   const [scanHighlight, setScanHighlight] = useState<number | null>(null);
@@ -662,7 +662,7 @@ export default function Inventory() {
                 {expiring.map((e) => (
                   <tr key={e.id} className={e.days_left < 0 ? 'row-expired' : e.days_left <= 7 ? 'row-expiring' : ''}>
                     <td>{e.name}</td>
-                    <td>{e.category_name ?? '—'}</td>
+                    <td>{e.category_name ?? 'â€”'}</td>
                     <td className="num">{Number(e.stock_qty.toFixed(3))}</td>
                     <td>{e.expiry_date}</td>
                     <td className={`num ${e.days_left < 0 ? 'text-warn' : e.days_left <= 7 ? 'text-warn' : ''}`}>
@@ -680,9 +680,9 @@ export default function Inventory() {
         <div className="search-result-item highlighted">
           <span className="psr-name">{selectedShownProduct()!.name}</span>
           <span className="psr-meta">
-            {selectedShownProduct()!.stock_qty} in stock • barcode {selectedShownProduct()!.barcode ?? '—'}
+            {selectedShownProduct()!.stock_qty} in stock â€¢ barcode {selectedShownProduct()!.barcode ?? 'â€”'}
           </span>
-          <span className="search-hint">Enter ×1 = selected, press Enter again to open Edit</span>
+          <span className="search-hint">Enter Ã—1 = selected, press Enter again to open Edit</span>
         </div>
       )}
 
@@ -719,7 +719,7 @@ export default function Inventory() {
                       {p.image ? (
                         <img src={p.image} alt="" className="product-thumb" loading="lazy" />
                       ) : (
-                        <div className="product-thumb-placeholder">🖼</div>
+                        <div className="product-thumb-placeholder">ðŸ–¼</div>
                       )}
                       <div>
                         <strong>{p.name}</strong>
@@ -733,15 +733,15 @@ export default function Inventory() {
                         <BarcodeCanvas text={p.barcode} />
                       </div>
                     ) : (
-                      <span className="muted">—</span>
+                      <span className="muted">â€”</span>
                     )}
                   </td>
-                  <td>{p.category_name ?? '—'}</td>
-                  <td>{p.unit_symbol ?? '—'}</td>
+                  <td>{p.category_name ?? 'â€”'}</td>
+                  <td>{p.unit_symbol ?? 'â€”'}</td>
                   <td>{p.cost_price.toLocaleString()}</td>
                   <td>{p.sale_price.toLocaleString()}</td>
-                  <td>{p.wholesale_price != null ? p.wholesale_price.toLocaleString() : '—'}</td>
-                  <td>{p.shelf_location ?? '—'}</td>
+                  <td>{p.wholesale_price != null ? p.wholesale_price.toLocaleString() : 'â€”'}</td>
+                  <td>{p.shelf_location ?? 'â€”'}</td>
                   <td className={`num ${low(p) ? 'text-warn' : ''}`}>
                     {Number(p.stock_qty.toFixed(3))} {p.low_stock_threshold > 0 && low(p) ? '(low)' : ''}
                   </td>
@@ -755,7 +755,7 @@ export default function Inventory() {
                         <span>{p.expiry_date} ({dn}d)</span>
                       )
                     ) : (
-                      <span className="muted">—</span>
+                      <span className="muted">â€”</span>
                     )}
                   </td>
                   <td>
@@ -772,10 +772,18 @@ export default function Inventory() {
                       <button className="btn btn-sm" onClick={() => openBatches(p)}>
                         Batches
                       </button>
-                      <button className="btn btn-sm" onClick={() => window.api.printing.printLabel(p.id, 1)} title="Sticker with name, price and barcode">
+                      <button className="btn btn-sm" onClick={() => {
+                        window.api.printing.printLabel(p.id, 1)
+                          .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+                          .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
+                      }} title="Sticker with shop name, product name, price, expiry date and barcode">
                         Label
                       </button>
-                      <button className="btn btn-sm" onClick={() => window.api.printing.printBarcodeLabel(p.id, 1)} title="Barcode-only sticker (no name/price)">
+                      <button className="btn btn-sm" onClick={() => {
+                        window.api.printing.printBarcodeLabel(p.id, 1)
+                          .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+                          .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
+                      }} title="Barcode-only sticker (shop name and barcode, no name or price)">
                         Barcode
                       </button>
                       <button className="btn btn-sm btn-danger" onClick={() => handleDelete(p)}>
@@ -843,7 +851,7 @@ export default function Inventory() {
                   value={form.category_id}
                   onChange={(e) => setForm({ ...form, category_id: e.target.value })}
                 >
-                  <option value="">— none —</option>
+                  <option value="">â€” none â€”</option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -876,7 +884,7 @@ export default function Inventory() {
                     });
                   }}
                 >
-                  <option value="">— none —</option>
+                  <option value="">â€” none â€”</option>
                   {units.map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.name} ({u.symbol})
@@ -1013,7 +1021,7 @@ export default function Inventory() {
                             onChange={(e) => updateUnit(i, { name: e.target.value })}
                             placeholder="Base unit name"
                           />
-                          <span className="unit-qty-fixed muted">1 × base</span>
+                          <span className="unit-qty-fixed muted">1 Ã— base</span>
                           <span className="badge badge-primary">Base</span>
                         </>
                       ) : (
@@ -1051,7 +1059,7 @@ export default function Inventory() {
                             onClick={() => removeUnit(i)}
                             title="Remove level"
                           >
-                            ×
+                            Ã—
                           </button>
                         </>
                       )}
@@ -1064,7 +1072,7 @@ export default function Inventory() {
                 <span className="muted small">
                   Base unit (qty 1) cannot be removed. Packaging levels convert to base units when sold.
                   Products with a Kilogram base unit automatically get a <strong>Gram</strong> selling
-                  option — the cashier can then type e.g. 250 and the system calculates the price from
+                  option â€” the cashier can then type e.g. 250 and the system calculates the price from
                   the Kilogram rate.
                 </span>
               </div>
@@ -1094,10 +1102,10 @@ export default function Inventory() {
               <ModalCloseButton onClose={() => setStockModal(null)} />
             </div>
             <p className="muted">
-              {stockModal.product.name} — current stock: <strong>{Number(stockModal.product.stock_qty.toFixed(3))}</strong>
+              {stockModal.product.name} â€” current stock: <strong>{Number(stockModal.product.stock_qty.toFixed(3))}</strong>
             </p>
             <label className="field">
-              <span>Quantity (+in / −out)</span>
+              <span>Quantity (+in / âˆ’out)</span>
               <input
                 type="number"
                 value={stockQty}
@@ -1126,7 +1134,7 @@ export default function Inventory() {
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>Stock History — {movements.product.name}</h2>
+              <h2>Stock History â€” {movements.product.name}</h2>
               <ModalCloseButton onClose={() => setMovements(null)} />
             </div>
             <div className="table-wrap">
@@ -1141,12 +1149,12 @@ export default function Inventory() {
                 <tbody>
                   {movements.rows.map((m) => (
                     <tr key={m.id}>
-                      <td>{m.created_at ? formatDateTimeAdmin(m.created_at) : '—'}</td>
+                      <td>{m.created_at ? formatDateTimeAdmin(m.created_at) : 'â€”'}</td>
                       <td className={m.change_qty >= 0 ? 'text-ok' : 'text-warn'}>
                         {m.change_qty > 0 ? '+' : ''}
                         {m.change_qty}
                       </td>
-                      <td>{m.reason ?? '—'}</td>
+                      <td>{m.reason ?? 'â€”'}</td>
                     </tr>
                   ))}
                   {movements.rows.length === 0 && (
@@ -1221,7 +1229,7 @@ export default function Inventory() {
         <div className="modal-overlay">
           <div className="modal modal-wide">
             <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>Batch Details — {batches.product.name}</h2>
+              <h2>Batch Details â€” {batches.product.name}</h2>
               <ModalCloseButton onClose={() => setBatches(null)} />
             </div>
             <div className="table-wrap">
@@ -1241,8 +1249,8 @@ export default function Inventory() {
                       <td><strong>{b.batch_number}</strong></td>
                       <td className="num">{b.quantity}</td>
                       <td className="num">{b.cost_price.toLocaleString()}</td>
-                      <td>{b.expiry_date ?? '—'}</td>
-                      <td>{b.received_date ? formatDateTimeAdmin(b.received_date) : '—'}</td>
+                      <td>{b.expiry_date ?? 'â€”'}</td>
+                      <td>{b.received_date ? formatDateTimeAdmin(b.received_date) : 'â€”'}</td>
                     </tr>
                   ))}
                   {batches.rows.length === 0 && (
@@ -1288,8 +1296,8 @@ export default function Inventory() {
                         <td><strong>{b.batch_number}</strong></td>
                         <td className="num">{b.quantity}</td>
                         <td className="num">{b.cost_price.toLocaleString()}</td>
-                        <td>{b.expiry_date ?? '—'}</td>
-                        <td>{b.received_date ? formatDateTimeAdmin(b.received_date) : '—'}</td>
+                        <td>{b.expiry_date ?? 'â€”'}</td>
+                        <td>{b.received_date ? formatDateTimeAdmin(b.received_date) : 'â€”'}</td>
                       </tr>
                     ))}
                   {stockReceived.length === 0 && (

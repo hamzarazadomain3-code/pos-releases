@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import JsBarcode from 'jsbarcode';
 import type { Product } from '../../../shared/types';
-import { formatMoney, getCurrencySymbol } from '../utils/currency';
+import { formatMoney } from '../utils/currency';
 
 type LabelSize = '38x25' | '50x30' | '100x50';
+type LabelLayout = 'roll' | 'sheet';
 
 const GRID_COLS: Record<LabelSize, string> = {
-  '38x25': 'repeat(8, 38mm)',
-  '50x30': 'repeat(6, 50mm)',
-  '100x50': 'repeat(3, 100mm)',
+  '38x25': 'repeat(4, 38mm)',
+  '50x30': 'repeat(3, 50mm)',
+  '100x50': 'repeat(1, 100mm)',
 };
 
 const LABEL_W: Record<LabelSize, string> = { '38x25': '38mm', '50x30': '50mm', '100x50': '100mm' };
@@ -19,9 +20,13 @@ export default function BarcodeGenerator() {
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProducts, setSelectedProducts] = useState<Set<number>>(new Set());
   const [labelSize, setLabelSize] = useState<LabelSize>('38x25');
+  const [labelLayout, setLabelLayout] = useState<LabelLayout>('roll');
+  const [copies, setCopies] = useState(1);
+  const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [shopName, setShopName] = useState('');
+  const [showPreview, setShowPreview] = useState(true);
   const printAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -32,6 +37,15 @@ export default function BarcodeGenerator() {
     window.api.settings
       .getAll()
       .then((s) => setShopName(s['shop_name'] || ''))
+      .catch(() => undefined);
+    window.api.printing
+      .getPrinterSettings()
+      .then((s) => {
+        if (s.labelPaper === '38x25' || s.labelPaper === '50x30' || s.labelPaper === '100x50') {
+          setLabelSize(s.labelPaper);
+        }
+        if (s.labelLayout === 'sheet' || s.labelLayout === 'roll') setLabelLayout(s.labelLayout);
+      })
       .catch(() => undefined);
   }, []);
 
@@ -70,9 +84,9 @@ export default function BarcodeGenerator() {
   };
 
   useEffect(() => {
-    renderBarcodes();
+    if (showPreview) renderBarcodes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProducts, labelSize, products]);
+  }, [selectedProducts, labelSize, products, showPreview]);
 
   const toggleProduct = (id: number) => {
     setSelectedProducts((prev) => {
@@ -89,9 +103,52 @@ export default function BarcodeGenerator() {
     );
   };
 
-  const handlePrint = () => {
-    renderBarcodes();
-    setTimeout(() => window.print(), 400);
+  const selectedIds = () => Array.from(selectedProducts);
+
+  const report = (r: { ok: boolean; message: string } | undefined) => {
+    if (!r) return;
+    if (r.ok) {
+      setNotice(null);
+    } else {
+      setNotice(r.message);
+    }
+  };
+
+  /**
+   * Printing is done in the main process via webContents.print() with an
+   * explicit page size. The previous implementation called window.print() from
+   * the renderer, which Electron cannot service — it fails with "This app
+   * doesn't support print preview" and never reaches the spooler. It also could
+   * not set a page size, so labels printed as full A4 pages with a tiny label in
+   * the middle.
+   */
+  const handlePrint = async () => {
+    setBusy(true);
+    try {
+      const r = await window.api.printing.printBarcodeBatch(selectedIds(), labelSize, copies);
+      if (r.ok) {
+        setNotice(
+          `${selectedProducts.size} product(s) x ${copies} = ${selectedProducts.size * copies} label(s) sent to the label printer.`
+        );
+      } else {
+        setNotice(r.message);
+      }
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handlePreview = async () => {
+    setBusy(true);
+    try {
+      report(await window.api.printing.previewBarcodeBatch(selectedIds(), labelSize, copies));
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const filtered = products.filter(
@@ -109,25 +166,66 @@ export default function BarcodeGenerator() {
         <div className="toolbar">
           <select
             value={labelSize}
-            onChange={(e) => setLabelSize(e.target.value as LabelSize)}
+            onChange={async (e) => {
+              const v = e.target.value as LabelSize;
+              setLabelSize(v);
+              await window.api.printing.setPaper('label', v).catch(() => undefined);
+            }}
             className="field-select"
             style={{ padding: '6px' }}
+            title="Physical label size"
           >
             <option value="38x25">38mm × 25mm (Thermal)</option>
             <option value="50x30">50mm × 30mm</option>
             <option value="100x50">100mm × 50mm (Large)</option>
           </select>
+          <select
+            value={labelLayout}
+            onChange={async (e) => {
+              const v = e.target.value as LabelLayout;
+              setLabelLayout(v);
+              await window.api.printing.setLabelLayout(v).catch(() => undefined);
+            }}
+            className="field-select"
+            style={{ padding: '6px' }}
+            title="Roll media (one label wide) or A4 label sheets (grid)"
+          >
+            <option value="roll">Label roll (1 across)</option>
+            <option value="sheet">A4 label sheet (grid)</option>
+          </select>
+          <label className="field" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span>Copies</span>
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={copies}
+              onChange={(e) => setCopies(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+              className="field-input"
+              style={{ width: '64px', padding: '6px' }}
+            />
+          </label>
+          <button
+            className="btn"
+            onClick={handlePreview}
+            disabled={selectedProducts.size === 0 || busy}
+          >
+            Preview Labels
+          </button>
           <button
             className="btn btn-primary"
             onClick={handlePrint}
-            disabled={selectedProducts.size === 0}
+            disabled={selectedProducts.size === 0 || busy}
           >
-            Print {selectedProducts.size} Labels
+            {busy ? 'Printing…' : `Print ${selectedProducts.size * copies} Label${selectedProducts.size * copies === 1 ? '' : 's'}`}
           </button>
           <button className="btn" onClick={selectAll}>
             {selectedProducts.size === products.length && products.length > 0
               ? 'Deselect All'
               : 'Select All'}
+          </button>
+          <button className="btn" onClick={() => setShowPreview((v) => !v)}>
+            {showPreview ? 'Hide Preview' : 'Show Preview'}
           </button>
         </div>
       </div>
@@ -163,6 +261,7 @@ export default function BarcodeGenerator() {
             <span className="result-meta">
               {formatMoney(p.sale_price)}
               {p.barcode ? ` • ${p.barcode}` : p.sku ? ` • ${p.sku}` : ' • no barcode'}
+              {p.expiry_date ? ` • exp ${fmtExpiry(p.expiry_date)}` : ''}
               {p.stock_qty > 0 ? ` • ${Number(p.stock_qty.toFixed(3))} in stock` : ' • out of stock'}
             </span>
           </label>
@@ -170,115 +269,130 @@ export default function BarcodeGenerator() {
         {filtered.length === 0 && <div className="muted center pad">No products found</div>}
       </div>
 
-      {/* Print area — hidden on screen, visible only in the print output */}
-      <div ref={printAreaRef} id="barcode-sheet" style={{ display: 'none', padding: '5mm' }}>
-        {selectedProducts.size > 0 && (
-          <div
-            className="barcode-grid"
-            style={{
-              display: 'grid',
-              gridTemplateColumns: GRID_COLS[labelSize],
-              gap: '2mm',
-              justifyContent: 'start',
-            }}
-          >
-            {products
-              .filter((p) => selectedProducts.has(p.id))
-              .map((p) => (
-                <div
-                  key={p.id}
-                  style={{
-                    width: LABEL_W[labelSize],
-                    height: LABEL_H[labelSize],
-                    border: '1px solid #ccc',
-                    padding: '1.5mm',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    textAlign: 'center',
-                    overflow: 'hidden',
-                    fontSize: labelSize === '38x25' ? '6pt' : '9pt',
-                    fontFamily: 'Arial, sans-serif',
-                    pageBreakInside: 'avoid',
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: labelSize === '38x25' ? '5pt' : '7pt',
-                      lineHeight: 1.1,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.02em',
-                      fontWeight: 600,
-                      maxWidth: '100%',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {shopName || p.name}
-                  </div>
-                  <div
-                    style={{
-                      fontWeight: 'bold',
-                      fontSize: labelSize === '38x25' ? '6.5pt' : '9pt',
-                      lineHeight: 1.15,
-                      maxWidth: '100%',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {p.name}
-                  </div>
-                  <svg
-                    id={`barcode-${p.id}`}
-                    style={{
-                      maxHeight: labelSize === '38x25' ? '10mm' : '18mm',
-                      maxWidth: '100%',
-                    }}
-                  />
-                  <div
-                    style={{
-                      fontSize: labelSize === '38x25' ? '5pt' : '7pt',
-                      lineHeight: 1,
-                      fontFamily: 'monospace',
-                      fontStyle: 'italic',
-                    }}
-                  >
-                    {barcodeText(p)}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: labelSize === '38x25' ? '5.5pt' : '8pt',
-                      lineHeight: 1.2,
-                      fontWeight: 'bold',
-                      maxWidth: '100%',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {formatMoney(p.sale_price)}
-                    {fmtExpiry(p.expiry_date) ? ` | Exp: ${fmtExpiry(p.expiry_date)}` : ''}
-                  </div>
-                  <div style={{ fontSize: labelSize === '38x25' ? '4.5pt' : '6.5pt', lineHeight: 1 }}>
-                    {todayStr()}
-                  </div>
-                </div>
-              ))}
+      {/*
+        On-screen preview only. The real printed document is generated in the main
+        process (services/labelTemplates.ts) so the same barcodes, prices and
+        expiry dates reach the printer — this sheet is never what gets printed.
+      */}
+      {showPreview && (
+        <div
+          ref={printAreaRef}
+          id="barcode-sheet"
+          style={{
+            marginTop: '16px',
+            padding: '5mm',
+            background: '#fff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '6px',
+            overflowX: 'auto',
+          }}
+        >
+          <div className="muted" style={{ marginBottom: '6px', fontSize: '12px' }}>
+            On-screen preview — {selectedProducts.size} selected × {copies} cop{selectedProducts.size * copies === 1 ? 'y' : 'ies'},
+            laid out on {labelSize === '38x25' ? '38 × 25mm' : labelSize === '50x30' ? '50 × 30mm' : '100 × 50mm'} label
+            stock{labelLayout === 'sheet' ? ' (A4 sheet grid)' : ' (roll, one across)'}. The printed document is
+            generated separately in the main process.
           </div>
-        )}
-      </div>
-
-      <style>{`
-        @media print {
-          body * { display: none; }
-          #barcode-sheet { display: block !important; }
-          #barcode-sheet .barcode-grid { display: grid !important; }
-          #barcode-sheet .barcode-grid > div { page-break-inside: avoid; }
-        }
-      `}</style>
+          {selectedProducts.size > 0 ? (
+            <div
+              className="barcode-grid"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: labelLayout === 'roll' ? `repeat(1, ${LABEL_W[labelSize]})` : GRID_COLS[labelSize],
+                gap: '2mm',
+                justifyContent: 'start',
+              }}
+            >
+              {products
+                .filter((p) => selectedProducts.has(p.id))
+                .map((p) => (
+                  <div
+                    key={p.id}
+                    style={{
+                      width: LABEL_W[labelSize],
+                      height: LABEL_H[labelSize],
+                      border: '0.2mm solid #bbb',
+                      borderRadius: '1mm',
+                      padding: '1mm',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      textAlign: 'center',
+                      overflow: 'hidden',
+                      fontSize: labelSize === '38x25' ? '5.5pt' : '7pt',
+                      fontFamily: 'Arial, sans-serif',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: labelSize === '38x25' ? '4pt' : '5.5pt',
+                        lineHeight: 1.1,
+                        textTransform: 'uppercase',
+                        fontWeight: 700,
+                        maxWidth: '100%',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {shopName || p.name}
+                    </div>
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        fontSize: labelSize === '38x25' ? '5.5pt' : '7pt',
+                        lineHeight: 1.1,
+                        maxWidth: '100%',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {p.name}
+                    </div>
+                    <svg
+                      id={`barcode-${p.id}`}
+                      style={{ maxHeight: labelSize === '38x25' ? '8mm' : labelSize === '50x30' ? '10mm' : '15mm' }}
+                    />
+                    <div
+                      style={{
+                        fontSize: labelSize === '38x25' ? '4.4pt' : '6pt',
+                        lineHeight: 1,
+                        fontFamily: 'monospace',
+                        maxWidth: '100%',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {barcodeText(p)}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: labelSize === '38x25' ? '4.8pt' : '6.5pt',
+                        lineHeight: 1.1,
+                        fontWeight: 700,
+                        maxWidth: '100%',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {formatMoney(p.sale_price)}
+                      {fmtExpiry(p.expiry_date) ? ` | Exp: ${fmtExpiry(p.expiry_date)}` : ''}
+                    </div>
+                    <div style={{ fontSize: labelSize === '38x25' ? '4pt' : '5.5pt', lineHeight: 1 }}>
+                      {todayStr()}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <div className="muted center pad">Select products above to preview their labels</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -11,6 +11,8 @@
     "dev:main": "tsc -p tsconfig.main.json -w",
     "dev:electron": "wait-on tcp:5173 && wait-on dist/main/main.js dist/preload/preload.js && cross-env NODE_ENV=development electron .",
     "dev": "concurrently -k -n vite,main,electron -c blue,green,magenta \"npm:dev:vite\" \"npm:dev:main\" \"npm:dev:electron\"",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json",
+    "test:print": "npm run build:main && electron scripts/print_smoke.js",
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
     "build": "npm run build:main && npm run build:renderer",

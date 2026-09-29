@@ -751,6 +751,48 @@ export interface BackupResult {
   cloudError: string | null;
 }
 
+export interface PrinterInfo {
+  name: string;
+  displayName: string;
+  description: string;
+  isDefault: boolean;
+  /** File-output / OneNote / fax-style software printers — they never print to paper. */
+  isVirtual: boolean;
+}
+
+export interface PaperSpecInfo {
+  kind: string;
+  label: string;
+  widthMm: number;
+  contentMm: number;
+  padMm: number;
+  fixedHeightMm: number | null;
+}
+
+export interface LabelSpecInfo {
+  kind: string;
+  label: string;
+  w: number;
+  h: number;
+  sheetCols: number;
+  gap: number;
+  barH: number;
+  fontPt: number;
+}
+
+export interface PrinterSettingsSnapshot {
+  receiptPrinter: string;
+  invoicePrinter: string;
+  labelPrinter: string;
+  receiptPaper: string;
+  invoicePaper: string;
+  labelPaper: string;
+  labelLayout: 'roll' | 'sheet';
+  printMode: 'silent' | 'dialog';
+  papers: Record<string, PaperSpecInfo>;
+  labelSizes: Record<string, LabelSpecInfo>;
+}
+
 export interface PrintResult {
   ok: boolean;
   message: string;
@@ -822,11 +864,19 @@ export interface PosBridge {
     printSale: (saleId: number, template?: string) => Promise<PrintResult>;
     printLabel: (productId: number, copies?: number) => Promise<PrintResult>;
     printBarcodeLabel: (productId: number, copies?: number) => Promise<PrintResult>;
+    printBarcodeBatch: (productIds: number[], size?: string, copies?: number) => Promise<PrintResult>;
+    previewBarcodeBatch: (productIds: number[], size?: string, copies?: number) => Promise<PrintResult>;
     openCashDrawer: () => Promise<{ ok: boolean; message: string }>;
-    previewReceipt: (saleId: number, template?: string) => Promise<boolean>;
-    previewInvoice: (saleId: number) => Promise<boolean>;
+    previewReceipt: (saleId: number, template?: string) => Promise<PrintResult>;
+    previewInvoice: (saleId: number) => Promise<PrintResult>;
     printInvoice: (saleId: number) => Promise<PrintResult>;
     printDrawerSummary: (data: { opening_cash: number; closing_cash: number; cash_sales: number; card_sales: number; udhaar_sales: number; other_payments: number; cash_refunds: number; cash_in: number; cash_out: number; expected_cash: number; actual_cash: number; variance: number; opened_at: string; closed_at: string; cashier: string; notes?: string }) => Promise<PrintResult>;
+    getPrinters: () => Promise<PrinterInfo[]>;
+    getPrinterSettings: () => Promise<PrinterSettingsSnapshot>;
+    setPrinter: (slot: string, printer: string) => Promise<{ ok: boolean; message: string }>;
+    setPaper: (slot: string, paper: string) => Promise<{ ok: boolean; message: string }>;
+    setLabelLayout: (layout: string) => Promise<{ ok: boolean; message: string }>;
+    printTestSheet: (paper?: string) => Promise<PrintResult>;
   };
   licensing: {
     activate: (key: string) => Promise<string>;

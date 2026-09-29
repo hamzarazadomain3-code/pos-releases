@@ -808,7 +808,7 @@ useEffect(() => {
       if ((autoPrintReceipt || opts?.forcePrint) && result.sale?.id) {
         window.api.printing.printSale(result.sale.id, receiptTemplate)
           .then((r) => { if (r && r.ok === false) setNotice(`Auto-print failed: ${r.message}`); })
-          .catch(() => undefined);
+          .catch((e) => setNotice(`Auto-print failed: ${e instanceof Error ? e.message : String(e)}`));
       }
       return true;
     } catch (e) {
@@ -1454,7 +1454,7 @@ function openPay() {
       if (autoPrintReceipt && result.sale?.id) {
         window.api.printing.printSale(result.sale.id, receiptTemplate)
           .then((r) => { if (r && r.ok === false) setNotice(`Auto-print failed: ${r.message}`); })
-          .catch(() => undefined);
+          .catch((e) => setNotice(`Auto-print failed: ${e instanceof Error ? e.message : String(e)}`));
       }
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
@@ -2832,7 +2832,10 @@ const handleUnitChange = (newLevel: number) => {
                 <button
                   className="btn"
                   onClick={() => {
-                    window.api.printing.previewReceipt(success.sale.id, receiptTemplate).catch((e) => setNotice(e.message));
+                    window.api.printing
+                      .previewReceipt(success.sale.id, receiptTemplate)
+                      .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+                      .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
                   }}
                 >
                   Preview Receipt
@@ -2850,7 +2853,10 @@ const handleUnitChange = (newLevel: number) => {
                 <button
                   className="btn"
                   onClick={() => {
-                    window.api.printing.previewInvoice(success.sale.id).catch((e) => setNotice(e.message));
+                    window.api.printing
+                      .previewInvoice(success.sale.id)
+                      .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+                      .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
                   }}
                 >
                   Preview Invoice
@@ -3277,7 +3283,11 @@ const handleUnitChange = (newLevel: number) => {
               <h2>Sale Detail — {saleDetail.invoice_no}</h2>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button className="btn btn-secondary" onClick={handleConvertToReturn}>Convert to Return</button>
-                <button className="btn btn-secondary" onClick={() => window.api.printing.printSale(saleDetail.id)}>Reprint Receipt</button>
+                <button className="btn btn-secondary" onClick={() => {
+                  window.api.printing.printSale(saleDetail.id)
+                    .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+                    .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
+                }}>Reprint Receipt</button>
                 <button className="btn btn-primary" onClick={handleDuplicateAsNewSale}>Duplicate as New Sale</button>
                 <button className="btn" onClick={() => setSaleDetail(null)}>Close</button>
               </div>
@@ -3341,7 +3351,11 @@ const handleUnitChange = (newLevel: number) => {
 
             <div className="modal-actions" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
               <button className="btn btn-secondary" onClick={handleConvertToReturn}>Convert to Return</button>
-              <button className="btn btn-secondary" onClick={() => window.api.printing.printSale(saleDetail.id)}>Reprint Receipt</button>
+              <button className="btn btn-secondary" onClick={() => {
+                window.api.printing.printSale(saleDetail.id)
+                  .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+                  .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
+              }}>Reprint Receipt</button>
               <button className="btn btn-primary" onClick={handleDuplicateAsNewSale}>Duplicate as New Sale</button>
               <button className="btn" onClick={() => setSaleDetail(null)}>Close</button>
             </div>

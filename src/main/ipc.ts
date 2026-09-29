@@ -36,8 +36,34 @@ import {
   voidSale,
 } from './services/sales';
 import { getAllSettings, setSetting } from './services/settings';
-import { printLabel, printBarcodeLabel, printSale, previewReceipt, previewInvoice, printInvoice, openCashDrawer, printDrawerSummary } from './services/printing';
-import { getAvailableTemplates, type ReceiptTemplate } from './services/receiptTemplates';
+import {
+  printLabel,
+  printBarcodeLabel,
+  printBarcodeBatch,
+  previewBarcodeBatch,
+  printSale,
+  previewReceipt,
+  previewInvoice,
+  printInvoice,
+  printDrawerSummary,
+  printTestSheet,
+  openCashDrawer,
+  AUTO_PRINTER,
+  type ReceiptTemplate,
+  type LabelSize,
+  type PaperKind,
+} from './services/printing';
+import { getAvailableTemplates } from './services/receiptTemplates';
+import {
+  getAvailablePrinters,
+  getConfiguredPrinter,
+  getConfiguredPaper,
+  getLabelLayout,
+  getPrintMode,
+  invalidatePrinterCache,
+  PAPER_SPECS,
+  LABEL_SPECS,
+} from './services/printService';
 import {
   addExpense,
   bestSellers,
@@ -214,23 +240,29 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('scaleBarcode:isScaleItem', (_e, barcode: string) => isScaleBarcode(barcode));
   ipcMain.handle('scaleBarcode:listPluMappings', () => listPluMappings());
 
-ipcMain.handle('printing:printSale', async (_e, saleId: number, template?: ReceiptTemplate) => {
+  // ── Printing ────────────────────────────────────────────────────────────
+  // All printing funnels through printService, the only module that calls
+  // webContents.print(). Every handler resolves to a PrintResult so the renderer
+  // always gets a reason on failure instead of a silent hang.
+  ipcMain.handle('printing:printSale', async (_e, saleId: number, template?: ReceiptTemplate) => {
     try {
       return await printSale(saleId, template);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:previewReceipt', (_e, saleId: number, template?: ReceiptTemplate) => {
-    previewReceipt(saleId, template);
-    return true;
+  ipcMain.handle('printing:previewReceipt', async (_e, saleId: number, template?: ReceiptTemplate) => {
+    try {
+      return await previewReceipt(saleId, template);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
   });
   ipcMain.handle('printing:previewInvoice', async (_e, saleId: number) => {
     try {
-      await previewInvoice(saleId);
-      return true;
+      return await previewInvoice(saleId);
     } catch (e) {
-      return false;
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
   ipcMain.handle('printing:printLabel', async (_e, productId: number, copies?: number) => {
@@ -243,6 +275,20 @@ ipcMain.handle('printing:printSale', async (_e, saleId: number, template?: Recei
   ipcMain.handle('printing:printBarcodeLabel', async (_e, productId: number, copies?: number) => {
     try {
       return await printBarcodeLabel(productId, copies ?? 1);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  ipcMain.handle('printing:printBarcodeBatch', async (_e, productIds: number[], size?: LabelSize, copies?: number) => {
+    try {
+      return await printBarcodeBatch(Array.isArray(productIds) ? productIds : [], size, copies ?? 1);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  ipcMain.handle('printing:previewBarcodeBatch', async (_e, productIds: number[], size?: LabelSize, copies?: number) => {
+    try {
+      return await previewBarcodeBatch(Array.isArray(productIds) ? productIds : [], size, copies ?? 1);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
@@ -265,6 +311,83 @@ ipcMain.handle('printing:printSale', async (_e, saleId: number, template?: Recei
 
   ipcMain.handle('receipt:getTemplates', () => {
     return getAvailableTemplates();
+  });
+
+  // ── Printer selection ───────────────────────────────────────────────────
+  ipcMain.handle('printing:getPrinters', async () => {
+    try {
+      return await getAvailablePrinters(true);
+    } catch {
+      return [];
+    }
+  });
+  ipcMain.handle('printing:getPrinterSettings', () => {
+    const fallback = {
+      receiptPrinter: AUTO_PRINTER,
+      invoicePrinter: AUTO_PRINTER,
+      labelPrinter: AUTO_PRINTER,
+      receiptPaper: 'thermal80',
+      invoicePaper: 'a4',
+      labelPaper: '38x25',
+      labelLayout: 'roll',
+      printMode: 'silent',
+      papers: PAPER_SPECS,
+      labelSizes: LABEL_SPECS,
+    };
+    try {
+      return {
+        receiptPrinter: getConfiguredPrinter('receipt') || AUTO_PRINTER,
+        invoicePrinter: getConfiguredPrinter('invoice') || AUTO_PRINTER,
+        labelPrinter: getConfiguredPrinter('label') || AUTO_PRINTER,
+        receiptPaper: getConfiguredPaper('receipt') || 'thermal80',
+        invoicePaper: getConfiguredPaper('invoice') || 'a4',
+        labelPaper: getConfiguredPaper('label') || '38x25',
+        labelLayout: getLabelLayout(),
+        printMode: getPrintMode(),
+        papers: PAPER_SPECS,
+        labelSizes: LABEL_SPECS,
+      };
+    } catch {
+      return fallback;
+    }
+  });
+  ipcMain.handle('printing:setPrinter', (_e, key: string, printer: string) => {
+    try {
+      if (!['receipt', 'invoice', 'label', 'drawer'].includes(key)) {
+        return { ok: false, message: 'Unknown printer slot.' };
+      }
+      setAdminSetting(`${key}_printer`, printer || AUTO_PRINTER);
+      invalidatePrinterCache();
+      return { ok: true, message: 'Printer saved.' };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  ipcMain.handle('printing:setPaper', (_e, key: string, paper: string) => {
+    try {
+      if (!['receipt', 'invoice', 'label'].includes(key)) {
+        return { ok: false, message: 'Unknown paper slot.' };
+      }
+      setAdminSetting(`${key}_paper`, paper);
+      return { ok: true, message: 'Paper size saved.' };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  ipcMain.handle('printing:setLabelLayout', (_e, layout: string) => {
+    try {
+      setAdminSetting('label_layout', layout === 'sheet' ? 'sheet' : 'roll');
+      return { ok: true, message: 'Label layout saved.' };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  ipcMain.handle('printing:printTestSheet', async (_e, paper?: PaperKind) => {
+    try {
+      return await printTestSheet(paper);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
   });
 
   ipcMain.handle('reports:dashboard', () => dashboard());

@@ -68,15 +68,24 @@ const bridge: PosBridge = {
     chooseCloudFolder: () => ipcRenderer.invoke('settings:chooseCloudFolder'),
   },
   printing: {
-    // existing printing methods
+    // ── Documents ──
     printSale: (saleId: number, template?: string) => ipcRenderer.invoke('printing:printSale', saleId, template),
     printLabel: (productId: number, copies?: number) => ipcRenderer.invoke('printing:printLabel', productId, copies),
     printBarcodeLabel: (productId: number, copies?: number) => ipcRenderer.invoke('printing:printBarcodeLabel', productId, copies),
+    printBarcodeBatch: (productIds: number[], size?: string, copies?: number) => ipcRenderer.invoke('printing:printBarcodeBatch', productIds, size, copies),
+    previewBarcodeBatch: (productIds: number[], size?: string, copies?: number) => ipcRenderer.invoke('printing:previewBarcodeBatch', productIds, size, copies),
     openCashDrawer: () => ipcRenderer.invoke('printing:openCashDrawer'),
     previewReceipt: (saleId: number, template?: string) => ipcRenderer.invoke('printing:previewReceipt', saleId, template),
     previewInvoice: (saleId: number) => ipcRenderer.invoke('printing:previewInvoice', saleId),
     printInvoice: (saleId: number) => ipcRenderer.invoke('printing:printInvoice', saleId),
     printDrawerSummary: (data: { opening_cash: number; closing_cash: number; cash_sales: number; card_sales: number; udhaar_sales: number; other_payments: number; cash_refunds: number; cash_in: number; cash_out: number; expected_cash: number; actual_cash: number; variance: number; opened_at: string; closed_at: string; cashier: string; notes?: string }) => ipcRenderer.invoke('printing:printDrawerSummary', data),
+    // ── Printer selection ──
+    getPrinters: () => ipcRenderer.invoke('printing:getPrinters'),
+    getPrinterSettings: () => ipcRenderer.invoke('printing:getPrinterSettings'),
+    setPrinter: (slot: string, printer: string) => ipcRenderer.invoke('printing:setPrinter', slot, printer),
+    setPaper: (slot: string, paper: string) => ipcRenderer.invoke('printing:setPaper', slot, paper),
+    setLabelLayout: (layout: string) => ipcRenderer.invoke('printing:setLabelLayout', layout),
+    printTestSheet: (paper?: string) => ipcRenderer.invoke('printing:printTestSheet', paper),
   },
   receipt: {
     getTemplates: () => ipcRenderer.invoke('receipt:getTemplates'),

@@ -1,7 +1,7 @@
 # Rokar POS — Agent Guide
 
 ## Version
-**v2.7.0** (Staged Search+Enter 1x/2x/3x + Shared Barcode Scan Hook: Quick Sale, Purchases, Inventory)
+**v2.8.0** (Reliable printing: 58mm/80mm receipts, A4/A5 invoices, roll & sheet barcode labels, per-slot printers)
 
 ## Environment
 - Node.js v24.18.0 (portable at `C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64`)
@@ -25,6 +25,19 @@ $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win
 ```powershell
 $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; node scripts/test_inventoryReports.js
 ```
+
+### Print geometry smoke test
+```powershell
+$env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; npm run test:print
+# Add --shots to also write PNGs of every rendered page for visual review:
+$env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; electron scripts/print_smoke.js --shots
+```
+Three layers of checking, because page dimensions alone hide real defects:
+- **Page box** — every generated PDF's actual width/height is measured against the paper spec.
+- **Layout audit** (`auditJobLayout`) — measures real element boxes in the loaded page against the PRINTABLE width and fails if anything is clipped. This is what catches receipts arriving sliced. Includes a stress case that renames a product to a 97-character name and restores it afterwards.
+- **Content audit** (`readJobText`) — reads back the laid-out text and asserts the expected fields are present, so a markup slip cannot silently drop a column.
+
+The audit runs the *production* job builders (`buildReceiptJob`/`buildInvoiceJob`), so it also covers the template/paper clamping. If `C:` is full, point the DB elsewhere first: `$env:TEMP="E:\tmp-opencode"; $env:ROKAR_SMOKE_USERDATA="E:\tmp-opencode\smokedata"`.
 
 ### Release
 ```powershell
@@ -57,3 +70,17 @@ Note: `npm run release` = build + electron-builder publish + `node scripts/final
 - `src/renderer/src/components/filters/SearchInput.tsx` — optional `onKeyDown` prop (used for staged search in Inventory)
 - `scripts/finalize-release.js` — finalizes GitHub release (needs GH_TOKEN — see Release above)
 - `scripts/test_inventoryReports.js` — 12-test verification suite
+- `src/main/services/printService.ts` — the printing engine (geometry, shared print window, previews, PDF export)
+- `scripts/print_smoke.js` — 46-check print geometry/enumeration suite
+
+## Printing Gotchas (Electron 43.4.0 on Windows)
+- **Never pass `pageSize` to `printToPDF`.** Any explicit size fails with `Failed to generate PDF: Printing failed`. Page size comes from the document's own CSS `@page` rule, passed with `preferCSSPageSize: true`.
+- **Page size is in microns**, `INCH`/`MM` constants — `MM * 1000`. Printable margin in inches: use `marginType: 'none'`.
+- **Do not `destroy()` a `BrowserWindow` and immediately reuse the name.** Either call strands later `loadURL` calls (`ERR_FAILED (-2)`). `printService` keeps one hidden window, closes it (never destroys) and loads each job from a temp file, serialising every job through a queue. If a load still fails it recycles the window and retries once.
+- **A `close()`d window is not yet `isDestroyed()`.** `disposeWindow` must also null `sharedPrintWindow`, otherwise the next job reuses a window that is shutting down and burns a failed load + retry every time the app is re-activated.
+- **Thermal height is measured from the rendered DOM**, not guessed: narrow the window to the printable width, read `scrollHeight`, then stamp a final `@page { size: <w>mm <h>mm }` rule. Measuring at the wide default viewport yields a wrong height because line wrapping changes.
+- **Auto-print must not resolve silently.** The `'auto'` printer setting means "ask every time" — it opens the OS dialog and is never substituted with the Windows default.
+- **Hidden windows must not block app quit.** `hasUserFacingWindows()` in `main.ts` excludes the print window from the quit check.
+- Printable widths are 52mm on 58mm paper and 72mm on 80mm paper. The shop mixes both — the paper size is a per-slot setting, not an app-wide constant.
+- **58mm receipts cannot use the 4-column item table.** A product name, a unit label like "1000 Gram" and two money columns do not fit in 52mm; the table grows past the page and the printer slices the right side off. `receiptTemplates.ts` emits a stacked two-line row (`td.stack`) on narrow paper instead.
+- `setAdminSetting` is owner-gated, so background timers (auto-backup) must not use it — write system-managed keys directly.

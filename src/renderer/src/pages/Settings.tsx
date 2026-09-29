@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react';
-import type { ActivityRow, ScalePluMapping, SettingsMap, WhatsAppStatus } from '../../../shared/types';
+import type {
+  ActivityRow,
+  PrinterInfo,
+  PrinterSettingsSnapshot,
+  ScalePluMapping,
+  SettingsMap,
+  WhatsAppStatus,
+} from '../../../shared/types';
 import { formatTimestamp, formatDateTimeAdmin } from '../utils/dateUtils';
 
 export default function Settings() {
@@ -20,6 +27,9 @@ export default function Settings() {
   const [pluMappings, setPluMappings] = useState<ScalePluMapping[]>([]);
   const [receiptTemplates, setReceiptTemplates] = useState<Array<{ id: string; name: string; description: string; width: string }>>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string>('standard');
+  const [printers, setPrinters] = useState<PrinterInfo[]>([]);
+  const [printSettings, setPrintSettings] = useState<PrinterSettingsSnapshot | null>(null);
+  const [printBusy, setPrintBusy] = useState(false);
 
   useEffect(() => {
     window.api.settings.getAll().then(setSettings).catch((e) => setNotice(e.message));
@@ -60,6 +70,8 @@ export default function Settings() {
     window.api.admin.settings.get('receipt_template').then((v) => {
       if (v) setSelectedTemplate(v);
     }).catch(() => undefined);
+    window.api.printing.getPrinters().then(setPrinters).catch(() => setPrinters([]));
+    window.api.printing.getPrinterSettings().then(setPrintSettings).catch(() => undefined);
   }, []);
 
   async function saveShop() {
@@ -158,6 +170,191 @@ export default function Settings() {
                 {saved ? 'Saved!' : 'Save'}
               </button>
             </div>
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-title">Printers &amp; Paper</div>
+          <div className="settings-form">
+            <p className="muted small">
+              Pick a printer for each document type. If a printer is left on <strong>Ask every time</strong>, Windows
+              shows its print dialog each time so the job can never silently go to the wrong device.
+              Printers marked <em>file output</em> (XPS, PDF, OneNote, Fax) do not print to paper.
+            </p>
+
+            {(['receipt', 'invoice', 'label'] as const).map((slot) => {
+              const printerKey = `${slot}Printer` as const;
+              const paperKey = `${slot}Paper` as const;
+              const title = slot === 'receipt' ? 'Receipts' : slot === 'invoice' ? 'Invoices' : 'Barcode Labels';
+              const currentPrinter = printSettings?.[printerKey] ?? 'auto';
+              const currentPaper = printSettings?.[paperKey] ?? '';
+              const paperOptions =
+                slot === 'receipt'
+                  ? Object.entries(printSettings?.papers ?? {}).filter(([k]) => k.startsWith('thermal'))
+                  : slot === 'invoice'
+                    ? Object.entries(printSettings?.papers ?? {}).filter(([k]) => k === 'a4' || k === 'a5')
+                    : Object.entries(printSettings?.labelSizes ?? {});
+              return (
+                <div
+                  key={slot}
+                  style={{
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '6px',
+                    padding: '10px 12px',
+                    marginBottom: '10px',
+                  }}
+                >
+                  <div style={{ fontWeight: 600, marginBottom: '8px' }}>{title}</div>
+                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                    <label className="field" style={{ flex: '1 1 260px' }}>
+                      <span>Printer</span>
+                      <select
+                        value={currentPrinter}
+                        onChange={async (e) => {
+                          const v = e.target.value;
+                          setPrintSettings((s) => (s ? { ...s, [printerKey]: v } : s));
+                          const r = await window.api.printing.setPrinter(slot, v);
+                          if (!r.ok) setNotice(r.message);
+                          else setNotice(`${title} printer saved.`);
+                        }}
+                      >
+                        <option value="auto">Ask every time (show Windows dialog)</option>
+                        {printers.map((p) => (
+                          <option key={p.name} value={p.name}>
+                            {p.displayName}
+                            {p.isDefault ? ' — Windows default' : ''}
+                            {p.isVirtual ? ' [file output / no paper]' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field" style={{ flex: '0 1 220px' }}>
+                      <span>Paper / size</span>
+                      <select
+                        value={currentPaper}
+                        onChange={async (e) => {
+                          const v = e.target.value;
+                          setPrintSettings((s) => (s ? { ...s, [paperKey]: v } : s));
+                          const r = await window.api.printing.setPaper(slot, v);
+                          if (!r.ok) setNotice(r.message);
+                          else setNotice(`${title} paper saved.`);
+                        }}
+                      >
+                        {paperOptions.map(([k, v]) => {
+                          const spec = v as { label?: string; w?: number; h?: number; widthMm?: number; contentMm?: number };
+                          const detail =
+                            spec.w != null
+                              ? `${spec.w} × ${spec.h}mm`
+                              : `${spec.widthMm}mm paper / ${spec.contentMm}mm printable`;
+                          return (
+                            <option key={k} value={k}>
+                              {spec.label ?? k} ({detail})
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </label>
+                  </div>
+                  {slot === 'label' && (
+                    <div style={{ marginTop: '8px' }}>
+                      <label className="field" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>Media</span>
+                        <select
+                          value={printSettings?.labelLayout ?? 'roll'}
+                          onChange={async (e) => {
+                            const v = e.target.value;
+                            setPrintSettings((s) => (s ? { ...s, labelLayout: v as 'roll' | 'sheet' } : s));
+                            await window.api.printing.setLabelLayout(v);
+                          }}
+                          style={{ width: 'auto' }}
+                        >
+                          <option value="roll">Label roll (one label across)</option>
+                          <option value="sheet">A4 label sheet (grid)</option>
+                        </select>
+                      </label>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            <label
+              className="field"
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px' }}
+            >
+              <input
+                type="checkbox"
+                checked={printSettings?.printMode === 'dialog'}
+                onChange={async (e) => {
+                  const v = e.target.checked ? 'dialog' : 'silent';
+                  setPrintSettings((s) => (s ? { ...s, printMode: v } : s));
+                  try {
+                    const r = await window.api.admin.settings.set('print_mode', v);
+                    if (r !== true) setNotice('Could not save the print dialog preference.');
+                    else
+                      setNotice(
+                        v === 'dialog'
+                          ? 'Every print will now ask which printer to use.'
+                          : 'Prints will use the printer chosen above.'
+                      );
+                  } catch (err) {
+                    setNotice(err instanceof Error ? err.message : String(err));
+                  }
+                }}
+                style={{ width: 'auto' }}
+              />
+              <span>
+                Always ask which printer to use
+                <span className="muted small"> — overrides the choices above and opens the Windows dialog for every print.</span>
+              </span>
+            </label>
+
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
+              <button
+                className="btn"
+                onClick={async () => {
+                  setPrintBusy(true);
+                  setNotice(null);
+                  try {
+                    const r = await window.api.printing.printTestSheet('receipt');
+                    setNotice(r.ok ? r.message : r.message);
+                  } catch (e) {
+                    setNotice(e instanceof Error ? e.message : String(e));
+                  } finally {
+                    setPrintBusy(false);
+                  }
+                }}
+                disabled={printBusy}
+              >
+                {printBusy ? 'Sending…' : 'Print Test Page (Receipt)'}
+              </button>
+              <button
+                className="btn"
+                onClick={async () => {
+                  setPrintBusy(true);
+                  setNotice(null);
+                  try {
+                    const r = await window.api.printing.printTestSheet('a4');
+                    setNotice(r.message);
+                  } catch (e) {
+                    setNotice(e instanceof Error ? e.message : String(e));
+                  } finally {
+                    setPrintBusy(false);
+                  }
+                }}
+                disabled={printBusy}
+              >
+                Print Test Page (A4 Invoice)
+              </button>
+            </div>
+            <p className="muted small" style={{ marginTop: '6px' }}>
+              Test pages print a millimetre ruler and black bars across the full printable width, so you can confirm the
+              paper is 58mm or 80mm and that nothing is cut off on the right edge.
+            </p>
+            <p className="muted small">
+              The cash drawer is wired into the till's receipt printer, so it follows the <strong>Receipts</strong>{' '}
+              setting above.
+            </p>
           </div>
         </div>
 

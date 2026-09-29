@@ -1,7 +1,8 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, protocol } from 'electron';
 import path from 'path';
 import { initDatabase } from './db';
 import { registerIpcHandlers } from './ipc';
+import { registerPrintProtocol, closeAllPrintWindows, hasUserFacingWindows, PRINT_SCHEME } from './services/printService';
 import * as licensing from './services/licensing';
 import { runBackup } from './services/backup';
 import { getAllSettings } from './services/settings';
@@ -15,6 +16,17 @@ import { ensureOtpTable } from './services/twoFactorAuth';
 import { todayLocal } from './utils/timezone';
 
 const isDev = process.env.NODE_ENV === 'development';
+
+// The print-preview window cannot call window.print() (Electron does not
+// implement Chromium's in-app print preview), so its Print button fetches
+// posprint://print/<token> and the main process runs the real print pipeline.
+// The scheme must be declared privileged before the app is ready.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: PRINT_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, bypassCSP: true },
+  },
+]);
 
 function appIcon(): string | null {
   if (app.isPackaged) {
@@ -50,6 +62,17 @@ function createWindow(): void {
   });
   win.webContents.on('unresponsive', () => {
     logError('window unresponsive', new Error('renderer unresponsive'));
+  });
+
+  win.on('closed', () => {
+    // The print service keeps one hidden window alive on purpose (recreating it
+    // per job breaks navigation on Electron 43). That window stops
+    // `window-all-closed` from ever firing, so without this the process would
+    // survive with no window and the database still open. A preview window left
+    // open is user-facing, so the app stays up until that is closed too.
+    if (!hasUserFacingWindows() && process.platform !== 'darwin') {
+      app.quit();
+    }
   });
 
   if (isDev) {
@@ -102,9 +125,10 @@ app.whenReady().then(async () => {
   } catch { /* no chrome processes found or kill failed — fine */ }
 
   try {
-    await initDatabase();
+    await     initDatabase();
     log('Database initialized + migrations applied');
     ensureOtpTable();
+    registerPrintProtocol();
       registerIpcHandlers();
       licensing.registerIpc();
   } catch (err) {
@@ -171,6 +195,9 @@ app.whenReady().then(async () => {
 
 
   app.on('activate', () => {
+    // A leaked print/preview window used to keep getAllWindows() non-empty, which
+    // permanently blocked the main window from being recreated. Clean them up first.
+    closeAllPrintWindows();
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }

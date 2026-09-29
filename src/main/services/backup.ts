@@ -3,7 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { getDb, getDbPath, closeDb, initDatabase } from '../db';
-import { setAdminSetting, getAdminSetting } from './admin';
+import { getAdminSetting } from './admin';
 import { getAllSettings, setSetting } from './settings';
 
 function stamp(): string {
@@ -32,7 +32,16 @@ export function runLocalBackup(): string {
   // Update timestamps in both generic and admin settings for compatibility
   const nowIso = new Date().toISOString();
   setSetting('last_backup', nowIso);
-  setAdminSetting('backup_last', nowIso);
+  // `setAdminSetting` is owner-gated, but the scheduled backup runs from a timer
+  // with no signed-in user, so it would throw and leave `backup_last` unset.
+  // This is a system-managed value, so write it directly.
+  try {
+    db.prepare(
+      'INSERT OR REPLACE INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)'
+    ).run('backup_last', nowIso);
+  } catch (e) {
+    console.error('backup: could not record backup_last —', e);
+  }
 
   // Cleanup old backups based on retention setting
   try {
