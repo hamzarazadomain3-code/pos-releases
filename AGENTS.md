@@ -1,7 +1,7 @@
 # Rokar POS — Agent Guide
 
 ## Version
-**v2.8.0** (Reliable printing: 58mm/80mm receipts, A4/A5 invoices, roll & sheet barcode labels, per-slot printers)
+**v2.9.0** (Reliable printing: 58mm/80mm receipts, A4/A5 invoices, roll & sheet barcode labels, per-slot printers)
 
 ## Environment
 - Node.js v24.18.0 (portable at `C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64`)
