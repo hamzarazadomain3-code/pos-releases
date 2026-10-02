@@ -105,6 +105,18 @@ import {
   can,
   defaultPasswordActive,
 } from './services/auth';
+import {
+  clearSecurityQuestion,
+  getRecoveryQuestion,
+  getRecoveryStatus,
+  getSupportInfo,
+  ownerRecoveryCode,
+  rotateRecoverySalt,
+  setRecoveredPassword,
+  setSecurityQuestion,
+  verifySecurityAnswer,
+  verifySupportCode,
+} from './services/recovery';
 import { runBackup, restoreBackup } from './services/backup';
 import { openShift, closeShift, forceCloseShift, currentShift, listShifts, getShift } from './services/shifts';
 import { saveCsv, saveXlsx, exportProductsXlsx, exportSalesXlsx, exportCustomersXlsx, exportPurchaseOrdersXlsx, exportExpensesXlsx, downloadProductTemplate, importProductsFromExcel } from './services/export';
@@ -442,6 +454,24 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('auth:refreshSession', () => refreshSession());
   ipcMain.handle('auth:verifyForUser', (_e, userId: number, secret: string) => verifyForUser(userId, secret));
   ipcMain.handle('auth:defaultPasswordActive', () => defaultPasswordActive());
+
+  // Password recovery — Option A (security answer) + Option B (support code)
+  ipcMain.handle('recovery:getStatus', (_e, userId: number) => getRecoveryStatus(userId));
+  ipcMain.handle('recovery:setSecurity', (_e, userId: number, question: string, answer: string) =>
+    setSecurityQuestion(userId, question, answer)
+  );
+  ipcMain.handle('recovery:clearSecurity', (_e, userId: number) => clearSecurityQuestion(userId));
+  ipcMain.handle('recovery:ownerCode', () => ownerRecoveryCode());
+  ipcMain.handle('recovery:rotateCode', () => rotateRecoverySalt());
+  ipcMain.handle('recovery:getQuestion', (_e, username: string) => getRecoveryQuestion(username));
+  ipcMain.handle('recovery:verifyAnswer', (_e, username: string, answer: string) =>
+    verifySecurityAnswer(username, answer)
+  );
+  ipcMain.handle('recovery:supportInfo', () => getSupportInfo());
+  ipcMain.handle('recovery:verifySupportCode', (_e, code: string) => verifySupportCode(code));
+  ipcMain.handle('recovery:setNewPassword', (_e, username: string, newPassword: string) =>
+    setRecoveredPassword(username, newPassword)
+  );
 
   ipcMain.handle('users:list', () => listUsers());
   ipcMain.handle('users:create', (_e, input) => createUser(input));

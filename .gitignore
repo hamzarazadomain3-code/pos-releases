@@ -14,6 +14,11 @@ src/renderer/public/icon.png
 *.db-journal
 .wwebjs_auth/
 build/puppeteer-cache/
+# Support-recovery HMAC secret. Injected into the build by
+# scripts/gen-support-key.js from ROKAR_SUPPORT_KEY in .env.
+# MUST stay out of git: this repository is PUBLIC, and a committed key would let
+# anyone mint a valid recovery code for any shop.
+src/main/generated/
 # license-server/
 cred_input.txt
 cred.txt

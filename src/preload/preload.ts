@@ -150,6 +150,20 @@ const bridge: PosBridge = {
     verifyForUser: (userId: number, secret: string) => ipcRenderer.invoke('auth:verifyForUser', userId, secret),
     defaultPasswordActive: () => ipcRenderer.invoke('auth:defaultPasswordActive'),
   },
+  recovery: {
+    getStatus: (userId: number) => ipcRenderer.invoke('recovery:getStatus', userId),
+    setSecurity: (userId: number, question: string, answer: string) =>
+      ipcRenderer.invoke('recovery:setSecurity', userId, question, answer),
+    clearSecurity: (userId: number) => ipcRenderer.invoke('recovery:clearSecurity', userId),
+    ownerCode: () => ipcRenderer.invoke('recovery:ownerCode'),
+    rotateCode: () => ipcRenderer.invoke('recovery:rotateCode'),
+    getQuestion: (username: string) => ipcRenderer.invoke('recovery:getQuestion', username),
+    verifyAnswer: (username: string, answer: string) => ipcRenderer.invoke('recovery:verifyAnswer', username, answer),
+    supportInfo: () => ipcRenderer.invoke('recovery:supportInfo'),
+    verifySupportCode: (code: string) => ipcRenderer.invoke('recovery:verifySupportCode', code),
+    setNewPassword: (username: string, newPassword: string) =>
+      ipcRenderer.invoke('recovery:setNewPassword', username, newPassword),
+  },
   users: {
     list: () => ipcRenderer.invoke('users:list'),
     create: (input) => ipcRenderer.invoke('users:create', input),

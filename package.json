@@ -1,6 +1,6 @@
 {
   "name": "pos-app",
-  "version": "2.9.0",
+  "version": "2.10.0",
   "description": "Local Billing & Inventory POS System",
   "main": "dist/main/main.js",
   "author": "Rokar POS",
@@ -11,9 +11,12 @@
     "dev:main": "tsc -p tsconfig.main.json -w",
     "dev:electron": "wait-on tcp:5173 && wait-on dist/main/main.js dist/preload/preload.js && cross-env NODE_ENV=development electron .",
     "dev": "concurrently -k -n vite,main,electron -c blue,green,magenta \"npm:dev:vite\" \"npm:dev:main\" \"npm:dev:electron\"",
-    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json",
+    "typecheck": "npm run gen:key && tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json",
     "test:print": "npm run build:main && electron scripts/print_smoke.js",
-    "build:main": "tsc -p tsconfig.main.json",
+    "test:recovery": "npm run build:main && electron scripts/test_recovery.js",
+    "test:recovery:ui": "npm run build && electron scripts/test_recovery_ui.js",
+    "gen:key": "node scripts/gen-support-key.js",
+    "build:main": "npm run gen:key && tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
     "build": "npm run build:main && npm run build:renderer",
     "package": "npm run build && npm run prepare:puppeteer && electron-builder",
@@ -89,11 +92,15 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.ico",

@@ -127,6 +127,21 @@ export interface LoginResult {
   message?: string;
 }
 
+/** Recovery setup state for one account, shown in Users → Recovery & Security. */
+export interface RecoveryStatus {
+  hasSecurityQuestion: boolean;
+  question: string | null;
+  deviceId: string;
+}
+
+/** Outcome of a recovery verification step (security answer or support code). */
+export interface RecoveryResult {
+  ok: boolean;
+  message?: string;
+  /** True when the input matched the owner recovery code rather than the answer. */
+  viaCode?: boolean;
+}
+
 export interface UserInput {
   username: string;
   password?: string;
@@ -927,6 +942,24 @@ export interface PosBridge {
     refreshSession: () => Promise<UserRow | null>;
     verifyForUser: (userId: number, secret: string) => Promise<boolean>;
     defaultPasswordActive: () => Promise<boolean>;
+  };
+  recovery: {
+    getStatus: (userId: number) => Promise<RecoveryStatus>;
+    setSecurity: (userId: number, question: string, answer: string) => Promise<RecoveryStatus>;
+    clearSecurity: (userId: number) => Promise<RecoveryStatus>;
+    ownerCode: () => Promise<string>;
+    rotateCode: () => Promise<string>;
+    getQuestion: (username: string) => Promise<{ hasRecovery: boolean; question: string | null }>;
+    verifyAnswer: (username: string, answer: string) => Promise<RecoveryResult>;
+    supportInfo: () => Promise<{
+      deviceId: string;
+      ownerUsername: string | null;
+      epoch: number;
+      /** False in a build made without ROKAR_SUPPORT_KEY — Support Recovery is off. */
+      enabled: boolean;
+    }>;
+    verifySupportCode: (code: string) => Promise<RecoveryResult>;
+    setNewPassword: (username: string, newPassword: string) => Promise<{ ok: boolean; message?: string }>;
   };
   users: {
     list: () => Promise<UserRow[]>;

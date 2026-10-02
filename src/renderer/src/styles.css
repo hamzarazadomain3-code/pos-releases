@@ -3257,6 +3257,41 @@ input.qty-val::-webkit-inner-spin-button {
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
 }
 
+/* Password recovery: read-out code / device id, and the quiet link on the login box */
+.recovery-device-id {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  word-break: break-all;
+  padding: 11px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: rgba(127, 127, 127, 0.06);
+  text-align: center;
+  user-select: all;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--primary);
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 4px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.btn-link:hover {
+  opacity: 0.8;
+}
+
+body.theme-dark .recovery-device-id {
+  background: rgba(255, 255, 255, 0.05);
+}
+
 /* ═══════════════════════════════════════════
    RTL Styles for Urdu
    ═══════════════════════════════════════════ */

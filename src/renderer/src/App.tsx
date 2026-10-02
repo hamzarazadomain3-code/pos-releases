@@ -28,6 +28,7 @@ const Expenses = lazy(() => import('./pages/Expenses'));
 const Commissions = lazy(() => import('./pages/Commissions'));
 const CustomReports = lazy(() => import('./pages/CustomReports'));
 const FIFOStockReport = lazy(() => import('./pages/FIFOStockReport'));
+const LoginRecovery = lazy(() => import('./pages/LoginRecovery'));
 
 const SESSION_KEY = 'pos_session';
 const SESSION_MAX_AGE = 24 * 60 * 60 * 1000;
@@ -239,10 +240,22 @@ function BranchSelector() {
   );
 }
 
-function LoginScreen({ onLogin, logo }: { onLogin: (user: UserRow, rememberMe: boolean) => void; logo?: string | null }) {
+function LoginScreen({
+  onLogin,
+  logo,
+  onForgotPassword,
+  onSupportRecovery,
+  initialUsername = '',
+}: {
+  onLogin: (user: UserRow, rememberMe: boolean) => void;
+  logo?: string | null;
+  onForgotPassword: () => void;
+  onSupportRecovery: () => void;
+  initialUsername?: string;
+}) {
   const { t } = useTranslation();
   const [pinMode, setPinMode] = useState(false);
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState(initialUsername);
   const [secret, setSecret] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -251,6 +264,19 @@ function LoginScreen({ onLogin, logo }: { onLogin: (user: UserRow, rememberMe: b
   const [otpCode, setOtpCode] = useState('');
   const [otpMessage, setOtpMessage] = useState<string | null>(null);
   const [otpBusy, setOtpBusy] = useState(false);
+
+  // Hidden developer fallback for when the security question cannot be answered.
+  // Deliberately obscure and only armed on the login screen.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.altKey && (e.code === 'KeyR' || e.key === 'R')) {
+        e.preventDefault();
+        onSupportRecovery();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onSupportRecovery]);
 
   const doLogin = async () => {
     if (busy) return;
@@ -365,6 +391,11 @@ function LoginScreen({ onLogin, logo }: { onLogin: (user: UserRow, rememberMe: b
         <button className="btn" onClick={() => { setPinMode(!pinMode); setSecret(''); setErr(null); }}>
           {pinMode ? t('buttons.Login_with_username_&_password') : t('buttons.Cashier__Login_with_PIN')}
         </button>
+        {!pinMode && (
+          <button className="btn btn-link" onClick={onForgotPassword}>
+            Forgot password?
+          </button>
+        )}
       </div>
     </div>
   );
@@ -456,6 +487,8 @@ export default function App() {
   const [shopLogo, setShopLogo] = useState<string | null>(null);
   const [sessionRestoring, setSessionRestoring] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [recoveryMode, setRecoveryMode] = useState<'self' | 'support' | null>(null);
+  const [recoveryPrefill, setRecoveryPrefill] = useState('');
   const nav = user ? navFor(user.role) : [];
 
   useEffect(() => {
@@ -653,7 +686,32 @@ export default function App() {
   if (!user) {
     return (
       <div className="app-shell">
-        <LoginScreen onLogin={handleLogin} logo={shopLogo} />
+        <Suspense fallback={null}>
+          {recoveryMode ? (
+            <LoginRecovery
+              mode={recoveryMode}
+              logo={shopLogo}
+              initialUsername={recoveryPrefill}
+              onClose={() => setRecoveryMode(null)}
+              onDone={(u) => {
+                setRecoveryMode(null);
+                setRecoveryPrefill(u);
+              }}
+            />
+          ) : (
+            <LoginScreen
+              onLogin={handleLogin}
+              logo={shopLogo}
+              initialUsername={recoveryPrefill}
+              onForgotPassword={() => setRecoveryMode('self')}
+              onSupportRecovery={() => {
+                if (window.confirm('Support Recovery is a developer tool.\n\nContinue?')) {
+                  setRecoveryMode('support');
+                }
+              }}
+            />
+          )}
+        </Suspense>
       </div>
     );
   }

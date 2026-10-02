@@ -26,6 +26,33 @@ $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win
 $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; node scripts/test_inventoryReports.js
 ```
 
+### Password recovery test
+```powershell
+$env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; npm run test:recovery
+```
+48 checks over the real `recovery.ts` against a throwaway DB: hash domain separation, answer
+normalisation, lockout at 5 failures, CLI/service code parity, cross-device + single-use
+rejection, and that one shop can be recovered repeatedly.
+
+```powershell
+$env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; npm run test:recovery:ui
+```
+26 end-to-end checks that drive the REAL renderer in a hidden `BrowserWindow` with the real
+preload and real IPC handlers, so it also proves the `recovery:*` channel names line up
+end-to-end and the `Ctrl+Shift+Alt+R` chord is armed. Needs a full `npm run build` first
+(it loads `dist/renderer`), hence it does not reuse `build:main`.
+
+Two gotchas if you extend it:
+- **`.lock-box` is not unique.** The login screen, the auto-lock screen and the forced
+  "Set a new owner password" modal all use it. Scope queries to the LAST box in DOM order
+  (`window.__t.top()`), never `querySelector('.lock-box')` — the first match is the login
+  screen and will silently keep matching "Rokar POS".
+- **Injected page helpers are wiped by `window.location.reload()`.** Re-inject via
+  `ensureHelpers()` after any navigation.
+- PowerShell reports `Exited with code 1` for these Electron runs even on success, because
+  Electron prints a `Network service crashed` banner to stderr. Trust the summary line and
+  `$LASTEXITCODE`, not the pipeline's exit status.
+
 ### Print geometry smoke test
 ```powershell
 $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; npm run test:print
@@ -72,6 +99,18 @@ Note: `npm run release` = build + electron-builder publish + `node scripts/final
 - `scripts/test_inventoryReports.js` — 12-test verification suite
 - `src/main/services/printService.ts` — the printing engine (geometry, shared print window, previews, PDF export)
 - `scripts/print_smoke.js` — 46-check print geometry/enumeration suite
+- `src/main/services/recovery.ts` — password recovery: Option A (security question + owner recovery
+  code) and Option B (developer-issued support code). Recovery answers are salted with
+  `pos-recovery-salt`, NOT the password salt `pos-salt` — a shared app-wide salt would put answers
+  and passwords in one hash domain. Support codes are `HMAC-SHA256(secret, "rokar-recover-v1|device|owner|epoch")`
+  truncated to 40 bits and encoded as Crockford base32; `epoch` (`admin_settings.support_epoch`) makes
+  each code single-use without needing a clock. Full spec incl. the key: `RECOVERY_CODE_SPEC.md`.
+- `migrations/049_password_recovery.js` — `security_question`/`security_answer_hash` on users,
+  `recovery_lockout`, `support_recovery_codes`, seeds `device_uuid` + `support_epoch`
+- `tools/recovery-code-cli.js` — developer's code generator, run locally, NOT packaged (`build.files`
+  excludes `tools/`). `node tools/recovery-code-cli.js <device-id> <request-number> [owner]`
+- `src/renderer/src/pages/LoginRecovery.tsx` — login-screen recovery flow (both modes)
+- `src/renderer/src/pages/Users.tsx` — "Recovery & Security" card (owner-gated)
 
 ## Printing Gotchas (Electron 43.4.0 on Windows)
 - **Never pass `pageSize` to `printToPDF`.** Any explicit size fails with `Failed to generate PDF: Printing failed`. Page size comes from the document's own CSS `@page` rule, passed with `preferCSSPageSize: true`.
