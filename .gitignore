@@ -13,6 +13,7 @@ src/renderer/public/icon.png
 *.db-shm
 *.db-journal
 .wwebjs_auth/
+.wwebjs_cache/
 build/puppeteer-cache/
 # Support-recovery HMAC secret. Injected into the build by
 # scripts/gen-support-key.js from ROKAR_SUPPORT_KEY in .env.

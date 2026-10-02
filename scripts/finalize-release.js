@@ -5,10 +5,24 @@
  * the draft so the auto-updater can see it.
  */
 const https = require('https');
+const fs = require('fs');
+const path = require('path');
 
 const TOKEN = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
 const { version } = require('../package.json');
+const { build } = require('../package.json');
 const tag = `v${version}`;
+
+/**
+ * Version-less asset name the marketing site downloads from.
+ *
+ * The site must not hard-code a version in its download link, otherwise every
+ * release would require a site edit and the page would silently keep serving an
+ * old installer. GitHub's `/releases/latest/download/<name>` always redirects to
+ * the newest published release, but `<name>` has to match the asset EXACTLY --
+ * so each release also carries a copy of the installer under this stable name.
+ */
+const STABLE_ASSET = 'RokarPOS-Setup.exe';
 
 if (!TOKEN) {
   console.error('FINALIZE_FAIL: GH_TOKEN not set');
@@ -17,6 +31,49 @@ if (!TOKEN) {
 
 const OWNER = 'hamzarazadomain3-code';
 const REPO = 'pos-releases';
+
+function uploadAsset(releaseId, filePath, assetName) {
+  const stat = fs.statSync(filePath);
+  const boundary = `----rokar${Date.now()}`;
+  const head = Buffer.from(
+    `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="name"\r\n\r\n${assetName}\r\n` +
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="data"; filename="${path.basename(filePath)}"\r\n` +
+      `Content-Type: application/octet-stream\r\n\r\n`,
+    'utf8'
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
+
+  const req = https.request(
+    {
+      hostname: 'uploads.github.com',
+      path: `/repos/${OWNER}/${REPO}/releases/${releaseId}/assets?name=${encodeURIComponent(assetName)}`,
+      method: 'POST',
+      headers: {
+        Authorization: `token ${TOKEN}`,
+        'User-Agent': 'pos-app-release',
+        Accept: 'application/vnd.github+json',
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': head.length + stat.size + tail.length,
+      },
+    },
+    (res) => {
+      let data = '';
+      res.on('data', (c) => (data += c));
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) console.log(`Stable asset uploaded: ${assetName}`);
+        else console.log(`Stable asset upload skipped (HTTP ${res.statusCode}): ${data.slice(0, 160)}`);
+      });
+    }
+  );
+  req.on('error', (e) => console.log(`Stable asset upload error: ${e.message}`));
+  req.write(head);
+  fs.createReadStream(filePath).pipe(req, { end: false });
+  req.write(tail);
+  req.end();
+  return new Promise((resolve) => setTimeout(resolve, 1500));
+}
 
 function api(method, path, body) {
   return new Promise((resolve, reject) => {
@@ -82,4 +139,21 @@ function api(method, path, body) {
     process.exit(1);
   }
   console.log(`Release ${tag} published: ${published.body.html_url}`);
+
+  // 4. Mirror the installer under a version-less name so the website's download
+  //    button can point at /releases/latest/download/... forever. Without this the
+  //    site would serve the previous version after every release.
+  const assets = (published.body.assets || []).map((a) => a.name);
+  if (assets.includes(STABLE_ASSET)) {
+    console.log(`Stable asset already present: ${STABLE_ASSET}`);
+  } else {
+    const outDir = (build && build.directories && build.directories.output) || 'dist_release';
+    const installer = path.join(__dirname, '..', outDir, `RokarPOS-Setup-${version}.exe`);
+    if (!fs.existsSync(installer)) {
+      console.log(`WARN: installer not found at ${installer} -- ${STABLE_ASSET} not uploaded.`);
+      console.log('      The website download button will keep serving the previous release.');
+    } else {
+      await uploadAsset(release.id, installer, STABLE_ASSET);
+    }
+  }
 })();

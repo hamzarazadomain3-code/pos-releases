@@ -1,7 +1,7 @@
 # Rokar POS — Agent Guide
 
 ## Version
-**v2.9.0** (Reliable printing: 58mm/80mm receipts, A4/A5 invoices, roll & sheet barcode labels, per-slot printers)
+**v2.10.0** (Password recovery: security question + owner recovery code, plus developer support codes)
 
 ## Environment
 - Node.js v24.18.0 (portable at `C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64`)
@@ -74,6 +74,13 @@ $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win
 ```
 Note: `npm run release` = build + electron-builder publish + `node scripts/finalize-release.js`. The finalize step does NOT inherit `.env` (dotenv only wraps electron-builder), so it fails with `FINALIZE_FAIL: GH_TOKEN not set` and leaves the GitHub release as a DRAFT — run the second command above to create the tag and publish it (the auto-updater only sees published releases).
 
+**Every release also needs a version-less asset.** Finalize uploads the installer a second time as `RokarPOS-Setup.exe` (no version in the name). The marketing site downloads from `/releases/latest/download/RokarPOS-Setup.exe`, so that name has to exist on every release — otherwise the site's download button silently keeps serving the *previous* installer. If finalize prints `WARN: installer not found`, the alias was skipped and you must upload it by hand:
+```powershell
+Copy-Item "dist_release\RokarPOS-Setup-<version>.exe" "dist_release\RokarPOS-Setup.exe" -Force
+gh release upload v<version> "dist_release\RokarPOS-Setup.exe" --repo hamzarazadomain3-code/pos-releases --clobber
+```
+This costs ~120 MB of extra release storage per release. It is the price of never editing the website again; do not "optimise" it away without also pinning the site back to a versioned URL.
+
 ## Architecture Notes
 - **Database**: `node:sqlite` with `DatabaseSync` (via `src/main/db.ts` `getDb()`)
 - **Migrations**: `migrations/0XX_*.js` — always use `PRAGMA table_info()` guard pattern
@@ -95,7 +102,7 @@ Note: `npm run release` = build + electron-builder publish + `node scripts/final
 - `src/renderer/src/pages/Purchases.tsx` — PO modal staged search + barcode scan (scan adds/increments line)
 - `src/renderer/src/pages/Inventory.tsx` — staged search (1× select highlight, 2× open Edit) + always-enabled barcode scan (found → highlight + auto-edit; not found → prompt "add new product with barcode")
 - `src/renderer/src/components/filters/SearchInput.tsx` — optional `onKeyDown` prop (used for staged search in Inventory)
-- `scripts/finalize-release.js` — finalizes GitHub release (needs GH_TOKEN — see Release above)
+- `scripts/finalize-release.js` — finalizes GitHub release (needs GH_TOKEN — see Release above). Also uploads `RokarPOS-Setup.exe`, the version-less asset the website's `/releases/latest/download/` link depends on.
 - `scripts/test_inventoryReports.js` — 12-test verification suite
 - `src/main/services/printService.ts` — the printing engine (geometry, shared print window, previews, PDF export)
 - `scripts/print_smoke.js` — 46-check print geometry/enumeration suite
