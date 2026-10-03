@@ -173,7 +173,7 @@ const ALL_NAV: { key: NavPage; labelKey: string; minRole: 'cashier' | 'manager' 
   { key: 'audits', labelKey: 'navigation.audits', minRole: 'manager' },
   { key: 'promotions', labelKey: 'navigation.promotions', minRole: 'manager' },
   { key: 'purchases', labelKey: 'navigation.purchases', minRole: 'manager' },
-  { key: 'udhaar', labelKey: 'navigation.Udhaar', minRole: 'manager' },
+  { key: 'udhaar', labelKey: 'navigation.udhaar', minRole: 'manager' },
   { key: 'returns', labelKey: 'navigation.returns', minRole: 'manager' },
   { key: 'shifts', labelKey: 'navigation.shifts', minRole: 'manager' },
   { key: 'reports', labelKey: 'navigation.reports', minRole: 'manager' },

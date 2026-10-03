@@ -13,7 +13,7 @@
     "promotions": "پروموشنز",
     "shifts": "شفٹس",
     "returns": "ریٹرنز",
-    "Udhaar": "ادھار",
+    "udhaar": "ادھار",
     "barcode": "بارکوڈ لیبلز",
     "expenses": "اخراجات",
     "commissions": "کمیشن",
@@ -23,7 +23,8 @@
     "branches": "برانچیز",
     "quickSale": "فوری فروخت",
     "transfers": "ٹرانسفر",
-    "fifoStock": "FIFO اسٹاک رپورٹ"
+    "fifoStock": "FIFO اسٹاک رپورٹ",
+    "admin": "ایڈمن پینل"
   },
   "buttons": {
     "save": "محفوظ کریں",

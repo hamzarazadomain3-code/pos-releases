@@ -13,7 +13,7 @@
     "promotions": "Promotions",
     "shifts": "Shifts",
     "returns": "Returns",
-    "Udhaar": "Udhaar",
+    "udhaar": "Udhaar",
     "barcode": "Barcode Labels",
     "expenses": "Expenses",
     "commissions": "Commissions",
@@ -23,7 +23,8 @@
     "branches": "Branches",
     "quickSale": "Quick Sale",
     "transfers": "Transfers",
-    "fifoStock": "FIFO Stock Report"
+    "fifoStock": "FIFO Stock Report",
+    "admin": "Admin Panel"
   },
   "buttons": {
     "save": "Save",

@@ -66,6 +66,42 @@ Three layers of checking, because page dimensions alone hide real defects:
 
 The audit runs the *production* job builders (`buildReceiptJob`/`buildInvoiceJob`), so it also covers the template/paper clamping. If `C:` is full, point the DB elsewhere first: `$env:TEMP="E:\tmp-opencode"; $env:ROKAR_SMOKE_USERDATA="E:\tmp-opencode\smokedata"`.
 
+### Marketing screenshots (capture_screens.js)
+```powershell
+$env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; npm run capture:screens -- --out E:/tmp-opencode/site/public/screens
+```
+Boots the real renderer against a seeded demo database and writes WebP screenshots
+of Dashboard / Billing / Inventory / Udhaar / Purchases / Reports, plus a
+`manifest.json`. The website's ProductTour section uses these instead of hand-drawn
+mockups, so **every screenshot shows fictional data from `scripts/seed_demo.js`** —
+the website must keep labelling them "sample data".
+
+Seeding is separate (`scripts/seed_demo.js`, also `npm run seed:demo` with
+`POS_DB_PATH` pointing somewhere disposable) and goes through the real
+`sales`/`inventory`/`purchases` services, so stock movements and customer ledgers
+are consistent with real use. It then back-dates the bills across 14 days by
+rewriting `sales.created_at`, which is safe only because nothing on the sale path
+denormalises a timestamp into an aggregate table.
+
+Four Electron gotchas cost most of the debugging time here. All four fail
+*silently* — you get a plausible-looking wrong file rather than an error:
+- **`backgroundThrottling: false` is mandatory.** The capture window is parked
+  off-screen, so Chromium treats it as occluded and throttles the lazy `import()`
+  that loads each page. Navigation silently never completes and every screenshot
+  comes out as the *previous* page. Three screenshots came out byte-identical
+  before this was found.
+- **Wait for the page to render, not for a timer.** Clicking a nav item flips
+  `active` synchronously but the component is still loading. Each screen declares a
+  `ready` expression (`.page-header h1` text, `.sale-invoice-title`, …) that is
+  polled before capturing.
+- **The first `capturePage()` after the window is shown throws `UnknownVizError`.**
+  Transient — the compositor frame does not exist yet. Retry rather than abort.
+- **A dark capture is not necessarily a blank capture.** Rokar's Dashboard is
+  genuinely ~42% dark pixels. Detect an unpainted buffer by *uniformity*
+  (low standard deviation, >80% dark), not by overall brightness.
+- Also: never `await` a `requestAnimationFrame` in this window — it is occluded, so
+  rAF is throttled to zero and the promise never resolves. Use a timer.
+
 ### Release
 ```powershell
 $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; npm run release
@@ -103,6 +139,8 @@ This costs ~120 MB of extra release storage per release. It is the price of neve
 - `src/renderer/src/pages/Inventory.tsx` — staged search (1× select highlight, 2× open Edit) + always-enabled barcode scan (found → highlight + auto-edit; not found → prompt "add new product with barcode")
 - `src/renderer/src/components/filters/SearchInput.tsx` — optional `onKeyDown` prop (used for staged search in Inventory)
 - `scripts/finalize-release.js` — finalizes GitHub release (needs GH_TOKEN — see Release above). Also uploads `RokarPOS-Setup.exe`, the version-less asset the website's `/releases/latest/download/` link depends on.
+- `scripts/seed_demo.js` — seeds a disposable DB with fictional shop data through the real services, for screenshots and for poking at the app without touching a real shop's numbers
+- `scripts/capture_screens.js` — captures real WebP screenshots of the app for the marketing site (see Marketing screenshots above)
 - `scripts/test_inventoryReports.js` — 12-test verification suite
 - `src/main/services/printService.ts` — the printing engine (geometry, shared print window, previews, PDF export)
 - `scripts/print_smoke.js` — 46-check print geometry/enumeration suite
