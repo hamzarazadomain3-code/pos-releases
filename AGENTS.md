@@ -26,7 +26,48 @@ $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win
 $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; node scripts/test_inventoryReports.js
 ```
 
-### Password recovery test
+### Licensing (perpetual, since 2026-10-03)
+
+**The licence is a one-time purchase and never expires.** This replaced a 1-year
+subscription that the marketing site had been contradicting all along (the site said
+"No annual lock-in" while `server.js` stamped every key `expires = now + 365 days`).
+
+How it works:
+- `license-server` has a `lifetime INTEGER` column. A lifetime key stores
+  `LIFETIME_SENTINEL` (`2999-12-31`) in `expires_at` **purely to satisfy that
+  column's NOT NULL** — rewriting it would mean a table rebuild. Every expiry
+  decision goes through `isLifetime(row)`, so the sentinel is never read.
+- `/api/generate` defaults to `lifetime: true`. Pass `lifetime: false` for a dated
+  key (rentals, evaluation).
+- The client caches this in the `license_lifetime` setting. `ensureLicenseValidSync()`
+  runs on **every sale** (`sales.ts`) and returns immediately for a lifetime key, so
+  the hot path is one string compare.
+
+Three defects were fixed at the same time. Each looked correct in isolation:
+1. **`device_id` was never sent**, so the server's `max_devices` check was dead code
+   and one key validated from unlimited machines. With no expiry left, that made a
+   perpetual licence trivially shareable, so `/api/validate` now *refuses* a request
+   without a `device_id` rather than skipping the check.
+2. **A server rejection was swallowed.** `throw new Error(data.msg)` sat inside the
+   `try` whose `catch` said "network error", so a `Revoked` or `Expired` response was
+   ignored and the shop carried on billing. Rejections are now captured in a variable
+   and re-thrown after the `try`. Network failures are still tolerated.
+3. **Revocation was unenforceable.** `checkLicense()` runs once at startup and only
+   logs its error, and the lifetime shortcut skips the per-sale check. A revoked
+   lifetime key is now recorded in `license_revoked` and blocks the next sale.
+   `activateLicense()` clears that flag.
+
+`scripts/test_licensing.js` (`npm run test:licensing`) covers all of this with a
+stubbed server — 19 checks, including that a perpetual licence passes with the
+network down and that a revoked one blocks the next sale. Add a case there rather
+than reasoning about the logic by hand.
+
+Keys already issued keep their 365-day expiry and are **not** converted
+automatically. To convert them, call `/api/renew` per key (it returns
+`{ok:true, lifetime:true}` and changes nothing for a lifetime key, so it is safe to
+run against every key), or run `UPDATE licenses SET lifetime = 1` in Turso.
+
+## Password recovery test
 ```powershell
 $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; npm run test:recovery
 ```
