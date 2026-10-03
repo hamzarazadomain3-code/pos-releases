@@ -1,7 +1,7 @@
 # Rokar POS — Agent Guide
 
 ## Version
-**v2.10.0** (Password recovery: security question + owner recovery code, plus developer support codes)
+**v2.11.0** (Perpetual one-time licence: no expiry, device-locked, revocable)
 
 ## Environment
 - Node.js v24.18.0 (portable at `C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64`)
