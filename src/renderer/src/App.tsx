@@ -525,6 +525,17 @@ export default function App() {
     restore();
   }, []);
 
+  // Listen for Support Recovery IPC from main process (menu item click)
+  useEffect(() => {
+    const off = window.api.app.onOpenSupportRecovery(() => {
+      // Only trigger if on login screen (no user logged in, no recovery mode active)
+      if (!user && !recoveryMode) {
+        setRecoveryMode('support');
+      }
+    });
+    return () => off();
+  }, [user, recoveryMode]);
+
   const handleLanguageChange = (lang: 'en' | 'ur') => {
     i18n.changeLanguage(lang);
     localStorage.setItem('language', lang);

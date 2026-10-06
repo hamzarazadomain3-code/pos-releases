@@ -813,10 +813,29 @@ export interface PrintResult {
   message: string;
 }
 
+/**
+ * Where a free trial currently stands.
+ *
+ * `serverAnchored` is the field worth understanding: while it is false the countdown
+ * is only a local guess, written on first run so an offline shop is not locked out.
+ * The server confirms (and can only shorten) it on the first successful check, which
+ * is what stops an uninstall-and-reinstall from buying another trial.
+ */
+export interface TrialStatus {
+  isTrial: boolean;
+  active: boolean;
+  daysLeft: number;
+  totalDays: number;
+  startedAt: string;
+  expiresAt: string;
+  serverAnchored: boolean;
+}
+
 export interface PosBridge {
   app: {
     getVersion: () => Promise<string>;
     quit: () => Promise<void>;
+    onOpenSupportRecovery: (callback: () => void) => () => void;
   };
   scaleBarcode: {
     parse: (barcode: string) => Promise<ScaleBarcodeResult>;
@@ -896,6 +915,7 @@ export interface PosBridge {
   licensing: {
     activate: (key: string) => Promise<string>;
     check: () => Promise<string>;
+    trialStatus: () => Promise<TrialStatus>;
   };
   reports: {
     dashboard: () => Promise<DashboardData>;

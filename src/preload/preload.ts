@@ -5,6 +5,11 @@ const bridge: PosBridge = {
   app: {
     getVersion: () => ipcRenderer.invoke('app:get-version'),
     quit: () => ipcRenderer.invoke('app:quit'),
+    onOpenSupportRecovery: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('open-support-recovery', listener);
+      return () => ipcRenderer.removeListener('open-support-recovery', listener);
+    },
   },
   updater: {
     check: () => ipcRenderer.invoke('updater:check'),
@@ -94,7 +99,8 @@ const bridge: PosBridge = {
   },
   licensing: {
     activate: (key: string) => ipcRenderer.invoke('licensing:activate', key),
-    check: () => ipcRenderer.invoke('licensing:check')
+    check: () => ipcRenderer.invoke('licensing:check'),
+    trialStatus: () => ipcRenderer.invoke('licensing:trialStatus')
   },
   reports: {
     dashboard: () => ipcRenderer.invoke('reports:dashboard'),

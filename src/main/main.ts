@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, protocol } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, protocol, Menu } from 'electron';
 import path from 'path';
 import { initDatabase } from './db';
 import { registerIpcHandlers } from './ipc';
@@ -192,6 +192,50 @@ app.whenReady().then(async () => {
   scheduleHourlyAlerts();
   // ── v2.0.0 Time-based triggers ──
   scheduleTimeBasedTriggers();
+
+  // ── Application Menu ──
+  // Create the application menu with View menu containing Support Recovery
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+        { type: 'separator' },
+        {
+          label: 'Support Recovery',
+          accelerator: 'Ctrl+Shift+Alt+R',
+          click: () => {
+            // Send IPC to renderer to open Support Recovery on login screen
+            const windows = BrowserWindow.getAllWindows();
+            const mainWindow = windows.find(w => !w.webContents.getURL().includes('devtools'));
+            if (mainWindow) {
+              mainWindow.webContents.send('open-support-recovery');
+            }
+          }
+        }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+
+  // IPC: Listen for renderer request to open Support Recovery (optional, for completeness)
+  ipcMain.on('open-support-recovery', () => {
+    const windows = BrowserWindow.getAllWindows();
+    const mainWindow = windows.find(w => !w.webContents.getURL().includes('devtools'));
+    if (mainWindow) {
+      mainWindow.webContents.send('open-support-recovery');
+    }
+  });
 
 
   app.on('activate', () => {

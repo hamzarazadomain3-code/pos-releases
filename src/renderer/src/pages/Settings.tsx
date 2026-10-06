@@ -5,12 +5,15 @@ import type {
   PrinterSettingsSnapshot,
   ScalePluMapping,
   SettingsMap,
+  TrialStatus,
   WhatsAppStatus,
 } from '../../../shared/types';
 import { formatTimestamp, formatDateTimeAdmin } from '../utils/dateUtils';
 
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsMap>({});
+  // Null = not a trial, so the panel is hidden entirely for licensed shops.
+  const [trial, setTrial] = useState<TrialStatus | null>(null);
   const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -72,6 +75,16 @@ export default function Settings() {
     }).catch(() => undefined);
     window.api.printing.getPrinters().then(setPrinters).catch(() => setPrinters([]));
     window.api.printing.getPrinterSettings().then(setPrintSettings).catch(() => undefined);
+    // Poll the countdown rather than reading it once: the whole point of showing
+    // "N of 15 days left" is that it moves. Cheap — it is a local settings read.
+    const loadTrial = () =>
+      window.api.licensing
+        .trialStatus()
+        .then((t) => setTrial(t.isTrial ? t : null))
+        .catch(() => setTrial(null));
+    loadTrial();
+    const trialPoll = setInterval(loadTrial, 60_000);
+    return () => clearInterval(trialPoll);
   }, []);
 
   async function saveShop() {
@@ -531,6 +544,37 @@ export default function Settings() {
     <div className="panel">
       <div className="panel-title">License</div>
       <div className="settings-form">
+        {trial && (
+          <div
+            className="muted small"
+            style={{
+              marginBottom: 10,
+              padding: '8px 10px',
+              borderRadius: 6,
+              border: `1px solid ${trial.active ? 'var(--border)' : 'var(--danger)'}`,
+              background: trial.active ? 'transparent' : 'rgba(220,80,80,0.08)',
+            }}
+          >
+            {trial.active ? (
+              <>
+                Free trial — <strong>{trial.daysLeft} of {trial.totalDays} days</strong> left
+                {trial.expiresAt && <> (ends {new Date(trial.expiresAt).toLocaleDateString()})</>}.
+                {!trial.serverAnchored && (
+                  <>
+                    {' '}This machine is offline, so the countdown is a local estimate. It will be
+                    confirmed — and can only be shortened, never extended — next time the app
+                    reaches the server.
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                The {trial.totalDays}-day free trial has ended. Enter your license key below to keep
+                billing.
+              </>
+            )}
+          </div>
+        )}
         <label className="field">
           <span>License Key</span>
           <input
@@ -545,6 +589,11 @@ export default function Settings() {
               try {
                 const msg = await window.api.licensing.activate(settings.license_key ?? '');
                 setNotice(msg);
+                // Re-read immediately: activating a paid key must clear the trial
+                // banner at once. Without this it would linger for up to a minute,
+                // claiming an active trial for a shop that just paid.
+                const t = await window.api.licensing.trialStatus();
+                setTrial(t.isTrial ? t : null);
               } catch (e) {
                 setNotice(e instanceof Error ? e.message : String(e));
               }
