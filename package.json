@@ -65,6 +65,7 @@
   "build": {
     "appId": "com.shopkeeper.pos",
     "productName": "Rokar POS",
+    "afterPack": "scripts/after-pack.js",
     "publish": [
       {
         "provider": "github",

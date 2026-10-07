@@ -158,6 +158,30 @@ gh release upload v<version> "dist_release\RokarPOS-Setup.exe" --repo hamzarazad
 ```
 This costs ~120 MB of extra release storage per release. It is the price of never editing the website again; do not "optimise" it away without also pinning the site back to a versioned URL.
 
+### App icon (why `signAndEditExecutable` is false)
+
+`build.win.signAndEditExecutable` is `false` on purpose. electron-builder's built-in
+executable editor shells out to `app-builder rcedit`, which unpacks the winCodeSign
+bundle with `7za` — and `7za` is not on PATH on these build machines, so leaving it on
+makes the whole build abort with `exec: "7za": executable file not found`. Turning it
+off kept the build green but silently dropped our icon from `Rokar POS.exe` (Explorer
+and the taskbar showed the stock Electron atom), while the NSIS installer/uninstaller
+looked correct because NSIS embeds `installerIcon`/`uninstallerIcon` itself.
+
+The icon is now applied by the `afterPack` hook (`scripts/after-pack.js`) using a
+vendored `build/tools/rcedit-x64.exe` (needs no external extractor). It sets the icon
+plus ProductName/FileDescription/CompanyName/version on the packaged executable. Do not
+delete `build/tools/` or the hook, and do not "simplify" it back to `signAndEditExecutable: true`
+unless `7za` is guaranteed on PATH. Verify a build with:
+```powershell
+python <pe-icon-parser> "dist_release\win-unpacked\Rokar POS.exe"   # expect 6 sizes, pixel-exact
+```
+`build/icon.ico` must stay a **square** multi-resolution ICO (16/32/48/64/128/256). The
+canonical source is `build/icon-source.png` (square 800×800, transparent padding). The
+raw logo `src/renderer/src/assets/rokar-sidebar-icon.png` is 800×793 — pad it to a square
+canvas before resizing, otherwise the ICO frames come out 256×254 etc. and Windows renders
+them wrong.
+
 ## Architecture Notes
 - **Database**: `node:sqlite` with `DatabaseSync` (via `src/main/db.ts` `getDb()`)
 - **Migrations**: `migrations/0XX_*.js` — always use `PRAGMA table_info()` guard pattern
@@ -180,6 +204,9 @@ This costs ~120 MB of extra release storage per release. It is the price of neve
 - `src/renderer/src/pages/Inventory.tsx` — staged search (1× select highlight, 2× open Edit) + always-enabled barcode scan (found → highlight + auto-edit; not found → prompt "add new product with barcode")
 - `src/renderer/src/components/filters/SearchInput.tsx` — optional `onKeyDown` prop (used for staged search in Inventory)
 - `scripts/finalize-release.js` — finalizes GitHub release (needs GH_TOKEN — see Release above). Also uploads `RokarPOS-Setup.exe`, the version-less asset the website's `/releases/latest/download/` link depends on.
+- `scripts/after-pack.js` — electron-builder `afterPack` hook that embeds `build/icon.ico` + version metadata into the packaged `Rokar POS.exe` with vendored `build/tools/rcedit-x64.exe` (see "App icon" above)
+- `build/icon.ico` — the app/installer icon. Must be a square multi-resolution ICO; regenerate from `build/icon-source.png` (square 800×800) with PIL and verify the directory frames are exact squares
+- `build/icon-source.png` — square 800×800 transparent-padded copy of the logo, kept so the ICO can be regenerated correctly
 - `scripts/seed_demo.js` — seeds a disposable DB with fictional shop data through the real services, for screenshots and for poking at the app without touching a real shop's numbers
 - `scripts/capture_screens.js` — captures real WebP screenshots of the app for the marketing site (see Marketing screenshots above)
 - `scripts/test_inventoryReports.js` — 12-test verification suite
