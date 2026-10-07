@@ -136,7 +136,13 @@ function buildRoll(
 ): string {
   const spec = PAPER_SPECS[paper];
   const narrow = paper === 'thermal58';
-  const basePt = narrow ? 9 : 8.5;
+  // Body size. Thermal heads need big glyphs: the previous 9pt (58mm) / 8.5pt
+  // (80mm) printed faint and smaller than competing receipts, and 80mm ended up
+  // smaller than 58mm even though it has more room. `receipt_font_size`
+  // (Settings -> Billing) tunes it at runtime; the old template ignored it, so
+  // the setting was dead config. small = -1.5pt, normal = 0, large = +1.5pt.
+  const fontDelta = s.receipt_font_size === 'small' ? -1.5 : s.receipt_font_size === 'large' ? 1.5 : 0;
+  const basePt = 10 + fontDelta;
 
   const rows = sale.items
     .map((it) => {
@@ -175,31 +181,35 @@ function buildRoll(
 html, body { margin: 0; padding: 0; background: #fff; }
 body {
   width: ${spec.contentMm}mm; padding: 1.2mm ${(spec.widthMm - spec.contentMm) / 2}mm;
-  font-family: ${narrow ? "'Consolas', 'Courier New', monospace" : "'Segoe UI', Arial, sans-serif"};
-  font-size: ${basePt}pt; color: #000; -webkit-print-color-adjust: exact;
+  font-family: ${narrow ? "'Consolas', 'Courier New', monospace" : "Arial, 'Segoe UI', sans-serif"};
+  font-size: ${basePt}pt; font-weight: 700; color: #000; -webkit-print-color-adjust: exact;
+  -webkit-text-stroke: 0.15pt #000;
 }
-h1 { font-size: ${narrow ? '12pt' : '13pt'}; text-align: center; margin: 0 0 0.8mm; }
-.shop { text-align: center; font-size: ${(basePt - 1.2).toFixed(1)}pt; color: #333; line-height: 1.35; }
-.hdr { text-align: center; font-size: ${(basePt - 1.5).toFixed(1)}pt; margin-bottom: 1mm; }
+h1 { font-size: ${narrow ? '13pt' : '15pt'}; font-weight: 800; text-align: center; margin: 0 0 0.8mm; }
+.shop { text-align: center; font-size: ${(basePt - 1.2).toFixed(1)}pt; font-weight: 700; color: #000; line-height: 1.4; }
+.hdr { text-align: center; font-size: ${(basePt - 1.5).toFixed(1)}pt; font-weight: 700; margin-bottom: 1mm; }
 .logo { max-width: 100%; max-height: 12mm; display: block; margin: 0 auto 1mm; }
 table { width: 100%; border-collapse: collapse; margin: 1.2mm 0; }
-td { padding: 0.5mm 0; font-size: ${basePt}pt; vertical-align: top; line-height: 1.25; }
+td { padding: 0.5mm 0; font-size: ${basePt}pt; font-weight: 700; vertical-align: top; line-height: 1.3; }
 td.r { text-align: right; white-space: nowrap; }
-td.name { padding-right: 1.5mm; word-break: break-word; }
-td.qty { color: #333; padding: 0.5mm 1.5mm; }
-td.total { font-weight: 700; }
+td.name { padding-right: 1mm; word-break: break-word; overflow-wrap: anywhere; }
+td.qty { color: #000; padding: 0.5mm 0.8mm; }
+td.total { font-weight: 800; }
 /* Narrow (58mm) stacked item row: name + line total, then qty x unit price. */
 td.stack { padding: 0.7mm 0; }
 .s1 { display: flex; align-items: flex-start; gap: 1.5mm; }
-.s1 .nm { flex: 1 1 auto; min-width: 0; word-break: break-word; }
-.s1 .tt { flex: 0 0 auto; white-space: nowrap; font-weight: 700; }
-.s2 { color: #333; font-size: ${(basePt - 0.6).toFixed(1)}pt; word-break: break-word; }
+.s1 .nm { flex: 1 1 auto; min-width: 0; word-break: break-word; overflow-wrap: anywhere; }
+.s1 .tt { flex: 0 0 auto; white-space: nowrap; font-weight: 800; }
+.s2 { color: #000; font-size: ${(basePt - 0.6).toFixed(1)}pt; font-weight: 700; word-break: break-word; }
 .meta td { font-size: ${(basePt - 0.6).toFixed(1)}pt; }
+/* 58mm: invoice no + date cannot stay on one line at the new size. Let the
+   value wrap (anywhere) so the meta table's min-content never exceeds 52mm. */
+.meta td.r { white-space: normal; overflow-wrap: anywhere; }
 .line { border-top: 0.3mm dashed #000; margin: 1.2mm 0; }
-.totals td { font-weight: 600; }
-.totals tr.grand td { font-size: ${basePt + 1.5}pt; font-weight: 700; }
-.promo { font-size: ${(basePt - 1.5).toFixed(1)}pt; color: #16a34a; }
-.foot { text-align: center; margin-top: 1.8mm; font-size: ${(basePt - 1.2).toFixed(1)}pt; line-height: 1.4; }
+.totals td { font-weight: 700; }
+.totals tr.grand td { font-size: ${basePt + 1.5}pt; font-weight: 900; }
+.promo { font-size: ${(basePt - 1.5).toFixed(1)}pt; font-weight: 700; color: #000; }
+.foot { text-align: center; margin-top: 1.8mm; font-size: ${(basePt - 1.2).toFixed(1)}pt; font-weight: 700; line-height: 1.45; }
 `;
 
   const body = `${opts.headerText ? `<div class="hdr">${esc(opts.headerText)}</div>` : ''}

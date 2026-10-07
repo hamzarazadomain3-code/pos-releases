@@ -1,7 +1,7 @@
 # Rokar POS — Agent Guide
 
 ## Version
-**v2.12.1** (Perpetual one-time licence: no expiry, device-locked, revocable)
+**v2.12.2** (Perpetual one-time licence: no expiry, device-locked, revocable)
 
 ## Environment
 - Node.js v24.18.0 (portable at `C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64`)
@@ -236,3 +236,30 @@ them wrong.
 - Printable widths are 52mm on 58mm paper and 72mm on 80mm paper. The shop mixes both — the paper size is a per-slot setting, not an app-wide constant.
 - **58mm receipts cannot use the 4-column item table.** A product name, a unit label like "1000 Gram" and two money columns do not fit in 52mm; the table grows past the page and the printer slices the right side off. `receiptTemplates.ts` emits a stacked two-line row (`td.stack`) on narrow paper instead.
 - `setAdminSetting` is owner-gated, so background timers (auto-backup) must not use it — write system-managed keys directly.
+
+### Receipt typography (thermal darkness / readability)
+
+Thermal receipts were printing faint and smaller than competing POS receipts. The
+rendering pipeline is Chromium → Windows printer driver (`webContents.print`), so
+there is **no ESC/POS `setDensity`/heat command and no DPI/quality option** — the
+head's darkness is a driver setting (Printer properties → Darkness/Heat = High,
+economy off). The only levers in code are glyph weight, size and colour, because a
+1-bit thermal head drops the grey anti-aliased edges of thin glyphs.
+
+`buildRoll()` in `receiptTemplates.ts` now prints with:
+- `basePt = 10` (was 9 on 58mm and **8.5 on 80mm** — 80mm was smaller than 58mm).
+- `font-weight: 700` on all body text (800 for shop name / line totals, 900 for TOTAL).
+- pure `#000` everywhere (no `#333` greys, no green promo).
+- `-webkit-text-stroke: 0.15pt #000` to thicken strokes on the thermal head.
+- 80mm uses `Arial` first (solid bold) instead of Segoe UI.
+
+The `receipt_font_size` setting (Settings → Billing: small/normal/large) now actually
+does something — it was dead config before, because the old template hardcoded the
+size. It applies a `-1.5pt / 0 / +1.5pt` delta to `basePt`, so a shop can tune the
+print without a rebuild.
+
+Raising the size briefly broke `npm run test:print` (the 97-char long-name stress
+overflowed the 80mm item table by ~1.6px). Fixed by shrinking the item-row padding
+(`td.name` padding-right 1.5→1mm, `td.qty` horizontal 1.5→0.8mm) — not by shrinking
+the font. Run `npm run test:print` after any typography change; it measures real
+element boxes against the printable width.
