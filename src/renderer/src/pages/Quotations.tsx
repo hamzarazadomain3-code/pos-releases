@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { QuotationRow, Customer, Product } from '../../../shared/types';
 import { formatDateTimeAdmin } from '../utils/dateUtils';
+import { Modal } from '../components/Modal';
+import { KeyboardInput } from '../components/KeyboardInput';
+import { useListKeyboard } from '../hooks/useListKeyboard';
+import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
 const fmt = (n: number) => n?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? '0';
 
@@ -161,6 +165,39 @@ export default function Quotations() {
     }
   };
 
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // ── Keyboard: arrow between quotations, Enter converts, Delete removes ──
+  const quoteList = useListKeyboard({
+    count: rows.length,
+    onOpen: (i) => {
+      const q = rows[i];
+      if (q && q.status !== 'converted' && q.status !== 'expired') handleConvert(q.id);
+    },
+    onDelete: (i) => {
+      const q = rows[i];
+      if (q && q.status !== 'converted' && confirm(`Delete quotation ${q.quote_no}?`)) handleDelete(q.id);
+    },
+  });
+
+  useKeyboardScope({
+    kind: 'page',
+    label: 'Quotations',
+    actions: {
+      new_record: () => setEditorOpen(true),
+      search: () => searchRef.current?.focus(),
+      save: () => { if (editorOpen) handleCreate(); },
+    },
+    shortcuts: [
+      { action: 'new_record', label: 'New quotation' },
+      { action: 'search', label: 'Focus search' },
+      { action: 'save', label: 'Save the quotation (when the editor is open)' },
+      { keys: '↑ / ↓', label: 'Move between quotations' },
+      { keys: 'Enter', label: 'Convert highlighted quotation' },
+      { keys: 'Delete', label: 'Delete highlighted quotation' },
+    ],
+  });
+
   return (
     <div className="page">
       <div className="page-header">
@@ -179,6 +216,7 @@ export default function Quotations() {
       <div className="card">
         <div className="row-btns" style={{ marginBottom: 12 }}>
           <input
+            ref={searchRef}
             placeholder="Search quote no / customer..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -202,7 +240,7 @@ export default function Quotations() {
         ) : rows.length === 0 ? (
           <p className="muted center pad">No quotations found.</p>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <div {...quoteList.getContainerProps()} style={{ overflowX: 'auto' }}>
             <table className="data-table">
               <thead>
                 <tr>
@@ -216,8 +254,8 @@ export default function Quotations() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((q) => (
-                  <tr key={q.id}>
+                {rows.map((q, i) => (
+                  <tr key={q.id} {...quoteList.getRowProps(i)}>
                     <td><strong>{q.quote_no}</strong></td>
                     <td>{q.customer_name || '—'}</td>
                     <td>
@@ -259,13 +297,14 @@ export default function Quotations() {
       </div>
 
       {editorOpen && (
-        <div className="modal-overlay" onClick={() => setEditorOpen(false)}>
-          <div className="modal" style={{ maxWidth: 720, width: '95%' }} onClick={(e) => e.stopPropagation()}>
-            <div className="row-btns" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
-              <h2>New Quotation</h2>
-              <button className="btn btn-sm" onClick={() => setEditorOpen(false)}>✕</button>
-            </div>
-
+        <Modal
+          onClose={() => setEditorOpen(false)}
+          onSubmit={handleCreate}
+          title="New Quotation"
+          style={{ maxWidth: 720, width: '95%' }}
+          label="Quotation"
+          shortcuts={[{ action: 'save', label: 'Save quotation' }]}
+        >
             <div className="form-group">
               <label>Customer</label>
               <select value={customerId} onChange={(e) => setCustomerId(e.target.value ? Number(e.target.value) : '')}>
@@ -314,15 +353,19 @@ export default function Quotations() {
                     <tr key={idx}>
                       <td>{item.product_name}</td>
                       <td>
-                        <input
-                          type="number" min="1" value={item.qty}
+                        <KeyboardInput
+                          type="text"
+                          decimals
+                          value={item.qty}
                           style={{ width: 60 }}
                           onChange={(e) => updateItem(idx, 'qty', Number(e.target.value))}
                         />
                       </td>
                       <td>
-                        <input
-                          type="number" min="0" step="0.01" value={item.unit_price}
+                        <KeyboardInput
+                          type="text"
+                          decimals
+                          value={item.unit_price}
                           style={{ width: 90 }}
                           onChange={(e) => updateItem(idx, 'unit_price', Number(e.target.value))}
                         />
@@ -355,8 +398,7 @@ export default function Quotations() {
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

@@ -8,6 +8,9 @@
  * whatever paper the printer happened to be loaded with.
  */
 import { execFile } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { getSale } from './sales';
 import { getUser } from './auth';
 import { formatLocalString } from '../utils/timezone';
@@ -34,6 +37,8 @@ import {
   printDocument,
   previewDocument,
   printCalibration,
+  printJobToPdf,
+  printJobToPng,
   registerPrintProtocol,
   PAPER_SPECS,
   LABEL_SPECS,
@@ -455,3 +460,13 @@ export async function printTestSheet(paper?: PaperKind): Promise<PrintResult> {
 }
 
 export { AUTO_PRINTER, LABEL_SPECS, PAPER_SPECS, invalidatePrinterCache };
+
+// Label Studio phase 4 entry points live in their own module so this load-bearing
+// print facade stays untouched; they are re-exported for ipc.ts which imports
+// everything print-related from here.
+export {
+  printBarcodeBatchWithOptions,
+  exportLabelBatchToPDF,
+  exportLabelBatchToPNG,
+  printCalibrationLabel,
+} from './labelStudioPrinting';

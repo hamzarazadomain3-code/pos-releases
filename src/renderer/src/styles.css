@@ -1079,6 +1079,252 @@ body.theme-dark .bilten-bill-summary-item {
   color: #fff;
 }
 
+/* ═══════════════════════════════════════════
+   SHARED MODAL STRUCTURE (keyboard layer)
+   ═══════════════════════════════════════════ */
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.modal-header h2,
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.btn-close {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 24px;
+  line-height: 1;
+  padding: 0 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-close:hover {
+  background: var(--hover-bg, rgba(99, 102, 241, 0.1));
+  color: var(--text);
+}
+
+.modal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+/* ═══════════════════════════════════════════
+   KEYBOARD NAVIGATION
+   ═══════════════════════════════════════════ */
+
+/*
+ * Shared focus ring for keyboard-driven lists and tables. It reuses the exact
+ * tokens of .browse-item-selected so the highlight is identical on every page.
+ */
+.kb-focus,
+[data-kb-active='true'] {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  background: rgba(99, 102, 241, 0.08);
+}
+
+tr[data-kb-active='true'] {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+tr[data-kb-active='true'] > td {
+  background: rgba(99, 102, 241, 0.08);
+}
+
+/* Line-item cells: show which cell has the caret when arrowing around. */
+[data-kb-cell] {
+  outline: none;
+}
+
+[data-kb-cell]:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  background: rgba(99, 102, 241, 0.08);
+}
+
+/* ─── Quantity input (− value +) ─── */
+.qty-input-wrap {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.qty-input-wrap input {
+  width: 56px;
+  border: none;
+  border-radius: 0;
+  text-align: center;
+  padding: 8px 4px;
+  font-size: 14px;
+  background: transparent;
+}
+
+.qty-input-wrap input:focus {
+  outline: none;
+  background: rgba(99, 102, 241, 0.06);
+}
+
+.qty-step {
+  border: none;
+  background: rgba(99, 102, 241, 0.06);
+  color: var(--primary);
+  width: 30px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.qty-step:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.16);
+}
+
+.qty-step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ─── Command palette (Ctrl+K) ─── */
+.command-palette {
+  width: 520px;
+}
+
+.palette-search {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.palette-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+  outline: none;
+}
+
+.palette-item {
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.palette-item:hover,
+.palette-item.active {
+  background: rgba(99, 102, 241, 0.1);
+  outline: none;
+}
+
+.palette-item.active {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.palette-empty {
+  padding: 14px;
+  text-align: center;
+}
+
+/* ─── Shortcut help (F1) ─── */
+.kb-help {
+  width: 560px;
+}
+
+.kb-help-heading {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 16px 0 8px;
+}
+
+.kb-help-heading:first-child {
+  margin-top: 0;
+}
+
+.kb-help-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kb-help-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.kb-help-key {
+  flex-shrink: 0;
+  min-width: 92px;
+  text-align: center;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 7px;
+  background: var(--surface-2, #f8fafc);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ─── Login PIN pad ─── */
+.pin-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.pin-key {
+  padding: 12px 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2, #f8fafc);
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.pin-key:hover {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.pin-key:active {
+  background: rgba(99, 102, 241, 0.2);
+}
+
 /* ═══════════════════════════════════════════════════════════
    BILLING UX — v2.4.3 enhancements
    ═══════════════════════════════════════════════════════════ */
@@ -3932,6 +4178,15 @@ body.theme-dark .recovery-device-id {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.admin-setting-input.admin-setting-textarea {
+  width: 260px;
+  min-height: 84px;
+  resize: vertical;
+  line-height: 1.4;
+  font-family: inherit;
+  white-space: pre-wrap;
 }
 
 .admin-setting-select {

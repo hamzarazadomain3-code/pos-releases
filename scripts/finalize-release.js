@@ -33,46 +33,51 @@ const OWNER = 'hamzarazadomain3-code';
 const REPO = 'pos-releases';
 
 function uploadAsset(releaseId, filePath, assetName) {
-  const stat = fs.statSync(filePath);
-  const boundary = `----rokar${Date.now()}`;
-  const head = Buffer.from(
-    `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="name"\r\n\r\n${assetName}\r\n` +
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="data"; filename="${path.basename(filePath)}"\r\n` +
-      `Content-Type: application/octet-stream\r\n\r\n`,
-    'utf8'
-  );
-  const tail = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
-
-  const req = https.request(
-    {
-      hostname: 'uploads.github.com',
-      path: `/repos/${OWNER}/${REPO}/releases/${releaseId}/assets?name=${encodeURIComponent(assetName)}`,
-      method: 'POST',
-      headers: {
-        Authorization: `token ${TOKEN}`,
-        'User-Agent': 'pos-app-release',
-        Accept: 'application/vnd.github+json',
-        'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        'Content-Length': head.length + stat.size + tail.length,
+  // GitHub's "upload a release asset" endpoint takes the RAW file bytes as the
+  // request body (with the name in the query string and Content-Type:
+  // application/octet-stream). It is NOT a multipart/form-data upload: sending
+  // multipart makes GitHub store the entire encoded body as the asset, so the
+  // installer is 274 bytes too big and starts with "--<boundary>" instead of
+  // "MZ" — i.e. a corrupt download for every client.
+  return new Promise((resolve) => {
+    const stat = fs.statSync(filePath);
+    const req = https.request(
+      {
+        hostname: 'uploads.github.com',
+        path: `/repos/${OWNER}/${REPO}/releases/${releaseId}/assets?name=${encodeURIComponent(assetName)}`,
+        method: 'POST',
+        headers: {
+          Authorization: `token ${TOKEN}`,
+          'User-Agent': 'pos-app-release',
+          Accept: 'application/vnd.github+json',
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': stat.size,
+        },
       },
-    },
-    (res) => {
-      let data = '';
-      res.on('data', (c) => (data += c));
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) console.log(`Stable asset uploaded: ${assetName}`);
-        else console.log(`Stable asset upload skipped (HTTP ${res.statusCode}): ${data.slice(0, 160)}`);
-      });
-    }
-  );
-  req.on('error', (e) => console.log(`Stable asset upload error: ${e.message}`));
-  req.write(head);
-  fs.createReadStream(filePath).pipe(req, { end: false });
-  req.write(tail);
-  req.end();
-  return new Promise((resolve) => setTimeout(resolve, 1500));
+      (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) console.log(`Stable asset uploaded: ${assetName}`);
+          else console.log(`Stable asset upload skipped (HTTP ${res.statusCode}): ${data.slice(0, 160)}`);
+          resolve();
+        });
+      }
+    );
+    req.on('error', (e) => {
+      console.log(`Stable asset upload error: ${e.message}`);
+      resolve();
+    });
+
+    const file = fs.createReadStream(filePath);
+    file.on('error', (e) => {
+      console.log(`Stable asset read error: ${e.message}`);
+      req.destroy();
+      resolve();
+    });
+    // Pipe with end:true — Node calls req.end() when the file stream finishes.
+    file.pipe(req);
+  });
 }
 
 function api(method, path, body) {

@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import JsBarcode from 'jsbarcode';
 import type { Product } from '../../../shared/types';
 import { formatMoney } from '../utils/currency';
+import { KeyboardInput } from '../components/KeyboardInput';
+import { useListKeyboard } from '../hooks/useListKeyboard';
+import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
 type LabelSize = '38x25' | '50x30' | '100x50';
 type LabelLayout = 'roll' | 'sheet';
@@ -28,6 +31,7 @@ export default function BarcodeGenerator() {
   const [shopName, setShopName] = useState('');
   const [showPreview, setShowPreview] = useState(true);
   const printAreaRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     window.api.inventory
@@ -159,6 +163,26 @@ export default function BarcodeGenerator() {
       (p.barcode ?? '').includes(search.trim())
   );
 
+  const productList = useListKeyboard({
+    count: filtered.length,
+    onOpen: (i) => { const p = filtered[i]; if (p) toggleProduct(p.id); },
+  });
+
+  useKeyboardScope({
+    kind: 'page',
+    label: 'Barcode Label Printer',
+    actions: {
+      search: () => searchRef.current?.focus(),
+      print: () => { void handlePrint(); },
+    },
+    shortcuts: [
+      { action: 'search', label: 'Focus product search' },
+      { action: 'print', label: 'Print selected labels' },
+      { keys: '↑ / ↓', label: 'Move between products' },
+      { keys: 'Enter', label: 'Toggle highlighted product' },
+    ],
+  });
+
   return (
     <div className="page">
       <div className="page-header">
@@ -195,10 +219,9 @@ export default function BarcodeGenerator() {
           </select>
           <label className="field" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <span>Copies</span>
-            <input
-              type="number"
-              min={1}
-              max={50}
+            <KeyboardInput
+              type="text"
+              decimals={false}
               value={copies}
               onChange={(e) => setCopies(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
               className="field-input"
@@ -237,6 +260,7 @@ export default function BarcodeGenerator() {
       )}
 
       <input
+        ref={searchRef}
         className="search-input"
         placeholder="Search products to label…"
         value={search}
@@ -244,10 +268,11 @@ export default function BarcodeGenerator() {
         style={{ marginBottom: '12px' }}
       />
 
-      <div className="result-list">
-        {filtered.map((p) => (
+      <div className="result-list" {...productList.getContainerProps()}>
+        {filtered.map((p, i) => (
           <label
             key={p.id}
+            {...productList.getRowProps(i)}
             className="result-item"
             style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}
           >

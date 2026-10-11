@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import type { Product, Customer, Category } from '../../../shared/types';
 import { formatMoney } from '../utils/currency';
 import { useBarcodeScan } from '../hooks/useBarcodeScan';
+import { Modal } from '../components/Modal';
+import { KeyboardInput } from '../components/KeyboardInput';
 
 interface CartItem {
   product_id: number;
@@ -394,10 +396,9 @@ export default function QuickSaleGrid() {
           {searchStage === 'qty' && selectedSearchProduct() && (
             <div className="quantity-input-box">
               <span>{selectedSearchProduct()!.name} — Qty:</span>
-              <input
-                type="number"
-                min={1}
-                max={999}
+              <KeyboardInput
+                type="text"
+                decimals={false}
                 autoFocus
                 value={searchQty}
                 onChange={(e) => setSearchQty(e.target.value)}
@@ -563,33 +564,32 @@ export default function QuickSaleGrid() {
       </aside>
 
       {qtyDialog && (
-        <div className="modal-overlay" onClick={() => setQtyDialog(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Add quantity — {qtyDialog.name}</h3>
-            <label className="field" style={{ marginTop: 12 }}>
-              <span>Quantity</span>
-              <input
-                type="number"
-                min={1}
-                max={999}
-                autoFocus
-                value={qtyDialogValue}
-                onChange={(e) => setQtyDialogValue(e.target.value)}
-                onFocus={(e) => e.target.select()}
-                onKeyDown={(e) => {
-                  if (e.key === 'ArrowUp') { setQtyDialogValue(String(Math.min(999, (Number(qtyDialogValue) || 1) + 1))); e.preventDefault(); }
-                  if (e.key === 'ArrowDown') { setQtyDialogValue(String(Math.max(1, (Number(qtyDialogValue) || 1) - 1))); e.preventDefault(); }
-                }}
-              />
-            </label>
-            <div className="modal-actions" style={{ marginTop: 16 }}>
-              <button className="btn" onClick={() => setQtyDialog(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={() => confirmQtyDialog(qtyDialog)}>
-                Add {Math.max(1, Math.min(999, Number(qtyDialogValue) || 1))}
-              </button>
-            </div>
+        <Modal
+          onClose={() => setQtyDialog(null)}
+          onSubmit={() => confirmQtyDialog(qtyDialog)}
+          title={`Add quantity — ${qtyDialog.name}`}
+        >
+          <label className="field" style={{ marginTop: 12 }}>
+            <span>Quantity</span>
+            <KeyboardInput
+              type="text"
+              decimals
+              autoFocus
+              value={qtyDialogValue}
+              onChange={(e) => setQtyDialogValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowUp') { setQtyDialogValue(String(Math.min(999, (Number(qtyDialogValue) || 1) + 1))); e.preventDefault(); }
+                if (e.key === 'ArrowDown') { setQtyDialogValue(String(Math.max(1, (Number(qtyDialogValue) || 1) - 1))); e.preventDefault(); }
+              }}
+            />
+          </label>
+          <div className="modal-actions" style={{ marginTop: 16 }}>
+            <button className="btn" onClick={() => setQtyDialog(null)}>Cancel</button>
+            <button className="btn btn-primary" onClick={() => confirmQtyDialog(qtyDialog)}>
+              Add {Math.max(1, Math.min(999, Number(qtyDialogValue) || 1))}
+            </button>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

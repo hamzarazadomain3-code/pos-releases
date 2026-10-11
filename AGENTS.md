@@ -1,7 +1,7 @@
 # Rokar POS — Agent Guide
 
 ## Version
-**v2.12.2** (Perpetual one-time licence: no expiry, device-locked, revocable)
+**v2.15.0** (Perpetual one-time licence: no expiry, device-locked, revocable)
 
 ## Environment
 - Node.js v24.18.0 (portable at `C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64`)
@@ -25,6 +25,118 @@ $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win
 ```powershell
 $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; node scripts/test_inventoryReports.js
 ```
+
+### Keyboard navigation test
+```powershell
+$env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; npm run test:keyboard
+# follows the same Electron pattern as test_recovery:ui — it needs a full build
+# first (it loads dist/renderer), and PowerShell reports exit code 1 even on
+# success because of the Electron stderr banner. Trust the "ALL PASSED" line.
+```
+`scripts/keyboard_smoke.js` (28 checks) drives the real renderer with synthetic
+`keydown` events: it signs in, seeds a product and the default shortcut bindings,
+then asserts the global layer (Ctrl+K palette, F1 help, Escape), that Ctrl+N opens
+each migrated page's primary modal and Escape closes it, that Ctrl+F focuses the
+page search box, that ArrowDown highlights an Inventory row and Enter opens its
+Edit modal, that Ctrl+N on Audits starts an audit with focusable count cells, and
+that Enter on the login username advances to the password field and submits.
+
+## Keyboard navigation
+
+Keyboard-first operation is shared infrastructure, not per-page code. The pieces:
+
+- `keyboard/KeyboardProvider.tsx` — one **bubble-phase** `window.keydown` listener,
+  mounted in `App.tsx`. It ignores anything already `preventDefault()`'d (so the
+  barcode scanner and any typing win), handles the built-ins Ctrl+K / F1, blocks
+  everything else while a palette/help overlay is open, and routes every other
+  admin combo to the **active scope**.
+- `keyboard/scopeRegistry.ts` + `hooks/useKeyboardScope.ts` — a scope stack. Modal
+  scopes rank above page scopes, so an open modal masks the page. `active()` is the
+  highest-id modal, else the highest-id page. When no scope is registered the
+  provider does nothing, so un-migrated screens keep owning their own keys.
+- `keyboard/shortcuts.ts` — `GLOBAL_SHORTCUTS` (Ctrl+K palette, F1 help) always
+  work; `BUILTIN_DEFAULTS` supplies Ctrl+N for `new_record` when the admin
+  `shortcuts` table has no binding. Everything else (`search`/`save`/`print` …)
+  comes from the `admin.shortcuts` table, so the owner can rebind it.
+- `hooks/useFormKeyboard.ts` — inside a modal: Enter = next field (last = submit),
+  Shift+Enter = previous, Escape = close, first control autofocused, numeric fields
+  select-all on focus, focus trap. It early-returns on `defaultPrevented`, so a
+  field that handles its own Enter (staged search, qty box, line-item cell) wins.
+- `hooks/useListKeyboard.ts` — any table/list: ↑/↓/Home/End/PageUp/PageDown
+  highlight, Enter opens, Delete deletes (caller confirms), type-to-filter focuses
+  the search box. Ignored while a row button/input has focus.
+- `hooks/useLineItemKeyboard.ts` — editable grids: `search → qty → price` cycle,
+  arrow cells, Ctrl+Enter submit, Delete row, Escape cancel.
+- `components/Modal.tsx` — the shared shell every migrated page uses: registers the
+  modal scope, wires `useFormKeyboard`, renders `modal-header`/`modal-footer`.
+- `components/KeyboardInput.tsx` / `QtyInput.tsx` — text inputs that never step on
+  ArrowUp/ArrowDown and select on focus.
+- `components/KeyboardHelp.tsx` / `CommandPalette.tsx` — the F1 overlay (lists the
+  active scope's shortcuts) and the Ctrl+K page switcher.
+
+### Adding keyboard support to a new page
+
+1. Replace each `modal-overlay` block with `<Modal onClose=… onSubmit=… title=… shortcuts=[…]>`.
+2. Add `useListKeyboard({ count, onOpen, onDelete })` and spread
+   `getContainerProps()`/`getRowProps(i)` on the table wrapper and rows.
+3. Add `useKeyboardScope({ kind: 'page', label, actions: { new_record, search, save }, shortcuts: [...] })`.
+4. Swap price/qty `<input type="number">` for `<KeyboardInput decimals>`.
+5. Add a row to the checklist below and extend `scripts/keyboard_smoke.js`.
+
+### Verification checklist
+
+`A` = asserted by `npm run test:keyboard` (automated). `M` = verified by hand.
+Anything not yet migrated is listed under the table.
+
+| Page / Modal | Flow | A | M |
+| --- | --- | --- | --- |
+| Global | Ctrl+K opens the page palette; Esc closes | ✓ | |
+| Global | F1 opens shortcut help; Esc closes | ✓ | |
+| Global | F1 lists only the keys valid on the current page | | ✓ |
+| Login | Enter on username → password; Enter submits | ✓ | |
+| Login | PIN pad tap entry | | ✓ |
+| Inventory | Ctrl+F focuses search; ↑/↓ highlight; Enter opens Edit | ✓ | |
+| Inventory | Delete removes highlighted product (with confirm) | | ✓ |
+| Inventory | Ctrl+N opens Add Product; Esc closes; Enter saves | ✓ | |
+| Inventory | Barcode scan found → highlight + auto-edit | | ✓ |
+| Purchases | Ctrl+N opens Add Supplier; Esc closes | ✓ | |
+| Purchases | ↑/↓ rows; Enter opens the row's ledger/PO | | ✓ |
+| Purchases PO modal | staged search → qty → add; scanner increments a line | | ✓ |
+| Expenses | Ctrl+N opens Add Expense; Esc closes | ✓ | |
+| Expenses | ↑/↓ rows; Enter edits; Delete deletes | | ✓ |
+| Udhaar | Ctrl+N opens Add Customer; ledger modal Esc closes | ✓ | |
+| Udhaar | ↑/↓ customers and ledger rows | | ✓ |
+| Transfers | Ctrl+N opens new transfer; Esc closes | ✓ | |
+| Transfers | ↑/↓ party/bank/account tables | | ✓ |
+| Returns | Ctrl+F focuses search; ↑/↓ sale rows | ✓ | |
+| Returns | qty→price Enter cycle; Ctrl+Enter submits | | ✓ |
+| Audits | Ctrl+N starts an audit; count cells are focusable | ✓ | |
+| Audits | type count → Enter saves and moves to next product | | ✓ |
+| Audits | Ctrl+Enter saves progress | | ✓ |
+| Promotions / Commissions / Branches | Ctrl+N opens the primary modal; Esc closes | ✓ | |
+| Quotations / Users / Custom Reports / Invoice Designer | Ctrl+N opens the primary modal; Esc closes | ✓ | |
+| Barcode Labels | Ctrl+F focuses the product search; ↑/↓ highlights a product | ✓ | |
+| Label Studio | Ctrl+F focuses the product search; ↑/↓ navigates products; Space toggles | | ✓ |
+| Reports / FIFO Stock Report | page scope registers (F1 shows the page heading) | ✓ | |
+| Reports | ↑/↓ across the analytics tables | | ✓ |
+| FIFO Stock Report | ↑/↓ across the per-product batch tables | | ✓ |
+| Cash Drawer | focus trap; Esc closes; opening/closing cash don't step | | ✓ |
+| Billing payment modal | Enter from **any** field completes the sale (legacy semantics) | | ✓ |
+
+**Migration status.** Every nav page's modals now use the shared `<Modal>` shell and
+`<KeyboardInput>`; `useListKeyboard` runs on the tables and `useKeyboardScope` on the
+page. Two things are deliberately still bespoke:
+
+- **`Billing.tsx` / `QuickSaleGrid.tsx` page-level keyboard.** Their window `keydown`
+  handlers, scanner and F-/chord shortcuts are left in charge (they register **no**
+  page scope, so the global provider does nothing on those screens). Only their modals
+  migrated. `<Modal onKeyDown={…}>` runs before the form-keyboard logic and the payment
+  modal uses it to keep the legacy "Enter anywhere completes the sale" rule — it must
+  also `stopPropagation()` or the window handler fires `completeSale()` a second time.
+  Give the payment modal `onSubmit` only if you also keep that guard; the built-in
+  Enter→next-field behavior would otherwise make the cashier Tab to "Complete Sale".
+- **`App.tsx`'s "Installing update" spinner** and `components/WallpaperEditor.tsx` stay
+  as inline overlays — they are non-interactive progress/editor surfaces, not forms.
 
 ### Licensing (perpetual, since 2026-10-03)
 
@@ -151,10 +263,14 @@ $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win
 ```
 Note: `npm run release` = build + electron-builder publish + `node scripts/finalize-release.js`. The finalize step does NOT inherit `.env` (dotenv only wraps electron-builder), so it fails with `FINALIZE_FAIL: GH_TOKEN not set` and leaves the GitHub release as a DRAFT — run the second command above to create the tag and publish it (the auto-updater only sees published releases).
 
-**Every release also needs a version-less asset.** Finalize uploads the installer a second time as `RokarPOS-Setup.exe` (no version in the name). The marketing site downloads from `/releases/latest/download/RokarPOS-Setup.exe`, so that name has to exist on every release — otherwise the site's download button silently keeps serving the *previous* installer. If finalize prints `WARN: installer not found`, the alias was skipped and you must upload it by hand:
+**Every release also needs a version-less asset.** Finalize uploads the installer a second time as `RokarPOS-Setup.exe` (no version in the name). The marketing site downloads from `/releases/latest/download/RokarPOS-Setup.exe`, so that name has to exist on every release — otherwise the site's download button silently keeps serving the *previous* installer. If finalize prints `WARN: installer not found`, the alias was skipped and you must upload it by hand (`gh` is installed and reads `GH_TOKEN`):
 ```powershell
 Copy-Item "dist_release\RokarPOS-Setup-<version>.exe" "dist_release\RokarPOS-Setup.exe" -Force
 gh release upload v<version> "dist_release\RokarPOS-Setup.exe" --repo hamzarazadomain3-code/pos-releases --clobber
+```
+GitHub's upload endpoint takes the **raw file bytes** (`Content-Type: application/octet-stream`, asset name in the `?name=` query string) — it is *not* a `multipart/form-data` upload. If `uploadAsset()` in `finalize-release.js` ever sends multipart, GitHub stores the whole encoded body as the asset: the file becomes ~274 bytes too big and starts with `--<boundary>` instead of `MZ`, so every download is corrupt while the API still reports a plausible size. After any release, sanity-check the alias:
+```powershell
+curl.exe -sL -r 0-1 "https://github.com/hamzarazadomain3-code/pos-releases/releases/latest/download/RokarPOS-Setup.exe"   # first two bytes must be "MZ"
 ```
 This costs ~120 MB of extra release storage per release. It is the price of never editing the website again; do not "optimise" it away without also pinning the site back to a versioned URL.
 
@@ -211,7 +327,9 @@ them wrong.
 - `scripts/capture_screens.js` — captures real WebP screenshots of the app for the marketing site (see Marketing screenshots above)
 - `scripts/test_inventoryReports.js` — 12-test verification suite
 - `src/main/services/printService.ts` — the printing engine (geometry, shared print window, previews, PDF export)
-- `scripts/print_smoke.js` — 46-check print geometry/enumeration suite
+- `src/main/services/labelStudioPrinting.ts` — Label Studio's main-process half: rebuilds a renderer serialized template into HTML (mm-coordinate elements + `{placeholders}`, barcode/QR via `printDocs.toDataUrl`) and exposes `printBarcodeBatchWithOptions` / `exportLabelBatchToPDF` / `exportLabelBatchToPNG` / `printCalibrationLabel` / `buildLabelStudioJob` / `buildCalibrationLabelHtml`
+- `scripts/print_smoke.js` — Print geometry/enumeration suite (page box + layout audit + content audit), run with `npm run test:print`
+- `scripts/receipt_design_check.js` — thermal redesign scenario suite (1 item / 6 items + discount + 0.57kg unit / udhaar) against a disposable DB, `npm run test:receipt`
 - `src/main/services/recovery.ts` — password recovery: Option A (security question + owner recovery
   code) and Option B (developer-issued support code). Recovery answers are salted with
   `pos-recovery-salt`, NOT the password salt `pos-salt` — a shared app-wide salt would put answers
@@ -233,9 +351,60 @@ them wrong.
 - **Thermal height is measured from the rendered DOM**, not guessed: narrow the window to the printable width, read `scrollHeight`, then stamp a final `@page { size: <w>mm <h>mm }` rule. Measuring at the wide default viewport yields a wrong height because line wrapping changes.
 - **Auto-print must not resolve silently.** The `'auto'` printer setting means "ask every time" — it opens the OS dialog and is never substituted with the Windows default.
 - **Hidden windows must not block app quit.** `hasUserFacingWindows()` in `main.ts` excludes the print window from the quit check.
-- Printable widths are 52mm on 58mm paper and 72mm on 80mm paper. The shop mixes both — the paper size is a per-slot setting, not an app-wide constant.
-- **58mm receipts cannot use the 4-column item table.** A product name, a unit label like "1000 Gram" and two money columns do not fit in 52mm; the table grows past the page and the printer slices the right side off. `receiptTemplates.ts` emits a stacked two-line row (`td.stack`) on narrow paper instead.
+- Printable widths are 48mm on 58mm paper and 72mm on 80mm paper (the physical print-head widths of Epson-class 57.5mm / 79.5mm rolls). The shop mixes both — the paper size is a per-slot setting, not an app-wide constant.
+- **58mm uses the same item table as 80mm, minus the DISC column.** The redesigned
+  thermal receipt (migration 050, `receiptTemplates.ts` `buildRoll`) prints a real
+  fixed-width `<table>` on both rolls, never stacked rows. 80mm is
+  `# | PARTICULARS | QTY | RATE | DISC | AMOUNT`; 58mm drops DISC (merged into the
+  totals block) and spells the second column `ITEM` because PARTICULARS cannot fit
+  in 48mm. The DISC column is the only one that can exceed the printable width on a
+  narrow roll, which is why it is physically absent there. Columns are explicit
+  `<colgroup>` percentages with `table-layout: fixed`; nothing below 58mm content
+  is measured.
+- **Totals stack on BOTH rolls, never side-by-side.** Measuring the 80mm layout
+  found the two-column totals (`CASH … | SUB TOTAL …`) putting the right table
+  +11..+18px past the printable edge once a wide payment mode (EASYPAYSA /
+  JAZZCASH) met a long NET TOTAL: flexbox `min-width:0` lets the item shrink below
+  its table, and the table then bleeds off the page. `buildRoll` emits the payments
+  block then the SUB TOTAL / DISCOUNT / NET block as full-width rows with
+  right-aligned values. Verify with `npm run test:receipt`, whose layout audit would
+  catch a regression.
+- **Roll pages must stay portrait.** `resolveGeometry` floors the measured page height at `widthMm + 2`; if the height were ever shorter than the width the driver treats the page as landscape and rotates the receipt 90°.
 - `setAdminSetting` is owner-gated, so background timers (auto-backup) must not use it — write system-managed keys directly.
+
+### Label Studio labels (custom per-element templates)
+
+Label Studio lets the owner draw a template (elements at mm coordinates) and print
+it, but the renderer cannot print — `window.print()` is dead in Electron. The
+template is therefore serialized over IPC and **rebuilt as HTML in the main
+process** by `src/main/services/labelStudioPrinting.ts`:
+
+- `printing:printBarcodeBatchWithOptions(ids, size, copies, options)` prints the
+  per-element design when `options.template` is supplied, otherwise the stock
+  `buildLabelJob` layout (Inventory / Barcode Generator quick labels). `options`
+  also carries `printer`, `xOffset`/`yOffset` (mm), `mirror` and `rotation`.
+- `{placeholders}` mirror the renderer preview: `{name} {price} {sku} {barcode}
+  {expiry} {mfg} {batch} {weight} {shop} {category} {date} {qty} {unit}`. Fields the
+  main process cannot know (mfg/batch/weight, and a produce scale weight) render
+  empty rather than lying; price uses `printCurrency()` + the `decimal_places`
+  setting. Barcodes reject a bogus EAN-13 and fall back to Code 128.
+- **`LABEL_SPECS` now carries the renderer's other stock sizes** (`40x30`, `50x25`,
+  `58x40`, `60x40`) so they no longer silently fall back to 38x25, and an arbitrary
+  "custom" size registers a one-off spec via `registerLabelSpec()` so the shared
+  `geometryFromSpec` can lay out its roll page. The layout audit iterates
+  `Object.keys(LABEL_SPECS)`, so every size is measured automatically.
+- **Offsets / mirror / rotation are CSS, not driver options.** `webContents.print()`
+  has no alignment controls, so offsets become `body{margin:…mm}` and mirror/rotation
+  become a `transform`. A 90° rotation turns the *content* within the label, not the
+  physical page — a true landscape label needs the printer driver to rotate.
+- **PDF/PNG export returns a Node `Buffer`, which crosses IPC as a `Uint8Array`**
+  (not a `Blob`). The renderer wraps it: `new Blob([new Uint8Array(result.data)])`.
+  The shared type is `data?: Blob | Uint8Array`.
+- `printCalibrationLabel(size)` prints one label-sized sheet (outline + mm ruler +
+  TOP/LEFT/CENTER guides) so the owner can line the label stock up before a run.
+- Verification: `npm run test:print` now audits the custom-template job too
+  (`buildLabelStudioJob`) — page box, clipping, placeholder resolution, the
+  PDF/PNG export bytes and the calibration sheet.
 
 ### Receipt typography (thermal darkness / readability)
 
@@ -246,20 +415,37 @@ head's darkness is a driver setting (Printer properties → Darkness/Heat = High
 economy off). The only levers in code are glyph weight, size and colour, because a
 1-bit thermal head drops the grey anti-aliased edges of thin glyphs.
 
-`buildRoll()` in `receiptTemplates.ts` now prints with:
-- `basePt = 10` (was 9 on 58mm and **8.5 on 80mm** — 80mm was smaller than 58mm).
-- `font-weight: 700` on all body text (800 for shop name / line totals, 900 for TOTAL).
+`buildRoll()` in `receiptTemplates.ts` prints with:
+- A per-paper type scale in **px** (the render pipeline is a fixed 96dpi CSS space,
+  so px is as deterministic as pt; geometry stays mm/pt): shop name 22px, address /
+  contact / header lines 14px, meta + totals 13px, item rows 13px, column headers
+  12px, NET TOTAL 17px, unit/promo 10px, footer 11px. The 58mm layout subtracts 2px
+  from every size.
+- `font-weight: 700` on all body text (800 for shop name / serial / money / NET
+  TOTAL, 900 for NET TOTAL).
 - pure `#000` everywhere (no `#333` greys, no green promo).
 - `-webkit-text-stroke: 0.15pt #000` to thicken strokes on the thermal head.
-- 80mm uses `Arial` first (solid bold) instead of Segoe UI.
+- `Arial, Tahoma` first (solid bold) plus Urdu-capable fallbacks.
 
 The `receipt_font_size` setting (Settings → Billing: small/normal/large) now actually
-does something — it was dead config before, because the old template hardcoded the
-size. It applies a `-1.5pt / 0 / +1.5pt` delta to `basePt`, so a shop can tune the
-print without a rebuild.
+does something — it applies a `-2px / 0 / +2px` delta to that scale, so a shop can
+tune the print without a rebuild.
 
-Raising the size briefly broke `npm run test:print` (the 97-char long-name stress
-overflowed the 80mm item table by ~1.6px). Fixed by shrinking the item-row padding
-(`td.name` padding-right 1.5→1mm, `td.qty` horizontal 1.5→0.8mm) — not by shrinking
-the font. Run `npm run test:print` after any typography change; it measures real
-element boxes against the printable width.
+The item table prints **money without the currency prefix** (the `Rs` is shown once, on
+NET TOTAL): several `Rs ` prefixes plus the numeric columns do not fit the printable
+width. The bug where QTY/RATE/AMOUNT ran together (`1 Piece Rs 550.00Rs 550.00`) is
+prevented by `table-layout: fixed` + an explicit `<colgroup>`; the smoke test asserts
+the column header is present and the layout audit asserts nothing crosses the
+printable width. Both rolls now use that table (58mm drops DISC, see above). A money
+string longer than 7 characters gets the `lg` class and drops one font step so a large
+amount stays on one line, and `INV-YYYYMMDD-NNNN` degrades to `INV-MMDD-NNNN` rather
+than wrapping.
+
+Editable receipt content lives in migration `050_receipt_design.js`
+(`receipt_header_lines` JSON array, `receipt_terms_text`, `receipt_software_by`,
+`receipt_show_serial_number`), surfaced in Admin → System Settings → Billing. The old
+`receipt_header_text` is no longer rendered at the top; the footer message is
+`receipt_footer_text` (default "Come again soon!").
+
+Run `npm run test:print` after any typography change; it measures real element boxes
+against the printable width.

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { BranchRow } from '../../../shared/types';
+import { Modal } from '../components/Modal';
+import { useListKeyboard } from '../hooks/useListKeyboard';
+import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
 export default function Branches() {
   const { t } = useTranslation();
@@ -86,6 +89,27 @@ export default function Branches() {
     else setErr(res.message || 'Delete failed');
   };
 
+  // ── Keyboard: arrow between branches, Enter edits, Delete removes ──
+  const branchList = useListKeyboard({
+    count: rows.length,
+    onOpen: (i) => { const b = rows[i]; if (b) openEdit(b); },
+    onDelete: (i) => { const b = rows[i]; if (b && !b.is_default) handleDelete(b.id); },
+  });
+
+  useKeyboardScope({
+    kind: 'page',
+    label: 'Branches',
+    actions: {
+      new_record: () => openNew(),
+    },
+    shortcuts: [
+      { action: 'new_record', label: 'New branch' },
+      { keys: '↑ / ↓', label: 'Move between rows' },
+      { keys: 'Enter', label: 'Edit highlighted branch' },
+      { keys: 'Delete', label: 'Delete highlighted branch' },
+    ],
+  });
+
   return (
     <div className="page">
       <div className="page-header">
@@ -102,7 +126,7 @@ export default function Branches() {
         ) : rows.length === 0 ? (
           <p className="muted center pad">No branches found.</p>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ overflowX: 'auto' }} {...branchList.getContainerProps()}>
             <table className="data-table">
               <thead>
                 <tr>
@@ -116,8 +140,8 @@ export default function Branches() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((b) => (
-                  <tr key={b.id} style={{ background: b.is_default ? '#fef3c7' : '' }}>
+                {rows.map((b, i) => (
+                  <tr key={b.id} style={{ background: b.is_default ? '#fef3c7' : '' }} {...branchList.getRowProps(i)}>
                     <td><strong>{b.name}</strong></td>
                     <td>{b.address || '—'}</td>
                     <td>{b.phone || '—'}</td>
@@ -157,13 +181,14 @@ export default function Branches() {
       </div>
 
       {editorOpen && (
-        <div className="modal-overlay" onClick={() => setEditorOpen(false)}>
-          <div className="modal" style={{ maxWidth: 520, width: '95%' }} onClick={(e) => e.stopPropagation()}>
-            <div className="row-btns" style={{ justifyContent: 'space-between', marginBottom: 16 }}>
-              <h2>{editingId ? 'Edit Branch' : 'New Branch'}</h2>
-              <button className="btn btn-sm" onClick={() => setEditorOpen(false)}>✕</button>
-            </div>
-
+        <Modal
+          onClose={() => setEditorOpen(false)}
+          onSubmit={handleSave}
+          title={editingId ? 'Edit Branch' : 'New Branch'}
+          style={{ maxWidth: 520, width: '95%' }}
+          label="Branch"
+          shortcuts={[{ action: 'save', label: 'Save branch' }]}
+        >
             <div className="form-group">
               <label>Branch Name</label>
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Main Shop" />
@@ -206,8 +231,7 @@ export default function Branches() {
                 {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Create Branch'}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

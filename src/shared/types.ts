@@ -109,7 +109,7 @@ export interface StockMovement {
   product_name?: string | null;
 }
 
-export type NavPage = 'dashboard' | 'billing' | 'inventory' | 'audits' | 'promotions' | 'purchases' | 'udhaar' | 'returns' | 'shifts' | 'reports' | 'settings' | 'users' | 'barcode' | 'admin' | 'quotations' | 'invoiceAdmin' | 'branches' | 'quickSale' | 'transfers' | 'expenses' | 'commissions' | 'customReports' | 'fifoStock';
+export type NavPage = 'dashboard' | 'billing' | 'inventory' | 'audits' | 'promotions' | 'purchases' | 'udhaar' | 'returns' | 'shifts' | 'reports' | 'settings' | 'users' | 'barcode' | 'admin' | 'quotations' | 'invoiceAdmin' | 'branches' | 'quickSale' | 'transfers' | 'expenses' | 'commissions' | 'customReports' | 'fifoStock' | 'labelStudio';
 
 export type UserRole = 'owner' | 'manager' | 'cashier';
 
@@ -900,6 +900,10 @@ export interface PosBridge {
     printBarcodeLabel: (productId: number, copies?: number) => Promise<PrintResult>;
     printBarcodeBatch: (productIds: number[], size?: string, copies?: number) => Promise<PrintResult>;
     previewBarcodeBatch: (productIds: number[], size?: string, copies?: number) => Promise<PrintResult>;
+    printBarcodeBatchWithOptions: (productIds: number[], size?: string, copies?: number, options?: { printer?: string; xOffset?: number; yOffset?: number; mirror?: boolean; rotation?: number; template?: unknown }) => Promise<PrintResult>;
+    exportLabelBatchToPDF: (productIds: number[], template: any, size?: string, copies?: number) => Promise<{ ok: boolean; message: string; data?: Blob | Uint8Array }>;
+    exportLabelBatchToPNG: (productIds: number[], template: any, size?: string, copies?: number) => Promise<{ ok: boolean; message: string; data?: Blob | Uint8Array }>;
+    printCalibrationLabel: (size: string) => Promise<PrintResult>;
     openCashDrawer: () => Promise<{ ok: boolean; message: string }>;
     previewReceipt: (saleId: number, template?: string) => Promise<PrintResult>;
     previewInvoice: (saleId: number) => Promise<PrintResult>;

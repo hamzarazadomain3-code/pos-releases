@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { ShiftDetail, ShiftRow } from '../../../shared/types';
 import { formatDateTimeAdmin } from '../utils/dateUtils';
+import { Modal } from '../components/Modal';
+import { KeyboardInput } from '../components/KeyboardInput';
+import { useListKeyboard } from '../hooks/useListKeyboard';
+import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
 export default function Shifts() {
   const [shifts, setShifts] = useState<ShiftRow[]>([]);
@@ -18,6 +22,48 @@ export default function Shifts() {
     load();
   }, []);
 
+  const viewShift = async (s: ShiftRow) => {
+    try {
+      setDetail(await window.api.shifts.get(s.id));
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const handleForceClose = async () => {
+    if (!forceTarget) return;
+    try {
+      const counted = forceCash.trim() === '' ? undefined : Number(forceCash);
+      if (counted !== undefined && (Number.isNaN(counted) || counted < 0)) {
+        setNotice('Counted cash must be a valid non-negative amount');
+        return;
+      }
+      const r = await window.api.shifts.forceClose(forceTarget.id, counted, forceNotes.trim() || undefined);
+      setNotice(`Shift #${r.id} force-closed${r.variance !== 0 ? ` (variance ${r.variance})` : ''}`);
+      setForceTarget(null);
+      load();
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  // ── Keyboard: arrow between shifts, Enter opens the detail ──
+  const shiftList = useListKeyboard({
+    count: shifts.length,
+    onOpen: (i) => { const s = shifts[i]; if (s) viewShift(s); },
+  });
+
+  const shiftSalesList = useListKeyboard({ count: detail?.sales.length ?? 0 });
+
+  useKeyboardScope({
+    kind: 'page',
+    label: 'Shift History',
+    shortcuts: [
+      { keys: '↑ / ↓', label: 'Move between shifts' },
+      { keys: 'Enter', label: 'View highlighted shift' },
+    ],
+  });
+
   return (
     <div className="page">
       <div className="page-header">
@@ -29,7 +75,7 @@ export default function Shifts() {
         </div>
       )}
       <div className="panel">
-        <div className="table-wrap">
+        <div className="table-wrap" {...shiftList.getContainerProps()}>
           <table className="data-table">
             <thead>
               <tr>
@@ -46,8 +92,8 @@ export default function Shifts() {
               </tr>
             </thead>
             <tbody>
-              {shifts.map((s) => (
-                <tr key={s.id}>
+              {shifts.map((s, i) => (
+                <tr key={s.id} {...shiftList.getRowProps(i)}>
                   <td>{s.id}</td>
                   <td>{s.username}</td>
                   <td>{s.opened_at ? formatDateTimeAdmin(s.opened_at) : '—'}</td>
@@ -87,13 +133,7 @@ export default function Shifts() {
                     )}
                     <button
                       className="btn btn-sm"
-                      onClick={async () => {
-                        try {
-                          setDetail(await window.api.shifts.get(s.id));
-                        } catch (e) {
-                          setNotice(e instanceof Error ? e.message : String(e));
-                        }
-                      }}
+                      onClick={() => viewShift(s)}
                     >
                       View
                     </button>
@@ -113,19 +153,23 @@ export default function Shifts() {
       </div>
 
       {forceTarget && (
-        <div className="modal-overlay" onClick={() => setForceTarget(null)}>
-          <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
-            <h2>Force Close Shift #{forceTarget.id}</h2>
+        <Modal
+          onClose={() => setForceTarget(null)}
+          onSubmit={handleForceClose}
+          title={`Force Close Shift #${forceTarget.id}`}
+          className="modal-sm"
+          label="Force Close Shift"
+          shortcuts={[{ action: 'save', label: 'Force close shift' }]}
+        >
             <p className="muted">
               {forceTarget.username} never closed this shift. Enter the counted cash if known — otherwise the expected
               amount is used (zero variance).
             </p>
             <label className="field">
               <span>Counted cash (optional)</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
+              <KeyboardInput
+                type="text"
+                decimals
                 value={forceCash}
                 onChange={(e) => setForceCash(e.target.value)}
                 placeholder="Leave empty to use expected"
@@ -141,35 +185,21 @@ export default function Shifts() {
               </button>
               <button
                 className="btn btn-danger"
-                onClick={async () => {
-                  try {
-                    const counted = forceCash.trim() === '' ? undefined : Number(forceCash);
-                    if (counted !== undefined && (Number.isNaN(counted) || counted < 0)) {
-                      setNotice('Counted cash must be a valid non-negative amount');
-                      return;
-                    }
-                    const r = await window.api.shifts.forceClose(forceTarget.id, counted, forceNotes.trim() || undefined);
-                    setNotice(`Shift #${r.id} force-closed${r.variance !== 0 ? ` (variance ${r.variance})` : ''}`);
-                    setForceTarget(null);
-                    load();
-                  } catch (e) {
-                    setNotice(e instanceof Error ? e.message : String(e));
-                  }
-                }}
+                onClick={handleForceClose}
               >
                 Force Close
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {detail && (
-        <div className="modal-overlay" onClick={() => setDetail(null)}>
-          <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-            <h2>
-              Shift #{detail.id} — {detail.username}
-            </h2>
+        <Modal
+          onClose={() => setDetail(null)}
+          title={`Shift #${detail.id} — ${detail.username}`}
+          className="modal-wide"
+          label="Shift Detail"
+        >
             <p className="muted">
               {detail.opened_at ? formatDateTimeAdmin(detail.opened_at) : ''}
               {' → '}
@@ -210,7 +240,7 @@ export default function Shifts() {
                 )}
               </span>
             </div>
-            <div className="table-wrap">
+            <div className="table-wrap" {...shiftSalesList.getContainerProps()}>
               <table className="data-table">
                 <thead>
                   <tr>
@@ -221,8 +251,8 @@ export default function Shifts() {
                   </tr>
                 </thead>
                 <tbody>
-                  {detail.sales.map((s) => (
-                    <tr key={s.id}>
+                  {detail.sales.map((s, i) => (
+                    <tr key={s.id} {...shiftSalesList.getRowProps(i)}>
                       <td>{s.invoice_no}</td>
                       <td>{s.created_at ? formatDateTimeAdmin(s.created_at) : '—'}</td>
                       <td>{s.total_amount.toFixed(2)}</td>
@@ -246,8 +276,7 @@ export default function Shifts() {
                 Close
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

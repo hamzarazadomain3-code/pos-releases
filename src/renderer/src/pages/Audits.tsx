@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ModalCloseButton } from '../components/ModalCloseButton';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AuditItemRow, AuditRow, Category } from '../../../shared/types';
 import { DateRangePicker, SearchInput, MultiSelectDropdown, FilterBar, FilterRow, Pagination } from '../components/filters';
 import { formatDateTimeAdmin } from '../utils/dateUtils';
+import { Modal } from '../components/Modal';
+import { KeyboardInput } from '../components/KeyboardInput';
+import { useListKeyboard } from '../hooks/useListKeyboard';
+import { useLineItemKeyboard } from '../hooks/useLineItemKeyboard';
+import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
 export default function Audits() {
   const [tab, setTab] = useState<'active' | 'history'>('active');
@@ -186,6 +190,42 @@ export default function Audits() {
   const shortage = (items: AuditItemRow[]) =>
     items.reduce((s, i) => s + (i.variance < 0 ? i.variance : 0), 0);
 
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // ── Keyboard: arrow through history / active audits; Enter opens one ──
+  const historyList = useListKeyboard({
+    count: history.length,
+    onOpen: (i) => { const a = history[i]; if (a) openDetail(a.id); },
+  });
+  const activeList = useListKeyboard({
+    count: active.length,
+    onOpen: (i) => { const a = active[i]; if (a) openAudit(a.id); },
+  });
+
+  // ── Keyboard: type a count, Enter saves it and moves to the next product ──
+  const countKb = useLineItemKeyboard({
+    rowCount: visible.length,
+    columns: ['counted'],
+    onSubmit: saveProgress,
+  });
+
+  useKeyboardScope({
+    kind: 'page',
+    label: 'Stock Audit',
+    actions: {
+      new_record: () => startAudit(),
+      search: () => searchRef.current?.focus(),
+      save: () => { if (current) saveProgress(); },
+    },
+    shortcuts: [
+      { action: 'new_record', label: 'Start a new audit' },
+      { action: 'search', label: 'Focus product search' },
+      { keys: '↑ / ↓', label: 'Move between rows' },
+      { keys: 'Enter', label: 'Open audit / next product (while counting)' },
+      { keys: 'Ctrl+Enter', label: 'Save progress' },
+    ],
+  });
+
   return (
     <div className="page">
       <div className="page-head">
@@ -267,6 +307,7 @@ export default function Audits() {
               </select>
             </FilterRow>
           </FilterBar>
+          <div {...historyList.getContainerProps()}>
           <table className="tbl">
             <thead>
               <tr>
@@ -281,8 +322,8 @@ export default function Audits() {
               </tr>
             </thead>
             <tbody>
-              {history.map((a) => (
-                  <tr key={a.id}>
+              {history.map((a, i) => (
+                  <tr key={a.id} {...historyList.getRowProps(i)}>
                     <td>AU-{String(a.id).padStart(4, '0')}</td>
                     <td>{a.completed_at ? formatDateTimeAdmin(a.completed_at) : '—'}</td>
                     <td>{a.username ?? '—'}</td>
@@ -306,6 +347,7 @@ export default function Audits() {
               )}
             </tbody>
           </table>
+          </div>
           <Pagination
             currentPage={historyPage}
             pageSize={historyPageSize}
@@ -325,6 +367,7 @@ export default function Audits() {
                 Start New Audit
               </button>
             </div>
+            <div {...activeList.getContainerProps()}>
             <table className="tbl">
               <thead>
                 <tr>
@@ -335,8 +378,8 @@ export default function Audits() {
                 </tr>
               </thead>
               <tbody>
-                {active.map((a) => (
-                  <tr key={a.id}>
+                {active.map((a, i) => (
+                  <tr key={a.id} {...activeList.getRowProps(i)}>
                     <td>AU-{String(a.id).padStart(4, '0')}</td>
                     <td>{a.created_at ? formatDateTimeAdmin(a.created_at) : '—'}</td>
                     <td>{a.username ?? '—'}</td>
@@ -356,6 +399,7 @@ export default function Audits() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         </>
       )}
@@ -387,6 +431,7 @@ export default function Audits() {
 
           <div className="toolbar" style={{ marginBottom: 12 }}>
             <input
+              ref={searchRef}
               className="search-input"
               placeholder="Search product or barcode…"
               value={search}
@@ -420,7 +465,7 @@ export default function Audits() {
               </tr>
             </thead>
             <tbody>
-              {visible.map((it) => {
+              {visible.map((it, ri) => {
                 const v = varianceOf(it);
                 return (
                   <tr key={it.product_id}>
@@ -431,11 +476,11 @@ export default function Audits() {
                     <td>{it.category_name ?? '—'}</td>
                     <td>{it.system_qty}</td>
                     <td>
-                      <input
+                      <KeyboardInput
+                        {...countKb.getCellProps(ri, 0)}
                         className="inp"
-                        type="number"
-                        min="0"
-                        step="1"
+                        type="text"
+                        decimals
                         value={counts[it.product_id] ?? ''}
                         placeholder={it.counted_qty !== null ? String(it.counted_qty) : ''}
                         onChange={(e) => setCounts({ ...counts, [it.product_id]: e.target.value })}
@@ -468,12 +513,12 @@ export default function Audits() {
       )}
 
       {result && (
-        <div className="modal-overlay">
-          <div className="modal modal-wide">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>Audit AU-{String(result.id).padStart(4, '0')} Completed</h2>
-              <ModalCloseButton onClose={() => setResult(null)} />
-            </div>
+        <Modal
+          onClose={() => setResult(null)}
+          title={`Audit AU-${String(result.id).padStart(4, '0')} Completed`}
+          className="modal-wide"
+          label="Audit Result"
+        >
             <p className="muted small">
               {result.completed_at ? formatDateTimeAdmin(result.completed_at) : ''} | by {result.username ?? '—'} |{' '}
               {result.total_items} items counted
@@ -522,17 +567,16 @@ export default function Audits() {
                 OK
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {detail && (
-        <div className="modal-overlay">
-          <div className="modal modal-wide">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>Audit AU-{String(detail.id).padStart(4, '0')}</h2>
-              <ModalCloseButton onClose={() => setDetail(null)} />
-            </div>
+        <Modal
+          onClose={() => setDetail(null)}
+          title={`Audit AU-${String(detail.id).padStart(4, '0')}`}
+          className="modal-wide"
+          label="Audit Detail"
+        >
             <p className="muted small">
               {detail.completed_at ? formatDateTimeAdmin(detail.completed_at) : ''} | by {detail.username ?? '—'} |{' '}
               {detail.total_items} items counted | net variance {detail.total_variance.toFixed(2)}
@@ -565,8 +609,7 @@ export default function Audits() {
                 Close
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

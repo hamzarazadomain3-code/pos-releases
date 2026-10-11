@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CashRefundRow, ReturnRow, Sale, SaleItem } from '../../../shared/types';
 import { DateRangePicker, SearchInput, FilterBar, FilterRow } from '../components/filters';
 import { formatDateTimeAdmin } from '../utils/dateUtils';
 import { formatMoney, getCurrencySymbol } from '../utils/currency';
+import { KeyboardInput } from '../components/KeyboardInput';
+import { useListKeyboard } from '../hooks/useListKeyboard';
+import { useLineItemKeyboard } from '../hooks/useLineItemKeyboard';
+import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
 export default function Returns() {
   const [sales, setSales] = useState<Sale[]>([]);
@@ -115,6 +119,48 @@ export default function Returns() {
     setProductId('');
   };
 
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const completedSales = useMemo(
+    () => filtered.filter((s) => s.status === 'completed').slice(0, 30),
+    [filtered],
+  );
+
+  // ── Keyboard: arrow between invoices, Enter opens the sale ──
+  const salesList = useListKeyboard({
+    count: completedSales.length,
+    onOpen: (i) => { const s = completedSales[i]; if (s) openSale(s); },
+  });
+
+  // ── Keyboard: qty → price cycle inside the refund table; Ctrl+Enter submits.
+  //    The first full cycle (invoice → items) is covered by both hooks.
+  const refundItems = saleDetail?.items ?? [];
+  const itemKb = useLineItemKeyboard({
+    rowCount: refundItems.length,
+    columns: ['qty', 'price'],
+    onSubmit: doReturn,
+    onRemoveRow: (row) => {
+      const it = refundItems[row];
+      if (it) setIncludeMap((m) => ({ ...m, [it.id]: false }));
+    },
+  });
+
+  useKeyboardScope({
+    kind: 'page',
+    label: 'Returns / Refunds',
+    actions: {
+      search: () => searchRef.current?.focus(),
+      save: () => { if (saleDetail) doReturn(); },
+    },
+    shortcuts: [
+      { action: 'search', label: 'Focus invoice search' },
+      { action: 'save', label: 'Save the return (when an invoice is open)' },
+      { keys: '↑ / ↓', label: 'Move between invoices / refund rows' },
+      { keys: 'Enter', label: 'Select invoice / next refund field' },
+      { keys: 'Ctrl+Enter', label: 'Save the return' },
+    ],
+  });
+
   return (
     <div className="page">
       <div className="page-head">
@@ -165,6 +211,7 @@ export default function Returns() {
         <div className="card-head">
           <h2>Return an item from an invoice</h2>
           <input
+            ref={searchRef}
             className="inp search-input"
             placeholder="Search by invoice no or customer..."
             value={search}
@@ -172,6 +219,7 @@ export default function Returns() {
             style={{ maxWidth: 320 }}
           />
         </div>
+        <div {...salesList.getContainerProps()}>
         <table className="tbl">
           <thead>
             <tr>
@@ -184,11 +232,8 @@ export default function Returns() {
             </tr>
           </thead>
           <tbody>
-            {filtered
-              .filter((s) => s.status === 'completed')
-              .slice(0, 30)
-              .map((s) => (
-                <tr key={s.id} className={selected?.id === s.id ? 'row-low' : ''}>
+            {completedSales.map((s, i) => (
+                <tr key={s.id} className={selected?.id === s.id ? 'row-low' : ''} {...salesList.getRowProps(i)}>
                   <td>{s.invoice_no}</td>
                   <td>{formatDateTimeAdmin(s.created_at ?? '')}</td>
                   <td>{s.customer_name ?? 'Walk-in'}</td>
@@ -201,7 +246,7 @@ export default function Returns() {
                   </td>
                 </tr>
               ))}
-            {!filtered.filter((s) => s.status === 'completed').length && (
+            {!completedSales.length && (
               <tr>
                 <td colSpan={6} className="muted">
                   No completed sales.
@@ -210,6 +255,7 @@ export default function Returns() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {saleDetail && (
@@ -234,7 +280,7 @@ export default function Returns() {
               </tr>
             </thead>
             <tbody>
-              {saleDetail.items.map((it) => {
+              {saleDetail.items.map((it, ri) => {
                 const remaining = it.qty - (it.returned_qty ?? 0);
                 const qty = Number(qtyMap[it.id]) || 0;
                 const price = Number(priceMap[it.id]) || 0;
@@ -255,21 +301,21 @@ export default function Returns() {
                       </div>
                     </td>
                     <td>
-                      <input
+                      <KeyboardInput
+                        {...itemKb.getCellProps(ri, 0)}
                         className="inp"
-                        type="number"
-                        min="0"
-                        max={remaining}
+                        type="text"
+                        decimals
                         value={qtyMap[it.id] ?? ''}
                         onChange={(e) => setQtyMap({ ...qtyMap, [it.id]: e.target.value })}
                       />
                     </td>
                     <td>
-                      <input
+                      <KeyboardInput
+                        {...itemKb.getCellProps(ri, 1)}
                         className="inp"
-                        type="number"
-                        min="0"
-                        step="0.01"
+                        type="text"
+                        decimals
                         value={priceMap[it.id] ?? ''}
                         onChange={(e) => setPriceMap({ ...priceMap, [it.id]: e.target.value })}
                       />
@@ -305,11 +351,10 @@ export default function Returns() {
           <h2>Cash Refund (no invoice)</h2>
         </div>
         <div className="expense-form">
-          <input
+          <KeyboardInput
             placeholder={`Amount (${getCurrencySymbol()})`}
-            type="number"
-            min="0"
-            step="0.01"
+            type="text"
+            decimals
             value={cfAmount}
             onChange={(e) => setCfAmount(e.target.value)}
             style={{ maxWidth: 160 }}

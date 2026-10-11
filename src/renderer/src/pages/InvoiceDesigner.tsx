@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { InvoiceTemplateRow } from '../../../shared/types';
 import { formatDateAdmin } from '../utils/dateUtils';
+import { Modal } from '../components/Modal';
+import { KeyboardInput } from '../components/KeyboardInput';
+import { useListKeyboard } from '../hooks/useListKeyboard';
+import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
 const TYPE_LABELS: Record<string, string> = {
   sale: 'Sale Invoice', purchase: 'Purchase Order', quotation: 'Quotation',
@@ -108,6 +112,28 @@ export default function InvoiceDesigner() {
     else setErr(res.message || 'Delete failed');
   };
 
+  // ── Keyboard: arrow through templates; Enter edits; Delete removes ──
+  const templateList = useListKeyboard({
+    count: templates.length,
+    onOpen: (i) => { const t = templates[i]; if (t) openEdit(t); },
+    onDelete: (i) => { const t = templates[i]; if (t) handleDelete(t.id); },
+  });
+
+  useKeyboardScope({
+    kind: 'page',
+    label: 'Invoice Templates',
+    actions: {
+      new_record: () => openNew(),
+      save: () => { if (editorOpen) handleSave(); },
+    },
+    shortcuts: [
+      { action: 'new_record', label: 'New template' },
+      { keys: '↑ / ↓', label: 'Move between templates' },
+      { keys: 'Enter', label: 'Edit highlighted template' },
+      { keys: 'Delete', label: 'Delete highlighted template' },
+    ],
+  });
+
   return (
     <div className="page">
       <div className="page-header">
@@ -124,7 +150,7 @@ export default function InvoiceDesigner() {
         ) : templates.length === 0 ? (
           <p className="muted center pad">No templates found.</p>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ overflowX: 'auto' }} {...templateList.getContainerProps()}>
             <table className="data-table">
               <thead>
                 <tr>
@@ -136,8 +162,8 @@ export default function InvoiceDesigner() {
                 </tr>
               </thead>
               <tbody>
-                {templates.map((t) => (
-                  <tr key={t.id}>
+                {templates.map((t, i) => (
+                  <tr key={t.id} {...templateList.getRowProps(i)}>
                     <td><strong>{t.name}</strong></td>
                     <td>{TYPE_LABELS[t.type] || t.type}</td>
                     <td>{t.paper_size}</td>
@@ -160,12 +186,14 @@ export default function InvoiceDesigner() {
       </div>
 
       {editorOpen && (
-        <div className="modal-overlay" onClick={() => setEditorOpen(false)}>
-          <div className="modal" style={{ maxWidth: 520, width: '95%' }} onClick={(e) => e.stopPropagation()}>
-            <div className="row-btns" style={{ justifyContent: 'space-between', marginBottom: 16 }}>
-              <h2>{editingId ? 'Edit Template' : 'New Template'}</h2>
-              <button className="btn btn-sm" onClick={() => setEditorOpen(false)}>✕</button>
-            </div>
+        <Modal
+          onClose={() => setEditorOpen(false)}
+          onSubmit={handleSave}
+          title={editingId ? 'Edit Template' : 'New Template'}
+          style={{ maxWidth: 520, width: '95%' }}
+          label="Invoice Template"
+          shortcuts={[{ action: 'save', label: 'Save template' }]}
+        >
 
             <div className="form-group">
               <label>Template Name</label>
@@ -198,7 +226,7 @@ export default function InvoiceDesigner() {
               </div>
               <div className="form-group">
                 <label>Font Size (px)</label>
-                <input type="number" min="8" max="24" value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} />
+                <KeyboardInput type="text" decimals={false} value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} />
               </div>
             </div>
 
@@ -241,8 +269,7 @@ export default function InvoiceDesigner() {
                 {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Create Template'}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

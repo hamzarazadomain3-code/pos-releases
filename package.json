@@ -1,6 +1,6 @@
 {
   "name": "pos-app",
-  "version": "2.12.2",
+  "version": "2.15.0",
   "description": "Local Billing & Inventory POS System",
   "main": "dist/main/main.js",
   "author": "Rokar POS",
@@ -13,6 +13,7 @@
     "dev": "concurrently -k -n vite,main,electron -c blue,green,magenta \"npm:dev:vite\" \"npm:dev:main\" \"npm:dev:electron\"",
     "typecheck": "npm run gen:key && tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json",
     "test:print": "npm run build:main && electron scripts/print_smoke.js",
+    "test:receipt": "npm run build:main && electron scripts/receipt_design_check.js",
     "test:recovery": "npm run build:main && electron scripts/test_recovery.js",
     "test:recovery:ui": "npm run build && electron scripts/test_recovery_ui.js",
     "gen:key": "node scripts/gen-support-key.js",
@@ -26,7 +27,8 @@
     "postinstall": "electron-builder install-app-deps",
     "capture:screens": "npm run build && electron scripts/capture_screens.js",
     "seed:demo": "node scripts/seed_demo.js",
-    "test:licensing": "npm run build:main && electron scripts/test_licensing.js"
+    "test:licensing": "npm run build:main && electron scripts/test_licensing.js",
+    "test:keyboard": "npm run build && electron scripts/keyboard_smoke.js"
   },
   "dependencies": {
     "bwip-js": "^4.11.2",

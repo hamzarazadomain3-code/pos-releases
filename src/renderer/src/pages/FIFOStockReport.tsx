@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Product } from '../../../shared/types';
 import { formatMoney } from '../utils/currency';
+import { useListKeyboard } from '../hooks/useListKeyboard';
+import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
 const fmt = (n: number) => n?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? '0';
 
@@ -56,6 +58,23 @@ export default function FIFOStockReport() {
 
   const grandTotal = Object.values(grouped).reduce((s, g) => s + g.totalValue, 0);
 
+  // Flattened batch list so ↑/↓ can move across the per-product tables in one run.
+  const flatBatches = Object.values(grouped).flatMap((g) => g.batches);
+  const batchIndex = new Map<number, number>();
+  flatBatches.forEach((b, i) => batchIndex.set(b.batch_id, i));
+  const batchList = useListKeyboard({ count: flatBatches.length });
+  const filterRef = useRef<HTMLSelectElement>(null);
+
+  useKeyboardScope({
+    kind: 'page',
+    label: 'FIFO Stock Report',
+    actions: { search: () => filterRef.current?.focus() },
+    shortcuts: [
+      { action: 'search', label: 'Focus product filter' },
+      { keys: '↑ / ↓', label: 'Move between batches' },
+    ],
+  });
+
   return (
     <div className="page">
       <div className="page-header">
@@ -80,7 +99,7 @@ export default function FIFOStockReport() {
 
       {/* Filter */}
       <div className="form-row" style={{ marginBottom: 12 }}>
-        <select value={filterProduct} onChange={(e) => setFilterProduct(e.target.value ? Number(e.target.value) : '')}>
+        <select ref={filterRef} value={filterProduct} onChange={(e) => setFilterProduct(e.target.value ? Number(e.target.value) : '')}>
           <option value="">All Products</option>
           {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
@@ -91,7 +110,8 @@ export default function FIFOStockReport() {
       ) : rows.length === 0 ? (
         <div className="muted center">No batch data found. FIFO tracking requires product batches from purchases.</div>
       ) : (
-        Object.entries(grouped).map(([pid, group]) => (
+        <div {...batchList.getContainerProps()}>
+        {Object.entries(grouped).map(([pid, group]) => (
           <div key={pid} style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
               <h3 style={{ margin: 0 }}>{group.name}</h3>
@@ -112,7 +132,7 @@ export default function FIFOStockReport() {
               </thead>
               <tbody>
                 {group.batches.map((b) => (
-                  <tr key={b.batch_id} style={{ opacity: b.available_qty <= 0 ? 0.5 : 1 }}>
+                  <tr {...batchList.getRowProps(batchIndex.get(b.batch_id) ?? 0)} key={b.batch_id} style={{ opacity: b.available_qty <= 0 ? 0.5 : 1 }}>
                     <td>{b.batch_number}</td>
                     <td>{fmt(b.total_qty)}</td>
                     <td style={{ fontWeight: 600 }}>{fmt(b.available_qty)}</td>
@@ -124,7 +144,8 @@ export default function FIFOStockReport() {
               </tbody>
             </table>
           </div>
-        ))
+        ))}
+        </div>
       )}
     </div>
   );

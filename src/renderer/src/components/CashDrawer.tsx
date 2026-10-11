@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback } from 'react';
 import type { CashDrawerBreakdown, CashDrawerSession, ShiftRow, UserRow } from '../../../shared/types';
 import { formatDateTimeAdmin, formatTimeAdmin } from '../utils/dateUtils';
 import { formatMoney, getCurrencySymbol } from '../utils/currency';
+import { Modal } from './Modal';
+import { KeyboardInput } from './KeyboardInput';
 
 interface Props {
   shift: ShiftRow;
@@ -106,13 +108,7 @@ export default function CashDrawer({ shift, onClose }: Props) {
     : 0;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal cash-drawer-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="cash-drawer-header">
-          <h2>Cash Drawer Session</h2>
-          <button className="btn btn-sm" onClick={onClose}>✕</button>
-        </div>
-
+    <Modal onClose={onClose} title="Cash Drawer Session" className="cash-drawer-modal" label="Cash Drawer">
         {notice && <div className="notice" onClick={() => setNotice(null)}>{notice}</div>}
 
         {!session ? (
@@ -132,9 +128,9 @@ export default function CashDrawer({ shift, onClose }: Props) {
               </div>
               <label className="field" style={{ marginTop: 12 }}>
                 <span>Opening Cash ({getCurrencySymbol()})</span>
-                <input
-                  type="number"
-                  min="0"
+                <KeyboardInput
+                  type="text"
+                  decimals
                   value={openingCash}
                   onChange={(e) => setOpeningCash(e.target.value)}
                 />
@@ -247,9 +243,9 @@ export default function CashDrawer({ shift, onClose }: Props) {
                 <div className="section-title">Close Drawer</div>
                 <label className="field">
                   <span>Counted Cash ({getCurrencySymbol()})</span>
-                  <input
-                    type="number"
-                    min="0"
+                  <KeyboardInput
+                    type="text"
+                    decimals
                     value={closingCash}
                     onChange={(e) => setClosingCash(e.target.value)}
                     placeholder="Enter the counted cash amount"
@@ -310,7 +306,6 @@ export default function CashDrawer({ shift, onClose }: Props) {
             </div>
           </div>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }

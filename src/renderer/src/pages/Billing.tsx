@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CashDrawer from '../components/CashDrawer';
 import LiveClock from '../components/LiveClock';
-import { ModalCloseButton } from '../components/ModalCloseButton';
+import { Modal } from '../components/Modal';
+import { KeyboardInput } from '../components/KeyboardInput';
 import { formatDateTimeAdmin, formatTimeAdmin, formatDateAdmin, toLocalDateString } from '../utils/dateUtils';
 import { getCurrencySymbol, formatMoney } from '../utils/currency';
 import { eventCombo, matchesShortcut } from '../utils/shortcutKeys';
@@ -2615,12 +2616,11 @@ const handleUnitChange = (newLevel: number) => {
       </div>
 
       {showShortcutsModal && (
-        <div className="modal-overlay" onClick={() => setShowShortcutsModal(false)}>
-          <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>Keyboard Shortcuts</h2>
-              <ModalCloseButton onClose={() => setShowShortcutsModal(false)} />
-            </div>
+        <Modal
+          onClose={() => setShowShortcutsModal(false)}
+          title="Keyboard Shortcuts"
+          style={{ maxWidth: 420 }}
+        >
             <div style={{ fontSize: 13, lineHeight: 1.8 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr', gap: '2px 12px' }}>
                 <kbd style={{ fontWeight: 600, textAlign: 'right' }}>F2</kbd><span>Focus search / barcode input</span>
@@ -2649,17 +2649,16 @@ const handleUnitChange = (newLevel: number) => {
                 </>
               )}
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {expiredConfirm && (
-        <div className="modal-overlay">
-          <div className="modal modal-sm">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2 className="text-warn">Expired Items in Bill</h2>
-              <ModalCloseButton onClose={() => setExpiredConfirm(null)} />
-            </div>
+        <Modal
+          onClose={() => setExpiredConfirm(null)}
+          title={<span className="text-warn">Expired Items in Bill</span>}
+          className="modal-sm"
+          closeOnOverlay={false}
+        >
             <p>The following items have passed their expiry date. Selling expired stock is not recommended:</p>
             <ul className="expired-confirm-list">
               {expiredConfirm.map((i) => (
@@ -2684,17 +2683,30 @@ const handleUnitChange = (newLevel: number) => {
                 Sell Anyway
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {payOpen && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>Payment — {grandTotal.toFixed(2)}</h2>
-              <ModalCloseButton onClose={() => setPayOpen(false)} />
-            </div>
+        <Modal
+          onClose={() => setPayOpen(false)}
+          title={`Payment — ${grandTotal.toFixed(2)}`}
+          closeOnOverlay={false}
+          onKeyDown={(e) => {
+            // Legacy billing behavior: Enter from ANY field in the payment modal
+            // completes the sale, rather than stepping through the fields.
+            // stopPropagation keeps the window-level legacy handler from firing
+            // completeSale a second time.
+            if (
+              (e.key === 'Enter' || e.key === '\r' || e.key === '\n') &&
+              payTotal > 0 &&
+              !busy
+            ) {
+              e.preventDefault();
+              e.stopPropagation();
+              completeSale();
+            }
+          }}
+        >
             {payRows.map((r, idx) => (
               <div className="pay-row" key={idx}>
                 <select
@@ -2710,8 +2722,9 @@ const handleUnitChange = (newLevel: number) => {
                   ))}
                   <option value="Udhaar">Udhaar (Credit)</option>
                 </select>
-                <input
-                  type="number"
+                <KeyboardInput
+                  type="text"
+                  decimals
                   value={r.amount}
                   onChange={(e) =>
                     setPayRows((prev) => prev.map((x, i) => (i === idx ? { ...x, amount: e.target.value } : x)))
@@ -2785,17 +2798,16 @@ const handleUnitChange = (newLevel: number) => {
                 Complete Sale
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {success && (
-        <div className="modal-overlay">
-          <div className="modal modal-sm">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2 className="text-ok">Sale Completed</h2>
-              <ModalCloseButton onClose={() => setSuccess(null)} />
-            </div>
+        <Modal
+          onClose={() => setSuccess(null)}
+          title={<span className="text-ok">Sale Completed</span>}
+          className="modal-sm"
+          closeOnOverlay={false}
+        >
             <p>
               <strong>Invoice:</strong> {success.sale.invoice_no}
             </p>
@@ -2920,23 +2932,22 @@ const handleUnitChange = (newLevel: number) => {
                 New Bill
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {qtyDialog && (
-        <div className="modal-overlay">
-          <div className="modal modal-sm">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>Quantity — {qtyDialog.product.name}</h2>
-              <ModalCloseButton onClose={() => setQtyDialog(null)} />
-            </div>
+        <Modal
+          onClose={() => setQtyDialog(null)}
+          onSubmit={confirmQtyDialog}
+          title={`Quantity — ${qtyDialog.product.name}`}
+          className="modal-sm"
+          closeOnOverlay={false}
+        >
             <label className="field">
               <span>Quantity (Enter ↑ / ↓ for quick adjust)</span>
-              <input
-                type="number"
-                min="1"
-                step="1"
+              <KeyboardInput
+                type="text"
+                decimals={false}
                 autoFocus
                 value={qtyDialogValue}
                 onChange={(e) => setQtyDialogValue(e.target.value)}
@@ -2964,17 +2975,16 @@ const handleUnitChange = (newLevel: number) => {
                 Add {qtyDialogValue || '1'}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {custModal && (
-        <div className="modal-overlay">
-          <div className="modal modal-sm">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>New Customer</h2>
-              <ModalCloseButton onClose={() => setCustModal(false)} />
-            </div>
+        <Modal
+          onClose={() => setCustModal(false)}
+          title="New Customer"
+          className="modal-sm"
+          closeOnOverlay={false}
+        >
             <label className="field">
               <span>Name *</span>
               <input value={newCustName} onChange={(e) => setNewCustName(e.target.value)} />
@@ -2985,10 +2995,9 @@ const handleUnitChange = (newLevel: number) => {
             </label>
             <label className="field">
               <span>Opening Balance ({getCurrencySymbol()})</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
+              <KeyboardInput
+                type="text"
+                decimals
                 value={newCustBalance}
                 onChange={(e) => setNewCustBalance(e.target.value)}
                 placeholder="0.00"
@@ -3014,17 +3023,15 @@ const handleUnitChange = (newLevel: number) => {
                 Save
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {heldModal && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>{heldModal.tab === 'held' ? 'Held Bills' : 'Quotations'}</h2>
-              <ModalCloseButton onClose={() => setHeldModal(null)} />
-            </div>
+        <Modal
+          onClose={() => setHeldModal(null)}
+          title={heldModal.tab === 'held' ? 'Held Bills' : 'Quotations'}
+          closeOnOverlay={false}
+        >
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
@@ -3075,24 +3082,21 @@ const handleUnitChange = (newLevel: number) => {
                 Close
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {history && (
-        <div className="modal-overlay">
-          <div className="modal modal-wide">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>Sales History</h2>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <select className="field-select" value={historyFilter} onChange={(e) => { setHistoryFilter(e.target.value as any); applyHistoryFilters(); }} style={{ width: '160px' }}>
-                  <option value="completed">Completed</option>
-                  <option value="voided">Voided</option>
-                  <option value="held">Held</option>
-                </select>
-                <ModalCloseButton onClose={() => setHistory(null)} />
-              </div>
-            </div>
+        <Modal
+          onClose={() => setHistory(null)}
+          title="Sales History"
+          className="modal-wide"
+          closeOnOverlay={false}
+        >
+            <select className="field-select" value={historyFilter} onChange={(e) => { setHistoryFilter(e.target.value as any); applyHistoryFilters(); }} style={{ width: '160px', marginBottom: '12px' }}>
+              <option value="completed">Completed</option>
+              <option value="voided">Voided</option>
+              <option value="held">Held</option>
+            </select>
             
             {/* Filter Bar */}
             <div className="filter-bar" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px', padding: '12px', background: '#f8f9fa', borderRadius: '4px', border: '1px solid #e0e0e0' }}>
@@ -3138,8 +3142,8 @@ const handleUnitChange = (newLevel: number) => {
                   {paymentModes.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
                 <input type="text" value={historyFilters.productId} onChange={(e) => setHistoryFilters(f => ({ ...f, productId: e.target.value }))} placeholder="Product name..." style={{ width: '180px' }} />
-                <input type="number" value={historyFilters.minAmount} onChange={(e) => setHistoryFilters(f => ({ ...f, minAmount: e.target.value }))} placeholder="Min Amt" step="0.01" style={{ width: '100px' }} />
-                <input type="number" value={historyFilters.maxAmount} onChange={(e) => setHistoryFilters(f => ({ ...f, maxAmount: e.target.value }))} placeholder="Max Amt" step="0.01" style={{ width: '100px' }} />
+                <KeyboardInput type="text" decimals value={historyFilters.minAmount} onChange={(e) => setHistoryFilters(f => ({ ...f, minAmount: e.target.value }))} placeholder="Min Amt" style={{ width: '100px' }} />
+                <KeyboardInput type="text" decimals value={historyFilters.maxAmount} onChange={(e) => setHistoryFilters(f => ({ ...f, maxAmount: e.target.value }))} placeholder="Max Amt" style={{ width: '100px' }} />
                 <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#333' }}>
                   <input type="checkbox" checked={historyFilters.onlyMySales} onChange={(e) => setHistoryFilters(f => ({ ...f, onlyMySales: e.target.checked }))} />
                   Only My Sales
@@ -3213,14 +3217,17 @@ const handleUnitChange = (newLevel: number) => {
                 Close
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
       {/* Below cost confirmation modal */}
       {belowCostConfirm && (
-        <div className="modal-overlay">
-          <div className="modal modal-sm">
-            <h2 className="text-warn">Below-Cost Items</h2>
+        <Modal
+          onClose={() => setBelowCostConfirm(null)}
+          title={<span className="text-warn">Below-Cost Items</span>}
+          className="modal-sm"
+          showClose={false}
+          closeOnOverlay={false}
+        >
             <p>The following items are priced below cost. Selling them requires manager approval.</p>
             <ul className="expired-confirm-list">
               {belowCostConfirm.map((i) => (
@@ -3273,24 +3280,24 @@ const handleUnitChange = (newLevel: number) => {
                 Override &amp; Continue
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
         {saleDetail && (
-        <div className="modal-overlay">
-          <div className="modal modal-wide">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>Sale Detail — {saleDetail.invoice_no}</h2>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button className="btn btn-secondary" onClick={handleConvertToReturn}>Convert to Return</button>
-                <button className="btn btn-secondary" onClick={() => {
-                  window.api.printing.printSale(saleDetail.id)
-                    .then((r) => { if (r && r.ok === false) setNotice(r.message); })
-                    .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
-                }}>Reprint Receipt</button>
-                <button className="btn btn-primary" onClick={handleDuplicateAsNewSale}>Duplicate as New Sale</button>
-                <button className="btn" onClick={() => setSaleDetail(null)}>Close</button>
-              </div>
+        <Modal
+          onClose={() => setSaleDetail(null)}
+          title={`Sale Detail — ${saleDetail.invoice_no}`}
+          className="modal-wide"
+          closeOnOverlay={false}
+        >
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button className="btn btn-secondary" onClick={handleConvertToReturn}>Convert to Return</button>
+              <button className="btn btn-secondary" onClick={() => {
+                window.api.printing.printSale(saleDetail.id)
+                  .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+                  .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
+              }}>Reprint Receipt</button>
+              <button className="btn btn-primary" onClick={handleDuplicateAsNewSale}>Duplicate as New Sale</button>
+              <button className="btn" onClick={() => setSaleDetail(null)}>Close</button>
             </div>
             
             {/* Header Info */}
@@ -3359,14 +3366,18 @@ const handleUnitChange = (newLevel: number) => {
               <button className="btn btn-primary" onClick={handleDuplicateAsNewSale}>Duplicate as New Sale</button>
               <button className="btn" onClick={() => setSaleDetail(null)}>Close</button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
 {voidTarget && (
-        <div className="modal-overlay">
-          <div className="modal modal-sm">
-            <h2>Void Sale {voidTarget.invoice_no}</h2>
+        <Modal
+          onClose={() => setVoidTarget(null)}
+          onSubmit={doVoid}
+          title={`Void Sale ${voidTarget.invoice_no}`}
+          className="modal-sm"
+          showClose={false}
+          closeOnOverlay={false}
+        >
             <p className="muted">Stock will be restored automatically. This cannot be undone.</p>
             <label className="field">
               <span>Reason *</span>
@@ -3380,21 +3391,21 @@ const handleUnitChange = (newLevel: number) => {
                 Confirm Void
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {openShiftModal && (
-        <div className="modal-overlay" onClick={() => setOpenShiftModal(false)}>
-          <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
-            <h2>Open Shift</h2>
+        <Modal
+          onClose={() => setOpenShiftModal(false)}
+          title="Open Shift"
+          className="modal-sm"
+        >
             <p className="muted">Enter the cash you are starting with in the drawer. Every sale until you close this shift is tagged to it.</p>
             <label className="field">
               <span>Starting cash</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
+              <KeyboardInput
+                type="text"
+                decimals
                 autoFocus
                 value={openCash}
                 onChange={(e) => setOpenCash(e.target.value)}
@@ -3426,14 +3437,16 @@ const handleUnitChange = (newLevel: number) => {
                 Start Shift
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {closeShiftModal && (
-        <div className="modal-overlay" onClick={() => setCloseShiftModal(null)}>
-          <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
-            <h2>Close Shift</h2>
+        <Modal
+          onClose={() => setCloseShiftModal(null)}
+          onSubmit={doCloseShift}
+          title="Close Shift"
+          className="modal-sm"
+        >
             <div className="summary-row">
               <span>Opening cash</span>
               <span>{closeShiftModal.start_cash.toFixed(2)}</span>
@@ -3452,10 +3465,9 @@ const handleUnitChange = (newLevel: number) => {
             </div>
             <label className="field">
               <span>Counted cash in drawer *</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
+              <KeyboardInput
+                type="text"
+                decimals
                 autoFocus
                 value={countedCash}
                 onChange={(e) => setCountedCash(e.target.value)}
@@ -3474,13 +3486,16 @@ const handleUnitChange = (newLevel: number) => {
                 Close Shift
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 {priceEditUnlockOpen && (
-  <div className="modal-overlay">
-    <div className="modal modal-sm">
-      <h2 className="text-warn">Unlock Price Editing</h2>
+  <Modal
+    onClose={() => setPriceEditUnlockOpen(false)}
+    title={<span className="text-warn">Unlock Price Editing</span>}
+    className="modal-sm"
+    showClose={false}
+    closeOnOverlay={false}
+  >
       <label className="field">
         <span>Manager</span>
         <select value={priceEditUserId ?? ''} onChange={(e) => setPriceEditUserId(e.target.value ? Number(e.target.value) : null)}>
@@ -3514,8 +3529,7 @@ const handleUnitChange = (newLevel: number) => {
           Unlock
         </button>
       </div>
-    </div>
-  </div>
+  </Modal>
 )}
   {cashDrawerOpen && shift && (
     <CashDrawer shift={shift} onClose={() => setCashDrawerOpen(false)} />

@@ -13,7 +13,16 @@
     "isolatedModules": true,
     "allowSyntheticDefaultImports": true,
     "noEmit": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["src/shared/*"],
+      "@renderer/*": ["src/renderer/src/*"],
+      "@components/*": ["src/renderer/src/components/*"],
+      "@hooks/*": ["src/renderer/src/hooks/*"],
+      "@utils/*": ["src/renderer/src/utils/*"],
+      "@pages/*": ["src/renderer/src/pages/*"]
+    }
   },
   "include": ["src/renderer/**/*", "src/shared/**/*"],
   "exclude": ["node_modules", "dist", "src/main"]

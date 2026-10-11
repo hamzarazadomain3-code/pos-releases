@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ModalCloseButton } from '../components/ModalCloseButton';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Product, PurchaseItem, PurchaseOrder, PurchasePriceRow, Supplier, SupplierTransaction } from '../../../shared/types';
 import { DateRangePicker, SearchInput, FilterBar, FilterRow } from '../components/filters';
 import { formatDateTimeAdmin } from '../utils/dateUtils';
 import { useBarcodeScan } from '../hooks/useBarcodeScan';
+import { Modal } from '../components/Modal';
+import { KeyboardInput } from '../components/KeyboardInput';
+import { useListKeyboard } from '../hooks/useListKeyboard';
+import { useLineItemKeyboard } from '../hooks/useLineItemKeyboard';
+import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
 type Tab = 'suppliers' | 'orders';
 
@@ -37,6 +41,7 @@ export default function Purchases() {
   const [poSearchStage, setPoSearchStage] = useState<'idle' | 'select' | 'qty'>('idle');
   const [poSelIdx, setPoSelIdx] = useState(-1);
   const [poQty, setPoQty] = useState('1');
+  const poQtyRef = useRef<HTMLInputElement>(null);
 
   const poMatches = products.filter((p) => {
     if (!poSearch) return true;
@@ -92,6 +97,13 @@ export default function Purchases() {
         .catch((e) => setErr(String(e)));
     },
   });
+
+  // Focus the qty box the moment the staged search reaches the qty step.
+  useEffect(() => {
+    if (poSearchStage !== 'qty') return;
+    const t = window.setTimeout(() => poQtyRef.current?.focus(), 0);
+    return () => window.clearTimeout(t);
+  }, [poSearchStage]);
 
   const [priceHist, setPriceHist] = useState<PurchasePriceRow[]>([]);
   const [priceProd, setPriceProd] = useState<{ id: number; name: string } | null>(null);
@@ -204,6 +216,45 @@ export default function Purchases() {
     setStatus('');
   };
 
+  // ── Keyboard: arrow through the tables; Enter opens the highlighted row ──
+  const supplierList = useListKeyboard({
+    count: suppliers.length,
+    onOpen: (i) => { const s = suppliers[i]; if (s) openLedger(s); },
+  });
+  const orderList = useListKeyboard({
+    count: orders.length,
+    onOpen: (i) => { const o = orders[i]; if (o) openPo(o.id); },
+  });
+  const priceList = useListKeyboard({
+    count: Math.min(products.length, 30),
+    onOpen: (i) => { const p = products[i]; if (p) showPriceHist(p); },
+  });
+
+  // ── Keyboard: qty → unit cost cycle inside the PO lines ──
+  const poLinesKb = useLineItemKeyboard({
+    rowCount: lines.length,
+    columns: ['qty', 'cost'],
+    onRemoveRow: (row) => setLines(lines.filter((_, j) => j !== row)),
+    onSubmit: savePo,
+    enabled: poModal,
+  });
+
+  useKeyboardScope({
+    kind: 'page',
+    label: 'Purchases & Suppliers',
+    actions: {
+      new_record: () => {
+        if (tab === 'suppliers') setSupplierModal(true);
+        else { resetStagedSearch(); setPoModal(true); }
+      },
+    },
+    shortcuts: [
+      { action: 'new_record', label: tab === 'suppliers' ? 'Add supplier' : 'New purchase order' },
+      { keys: '↑ / ↓', label: 'Move between rows' },
+      { keys: 'Enter', label: 'Open highlighted row / next PO line field' },
+    ],
+  });
+
   return (
     <div className="page">
       <div className="page-head">
@@ -232,6 +283,7 @@ export default function Purchases() {
               Add Supplier
             </button>
           </div>
+          <div {...supplierList.getContainerProps()}>
           <table className="tbl">
             <thead>
               <tr>
@@ -242,8 +294,8 @@ export default function Purchases() {
               </tr>
             </thead>
             <tbody>
-              {suppliers.map((s) => (
-                <tr key={s.id}>
+              {suppliers.map((s, i) => (
+                <tr key={s.id} {...supplierList.getRowProps(i)}>
                   <td>{s.name}</td>
                   <td>{s.phone ?? '—'}</td>
                   <td className={s.balance > 0 ? 'text-warn' : ''}>{s.balance.toFixed(2)}</td>
@@ -263,6 +315,7 @@ export default function Purchases() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -309,6 +362,7 @@ export default function Purchases() {
               </button>
             </FilterRow>
           </FilterBar>
+          <div {...orderList.getContainerProps()}>
           <table className="tbl">
             <thead>
               <tr>
@@ -321,8 +375,8 @@ export default function Purchases() {
               </tr>
             </thead>
             <tbody>
-              {orders.map((o) => (
-                <tr key={o.id}>
+              {orders.map((o, i) => (
+                <tr key={o.id} {...orderList.getRowProps(i)}>
                   <td>PO-{String(o.id).padStart(4, '0')}</td>
                   <td>{o.supplier_name ?? '—'}</td>
                   <td>{o.created_at ? formatDateTimeAdmin(o.created_at) : '—'}</td>
@@ -358,18 +412,21 @@ export default function Purchases() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
       {supplierModal && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>Add Supplier</h2>
-              <ModalCloseButton onClose={() => setSupplierModal(false)} />
-            </div>
+        <Modal
+          onClose={() => setSupplierModal(false)}
+          onSubmit={addSupplier}
+          title="Add Supplier"
+          className="modal-sm"
+          label="Add Supplier"
+          shortcuts={[{ action: 'save', label: 'Save supplier' }]}
+        >
             <label className="lbl">Name *</label>
-            <input className="inp" value={sName} onChange={(e) => setSName(e.target.value)} autoFocus />
+            <input className="inp" value={sName} onChange={(e) => setSName(e.target.value)} />
             <label className="lbl">Phone</label>
             <input className="inp" value={sPhone} onChange={(e) => setSPhone(e.target.value)} />
             <label className="lbl">Address</label>
@@ -382,17 +439,18 @@ export default function Purchases() {
                 Cancel
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {poModal && (
-        <div className="modal-overlay">
-          <div className="modal modal-wide">
-<div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h2>New Purchase Order</h2>
-                <ModalCloseButton onClose={() => { resetStagedSearch(); setPoModal(false); }} />
-              </div>
+        <Modal
+          onClose={() => { resetStagedSearch(); setPoModal(false); }}
+          onSubmit={savePo}
+          title="New Purchase Order"
+          className="modal-wide"
+          label="New Purchase Order"
+          shortcuts={[{ action: 'save', label: 'Create purchase order' }]}
+        >
             <label className="lbl">Supplier *</label>
             <select className="inp" value={poSupplier} onChange={(e) => setPoSupplier(e.target.value)}>
               <option value="">— select —</option>
@@ -444,6 +502,8 @@ export default function Purchases() {
                     return;
                   }
                   if (e.key === 'Escape' || e.key === 'Esc') {
+                    e.preventDefault();
+                    e.stopPropagation();
                     setPoSearch('');
                     setPoSearchStage('idle');
                     setPoSelIdx(-1);
@@ -480,20 +540,24 @@ export default function Purchases() {
               {poSearchStage === 'qty' && selectedPoProduct() && (
                 <div className="quantity-input-box">
                   <span>{selectedPoProduct()!.name} — Qty:</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={9999}
-                    autoFocus
+                  <KeyboardInput
+                    ref={poQtyRef}
+                    type="text"
+                    decimals
                     value={poQty}
                     onChange={(e) => setPoQty(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === '\r' || e.key === '\n') {
                         e.preventDefault();
+                        e.stopPropagation();
                         confirmPoAdd();
                         return;
                       }
-                      if (e.key === 'Escape' || e.key === 'Esc') setPoSearchStage('select');
+                      if (e.key === 'Escape' || e.key === 'Esc') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setPoSearchStage('select');
+                      }
                     }}
                   />
                   <button className="btn btn-sm btn-primary" onClick={confirmPoAdd}>
@@ -534,10 +598,11 @@ export default function Purchases() {
                       </select>
                     </td>
                     <td>
-                      <input
+                      <KeyboardInput
+                        {...poLinesKb.getCellProps(i, 0)}
                         className="inp"
-                        type="number"
-                        min="1"
+                        type="text"
+                        decimals
                         value={l.qty}
                         onChange={(e) => {
                           const n = [...lines];
@@ -547,11 +612,11 @@ export default function Purchases() {
                       />
                     </td>
                     <td>
-                      <input
+                      <KeyboardInput
+                        {...poLinesKb.getCellProps(i, 1)}
                         className="inp"
-                        type="number"
-                        min="0"
-                        step="0.01"
+                        type="text"
+                        decimals
                         value={l.unit_cost}
                         onChange={(e) => {
                           const n = [...lines];
@@ -597,19 +662,16 @@ export default function Purchases() {
                 Cancel
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {poView && (
-        <div className="modal-overlay">
-          <div className="modal modal-wide">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>
-                PO-{String(poView.order.id).padStart(4, '0')} — {poView.order.supplier_name ?? ''}
-              </h2>
-              <ModalCloseButton onClose={() => setPoView(null)} />
-            </div>
+        <Modal
+          onClose={() => setPoView(null)}
+          title={`PO-${String(poView.order.id).padStart(4, '0')} — ${poView.order.supplier_name ?? ''}`}
+          className="modal-wide"
+          label="Purchase Order"
+        >
             <p className="muted small">
               {formatDateTimeAdmin(poView.order.created_at ?? '')} | {statusLabel(poView.order.status)}
             </p>
@@ -649,27 +711,27 @@ export default function Purchases() {
             <button className="btn" onClick={() => setPoView(null)}>
               Close
             </button>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {ledger && (
-        <div className="modal-overlay">
-          <div className="modal modal-wide">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>Supplier — {ledger.supplier.name}</h2>
-              <ModalCloseButton onClose={() => setLedger(null)} />
-            </div>
+        <Modal
+          onClose={() => setLedger(null)}
+          onSubmit={pay}
+          title={`Supplier — ${ledger.supplier.name}`}
+          className="modal-wide"
+          label="Supplier Ledger"
+          shortcuts={[{ keys: 'Enter', label: 'Record payment' }]}
+        >
             <div className="ledger-head">
               <span>
                 Payable: <strong>{ledger.supplier.balance.toFixed(2)}</strong>
               </span>
               <span>
                 Pay:
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
+                <KeyboardInput
+                  type="text"
+                  decimals
                   className="limit-input"
                   value={payAmount}
                   onChange={(e) => setPayAmount(e.target.value)}
@@ -723,17 +785,15 @@ export default function Purchases() {
             <button className="btn" onClick={() => setLedger(null)}>
               Close
             </button>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {priceProd && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>Price History — {priceProd.name}</h2>
-              <ModalCloseButton onClose={() => setPriceProd(null)} />
-            </div>
+        <Modal
+          onClose={() => setPriceProd(null)}
+          title={`Price History — ${priceProd.name}`}
+          label="Price History"
+        >
             <table className="tbl">
               <thead>
                 <tr>
@@ -760,8 +820,7 @@ export default function Purchases() {
             <button className="btn" onClick={() => setPriceProd(null)}>
               Close
             </button>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {tab === 'orders' && (
@@ -769,6 +828,7 @@ export default function Purchases() {
           <div className="card-head">
             <h2>Price History</h2>
           </div>
+          <div {...priceList.getContainerProps()}>
           <table className="tbl">
             <thead>
               <tr>
@@ -778,8 +838,8 @@ export default function Purchases() {
               </tr>
             </thead>
             <tbody>
-              {products.slice(0, 30).map((p) => (
-                <tr key={p.id}>
+              {products.slice(0, 30).map((p, i) => (
+                <tr key={p.id} {...priceList.getRowProps(i)}>
                   <td>{p.name}</td>
                   <td>{p.cost_price.toFixed(2)}</td>
                   <td>
@@ -791,6 +851,7 @@ export default function Purchases() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

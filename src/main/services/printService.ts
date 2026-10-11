@@ -72,10 +72,11 @@ export interface PaperSpec {
 }
 
 export const PAPER_SPECS: Record<PaperKind, PaperSpec> = {
-  // A 58mm roll has ~2mm of unprintable margin per side -> ~54mm printable.
-  // We keep a further 2mm of breathing room.
-  thermal58: { kind: 'thermal58', label: 'Thermal roll 58mm', widthMm: 58, contentMm: 52, padMm: 0, fixedHeightMm: null },
-  // An 80mm roll has ~3mm per side -> ~74mm printable.
+  // 58mm paper has a 48mm print head width (the standard 57.5mm roll / 48mm
+  // print width of Epson-class thermal printers). The old 52mm budget was wider
+  // than the head and the right-hand columns were being cut off.
+  thermal58: { kind: 'thermal58', label: 'Thermal roll 58mm', widthMm: 58, contentMm: 48, padMm: 0, fixedHeightMm: null },
+  // 80mm paper has a 72mm print head width (79.5mm roll / 72mm print width).
   thermal80: { kind: 'thermal80', label: 'Thermal roll 80mm', widthMm: 80, contentMm: 72, padMm: 0, fixedHeightMm: null },
   a4: { kind: 'a4', label: 'A4 (210 x 297mm)', widthMm: 210, contentMm: 190, padMm: 10, fixedHeightMm: 297 },
   a5: { kind: 'a5', label: 'A5 (148 x 210mm)', widthMm: 148, contentMm: 134, padMm: 7, fixedHeightMm: 210 },
@@ -104,6 +105,27 @@ export const LABEL_SPECS: Record<LabelSize, LabelSpec> = {
   '50x30': { kind: '50x30', label: '50 x 30mm', w: 50, h: 30, sheetCols: 3, gap: 1, barH: 10, fontPt: 7 },
   '100x50': { kind: '100x50', label: '100 x 50mm', w: 100, h: 50, sheetCols: 1, gap: 1.5, barH: 15, fontPt: 9 },
 };
+// The renderer's Label Studio offers more sizes than the bare 3 above. They are
+// fixed stock sizes, so they get the same treatment as the original three
+// instead of falling back to 38x25. `sheetCols` follows the same A4-fit rule.
+const EXTRA_LABEL_SPECS: Array<Omit<LabelSpec, 'kind'> & { kind: string }> = [
+  { kind: '40x30', label: '40 x 30mm', w: 40, h: 30, sheetCols: 4, gap: 1, barH: 8, fontPt: 6 },
+  { kind: '50x25', label: '50 x 25mm', w: 50, h: 25, sheetCols: 3, gap: 1, barH: 9, fontPt: 6 },
+  { kind: '58x40', label: '58 x 40mm', w: 58, h: 40, sheetCols: 3, gap: 1.5, barH: 11, fontPt: 7.5 },
+  { kind: '60x40', label: '60 x 40mm', w: 60, h: 40, sheetCols: 3, gap: 1.5, barH: 11, fontPt: 7.5 },
+];
+for (const spec of EXTRA_LABEL_SPECS) {
+  (LABEL_SPECS as Record<string, LabelSpec>)[spec.kind] = spec as LabelSpec;
+}
+
+/**
+ * Register a one-off label spec (e.g. Label Studio's arbitrary "custom" size)
+ * so the shared geometry code can lay out a roll page for it. Idempotent: an
+ * existing spec for the same key is never overwritten.
+ */
+export function registerLabelSpec(spec: LabelSpec): void {
+  (LABEL_SPECS as Record<string, LabelSpec>)[spec.kind] = spec;
+}
 
 export function isLabelSize(p: PaperOrLabel): p is LabelSize {
   return p in LABEL_SPECS;
@@ -377,7 +399,12 @@ function previewWidthPx(job: PrintJob): number {
 function newPrintWindow(widthPx: number, heightPx: number): BrowserWindow {
   const win = new BrowserWindow({
     show: false,
-    width: Math.max(240, Math.round(widthPx)),
+    // The floor must stay at or below the narrowest printable width (48mm ≈
+    // 181px): the hidden measuring window has to be EXACTLY as wide as the
+    // receipt body, or the body's `margin:0 auto` shifts and the layout audit
+    // (which compares against an absolute contentMm limit) reports a false
+    // clip. 120px is just a sane minimum for the empty window.
+    width: Math.max(120, Math.round(widthPx)),
     height: Math.max(200, Math.round(heightPx)),
     useContentSize: true,
     webPreferences: { sandbox: true, javascript: true },
@@ -402,9 +429,11 @@ let printQueue: Promise<unknown> = Promise.resolve();
 function getPrintWindow(widthPx: number, heightPx: number): BrowserWindow {
   if (sharedPrintWindow && !sharedPrintWindow.isDestroyed()) {
     try {
-      // Stays hidden: only setContentSize, never show().
+      // Stays hidden: only setContentSize, never show(). Must mirror
+      // newPrintWindow's floor (120) so the measuring viewport stays the exact
+      // printable width — see newPrintWindow above.
       sharedPrintWindow.setContentSize(
-        Math.max(240, Math.round(widthPx)),
+        Math.max(120, Math.round(widthPx)),
         Math.max(200, Math.round(heightPx))
       );
       return sharedPrintWindow;
@@ -589,7 +618,15 @@ async function resolveGeometry(win: BrowserWindow, job: PrintJob): Promise<PageG
   // Roll media: measure so the cut lands right after the last line of text.
   const px = await measureContentHeightPx(win);
   const measured = px > 0 ? pxToMm(px) : MIN_ROLL_HEIGHT_MM;
-  const heightMm = Math.min(MAX_ROLL_HEIGHT_MM, Math.max(MIN_ROLL_HEIGHT_MM, Math.ceil(measured) + 4));
+  // Keep the page PORTRAIT. If the measured height were ever shorter than the
+  // paper width, the driver treats the page as landscape and rotates it 90° on
+  // the roll. A one-item receipt can be ~70mm tall, so the floor is width + 2mm
+  // (a real receipt is always taller than this, so it costs no blank paper).
+  const portraitFloor = spec.widthMm + 2;
+  const heightMm = Math.min(
+    MAX_ROLL_HEIGHT_MM,
+    Math.max(MIN_ROLL_HEIGHT_MM, portraitFloor, Math.ceil(measured) + 4)
+  );
   return {
     pageSize: { width: mmToMicrons(spec.widthMm), height: mmToMicrons(heightMm) },
     widthMm: spec.widthMm,

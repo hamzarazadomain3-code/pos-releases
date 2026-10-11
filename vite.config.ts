@@ -6,6 +6,16 @@ export default defineConfig({
   root: path.resolve(__dirname, 'src/renderer'),
   base: './',
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@shared': path.resolve(__dirname, 'src/shared'),
+      '@renderer': path.resolve(__dirname, 'src/renderer/src'),
+      '@components': path.resolve(__dirname, 'src/renderer/src/components'),
+      '@hooks': path.resolve(__dirname, 'src/renderer/src/hooks'),
+      '@utils': path.resolve(__dirname, 'src/renderer/src/utils'),
+      '@pages': path.resolve(__dirname, 'src/renderer/src/pages'),
+    },
+  },
   build: {
     outDir: path.resolve(__dirname, 'dist/renderer'),
     emptyOutDir: true,

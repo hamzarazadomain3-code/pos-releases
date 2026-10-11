@@ -17,6 +17,22 @@ export function formatLocalDate(d: Date | string): string {
   return date.toLocaleDateString('en-US', { timeZone: PAKISTAN_TZ });
 }
 
+/**
+ * Receipt date: `dd/mm/yyyy h:mm AM` — one line, no seconds, no comma.
+ * en-GB date (day/month) + en-US hour12 time without seconds.
+ */
+export function formatReceiptDateTime(d: Date | string): string {
+  const date = typeof d === 'string' ? new Date(d) : d;
+  const day = date.toLocaleDateString('en-GB', { timeZone: PAKISTAN_TZ });
+  const time = date.toLocaleTimeString('en-US', {
+    timeZone: PAKISTAN_TZ,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+  return `${day} ${time}`;
+}
+
 /** Format a Date as YYYY-MM-DD in Pakistan timezone. */
 export function formatDateYMD(d: Date): string {
   return d.toLocaleDateString('en-CA', { timeZone: PAKISTAN_TZ });

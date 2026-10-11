@@ -9,6 +9,9 @@ import type {
   WhatsAppStatus,
 } from '../../../shared/types';
 import { formatTimestamp, formatDateTimeAdmin } from '../utils/dateUtils';
+import { Modal } from '../components/Modal';
+import { KeyboardInput } from '../components/KeyboardInput';
+import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsMap>({});
@@ -33,6 +36,7 @@ export default function Settings() {
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [printSettings, setPrintSettings] = useState<PrinterSettingsSnapshot | null>(null);
   const [printBusy, setPrintBusy] = useState(false);
+  const [previewBusy, setPreviewBusy] = useState(false);
 
   useEffect(() => {
     window.api.settings.getAll().then(setSettings).catch((e) => setNotice(e.message));
@@ -117,6 +121,15 @@ export default function Settings() {
       product_deleted: 'Product deleted',
     }[a] ?? a);
 
+  useKeyboardScope({
+    kind: 'page',
+    label: 'Settings',
+    actions: {
+      save: () => { saveShop(); },
+    },
+    shortcuts: [{ action: 'save', label: 'Save shop information' }],
+  });
+
   return (
     <div className="page">
       <div className="page-header">
@@ -138,6 +151,7 @@ export default function Settings() {
                 ['shop_name', 'Shop Name'],
                 ['shop_address', 'Address'],
                 ['shop_phone', 'Phone'],
+                ['shop_whatsapp', 'WhatsApp'],
                 ['receipt_footer', 'Receipt Footer'],
                 ['currency', 'Currency Symbol'],
               ] as [string, string][]
@@ -152,9 +166,9 @@ export default function Settings() {
               ))}
               <label className="field">
                 <span>Expiry warning window (days)</span>
-                <input
-                  type="number"
-                  min={1}
+                <KeyboardInput
+                  type="text"
+                  decimals
                   value={settings.expiry_warning_days ?? '30'}
                   onChange={(e) => setSettings({ ...settings, expiry_warning_days: e.target.value })}
                 />
@@ -406,6 +420,33 @@ export default function Settings() {
                 }}
               >
                 Save Template
+              </button>
+              <button
+                className="btn"
+                disabled={previewBusy}
+                onClick={async () => {
+                  setPreviewBusy(true);
+                  try {
+                    // Preview renders the EXACT HTML the printer builds, so a
+                    // template choice can be verified before it is saved.
+                    const sales = await window.api.sales.list(
+                      undefined, undefined, false, undefined, undefined, undefined,
+                      undefined, undefined, undefined, undefined, 'date', 'desc'
+                    );
+                    const sale = sales && sales[0];
+                    if (!sale) {
+                      setNotice('No sale exists yet — make a test sale to preview the receipt.');
+                      return;
+                    }
+                    await window.api.printing.previewReceipt(sale.id, selectedTemplate);
+                  } catch (e) {
+                    setNotice(e instanceof Error ? e.message : String(e));
+                  } finally {
+                    setPreviewBusy(false);
+                  }
+                }}
+              >
+                {previewBusy ? 'Opening…' : 'Preview Receipt'}
               </button>
             </div>
           </div>
@@ -680,8 +721,12 @@ export default function Settings() {
         )}
         {updateState === 'error' && <p className="small text-warn">Update check failed: {updateDetail}</p>}
         {updateState === 'restarting' && (
-          <div className="modal-overlay" style={{ zIndex: 9999 }}>
-            <div className="modal" style={{ textAlign: 'center', padding: '40px' }}>
+          <Modal
+            onClose={() => undefined}
+            overlayStyle={{ zIndex: 9999 }}
+            style={{ textAlign: 'center', padding: '40px' }}
+            closeOnOverlay={false}
+          >
               <div className="spinner" style={{
                 margin: '0 auto 16px',
                 width: '40px',
@@ -696,8 +741,7 @@ export default function Settings() {
               </strong>
               <span className="muted small">Please wait while the app restarts</span>
               <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-            </div>
-          </div>
+          </Modal>
         )}
       </div>
     </div>

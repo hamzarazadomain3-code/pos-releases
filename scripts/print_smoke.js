@@ -69,6 +69,7 @@ async function run() {
   const { initDatabase } = require('../dist/main/db.js');
   const printService = require('../dist/main/services/printService.js');
   const printing = require('../dist/main/services/printing.js');
+  const labelStudio = require('../dist/main/services/labelStudioPrinting.js');
   const { buildCalibrationHtml } = require('../dist/main/services/printDocs.js');
   const sales = require('../dist/main/services/sales.js');
   const inventory = require('../dist/main/services/inventory.js');
@@ -167,6 +168,117 @@ async function run() {
     checkTrue('barcode-only label produced a readable PDF', !!m);
     if (m) check('barcode-only label page width', m.widthMm, printService.LABEL_SPECS['50x30'].w, 2);
     checkTrue('barcode-only label job is named distinctly', /Barcode-only/.test(job.jobName), job.jobName);
+  }
+
+  // ── 3c. Label Studio custom templates (Phase 4) ──
+  // The renderer's template (elements with mm coordinates) is serialized over
+  // IPC, so the main process rebuilds it as HTML. Audit the SAME job the app
+  // prints/exported so a layout slip cannot hide behind the preview canvas.
+  console.log('\nLabel Studio custom templates');
+  {
+    const studioTemplate = {
+      id: 'smoke-retail',
+      name: 'Smoke Retail',
+      size: '38x25',
+      layout: 'roll',
+      defaults: { copies: 1, barcodeOnly: false },
+      elements: [
+        { id: 'name', type: 'text', x: 2, y: 1, w: 34, h: 4, visible: true, locked: false, rotation: 0, content: '{name}', style: { fontSize: 6, bold: true, align: 'center' } },
+        { id: 'line', type: 'line', x: 2, y: 5.5, w: 34, h: 0.2, visible: true, locked: false, rotation: 0, content: '', style: {} },
+        { id: 'code', type: 'barcode', x: 4, y: 7, w: 30, h: 9, visible: true, locked: false, rotation: 0, content: '{barcode}', barcodeOptions: { height: 9, barWidth: 2, showText: true }, style: {} },
+        { id: 'price', type: 'text', x: 2, y: 18, w: 20, h: 4, visible: true, locked: false, rotation: 0, content: '{price}', style: { fontSize: 7, bold: true, align: 'left' } },
+        { id: 'qr', type: 'qr', x: 26, y: 16.5, w: 9, h: 6, visible: true, locked: false, rotation: 0, content: '{sku}', style: {} },
+      ],
+    };
+
+    const job = await labelStudio.buildLabelStudioJob([productId], studioTemplate);
+    const { data } = await printService.printJobToPdf(job);
+    fs.writeFileSync(path.join(outDir, 'label-studio-retail-38x25.pdf'), data);
+    const m = measurePdf(data);
+    checkTrue('studio template produced a readable PDF', !!m);
+    if (m) {
+      check('studio template page width fits the label', m.widthMm, 38, 2);
+      checkTrue('studio template page holds the label height', m.heightMm >= 24.5, `${m.heightMm.toFixed(1)}mm`);
+    }
+
+    // Offset / mirror / rotation must be injectable without breaking geometry.
+    const off = await printService.printJobToPdf(
+      await labelStudio.buildLabelStudioJob([productId], {
+        ...studioTemplate,
+        layout: 'sheet',
+      })
+    );
+    checkTrue('studio sheet layout still renders', measurePdf(off.data)?.widthMm > 200, '');
+
+    // Custom (object) size registers a one-off spec and lays out correctly.
+    const customSpec = { w: 40, h: 30, gap: 1, margins: { t: 1, r: 1, b: 1, l: 1 } };
+    const customJob = await labelStudio.buildLabelStudioJob(
+      [productId],
+      { ...studioTemplate, size: customSpec, name: 'Custom 40' },
+      undefined,
+      1
+    );
+    const customM = measurePdf((await printService.printJobToPdf(customJob)).data);
+    if (customM) check('custom-size label page width matches the template', customM.widthMm, 40, 2);
+
+    // Layout audit: nothing hangs off the right edge of the label cell.
+    const auditStudio = async (name, j) => {
+      const a = await printService.auditJobLayout(j);
+      const clipped = a.offenders.filter((o) => o.overflowRight > 1);
+      checkTrue(
+        `${name}: nothing clipped on the right`,
+        clipped.length === 0,
+        clipped.slice(0, 2).map((o) => `<${o.tag}> "${o.text}" +${o.overflowRight}px`).join(' | ')
+      );
+    };
+    await auditStudio('studio roll (2 copies)', await labelStudio.buildLabelStudioJob([productId], studioTemplate, undefined, 2));
+    await auditStudio('studio sheet layout', await labelStudio.buildLabelStudioJob([productId], { ...studioTemplate, layout: 'sheet' }, undefined, 2));
+
+    // Content audit: the placeholders must resolve to real fields.
+    const text = await printService.readJobText(job);
+    const flat = text.replace(/\s+/g, ' ');
+    const p = inventory.getProduct(productId);
+    checkTrue('studio label prints the product name', !!p && flat.includes(p.name), p ? p.name : '');
+    checkTrue('studio label prints money with decimals', /\d+\.\d{2}/.test(flat), '');
+
+    // Export entry points return real bytes (not a stub).
+    const exported = await labelStudio.exportLabelBatchToPDF([productId], studioTemplate);
+    checkTrue('exportLabelBatchToPDF returns PDF bytes', exported.ok && !!exported.data && exported.data.length > 1000, exported.message);
+    if (exported.data) {
+      const em = measurePdf(exported.data);
+      checkTrue(
+        'exported PDF is the label size',
+        !!em && Math.abs(em.widthMm - 38) <= 2,
+        em ? `${em.widthMm.toFixed(1)}mm` : 'no PDF'
+      );
+    }
+    const pngOut = await labelStudio.exportLabelBatchToPNG([productId], studioTemplate);
+    const pngOk = pngOut.ok && pngOut.data && pngOut.data.subarray(0, 8).toString('latin1') === '\x89PNG\r\n\x1a\n';
+    checkTrue('exportLabelBatchToPNG returns a PNG', !!pngOk, pngOut.message);
+    if (pngOk) {
+      const pw = pngOut.data.readUInt32BE(16);
+      const ph = pngOut.data.readUInt32BE(20);
+      // One 38x25 label on a roll with a 1mm gap on both sides = 38x27mm page.
+      checkTrue(
+        'studio PNG aspect matches the label page',
+        pw > 0 && ph > 0 && Math.abs(pw / ph - 38 / 27) < 0.12,
+        `${pw}x${ph}`
+      );
+    }
+
+    // Calibration sheet for a label size (not a receipt roll).
+    const calJob = {
+      html: labelStudio.buildCalibrationLabelHtml('50x30'),
+      paper: '50x30',
+      labelLayout: 'roll',
+      labelRows: 1,
+      printerKey: 'label',
+      jobName: 'cal-label-smoke',
+    };
+    const calPdf = await printService.printJobToPdf(calJob);
+    fs.writeFileSync(path.join(outDir, 'cal-label-50x30.pdf'), calPdf.data);
+    const calM = measurePdf(calPdf.data);
+    if (calM) check('calibration label page width', calM.widthMm, 50, 2);
   }
 
   // ── 4. Thermal receipt from a real sale, at both roll widths ──
@@ -318,16 +430,38 @@ async function run() {
 
   // ── 6. Content audit: the fields must actually be on the page ──
   // Geometry proves nothing is clipped, but a markup slip can drop a field
-  // entirely. The 58mm layout stacks items onto two lines, so check the
-  // narrow receipt really still shows name, qty, unit price and line total.
+  // entirely. Both roll widths now use the same fixed item table (58mm has no
+  // DISC column and spells PARTICULARS as ITEM), so check the headers and the
+  // invoice number survive the redesign.
   console.log('\nContent audit (fields present)');
   {
     const sale = saleId ? sales.getSale(saleId) : null;
     const item = sale && sale.items && sale.items.length ? sale.items[0] : null;
     if (item) {
       const name = item.product_name || '';
-      const qtyLabel = item.unit_name && item.display_qty != null ? `${item.display_qty} ${item.unit_name}` : String(item.qty);
-      const money = (n) => String(Number(n || 0).toFixed(2));
+      // The receipts/invoices print money through toLocaleString, so a
+      // four-figure amount carries a thousands separator ("1,000.00"). Format
+      // the expectation the same way, and require a whole money token: a naive
+      // `includes("0.00")` would otherwise "match" inside "1,000.00".
+      const money = (n) =>
+        Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const hasMoney = (haystack, n) => {
+        const needle = money(n);
+        for (let from = 0; ; ) {
+          const i = haystack.indexOf(needle, from);
+          if (i < 0) return false;
+          const before = i > 0 ? haystack[i - 1] : '';
+          const after = i + needle.length < haystack.length ? haystack[i + needle.length] : '';
+          if (!/[\d,]/.test(before) && !/[\d,]/.test(after)) return true;
+          from = i + 1;
+        }
+      };
+      // The invoice number prints as `INV-MMDD-NNNN` when the full
+      // `INV-YYYYMMDD-NNNN` is too long to ever wrap.
+      const invMatch = (sale.invoice_no || '').match(/^([A-Za-z]+)-(\d{8})-(\d+)$/);
+      const invTexts = invMatch
+        ? [sale.invoice_no, `${invMatch[1]}-${invMatch[2].slice(4)}-${invMatch[3]}`]
+        : [sale.invoice_no];
 
       for (const paper of ['thermal58', 'thermal80']) {
         const restore = setPrintSetting('receipt_paper', paper);
@@ -336,13 +470,29 @@ async function run() {
           const text = await printService.readJobText(job);
           const flat = text.replace(/\s+/g, ' ');
           checkTrue(`receipt ${paper}: product name is printed`, name ? flat.includes(name) : true, name);
-          checkTrue(`receipt ${paper}: line total is printed`, flat.includes(money(item.line_total)), money(item.line_total));
+          checkTrue(`receipt ${paper}: line total is printed`, hasMoney(flat, item.line_total), money(item.line_total));
+          checkTrue(`receipt ${paper}: NET TOTAL is printed`, flat.includes('NET TOTAL'), '');
           if (paper === 'thermal58') {
-            // The stacked narrow row must keep the qty AND the unit price, which
-            // used to live in their own columns.
-            checkTrue('receipt thermal58: qty label survives the stacked layout', flat.includes(qtyLabel), qtyLabel);
-            checkTrue('receipt thermal58: stacked rows use the x separator', flat.includes('\u00d7'));
+            // 58mm uses the compact 5-column table (# | ITEM | QTY | RATE | AMOUNT).
+            checkTrue(
+              'receipt thermal58: 5-column item header is printed',
+              flat.includes('ITEM') && flat.includes('QTY') && flat.includes('RATE') && flat.includes('AMOUNT'),
+              ''
+            );
+          } else {
+            // 80mm uses the 6-column fixed table. If a markup slip drops the
+            // header row the columns collapse back into one run of text.
+            checkTrue(
+              'receipt thermal80: 6-column item header is printed',
+              flat.includes('#') && flat.includes('PARTICULARS') && flat.includes('QTY') && flat.includes('RATE') && flat.includes('DISC') && flat.includes('AMOUNT'),
+              ''
+            );
           }
+          checkTrue(
+            `receipt ${paper}: invoice number is on the receipt`,
+            invTexts.some((t) => t && flat.includes(t)),
+            invTexts[0]
+          );
         } finally {
           restore();
         }
@@ -353,7 +503,7 @@ async function run() {
           const text = await printService.readJobText(printing.buildInvoiceJob(saleId));
           const flat = text.replace(/\s+/g, ' ');
           checkTrue(`invoice ${paper}: product name is printed`, flat.includes(name), name);
-          checkTrue(`invoice ${paper}: grand total is printed`, flat.includes(money(sale.subtotal)) || flat.includes(money(sale.total)), '');
+          checkTrue(`invoice ${paper}: grand total is printed`, hasMoney(flat, sale.subtotal) || hasMoney(flat, sale.total_amount), '');
         } finally {
           restore();
         }

@@ -6,7 +6,7 @@ import WallpaperPresets from '../../components/WallpaperPresets';
 interface Section {
   key: string;
   label: string;
-  settings: { key: string; label: string; type: 'text' | 'number' | 'toggle' | 'select' | 'color' | 'wallpaper' | 'range'; options?: string[]; hint?: string }[];
+  settings: { key: string; label: string; type: 'text' | 'number' | 'toggle' | 'select' | 'color' | 'wallpaper' | 'range' | 'textarea'; options?: string[]; hint?: string }[];
 }
 
 const SECTIONS: Section[] = [
@@ -27,8 +27,11 @@ const SECTIONS: Section[] = [
       { key: 'auto_print_receipt', label: 'Auto-print Receipt', type: 'toggle' },
       { key: 'clock_timezone', label: 'Clock Timezone', type: 'text', hint: 'IANA zone (e.g. Asia/Karachi). Blank = Asia/Karachi.' },
       { key: 'print_mode', label: 'Print Mode', type: 'select', options: ['silent', 'dialog'], hint: 'silent = print straight to the default printer without a dialog' },
-      { key: 'receipt_header_text', label: 'Receipt Header Text', type: 'text', hint: 'Shown at top of receipt' },
-      { key: 'receipt_footer_text', label: 'Receipt Footer Text', type: 'text', hint: 'Shown at bottom of receipt' },
+      { key: 'receipt_header_lines', label: 'Receipt Header Lines', type: 'textarea', hint: 'One line each, under the shop name / contact info' },
+      { key: 'receipt_terms_text', label: 'Receipt Terms Text', type: 'textarea', hint: 'Multi-line terms at the bottom of the receipt' },
+      { key: 'receipt_software_by', label: 'Software By Name', type: 'text', hint: 'Tradename under "-- SOFTWARE BY --"' },
+      { key: 'receipt_show_serial_number', label: 'Show Item Numbers (#)', type: 'toggle', hint: 'Show the "#" column in the items table' },
+      { key: 'receipt_footer_text', label: 'Receipt Footer Message', type: 'text', hint: 'Bottom message, e.g. "Come again soon!"' },
       { key: 'show_tax_on_receipt', label: 'Show Tax on Receipt', type: 'toggle' },
       { key: 'show_discount_breakdown', label: 'Show Discount Breakdown', type: 'toggle' },
       { key: 'show_payment_method', label: 'Show Payment Method', type: 'toggle' },
@@ -176,6 +179,34 @@ const SECTIONS: Section[] = [
     ],
   },
 ];
+
+/**
+ * `receipt_header_lines` is stored as a JSON array but edited as one line per
+ * row. Everything else is a plain string, so these only transform that one key.
+ */
+function displayValueFor(key: string, raw: string | undefined): string {
+  if (key === 'receipt_header_lines' && raw) {
+    try {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return arr.join('\n');
+    } catch {
+      /* fall through to the raw value */
+    }
+  }
+  return raw ?? '';
+}
+
+function saveValueFor(key: string, value: string): string {
+  if (key === 'receipt_header_lines') {
+    return JSON.stringify(
+      value
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean)
+    );
+  }
+  return value;
+}
 
 export default function SystemSettings() {
   const [settings, setSettings] = useState<AdminSettingsMap>({});
@@ -471,6 +502,13 @@ export default function SystemSettings() {
                   </div>
                   <span className="muted small">Max 5MB. Supports JPG, PNG, WebP. Opens crop editor after upload.</span>
                 </div>
+              ) : s.type === 'textarea' ? (
+                <textarea
+                  value={displayValueFor(s.key, settings[s.key])}
+                  onChange={(e) => updateSetting(s.key, saveValueFor(s.key, e.target.value))}
+                  className="admin-setting-input admin-setting-textarea"
+                  rows={4}
+                />
               ) : (
                 <input
                   type={s.type}

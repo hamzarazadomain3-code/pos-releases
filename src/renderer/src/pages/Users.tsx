@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ModalCloseButton } from '../components/ModalCloseButton';
+import { Modal } from '../components/Modal';
+import { useListKeyboard } from '../hooks/useListKeyboard';
+import { useKeyboardScope } from '../hooks/useKeyboardScope';
 import type { RecoveryStatus, UserInput, UserRole, UserRow } from '../../../shared/types';
 
 /**
@@ -184,6 +186,28 @@ export default function Users() {
     setSecBusy(false);
   };
 
+  // ── Keyboard: arrow through staff; Enter edits; Delete removes ──
+  const userList = useListKeyboard({
+    count: users.length,
+    onOpen: (i) => { const u = users[i]; if (u) openEdit(u); },
+    onDelete: (i) => { const u = users[i]; if (u && u.role !== 'owner') remove(u); },
+  });
+
+  useKeyboardScope({
+    kind: 'page',
+    label: 'Users & Roles',
+    actions: {
+      new_record: () => openAdd(),
+      save: () => { if (modal) submit(); },
+    },
+    shortcuts: [
+      { action: 'new_record', label: 'Add user' },
+      { keys: '↑ / ↓', label: 'Move between users' },
+      { keys: 'Enter', label: 'Edit highlighted user' },
+      { keys: 'Delete', label: 'Delete highlighted user' },
+    ],
+  });
+
   return (
     <div className="page">
       <div className="page-head">
@@ -350,45 +374,47 @@ export default function Users() {
             Add User
           </button>
         </div>
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Username</th>
-              <th>Role</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((u) => (
-              <tr key={u.id} className={u.active === 1 ? '' : 'muted'}>
-                <td>
-                  {u.username}
-                  {u.role === 'owner' && <span className="badge badge-warn" style={{ marginLeft: 8 }}>Owner</span>}
-                </td>
-                <td>{roleLabel(u.role)}</td>
-                <td>{u.active === 1 ? 'Active' : 'Disabled'}</td>
-                <td>
-                  <div className="row-actions">
-                    <button className="btn btn-sm" onClick={() => openEdit(u)}>
-                      Edit / Reset
-                    </button>
-                    {u.role !== 'owner' && (
-                      <button className="btn btn-sm" onClick={() => toggleActive(u)}>
-                        {u.active === 1 ? 'Disable' : 'Enable'}
-                      </button>
-                    )}
-                    {u.role !== 'owner' && (
-                      <button className="btn btn-sm btn-danger" onClick={() => remove(u)}>
-                        Delete
-                      </button>
-                    )}
-                  </div>
-                </td>
+        <div {...userList.getContainerProps()}>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {users.map((u, i) => (
+                <tr key={u.id} className={u.active === 1 ? '' : 'muted'} {...userList.getRowProps(i)}>
+                  <td>
+                    {u.username}
+                    {u.role === 'owner' && <span className="badge badge-warn" style={{ marginLeft: 8 }}>Owner</span>}
+                  </td>
+                  <td>{roleLabel(u.role)}</td>
+                  <td>{u.active === 1 ? 'Active' : 'Disabled'}</td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="btn btn-sm" onClick={() => openEdit(u)}>
+                        Edit / Reset
+                      </button>
+                      {u.role !== 'owner' && (
+                        <button className="btn btn-sm" onClick={() => toggleActive(u)}>
+                          {u.active === 1 ? 'Disable' : 'Enable'}
+                        </button>
+                      )}
+                      {u.role !== 'owner' && (
+                        <button className="btn btn-sm btn-danger" onClick={() => remove(u)}>
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         <p className="muted small" style={{ marginTop: 12 }}>
           Owner: full access (settings, users, reports, everything). Manager: inventory, purchases, udhaar, returns & reports.
           Cashier: billing only — PIN login for fast counter switching.
@@ -396,47 +422,47 @@ export default function Users() {
       </div>
 
       {modal && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>{modal.mode === 'add' ? 'Add User' : `Edit — ${modal.user.username}`}</h2>
-              <ModalCloseButton onClose={() => setModal(null)} />
-            </div>
-            {modal.mode === 'add' && (
-              <>
-                <label className="lbl">Username *</label>
-                <input className="inp" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
-              </>
-            )}
-            <label className="lbl">Role *</label>
-            <select className="inp" value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
-              <option value="cashier">Cashier (billing only, PIN login)</option>
-              <option value="manager">Manager (inventory + reports)</option>
-              <option value="owner">Owner (full access)</option>
-            </select>
-            {modal.mode === 'edit' && (
-              <label className="lbl">
-                Username: <strong>{modal.user.username}</strong>
-              </label>
-            )}
+        <Modal
+          onClose={() => setModal(null)}
+          onSubmit={submit}
+          title={modal.mode === 'add' ? 'Add User' : `Edit — ${modal.user.username}`}
+          label="User"
+          shortcuts={[{ action: 'save', label: 'Save user' }]}
+        >
+          {modal.mode === 'add' && (
+            <>
+              <label className="lbl">Username *</label>
+              <input className="inp" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
+            </>
+          )}
+          <label className="lbl">Role *</label>
+          <select className="inp" value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
+            <option value="cashier">Cashier (billing only, PIN login)</option>
+            <option value="manager">Manager (inventory + reports)</option>
+            <option value="owner">Owner (full access)</option>
+          </select>
+          {modal.mode === 'edit' && (
             <label className="lbl">
-              {modal.mode === 'edit' ? 'New password (leave blank to keep)' : 'Password'} {role === 'cashier' ? '(optional if PIN set)' : '*'}
+              Username: <strong>{modal.user.username}</strong>
             </label>
-            <input className="inp" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-            <label className="lbl">
-              PIN {role === 'cashier' ? '(required for fast counter login)' : '(optional)'}
-            </label>
-            <input className="inp" type="password" value={pin} onChange={(e) => setPin(e.target.value)} placeholder="4-10 digits" />
-            <div className="row-btns">
-              <button className="btn btn-primary" onClick={submit}>
-                Save
-              </button>
-              <button className="btn" onClick={() => setModal(null)}>
-                Cancel
-              </button>
-            </div>
+          )}
+          <label className="lbl">
+            {modal.mode === 'edit' ? 'New password (leave blank to keep)' : 'Password'} {role === 'cashier' ? '(optional if PIN set)' : '*'}
+          </label>
+          <input className="inp" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <label className="lbl">
+            PIN {role === 'cashier' ? '(required for fast counter login)' : '(optional)'}
+          </label>
+          <input className="inp" type="password" value={pin} onChange={(e) => setPin(e.target.value)} placeholder="4-10 digits" />
+          <div className="row-btns">
+            <button className="btn btn-primary" onClick={submit}>
+              Save
+            </button>
+            <button className="btn" onClick={() => setModal(null)}>
+              Cancel
+            </button>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

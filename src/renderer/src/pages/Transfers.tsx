@@ -2,6 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { PartyTransferRow, BankAccountRow, BankTransferRow, Customer, Supplier } from '../../../shared/types';
 import { formatDateAdmin } from '../utils/dateUtils';
+import { Modal } from '../components/Modal';
+import { KeyboardInput } from '../components/KeyboardInput';
+import { useListKeyboard } from '../hooks/useListKeyboard';
+import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
 type Tab = 'party' | 'bank';
 
@@ -163,6 +167,23 @@ export default function Transfers() {
 
   const fmt = (n: number) => n?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? '0';
 
+  // ── Keyboard: arrow through the tables ──
+  const partyList = useListKeyboard({ count: partyTransfers.length });
+  const bankList = useListKeyboard({ count: bankTransfers.length });
+  const accountList = useListKeyboard({ count: bankAccounts.length });
+
+  useKeyboardScope({
+    kind: 'page',
+    label: 'Transfers',
+    actions: {
+      new_record: () => (tab === 'party' ? setPartyFormOpen(true) : setBankFormOpen(true)),
+    },
+    shortcuts: [
+      { action: 'new_record', label: tab === 'party' ? 'New party transfer' : 'New bank transfer' },
+      { keys: '↑ / ↓', label: 'Move between rows' },
+    ],
+  });
+
   return (
     <div className="page">
       <div className="page-header">
@@ -188,7 +209,7 @@ export default function Transfers() {
 
           <div className="card">
             {partyLoading ? <p className="muted center pad">Loading…</p> : partyTransfers.length === 0 ? <p className="muted center pad">No party transfers</p> : (
-              <div style={{ overflowX: 'auto' }}>
+              <div style={{ overflowX: 'auto' }} {...partyList.getContainerProps()}>
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -201,8 +222,8 @@ export default function Transfers() {
                     </tr>
                   </thead>
                   <tbody>
-                    {partyTransfers.map((t) => (
-                      <tr key={t.id}>
+                    {partyTransfers.map((t, i) => (
+                      <tr key={t.id} {...partyList.getRowProps(i)}>
                         <td>{t.from_party_type === 'customer' ? '👤' : '🏢'} {t.from_party_name || `ID: ${t.from_party_id}`}</td>
                         <td>{t.to_party_type === 'customer' ? '👤' : '🏢'} {t.to_party_name || `ID: ${t.to_party_id}`}</td>
                         <td>{fmt(t.amount)}</td>
@@ -218,13 +239,14 @@ export default function Transfers() {
           </div>
 
           {partyFormOpen && (
-            <div className="modal-overlay" onClick={() => setPartyFormOpen(false)}>
-              <div className="modal" style={{ maxWidth: 520, width: '95%' }} onClick={(e) => e.stopPropagation()}>
-                <div className="row-btns" style={{ justifyContent: 'space-between', marginBottom: 16 }}>
-                  <h2>New Party Transfer</h2>
-                  <button className="btn btn-sm" onClick={() => setPartyFormOpen(false)}>✕</button>
-                </div>
-
+            <Modal
+              onClose={() => setPartyFormOpen(false)}
+              onSubmit={handlePartyCreate}
+              title="New Party Transfer"
+              style={{ maxWidth: 520, width: '95%' }}
+              label="New Party Transfer"
+              shortcuts={[{ action: 'save', label: 'Create transfer' }]}
+            >
                 <div className="form-row">
                   <div className="form-group">
                     <label>From Type</label>
@@ -267,7 +289,7 @@ export default function Transfers() {
 
                 <div className="form-group">
                   <label>Amount</label>
-                  <input type="number" min="0.01" step="0.01" value={partyAmount} onChange={(e) => setPartyAmount(e.target.value)} required />
+                  <KeyboardInput type="text" decimals value={partyAmount} onChange={(e) => setPartyAmount(e.target.value)} required />
                 </div>
 
                 <div className="form-group">
@@ -286,8 +308,7 @@ export default function Transfers() {
                     {partySaving ? 'Saving…' : 'Create Transfer'}
                   </button>
                 </div>
-              </div>
-            </div>
+            </Modal>
           )}
         </>
       )}
@@ -301,7 +322,7 @@ export default function Transfers() {
 
           <div className="card">
             {bankLoading ? <p className="muted center pad">Loading…</p> : bankTransfers.length === 0 ? <p className="muted center pad">No bank transfers</p> : (
-              <div style={{ overflowX: 'auto' }}>
+              <div style={{ overflowX: 'auto' }} {...bankList.getContainerProps()}>
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -314,8 +335,8 @@ export default function Transfers() {
                     </tr>
                   </thead>
                   <tbody>
-                    {bankTransfers.map((t) => (
-                      <tr key={t.id}>
+                    {bankTransfers.map((t, i) => (
+                      <tr key={t.id} {...bankList.getRowProps(i)}>
                         <td>{t.from_account_name}</td>
                         <td>{t.to_account_name}</td>
                         <td>{fmt(t.amount)}</td>
@@ -332,13 +353,14 @@ export default function Transfers() {
 
           {/* Bank Transfer Form */}
           {bankFormOpen && (
-            <div className="modal-overlay" onClick={() => setBankFormOpen(false)}>
-              <div className="modal" style={{ maxWidth: 520, width: '95%' }} onClick={(e) => e.stopPropagation()}>
-                <div className="row-btns" style={{ justifyContent: 'space-between', marginBottom: 16 }}>
-                  <h2>New Bank Transfer</h2>
-                  <button className="btn btn-sm" onClick={() => setBankFormOpen(false)}>✕</button>
-                </div>
-
+            <Modal
+              onClose={() => setBankFormOpen(false)}
+              onSubmit={handleBankCreate}
+              title="New Bank Transfer"
+              style={{ maxWidth: 520, width: '95%' }}
+              label="New Bank Transfer"
+              shortcuts={[{ action: 'save', label: 'Create transfer' }]}
+            >
                 <div className="form-row">
                   <div className="form-group">
                     <label>From Account</label>
@@ -360,7 +382,7 @@ export default function Transfers() {
 
                 <div className="form-group">
                   <label>Amount</label>
-                  <input type="number" min="0.01" step="0.01" value={bankAmount} onChange={(e) => setBankAmount(e.target.value)} required />
+                  <KeyboardInput type="text" decimals value={bankAmount} onChange={(e) => setBankAmount(e.target.value)} required />
                 </div>
 
                 <div className="form-group">
@@ -379,19 +401,19 @@ export default function Transfers() {
                     {bankSaving ? 'Saving…' : 'Create Transfer'}
                   </button>
                 </div>
-              </div>
-            </div>
+            </Modal>
           )}
 
           {/* Bank Account Form */}
           {accountFormOpen && (
-            <div className="modal-overlay" onClick={() => setAccountFormOpen(false)}>
-              <div className="modal" style={{ maxWidth: 520, width: '95%' }} onClick={(e) => e.stopPropagation()}>
-                <div className="row-btns" style={{ justifyContent: 'space-between', marginBottom: 16 }}>
-                  <h2>New Bank Account</h2>
-                  <button className="btn btn-sm" onClick={() => setAccountFormOpen(false)}>✕</button>
-                </div>
-
+            <Modal
+              onClose={() => setAccountFormOpen(false)}
+              onSubmit={handleAccountCreate}
+              title="New Bank Account"
+              style={{ maxWidth: 520, width: '95%' }}
+              label="New Bank Account"
+              shortcuts={[{ action: 'save', label: 'Create account' }]}
+            >
                 <div className="form-group">
                   <label>Account Name</label>
                   <input value={accountName} onChange={(e) => setAccountName(e.target.value)} required />
@@ -430,15 +452,14 @@ export default function Transfers() {
                     {accountSaving ? 'Saving…' : 'Create Account'}
                   </button>
                 </div>
-              </div>
-            </div>
+            </Modal>
           )}
 
           {/* Bank Accounts List */}
           <div className="card" style={{ marginTop: 16 }}>
             <h3>Bank Accounts</h3>
             {bankAccounts.length === 0 ? <p className="muted pad">No accounts</p> : (
-              <div style={{ overflowX: 'auto' }}>
+              <div style={{ overflowX: 'auto' }} {...accountList.getContainerProps()}>
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -450,8 +471,8 @@ export default function Transfers() {
                     </tr>
                   </thead>
                   <tbody>
-                    {bankAccounts.map((a) => (
-                      <tr key={a.id}>
+                    {bankAccounts.map((a, i) => (
+                      <tr key={a.id} {...accountList.getRowProps(i)}>
                         <td><strong>{a.name}</strong></td>
                         <td>{a.bank_name || '—'}</td>
                         <td>{a.account_number || '—'}</td>

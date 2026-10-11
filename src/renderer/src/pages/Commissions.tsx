@@ -3,6 +3,10 @@ import { useTranslation } from 'react-i18next';
 import type { CommissionRuleRow, SalesmanCommissionRow } from '../../../shared/types';
 import { formatDateAdmin } from '../utils/dateUtils';
 import { formatMoney, getCurrencySymbol } from '../utils/currency';
+import { Modal } from '../components/Modal';
+import { KeyboardInput } from '../components/KeyboardInput';
+import { useListKeyboard } from '../hooks/useListKeyboard';
+import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
 const fmt = (n: number) => n?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? '0';
 
@@ -105,6 +109,29 @@ export default function Commissions() {
     else setErr(res.message || 'Error');
   };
 
+  // ── Keyboard: arrow between rows, Enter edits a rule, Delete removes it ──
+  const ruleList = useListKeyboard({
+    count: rules.length,
+    onOpen: (i) => { const r = rules[i]; if (r) openRuleEdit(r); },
+    onDelete: (i) => { const r = rules[i]; if (r) deleteRule(r.id); },
+  });
+
+  const commissionList = useListKeyboard({ count: commissions.length });
+
+  useKeyboardScope({
+    kind: 'page',
+    label: 'Salesman Commissions',
+    actions: {
+      new_record: () => { resetRuleForm(); setRuleFormOpen(true); },
+    },
+    shortcuts: [
+      { action: 'new_record', label: 'New commission rule' },
+      { keys: '↑ / ↓', label: 'Move between rows' },
+      { keys: 'Enter', label: 'Edit highlighted rule' },
+      { keys: 'Delete', label: 'Delete highlighted rule' },
+    ],
+  });
+
   return (
     <div className="page">
       <div className="page-header">
@@ -164,12 +191,14 @@ export default function Commissions() {
 
       {/* Rule form modal */}
       {ruleFormOpen && (
-        <div className="modal-overlay" onClick={() => resetRuleForm()}>
-          <div className="modal" style={{ maxWidth: 500 }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>{ruleEditId ? 'Edit Rule' : 'New Commission Rule'}</h3>
-              <button className="btn-close" onClick={resetRuleForm}>×</button>
-            </div>
+        <Modal
+          onClose={resetRuleForm}
+          onSubmit={saveRule}
+          title={ruleEditId ? 'Edit Rule' : 'New Commission Rule'}
+          style={{ maxWidth: 500 }}
+          label="Commission Rule"
+          shortcuts={[{ action: 'save', label: 'Save rule' }]}
+        >
             <div className="modal-content">
               <div className="form-group">
                 <label>Rule Name</label>
@@ -185,7 +214,7 @@ export default function Commissions() {
                 </div>
                 <div className="form-group">
                   <label>Value</label>
-                  <input type="number" step="0.01" value={ruleValue} onChange={(e) => setRuleValue(e.target.value)} />
+                  <KeyboardInput type="text" decimals value={ruleValue} onChange={(e) => setRuleValue(e.target.value)} />
                 </div>
               </div>
               <div className="form-row">
@@ -199,7 +228,7 @@ export default function Commissions() {
                 </div>
                 <div className="form-group">
                   <label>Priority</label>
-                  <input type="number" value={rulePriority} onChange={(e) => setRulePriority(e.target.value)} />
+                  <KeyboardInput type="text" decimals={false} value={rulePriority} onChange={(e) => setRulePriority(e.target.value)} />
                 </div>
               </div>
             </div>
@@ -207,20 +236,19 @@ export default function Commissions() {
               <button className="btn" onClick={resetRuleForm}>Cancel</button>
               <button className="btn btn-primary" onClick={saveRule}>{ruleEditId ? 'Update' : 'Create'}</button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* Table */}
       {loading ? <div className="muted center">Loading...</div> : tab === 'rules' ? (
-        <table className="data-table">
+        <table className="data-table" {...ruleList.getContainerProps()}>
           <thead>
             <tr><th>Name</th><th>Type</th><th>Value</th><th>Scope</th><th>Priority</th><th>Status</th><th>Actions</th></tr>
           </thead>
           <tbody>
             {rules.length === 0 && <tr><td colSpan={7} className="center muted">No rules configured</td></tr>}
-            {rules.map((r) => (
-              <tr key={r.id}>
+            {rules.map((r, i) => (
+              <tr key={r.id} {...ruleList.getRowProps(i)}>
                 <td>{r.name}</td>
                 <td><span className="badge">{r.type}</span></td>
                 <td style={{ fontWeight: 600 }}>{r.type === 'percent' ? `${r.value}%` : formatMoney(r.value)}</td>
@@ -236,14 +264,14 @@ export default function Commissions() {
           </tbody>
         </table>
       ) : (
-        <table className="data-table">
+        <table className="data-table" {...commissionList.getContainerProps()}>
           <thead>
             <tr><th>Date</th><th>Salesman</th><th>Sale ID</th><th>Base</th><th>Rate</th><th>Commission</th><th>Status</th><th>Actions</th></tr>
           </thead>
           <tbody>
             {commissions.length === 0 && <tr><td colSpan={8} className="center muted">No commissions found</td></tr>}
-            {commissions.map((c) => (
-              <tr key={c.id}>
+            {commissions.map((c, i) => (
+              <tr key={c.id} {...commissionList.getRowProps(i)}>
                 <td>{formatDateAdmin(c.created_at)}</td>
                 <td>{c.salesman_name}</td>
                 <td>#{c.sale_id}</td>

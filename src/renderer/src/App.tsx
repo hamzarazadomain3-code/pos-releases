@@ -1,9 +1,10 @@
-import { Component, Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Component, Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { NavPage, UserRow } from '../../shared/types';
 import { resetFormatCache } from './utils/formatters';
 import { initCurrency } from './utils/currency';
 import { initDateUtils, resetDateUtils } from './utils/dateUtils';
+import { KeyboardProvider } from './keyboard/KeyboardProvider';
 import rokarSidebarIcon from './assets/rokar-sidebar-icon.png';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Inventory = lazy(() => import('./pages/Inventory'));
@@ -29,6 +30,7 @@ const Commissions = lazy(() => import('./pages/Commissions'));
 const CustomReports = lazy(() => import('./pages/CustomReports'));
 const FIFOStockReport = lazy(() => import('./pages/FIFOStockReport'));
 const LoginRecovery = lazy(() => import('./pages/LoginRecovery'));
+const LabelStudio = lazy(() => import('./pages/LabelStudio'));
 
 const SESSION_KEY = 'pos_session';
 const SESSION_MAX_AGE = 24 * 60 * 60 * 1000;
@@ -45,6 +47,7 @@ const NAV_ICONS: Record<string, JSX.Element> = {
   transfers: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>,
   branches: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>,
   barcode: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2v20"/><rect x="10" y="2" width="2" height="20"/><rect x="15" y="2" width="1" height="20"/><rect x="19" y="2" width="2" height="20"/><rect x="3" y="2" width="2" height="20"/></svg>,
+  labelStudio: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="8" height="10" rx="1"/><rect x="13" y="3" width="8" height="10" rx="1"/><path d="M7 7h4M7 11h4M17 7h4M17 11h4"/></svg>,
   audits: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>,
   promotions: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
   shifts: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
@@ -169,6 +172,7 @@ const ALL_NAV: { key: NavPage; labelKey: string; minRole: 'cashier' | 'manager' 
   { key: 'transfers', labelKey: 'navigation.transfers', minRole: 'manager' },
   { key: 'quotations', labelKey: 'navigation.quotations', minRole: 'manager' },
   { key: 'invoiceAdmin', labelKey: 'navigation.invoiceAdmin', minRole: 'manager' },
+  { key: 'labelStudio', labelKey: 'navigation.labelStudio', minRole: 'manager' },
   { key: 'barcode', labelKey: 'navigation.barcode', minRole: 'manager' },
   { key: 'audits', labelKey: 'navigation.audits', minRole: 'manager' },
   { key: 'promotions', labelKey: 'navigation.promotions', minRole: 'manager' },
@@ -264,6 +268,7 @@ function LoginScreen({
   const [otpCode, setOtpCode] = useState('');
   const [otpMessage, setOtpMessage] = useState<string | null>(null);
   const [otpBusy, setOtpBusy] = useState(false);
+  const passRef = useRef<HTMLInputElement>(null);
 
   // Hidden developer fallback for when the security question cannot be answered.
   // Deliberately obscure and only armed on the login screen.
@@ -366,9 +371,16 @@ function LoginScreen({
             value={username}
             autoFocus
             onChange={(e) => setUsername(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                passRef.current?.focus();
+              }
+            }}
           />
         )}
         <input
+          ref={passRef}
           type="password"
           placeholder={pinMode ? t('messages.enter_pin') : t('messages.password')}
           value={secret}
@@ -376,6 +388,24 @@ function LoginScreen({
           onChange={(e) => setSecret(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && doLogin()}
         />
+        {pinMode && (
+          <div className="pin-pad">
+            {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map((k) => (
+              <button
+                key={k}
+                type="button"
+                className="pin-key"
+                onClick={() => {
+                  if (k === 'C') setSecret('');
+                  else if (k === '⌫') setSecret((s) => s.slice(0, -1));
+                  else setSecret((s) => s + k);
+                }}
+              >
+                {k}
+              </button>
+            ))}
+          </div>
+        )}
         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#888', margin: '4px 0 8px', cursor: 'pointer' }}>
           <input
             type="checkbox"
@@ -489,7 +519,31 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [recoveryMode, setRecoveryMode] = useState<'self' | 'support' | null>(null);
   const [recoveryPrefill, setRecoveryPrefill] = useState('');
+  const [shortcutMap, setShortcutMap] = useState<Record<string, string>>({});
   const nav = user ? navFor(user.role) : [];
+
+  // Load the admin shortcut bindings for the global keyboard layer.
+  useEffect(() => {
+    if (!user) {
+      setShortcutMap({});
+      return;
+    }
+    let mounted = true;
+    window.api.admin.shortcuts
+      .getAll()
+      .then((rows) => {
+        if (!mounted) return;
+        const map: Record<string, string> = {};
+        for (const r of rows) {
+          if (r.is_active) map[r.action] = r.shortcut_key;
+        }
+        setShortcutMap(map);
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, [user]);
 
   useEffect(() => {
     window.api.settings
@@ -733,6 +787,12 @@ export default function App() {
   }));
 
   return (
+    <KeyboardProvider
+      shortcutMap={shortcutMap}
+      pages={activeNav.map((n) => ({ key: n.key, label: n.label }))}
+      onNavigate={(key) => setPage(key as NavPage)}
+      enabled={!locked && !mustChangePw}
+    >
     <div className="app-shell">
       <button
         className="sidebar-toggle"
@@ -808,6 +868,7 @@ export default function App() {
           {page === 'transfers' && <Transfers />}
           {page === 'quotations' && <Quotations />}
           {page === 'invoiceAdmin' && <InvoiceDesigner />}
+          {page === 'labelStudio' && <LabelStudio />}
           {page === 'barcode' && <BarcodeGenerator />}
           {page === 'audits' && <Audits />}
           {page === 'promotions' && <Promotions />}
@@ -838,5 +899,6 @@ export default function App() {
       )}
       <UpdateBanner />
     </div>
+    </KeyboardProvider>
   );
 }

@@ -7,12 +7,18 @@
  * style can never drift apart again (they were two unrelated implementations).
  *
  * Geometry rule for every document produced here:
- *   - CSS lengths are in `mm` / `pt`, never `px`. `px` is DPI-dependent, which
- *     is why the same receipt came out tiny on one client's thermal printer and
- *     oversized on another. `mm` is physically fixed across all DPI settings.
- *   - The body is always NARROWER than the physical page. Thermal printers
- *     reserve ~2mm (58mm roll) / ~3mm (80mm roll) of unprintable hardware
- *     margin, so content sized to the full paper width gets sliced into strips.
+ *   - Page/paper/box CSS lengths are in `mm` / `pt`, never `px`. `px` is
+ *     DPI-dependent, which is why the same receipt came out tiny on one client's
+ *     thermal printer and oversized on another. `mm` is physically fixed across
+ *     all DPI settings.
+ *   - The one exception is FONT SIZES in the thermal receipt template
+ *     (receiptTemplates.ts): the design spec fixes them in `px` and the render
+ *     pipeline is a fixed 96dpi CSS space, so they are as deterministic as pt.
+ *   - The body is exactly the PRINTABLE width (`spec.contentMm`) and is centred
+ *     on the roll with `margin:0 auto`. That is 48mm on a 58mm roll (the print
+ *     head of an Epson-class 57.5mm printer) and 72mm on an 80mm roll. Sizing
+ *     the body any wider than the head makes the printer slice the right-hand
+ *     columns off.
  */
 import { getSale } from './sales';
 import { getUser } from './auth';
@@ -48,6 +54,12 @@ export function getPrintSettings(): Record<string, string> {
     if (admin.show_cashier_name !== undefined) base.show_cashier_name = admin.show_cashier_name;
     if (admin.currency_symbol) base.currency = admin.currency_symbol;
     if (admin.receipt_template) base.receipt_template = admin.receipt_template;
+    // Thermal receipt redesign (migration 050): editable header lines, terms,
+    // "software by" tradename and the items-table "#" column.
+    if (admin.receipt_header_lines !== undefined) base.receipt_header_lines = admin.receipt_header_lines;
+    if (admin.receipt_terms_text !== undefined) base.receipt_terms_text = admin.receipt_terms_text;
+    if (admin.receipt_software_by !== undefined) base.receipt_software_by = admin.receipt_software_by;
+    if (admin.receipt_show_serial_number !== undefined) base.receipt_show_serial_number = admin.receipt_show_serial_number;
     return base;
   } catch {
     return getAllSettings();

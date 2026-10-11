@@ -1,10 +1,13 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import bwipjs from 'bwip-js';
-import { ModalCloseButton } from '../components/ModalCloseButton';
 import { formatDateTimeAdmin } from '../utils/dateUtils';
 import type { Category, ExpiringRow, Product, ProductImportResult, ProductInput, StockMovement, Unit } from '../../../shared/types';
 import { DateRangePicker, SearchInput, MultiSelectDropdown, FilterBar, FilterRow } from '../components/filters';
 import { useBarcodeScan } from '../hooks/useBarcodeScan';
+import { Modal } from '../components/Modal';
+import { KeyboardInput } from '../components/KeyboardInput';
+import { useListKeyboard } from '../hooks/useListKeyboard';
+import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
 interface ProductBatch {
   id: number;
@@ -545,6 +548,32 @@ export default function Inventory() {
     setExpiryTo('');
   };
 
+  const searchWrapRef = useRef<HTMLDivElement>(null);
+
+  // ── Keyboard: arrow through products; Enter edits; Delete removes ──
+  const productList = useListKeyboard({
+    count: shown.length,
+    onOpen: (i) => { const p = shown[i]; if (p) openEdit(p); },
+    onDelete: (i) => { const p = shown[i]; if (p) handleDelete(p); },
+  });
+
+  useKeyboardScope({
+    kind: 'page',
+    label: 'Inventory',
+    actions: {
+      new_record: () => openCreate(),
+      search: () => searchWrapRef.current?.querySelector('input')?.focus(),
+      save: () => { if (formOpen) handleSave(); },
+    },
+    shortcuts: [
+      { action: 'new_record', label: 'Add product' },
+      { action: 'search', label: 'Focus product search' },
+      { keys: '↑ / ↓', label: 'Move between products' },
+      { keys: 'Enter', label: 'Edit highlighted product' },
+      { keys: 'Delete', label: 'Delete highlighted product' },
+    ],
+  });
+
   return (
     <div className="page">
       <div className="page-header">
@@ -554,6 +583,7 @@ export default function Inventory() {
           onApply={load}
         >
           <FilterRow>
+            <div ref={searchWrapRef} style={{ display: 'contents' }}>
             <SearchInput
               value={search}
               onChange={(e) => {
@@ -565,6 +595,7 @@ export default function Inventory() {
               debounceMs={300}
               onKeyDown={handleSearchKeyDown}
             />
+            </div>
             <select
               className="field-select"
               value={categoryId}
@@ -686,7 +717,7 @@ export default function Inventory() {
         </div>
       )}
 
-      <div className="table-wrap">
+      <div className="table-wrap" {...productList.getContainerProps()}>
         <table className="data-table">
           <thead>
             <tr>
@@ -705,7 +736,7 @@ export default function Inventory() {
             </tr>
           </thead>
           <tbody>
-            {shown.map((p) => {
+            {shown.map((p, i) => {
               const dn = daysUntil(p.expiry_date);
               const isHighlight = scanHighlight === p.id;
               return (
@@ -713,6 +744,7 @@ export default function Inventory() {
                   key={p.id}
                   data-row-id={p.id}
                   className={`${expiryClass(p.expiry_date) || (low(p) ? 'row-low' : '')}${isHighlight ? ' row-highlight' : ''}`}
+                  {...productList.getRowProps(i)}
                 >
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -806,12 +838,13 @@ export default function Inventory() {
       </div>
 
       {formOpen && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>{editing ? 'Edit Product' : 'Add Product'}</h2>
-              <ModalCloseButton onClose={() => setFormOpen(false)} />
-            </div>
+        <Modal
+          onClose={() => setFormOpen(false)}
+          onSubmit={handleSave}
+          title={editing ? 'Edit Product' : 'Add Product'}
+          label="Product"
+          shortcuts={[{ action: 'save', label: 'Save product' }]}
+        >
             <div className="form-grid">
               <label className="field span-2">
                 <span>Name *</span>
@@ -908,24 +941,27 @@ export default function Inventory() {
               )}
               <label className="field">
                 <span>Cost Price</span>
-                <input
-                  type="number"
+                <KeyboardInput
+                  type="text"
+                  decimals
                   value={form.cost_price}
                   onChange={(e) => setForm({ ...form, cost_price: e.target.value })}
                 />
               </label>
               <label className="field">
                 <span>Sale Price *</span>
-                <input
-                  type="number"
+                <KeyboardInput
+                  type="text"
+                  decimals
                   value={form.sale_price}
                   onChange={(e) => setForm({ ...form, sale_price: e.target.value })}
                 />
               </label>
               <label className="field">
                 <span>Wholesale Price</span>
-                <input
-                  type="number"
+                <KeyboardInput
+                  type="text"
+                  decimals
                   value={form.wholesale_price}
                   onChange={(e) => setForm({ ...form, wholesale_price: e.target.value })}
                   placeholder="optional"
@@ -943,8 +979,9 @@ export default function Inventory() {
               {!editing && (
                 <label className="field">
                   <span>Initial Stock</span>
-                  <input
-                    type="number"
+                  <KeyboardInput
+                    type="text"
+                    decimals
                     value={form.stock_qty}
                     onChange={(e) => setForm({ ...form, stock_qty: e.target.value })}
                   />
@@ -952,16 +989,18 @@ export default function Inventory() {
               )}
               <label className="field">
                 <span>Low Stock Alert</span>
-                <input
-                  type="number"
+                <KeyboardInput
+                  type="text"
+                  decimals
                   value={form.low_stock_threshold}
                   onChange={(e) => setForm({ ...form, low_stock_threshold: e.target.value })}
                 />
               </label>
               <label className="field">
                 <span>Tax %</span>
-                <input
-                  type="number"
+                <KeyboardInput
+                  type="text"
+                  decimals
                   value={form.tax_rate}
                   onChange={(e) => setForm({ ...form, tax_rate: e.target.value })}
                 />
@@ -1032,10 +1071,10 @@ export default function Inventory() {
                             onChange={(e) => updateUnit(i, { name: e.target.value })}
                             placeholder="e.g. Box"
                           />
-                          <input
+                          <KeyboardInput
                             className="unit-qty"
-                            type="number"
-                            min={2}
+                            type="text"
+                            decimals
                             value={u.quantity_in_base_units}
                             onChange={(e) => updateUnit(i, { quantity_in_base_units: Number(e.target.value) })}
                             title="Base units in this packaging level"
@@ -1046,9 +1085,10 @@ export default function Inventory() {
                             onChange={(e) => updateUnit(i, { barcode: e.target.value })}
                             placeholder="barcode (optional)"
                           />
-                          <input
+                          <KeyboardInput
                             className="unit-price"
-                            type="number"
+                            type="text"
+                            decimals
                             value={u.price}
                             onChange={(e) => updateUnit(i, { price: e.target.value })}
                             placeholder="price (optional)"
@@ -1090,26 +1130,27 @@ export default function Inventory() {
                 {busy ? 'Saving...' : 'Save '}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {stockModal && (
-        <div className="modal-overlay">
-          <div className="modal modal-sm">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>Stock Adjustment</h2>
-              <ModalCloseButton onClose={() => setStockModal(null)} />
-            </div>
+        <Modal
+          onClose={() => setStockModal(null)}
+          onSubmit={handleStock}
+          title="Stock Adjustment"
+          className="modal-sm"
+          label="Stock Adjustment"
+          shortcuts={[{ action: 'save', label: 'Apply adjustment' }]}
+        >
             <p className="muted">
               {stockModal.product.name} â€” current stock: <strong>{Number(stockModal.product.stock_qty.toFixed(3))}</strong>
             </p>
             <label className="field">
               <span>Quantity (+in / âˆ’out)</span>
-              <input
-                type="number"
+              <KeyboardInput
+                type="text"
+                decimals
                 value={stockQty}
-                autoFocus
                 onChange={(e) => setStockQty(e.target.value)}
                 placeholder="e.g. 10 or -3"
               />
@@ -1126,17 +1167,15 @@ export default function Inventory() {
                 Apply
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {movements && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>Stock History â€” {movements.product.name}</h2>
-              <ModalCloseButton onClose={() => setMovements(null)} />
-            </div>
+        <Modal
+          onClose={() => setMovements(null)}
+          title={`Stock History — ${movements.product.name}`}
+          label="Stock History"
+        >
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
@@ -1172,16 +1211,14 @@ export default function Inventory() {
                 Close
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
       {importResult && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>Import Result</h2>
-              <ModalCloseButton onClose={() => setImportResult(null)} />
-            </div>
+        <Modal
+          onClose={() => setImportResult(null)}
+          title="Import Result"
+          label="Import Result"
+        >
             <p>
               <strong>{importResult.inserted}</strong> product(s) imported successfully.
               {importResult.errors.length > 0 && (
@@ -1222,16 +1259,15 @@ export default function Inventory() {
                 OK
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
       {batches && (
-        <div className="modal-overlay">
-          <div className="modal modal-wide">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>Batch Details â€” {batches.product.name}</h2>
-              <ModalCloseButton onClose={() => setBatches(null)} />
-            </div>
+        <Modal
+          onClose={() => setBatches(null)}
+          title={`Batch Details — ${batches.product.name}`}
+          className="modal-wide"
+          label="Batch Details"
+        >
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
@@ -1266,17 +1302,16 @@ export default function Inventory() {
                 Close
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {stockReceived && (
-        <div className="modal-overlay">
-          <div className="modal modal-wide">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>Stock Received Log</h2>
-              <ModalCloseButton onClose={() => setStockReceived(null)} />
-            </div>
+        <Modal
+          onClose={() => setStockReceived(null)}
+          title="Stock Received Log"
+          className="modal-wide"
+          label="Stock Received Log"
+        >
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
@@ -1313,8 +1348,7 @@ export default function Inventory() {
                 Close
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

@@ -41,6 +41,10 @@ import {
   printBarcodeLabel,
   printBarcodeBatch,
   previewBarcodeBatch,
+  printBarcodeBatchWithOptions,
+  exportLabelBatchToPDF,
+  exportLabelBatchToPNG,
+  printCalibrationLabel,
   printSale,
   previewReceipt,
   previewInvoice,
@@ -301,6 +305,34 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('printing:previewBarcodeBatch', async (_e, productIds: number[], size?: LabelSize, copies?: number) => {
     try {
       return await previewBarcodeBatch(Array.isArray(productIds) ? productIds : [], size, copies ?? 1);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  ipcMain.handle('printing:printBarcodeBatchWithOptions', async (_e, productIds: number[], size: LabelSize | undefined, copies: number, options: { printer?: string; xOffset?: number; yOffset?: number; mirror?: boolean; rotation?: number; template?: unknown }) => {
+    try {
+      return await printBarcodeBatchWithOptions(Array.isArray(productIds) ? productIds : [], size, copies, options);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  ipcMain.handle('printing:exportLabelBatchToPDF', async (_e, productIds: number[], template: any, size: LabelSize | undefined, copies: number) => {
+    try {
+      return await exportLabelBatchToPDF(Array.isArray(productIds) ? productIds : [], template, size, copies);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  ipcMain.handle('printing:exportLabelBatchToPNG', async (_e, productIds: number[], template: any, size: LabelSize | undefined, copies: number) => {
+    try {
+      return await exportLabelBatchToPNG(Array.isArray(productIds) ? productIds : [], template, size, copies);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  ipcMain.handle('printing:printCalibrationLabel', async (_e, size: LabelSize) => {
+    try {
+      return await printCalibrationLabel(size);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }

@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ExpenseCategoryRow, ExpenseRow } from '../../../shared/types';
 import { toLocalDateString, formatDateAdmin } from '../utils/dateUtils';
 import { formatMoney, getCurrencySymbol } from '../utils/currency';
+import { Modal } from '../components/Modal';
+import { KeyboardInput } from '../components/KeyboardInput';
+import { useListKeyboard } from '../hooks/useListKeyboard';
+import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
 const fmt = (n: number) => n?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? '0';
 
@@ -36,6 +40,8 @@ export default function Expenses() {
   const [catName, setCatName] = useState('');
   const [catDesc, setCatDesc] = useState('');
   const [catColor, setCatColor] = useState('#6B7280');
+
+  const filterRef = useRef<HTMLSelectElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -104,6 +110,7 @@ export default function Expenses() {
 
   // Category management
   const resetCatForm = () => { setCatFormOpen(false); setCatEditId(null); setCatName(''); setCatDesc(''); setCatColor('#6B7280'); };
+  const openNewCategory = () => { resetCatForm(); setCatFormOpen(true); };
   const saveCategory = async () => {
     if (!catName) return;
     const res = catEditId
@@ -118,13 +125,45 @@ export default function Expenses() {
     if (res.ok) { setSuccess('Deleted'); load(); } else setErr(res.message || 'Error');
   };
 
+  // ── Keyboard: arrow between rows, Enter edits, Delete removes ──
+  const expList = useListKeyboard({
+    count: expenses.length,
+    onOpen: (i) => { const e = expenses[i]; if (e) openEdit(e); },
+    onDelete: (i) => { const e = expenses[i]; if (e) deleteExpense(e.id); },
+  });
+
+  const catList = useListKeyboard({
+    count: categories.length,
+    onOpen: (i) => {
+      const c = categories[i];
+      if (c) { setCatFormOpen(true); setCatEditId(c.id); setCatName(c.name); setCatDesc(c.description || ''); setCatColor(c.color); }
+    },
+    onDelete: (i) => { const c = categories[i]; if (c) deleteCategory(c.id); },
+  });
+
+  useKeyboardScope({
+    kind: 'page',
+    label: tab === 'list' ? 'Expenses' : 'Expense Categories',
+    actions: {
+      new_record: () => (tab === 'list' ? openNew() : openNewCategory()),
+      search: () => filterRef.current?.focus(),
+    },
+    shortcuts: [
+      { action: 'new_record', label: tab === 'list' ? 'New expense' : 'New category' },
+      { action: 'search', label: 'Focus category filter' },
+      { keys: '↑ / ↓', label: 'Move between rows' },
+      { keys: 'Enter', label: 'Edit highlighted row' },
+      { keys: 'Delete', label: 'Delete highlighted row' },
+    ],
+  });
+
   return (
     <div className="page">
       <div className="page-header">
         <h1>Expenses</h1>
         <div className="row-btns">
           {tab === 'list' && <button className="btn btn-primary" onClick={openNew}>+ New Expense</button>}
-          {tab === 'categories' && <button className="btn btn-primary" onClick={() => { resetCatForm(); setCatFormOpen(true); }}>+ New Category</button>}
+          {tab === 'categories' && <button className="btn btn-primary" onClick={openNewCategory}>+ New Category</button>}
         </div>
       </div>
 
@@ -155,7 +194,7 @@ export default function Expenses() {
       {/* Filters */}
       {tab === 'list' && (
         <div className="form-row" style={{ marginBottom: 12 }}>
-          <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value ? Number(e.target.value) : '')}>
+          <select ref={filterRef} value={filterCategory} onChange={(e) => setFilterCategory(e.target.value ? Number(e.target.value) : '')}>
             <option value="">All Categories</option>
             {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
@@ -166,145 +205,150 @@ export default function Expenses() {
 
       {/* Expense form modal */}
       {formOpen && (
-        <div className="modal-overlay" onClick={() => resetForm()}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>{editId ? 'Edit Expense' : 'New Expense'}</h3>
-              <button className="btn-close" onClick={resetForm}>×</button>
+        <Modal
+          onClose={resetForm}
+          onSubmit={saveExpense}
+          title={editId ? 'Edit Expense' : 'New Expense'}
+          label="Expense"
+          shortcuts={[{ action: 'save', label: 'Save expense' }]}
+        >
+          <div className="modal-content">
+            <div className="form-group">
+              <label>Category</label>
+              <select value={formCat} onChange={(e) => setFormCat(Number(e.target.value))}>
+                <option value="">Select...</option>
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
             </div>
-            <div className="modal-content">
+            <div className="form-group">
+              <label>Title</label>
+              <input value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="Expense title" />
+            </div>
+            <div className="form-group">
+              <label>Description</label>
+              <input value={formDesc} onChange={(e) => setFormDesc(e.target.value)} placeholder="Optional description" />
+            </div>
+            <div className="form-row">
               <div className="form-group">
-                <label>Category</label>
-                <select value={formCat} onChange={(e) => setFormCat(Number(e.target.value))}>
-                  <option value="">Select...</option>
-                  {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                <label>Amount ({getCurrencySymbol()})</label>
+                <KeyboardInput type="text" decimals value={formAmount} onChange={(e) => setFormAmount(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label>Date</label>
+                <input type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>
+                <input type="checkbox" checked={formRecurring} onChange={(e) => setFormRecurring(e.target.checked)} /> Recurring
+              </label>
+              {formRecurring && (
+                <select value={formRecType} onChange={(e) => setFormRecType(e.target.value as any)}>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
                 </select>
-              </div>
-              <div className="form-group">
-                <label>Title</label>
-                <input value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="Expense title" />
-              </div>
-              <div className="form-group">
-                <label>Description</label>
-                <input value={formDesc} onChange={(e) => setFormDesc(e.target.value)} placeholder="Optional description" />
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Amount ({getCurrencySymbol()})</label>
-                  <input type="number" step="0.01" value={formAmount} onChange={(e) => setFormAmount(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Date</label>
-                  <input type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} />
-                </div>
-              </div>
-              <div className="form-group">
-                <label>
-                  <input type="checkbox" checked={formRecurring} onChange={(e) => setFormRecurring(e.target.checked)} /> Recurring
-                </label>
-                {formRecurring && (
-                  <select value={formRecType} onChange={(e) => setFormRecType(e.target.value as any)}>
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
-                  </select>
-                )}
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn" onClick={resetForm}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveExpense}>{editId ? 'Update' : 'Save'}</button>
+              )}
             </div>
           </div>
-        </div>
+          <div className="modal-footer">
+            <button className="btn" onClick={resetForm}>Cancel</button>
+            <button className="btn btn-primary" onClick={saveExpense}>{editId ? 'Update' : 'Save'}</button>
+          </div>
+        </Modal>
       )}
 
       {/* Category form modal */}
       {catFormOpen && (
-        <div className="modal-overlay" onClick={() => resetCatForm()}>
-          <div className="modal" style={{ maxWidth: 400 }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>{catEditId ? 'Edit Category' : 'New Category'}</h3>
-              <button className="btn-close" onClick={resetCatForm}>×</button>
+        <Modal
+          onClose={resetCatForm}
+          onSubmit={saveCategory}
+          title={catEditId ? 'Edit Category' : 'New Category'}
+          style={{ maxWidth: 400 }}
+          label="Expense Category"
+          shortcuts={[{ action: 'save', label: 'Save category' }]}
+        >
+          <div className="modal-content">
+            <div className="form-group">
+              <label>Name</label>
+              <input value={catName} onChange={(e) => setCatName(e.target.value)} />
             </div>
-            <div className="modal-content">
-              <div className="form-group">
-                <label>Name</label>
-                <input value={catName} onChange={(e) => setCatName(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label>Description</label>
-                <input value={catDesc} onChange={(e) => setCatDesc(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label>Color</label>
-                <input type="color" value={catColor} onChange={(e) => setCatColor(e.target.value)} />
-              </div>
+            <div className="form-group">
+              <label>Description</label>
+              <input value={catDesc} onChange={(e) => setCatDesc(e.target.value)} />
             </div>
-            <div className="modal-footer">
-              <button className="btn" onClick={resetCatForm}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveCategory}>{catEditId ? 'Update' : 'Save'}</button>
+            <div className="form-group">
+              <label>Color</label>
+              <input type="color" value={catColor} onChange={(e) => setCatColor(e.target.value)} />
             </div>
           </div>
-        </div>
+          <div className="modal-footer">
+            <button className="btn" onClick={resetCatForm}>Cancel</button>
+            <button className="btn btn-primary" onClick={saveCategory}>{catEditId ? 'Update' : 'Save'}</button>
+          </div>
+        </Modal>
       )}
 
       {/* Table */}
       {loading ? <div className="muted center">Loading...</div> : tab === 'list' ? (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Title</th>
-              <th>Category</th>
-              <th>Amount</th>
-              <th>User</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {expenses.length === 0 && <tr><td colSpan={7} className="center muted">No expenses found</td></tr>}
-            {expenses.map((e) => (
-              <tr key={e.id}>
-                <td>{formatDateAdmin(e.expense_date)}</td>
-                <td>{e.title}</td>
-                <td>
-                  <span className="badge" style={{ background: e.category_color || '#6B7280', color: '#fff' }}>
-                    {e.category_name}
-                  </span>
-                </td>
-                <td style={{ fontWeight: 600 }}>{formatMoney(e.amount)}</td>
-                <td className="muted">{e.username}</td>
-                <td><span className={`badge ${e.status === 'active' ? 'badge-ok' : 'badge-warn'}`}>{e.status}</span></td>
-                <td>
-                  <button className="btn btn-sm" onClick={() => openEdit(e)}>Edit</button>{' '}
-                  <button className="btn btn-sm btn-danger" onClick={() => deleteExpense(e.id)}>Del</button>
-                </td>
+        <div {...expList.getContainerProps()}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Title</th>
+                <th>Category</th>
+                <th>Amount</th>
+                <th>User</th>
+                <th>Status</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {expenses.length === 0 && <tr><td colSpan={7} className="center muted">No expenses found</td></tr>}
+              {expenses.map((e, i) => (
+                <tr key={e.id} {...expList.getRowProps(i)}>
+                  <td>{formatDateAdmin(e.expense_date)}</td>
+                  <td>{e.title}</td>
+                  <td>
+                    <span className="badge" style={{ background: e.category_color || '#6B7280', color: '#fff' }}>
+                      {e.category_name}
+                    </span>
+                  </td>
+                  <td style={{ fontWeight: 600 }}>{formatMoney(e.amount)}</td>
+                  <td className="muted">{e.username}</td>
+                  <td><span className={`badge ${e.status === 'active' ? 'badge-ok' : 'badge-warn'}`}>{e.status}</span></td>
+                  <td>
+                    <button className="btn btn-sm" onClick={() => openEdit(e)}>Edit</button>{' '}
+                    <button className="btn btn-sm btn-danger" onClick={() => deleteExpense(e.id)}>Del</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
-        <table className="data-table">
-          <thead>
-            <tr><th>Name</th><th>Description</th><th>Color</th><th>Status</th><th>Actions</th></tr>
-          </thead>
-          <tbody>
-            {categories.map((c) => (
-              <tr key={c.id}>
-                <td>{c.name}</td>
-                <td className="muted">{c.description || '-'}</td>
-                <td><span style={{ display: 'inline-block', width: 20, height: 20, borderRadius: 4, background: c.color, verticalAlign: 'middle' }} /></td>
-                <td><span className={`badge ${c.is_active ? 'badge-ok' : 'badge-warn'}`}>{c.is_active ? 'Active' : 'Inactive'}</span></td>
-                <td>
-                  <button className="btn btn-sm" onClick={() => { setCatFormOpen(true); setCatEditId(c.id); setCatName(c.name); setCatDesc(c.description || ''); setCatColor(c.color); }}>Edit</button>{' '}
-                  <button className="btn btn-sm btn-danger" onClick={() => deleteCategory(c.id)}>Del</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div {...catList.getContainerProps()}>
+          <table className="data-table">
+            <thead>
+              <tr><th>Name</th><th>Description</th><th>Color</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              {categories.map((c, i) => (
+                <tr key={c.id} {...catList.getRowProps(i)}>
+                  <td>{c.name}</td>
+                  <td className="muted">{c.description || '-'}</td>
+                  <td><span style={{ display: 'inline-block', width: 20, height: 20, borderRadius: 4, background: c.color, verticalAlign: 'middle' }} /></td>
+                  <td><span className={`badge ${c.is_active ? 'badge-ok' : 'badge-warn'}`}>{c.is_active ? 'Active' : 'Inactive'}</span></td>
+                  <td>
+                    <button className="btn btn-sm" onClick={() => { setCatFormOpen(true); setCatEditId(c.id); setCatName(c.name); setCatDesc(c.description || ''); setCatColor(c.color); }}>Edit</button>{' '}
+                    <button className="btn btn-sm btn-danger" onClick={() => deleteCategory(c.id)}>Del</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

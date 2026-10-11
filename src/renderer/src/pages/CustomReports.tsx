@@ -2,6 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { CustomReportRow, ReportScheduleRow } from '../../../shared/types';
 import { formatDateAdmin } from '../utils/dateUtils';
+import { Modal } from '../components/Modal';
+import { KeyboardInput } from '../components/KeyboardInput';
+import { useListKeyboard } from '../hooks/useListKeyboard';
+import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
 export default function CustomReports() {
   const { t } = useTranslation();
@@ -100,6 +104,30 @@ export default function CustomReports() {
     } catch (e) { setErr(String(e)); }
   };
 
+  // ── Keyboard: arrow through reports; Enter runs; Delete removes ──
+  const reportList = useListKeyboard({
+    count: reports.length,
+    onOpen: (i) => { const r = reports[i]; if (r) previewReport(r.id); },
+    onDelete: (i) => { const r = reports[i]; if (r) deleteReport(r.id); },
+  });
+
+  const scheduleList = useListKeyboard({ count: schedules.length });
+
+  useKeyboardScope({
+    kind: 'page',
+    label: 'Custom Reports',
+    actions: {
+      new_record: () => { resetForm(); setFormOpen(true); },
+      save: () => { if (formOpen) saveReport(); },
+    },
+    shortcuts: [
+      { action: 'new_record', label: 'New report' },
+      { keys: '↑ / ↓', label: 'Move between rows' },
+      { keys: 'Enter', label: 'Run highlighted report' },
+      { keys: 'Delete', label: 'Delete highlighted report' },
+    ],
+  });
+
   return (
     <div className="page">
       <div className="page-header">
@@ -120,132 +148,136 @@ export default function CustomReports() {
 
       {/* Report form modal */}
       {formOpen && (
-        <div className="modal-overlay" onClick={() => resetForm()}>
-          <div className="modal" style={{ maxWidth: 600 }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>{editId ? 'Edit Report' : 'New Report'}</h3>
-              <button className="btn-close" onClick={resetForm}>×</button>
+        <Modal
+          onClose={() => resetForm()}
+          onSubmit={saveReport}
+          title={editId ? 'Edit Report' : 'New Report'}
+          style={{ maxWidth: 600 }}
+          label="Custom Report"
+          shortcuts={[{ action: 'save', label: 'Save report' }]}
+        >
+          <div className="modal-content">
+            <div className="form-group">
+              <label>Report Name</label>
+              <input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="e.g. Monthly Sales Summary" />
             </div>
-            <div className="modal-content">
+            <div className="form-group">
+              <label>Description</label>
+              <input value={formDesc} onChange={(e) => setFormDesc(e.target.value)} placeholder="Optional description" />
+            </div>
+            <div className="form-row">
               <div className="form-group">
-                <label>Report Name</label>
-                <input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="e.g. Monthly Sales Summary" />
+                <label>Base Table</label>
+                <select value={formTable} onChange={(e) => { setFormTable(e.target.value); setFormColumns([]); }}>
+                  <option value="">Select table...</option>
+                  {tables.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
               </div>
               <div className="form-group">
-                <label>Description</label>
-                <input value={formDesc} onChange={(e) => setFormDesc(e.target.value)} placeholder="Optional description" />
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Base Table</label>
-                  <select value={formTable} onChange={(e) => { setFormTable(e.target.value); setFormColumns([]); }}>
-                    <option value="">Select table...</option>
-                    {tables.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Row Limit</label>
-                  <input type="number" value={formLimit} onChange={(e) => setFormLimit(e.target.value)} />
-                </div>
-              </div>
-              {availableColumns.length > 0 && (
-                <div className="form-group">
-                  <label>Columns</label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
-                    {availableColumns.map((col) => (
-                      <button
-                        key={col}
-                        className={`btn btn-sm ${formColumns.includes(col) ? 'btn-primary' : ''}`}
-                        onClick={() => toggleColumn(col)}
-                        type="button"
-                      >
-                        {col}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="form-group">
-                <label>
-                  <input type="checkbox" checked={formPublic} onChange={(e) => setFormPublic(e.target.checked)} /> Public (visible to all users)
-                </label>
+                <label>Row Limit</label>
+                <KeyboardInput type="text" decimals={false} value={formLimit} onChange={(e) => setFormLimit(e.target.value)} />
               </div>
             </div>
-            <div className="modal-footer">
-              <button className="btn" onClick={resetForm}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveReport}>{editId ? 'Update' : 'Create'}</button>
+            {availableColumns.length > 0 && (
+              <div className="form-group">
+                <label>Columns</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                  {availableColumns.map((col) => (
+                    <button
+                      key={col}
+                      className={`btn btn-sm ${formColumns.includes(col) ? 'btn-primary' : ''}`}
+                      onClick={() => toggleColumn(col)}
+                      type="button"
+                    >
+                      {col}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="form-group">
+              <label>
+                <input type="checkbox" checked={formPublic} onChange={(e) => setFormPublic(e.target.checked)} /> Public (visible to all users)
+              </label>
             </div>
           </div>
-        </div>
+          <div className="modal-footer">
+            <button className="btn" onClick={resetForm}>Cancel</button>
+            <button className="btn btn-primary" onClick={saveReport}>{editId ? 'Update' : 'Create'}</button>
+          </div>
+        </Modal>
       )}
 
       {/* Preview modal */}
       {previewData && (
-        <div className="modal-overlay" onClick={() => setPreviewData(null)}>
-          <div className="modal" style={{ maxWidth: '90vw' }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Report Preview</h3>
-              <button className="btn-close" onClick={() => setPreviewData(null)}>×</button>
-            </div>
-            <div className="modal-content" style={{ overflow: 'auto' }}>
-              <table className="data-table">
-                <thead>
-                  <tr>{previewData.columns.map((c) => <th key={c}>{c}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {previewData.rows.map((row, i) => (
-                    <tr key={i}>{row.map((cell, j) => <td key={j}>{cell === null ? '-' : String(cell)}</td>)}</tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="muted small" style={{ marginTop: 8 }}>{previewData.rows.length} rows returned</div>
-            </div>
+        <Modal
+          onClose={() => setPreviewData(null)}
+          title="Report Preview"
+          style={{ maxWidth: '90vw' }}
+          label="Report Preview"
+        >
+          <div className="modal-content" style={{ overflow: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr>{previewData.columns.map((c) => <th key={c}>{c}</th>)}</tr>
+              </thead>
+              <tbody>
+                {previewData.rows.map((row, i) => (
+                  <tr key={i}>{row.map((cell, j) => <td key={j}>{cell === null ? '-' : String(cell)}</td>)}</tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="muted small" style={{ marginTop: 8 }}>{previewData.rows.length} rows returned</div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Table */}
       {loading ? <div className="muted center">Loading...</div> : tab === 'reports' ? (
-        <table className="data-table">
-          <thead>
-            <tr><th>Name</th><th>Table</th><th>Columns</th><th>Public</th><th>Created</th><th>Actions</th></tr>
-          </thead>
-          <tbody>
-            {reports.length === 0 && <tr><td colSpan={6} className="center muted">No reports created yet</td></tr>}
-            {reports.map((r) => (
-              <tr key={r.id}>
-                <td>{r.name}</td>
-                <td><span className="badge">{r.base_table}</span></td>
-                <td className="small muted">{JSON.parse(r.columns_json || '[]').length} cols</td>
-                <td>{r.is_public ? '✓' : ''}</td>
-                <td className="muted small">{formatDateAdmin(r.created_at)}</td>
-                <td>
-                  <button className="btn btn-sm" onClick={() => previewReport(r.id)}>Run</button>{' '}
-                  <button className="btn btn-sm" onClick={() => openEdit(r)}>Edit</button>{' '}
-                  <button className="btn btn-sm btn-danger" onClick={() => deleteReport(r.id)}>Del</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div {...reportList.getContainerProps()}>
+          <table className="data-table">
+            <thead>
+              <tr><th>Name</th><th>Table</th><th>Columns</th><th>Public</th><th>Created</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              {reports.length === 0 && <tr><td colSpan={6} className="center muted">No reports created yet</td></tr>}
+              {reports.map((r, i) => (
+                <tr key={r.id} {...reportList.getRowProps(i)}>
+                  <td>{r.name}</td>
+                  <td><span className="badge">{r.base_table}</span></td>
+                  <td className="small muted">{JSON.parse(r.columns_json || '[]').length} cols</td>
+                  <td>{r.is_public ? '✓' : ''}</td>
+                  <td className="muted small">{formatDateAdmin(r.created_at)}</td>
+                  <td>
+                    <button className="btn btn-sm" onClick={() => previewReport(r.id)}>Run</button>{' '}
+                    <button className="btn btn-sm" onClick={() => openEdit(r)}>Edit</button>{' '}
+                    <button className="btn btn-sm btn-danger" onClick={() => deleteReport(r.id)}>Del</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
-        <table className="data-table">
-          <thead>
-            <tr><th>Report</th><th>Frequency</th><th>Format</th><th>Active</th><th>Last Run</th></tr>
-          </thead>
-          <tbody>
-            {schedules.length === 0 && <tr><td colSpan={5} className="center muted">No schedules configured</td></tr>}
-            {schedules.map((s) => (
-              <tr key={s.id}>
-                <td>{s.report_name || `Report #${s.report_id}`}</td>
-                <td>{s.frequency}</td>
-                <td><span className="badge">{s.format?.toUpperCase()}</span></td>
-                <td>{s.is_active ? '✓' : ''}</td>
-                <td className="muted small">{s.last_run ? formatDateAdmin(s.last_run) : 'Never'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div {...scheduleList.getContainerProps()}>
+          <table className="data-table">
+            <thead>
+              <tr><th>Report</th><th>Frequency</th><th>Format</th><th>Active</th><th>Last Run</th></tr>
+            </thead>
+            <tbody>
+              {schedules.length === 0 && <tr><td colSpan={5} className="center muted">No schedules configured</td></tr>}
+              {schedules.map((s, i) => (
+                <tr key={s.id} {...scheduleList.getRowProps(i)}>
+                  <td>{s.report_name || `Report #${s.report_id}`}</td>
+                  <td>{s.frequency}</td>
+                  <td><span className="badge">{s.format?.toUpperCase()}</span></td>
+                  <td>{s.is_active ? '✓' : ''}</td>
+                  <td className="muted small">{s.last_run ? formatDateAdmin(s.last_run) : 'Never'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

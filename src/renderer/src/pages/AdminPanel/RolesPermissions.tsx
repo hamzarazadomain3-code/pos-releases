@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { ModalCloseButton } from '../../components/ModalCloseButton';
+import { Modal } from '../../components/Modal';
+import { useListKeyboard } from '../../hooks/useListKeyboard';
+import { useKeyboardScope } from '../../hooks/useKeyboardScope';
 import type { AdminRole, RolePermission } from '../../../../shared/types';
 
 const ALL_PERMISSIONS = [
@@ -103,6 +105,28 @@ export default function RolesPermissions() {
     setBusy(false);
   };
 
+  // ── Keyboard: arrow through roles; Enter selects; Delete removes ──
+  const roleList = useListKeyboard({
+    count: roles.length,
+    onOpen: (i) => { const r = roles[i]; if (r) selectRole(r.id); },
+    onDelete: (i) => { const r = roles[i]; if (r && !r.is_system_role) deleteRole(r.id, r.name); },
+  });
+
+  useKeyboardScope({
+    kind: 'page',
+    label: 'Roles & Permissions',
+    actions: {
+      new_record: () => setShowCreate(true),
+      save: () => { if (showCreate) createRole(); },
+    },
+    shortcuts: [
+      { action: 'new_record', label: 'New role' },
+      { keys: '↑ / ↓', label: 'Move between roles' },
+      { keys: 'Enter', label: 'Select highlighted role' },
+      { keys: 'Delete', label: 'Delete highlighted role' },
+    ],
+  });
+
   return (
     <div className="admin-sub-page">
       <div className="admin-sub-header">
@@ -113,37 +137,38 @@ export default function RolesPermissions() {
       {notice && <div className="notice" onClick={() => setNotice(null)}>{notice}</div>}
 
       {showCreate && (
-        <div className="modal-overlay" onClick={() => setShowCreate(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h3>Create New Role</h3>
-              <ModalCloseButton onClose={() => setShowCreate(false)} />
-            </div>
-            <label className="field">
-              <span>Role Name</span>
-              <input value={newName} onChange={(e) => setNewName(e.target.value)} autoFocus />
-            </label>
-            <label className="field">
-              <span>Description</span>
-              <input value={newDesc} onChange={(e) => setNewDesc(e.target.value)} />
-            </label>
-            <div className="modal-actions">
-              <button className="btn btn-primary" disabled={busy || !newName.trim()} onClick={createRole}>
-                {busy ? 'Creating...' : 'Create'}
-              </button>
-              <button className="btn" onClick={() => setShowCreate(false)}>Cancel</button>
-            </div>
+        <Modal
+          onClose={() => setShowCreate(false)}
+          onSubmit={createRole}
+          title="Create New Role"
+          label="Roles & Permissions"
+          shortcuts={[{ action: 'save', label: 'Create role' }]}
+        >
+          <label className="field">
+            <span>Role Name</span>
+            <input value={newName} onChange={(e) => setNewName(e.target.value)} autoFocus />
+          </label>
+          <label className="field">
+            <span>Description</span>
+            <input value={newDesc} onChange={(e) => setNewDesc(e.target.value)} />
+          </label>
+          <div className="modal-actions">
+            <button className="btn btn-primary" disabled={busy || !newName.trim()} onClick={createRole}>
+              {busy ? 'Creating...' : 'Create'}
+            </button>
+            <button className="btn" onClick={() => setShowCreate(false)}>Cancel</button>
           </div>
-        </div>
+        </Modal>
       )}
 
       <div className="roles-layout">
-        <div className="roles-list">
-          {roles.map((r) => (
+        <div className="roles-list" {...roleList.getContainerProps()}>
+          {roles.map((r, i) => (
             <div
               key={r.id}
               className={`role-card ${selectedRole === r.id ? 'active' : ''}`}
               onClick={() => selectRole(r.id)}
+              {...roleList.getRowProps(i)}
             >
               <div className="role-card-header">
                 <span className="role-name">{r.name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</span>

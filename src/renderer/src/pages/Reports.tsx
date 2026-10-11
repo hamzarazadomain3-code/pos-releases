@@ -39,6 +39,9 @@ import type {
 } from '../../../shared/types';
 import { formatDateAdmin, toLocalDateString } from '../utils/dateUtils';
 import { formatMoney, getCurrencySymbol } from '../utils/currency';
+import { KeyboardInput } from '../components/KeyboardInput';
+import { useListKeyboard } from '../hooks/useListKeyboard';
+import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
 type Tab =
   | 'sales'
@@ -252,6 +255,35 @@ export default function Reports() {
     );
   }
 
+  const productsList = useListKeyboard({ count: productPerf?.topProducts.length ?? 0 });
+  const slowMoversList = useListKeyboard({ count: productPerf?.slowMovers.length ?? 0 });
+  const topCustomersList = useListKeyboard({ count: customerAnalysis?.topCustomers.length ?? 0 });
+  const overdueUdhaarList = useListKeyboard({ count: customerAnalysis?.udhaarOverdue.length ?? 0 });
+  const dailyInvList = useListKeyboard({ count: dailyInv?.length ?? 0 });
+  const weeklyInvList = useListKeyboard({ count: weeklyInv?.length ?? 0 });
+  const monthlyInvList = useListKeyboard({ count: monthlyInv?.length ?? 0 });
+  const purchaseHistoryList = useListKeyboard({ count: purchaseHistory?.length ?? 0 });
+  const supplierMetricsList = useListKeyboard({ count: supplierMetrics?.length ?? 0 });
+  const taxCategoryList = useListKeyboard({ count: tax?.taxByCategory.length ?? 0 });
+  const closingByModeList = useListKeyboard({ count: closing?.by_mode.length ?? 0 });
+  const expensesList = useListKeyboard({ count: expenses?.length ?? 0 });
+  const alertsList = useListKeyboard({ count: alerts?.length ?? 0 });
+  const profitDataList = useListKeyboard({ count: profitData?.length ?? 0 });
+  const categoryProfitList = useListKeyboard({ count: categoryProfit?.length ?? 0 });
+  const breakEvenList = useListKeyboard({ count: breakEven?.length ?? 0 });
+  const lowProfitList = useListKeyboard({ count: lowProfitData?.length ?? 0 });
+  const worstProductsList = useListKeyboard({ count: worstProducts?.length ?? 0 });
+
+  useKeyboardScope({
+    kind: 'page',
+    label: 'Reports',
+    shortcuts: [
+      { keys: '↑ / ↓', label: 'Move between rows' },
+      { keys: 'Home / End', label: 'First / last row' },
+      { keys: 'PageUp / PageDown', label: 'Jump by a page' },
+    ],
+  });
+
   return (
     <div className="page">
       <div className="page-header">
@@ -411,7 +443,7 @@ export default function Reports() {
                 }}
               />
            </div>
-            <div className="table-wrap">
+            <div className="table-wrap" {...productsList.getContainerProps()}>
               <table className="data-table">
                 <thead>
                   <tr>
@@ -424,8 +456,8 @@ export default function Reports() {
                  </tr>
                </thead>
                 <tbody>
-                  {productPerf.topProducts.map((p) => (
-                    <tr key={p.id}>
+                  {productPerf.topProducts.map((p, i) => (
+                    <tr {...productsList.getRowProps(i)} key={p.id}>
                       <td>{p.name}</td>
                       <td>{p.category ?? '—'}</td>
                       <td className="num">{fmt(p.qty_sold)}</td>
@@ -478,7 +510,7 @@ export default function Reports() {
           {productPerf.slowMovers.length > 0 && (
             <div className="panel" style={{ marginTop: 12 }}>
               <div className="panel-title">Slow Movers ({'>'} 30 days no sale</div>
-              <div className="table-wrap">
+              <div className="table-wrap" {...slowMoversList.getContainerProps()}>
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -492,8 +524,8 @@ export default function Reports() {
                    </tr>
                  </thead>
                   <tbody>
-                    {productPerf.slowMovers.map((p) => (
-                      <tr key={p.id} className="row-low">
+                    {productPerf.slowMovers.map((p, i) => (
+                      <tr {...slowMoversList.getRowProps(i)} key={p.id} className="row-low">
                         <td>{p.name}</td>
                         <td>{p.category ?? '—'}</td>
                         <td className="num">{fmt(p.stock_qty)}</td>
@@ -553,7 +585,7 @@ export default function Reports() {
                 }}
               />
            </div>
-            <div className="table-wrap">
+            <div className="table-wrap" {...topCustomersList.getContainerProps()}>
               <table className="data-table">
                 <thead>
                   <tr>
@@ -566,8 +598,8 @@ export default function Reports() {
                  </tr>
                </thead>
                 <tbody>
-                  {customerAnalysis.topCustomers.map((c) => (
-                    <tr key={c.id}>
+                  {customerAnalysis.topCustomers.map((c, i) => (
+                    <tr {...topCustomersList.getRowProps(i)} key={c.id}>
                       <td>{c.name}</td>
                       <td>{c.phone ?? '—'}</td>
                       <td className="num">{c.purchase_count}</td>
@@ -586,7 +618,7 @@ export default function Reports() {
           {customerAnalysis.udhaarOverdue.length > 0 && (
             <div className="panel" style={{ marginTop: 12 }}>
               <div className="panel-title">⚠ Overdue Udhaar ({'>'} 30 days</div>
-              <div className="table-wrap">
+              <div className="table-wrap" {...overdueUdhaarList.getContainerProps()}>
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -598,8 +630,8 @@ export default function Reports() {
                    </tr>
                  </thead>
                   <tbody>
-                    {customerAnalysis.udhaarOverdue.map((c) => (
-                      <tr key={c.id} className="row-low">
+                    {customerAnalysis.udhaarOverdue.map((c, i) => (
+                      <tr {...overdueUdhaarList.getRowProps(i)} key={c.id} className="row-low">
                         <td>{c.name}</td>
                         <td>{c.phone ?? '—'}</td>
                         <td className="num text-warn">{fmt(c.balance)}</td>
@@ -644,7 +676,7 @@ export default function Reports() {
             <div>
               <div className="panel">
                 <div className="panel-title">Today's Daily Inventory</div>
-                <div className="table-wrap">
+                <div className="table-wrap" {...dailyInvList.getContainerProps()}>
                   <table className="data-table">
                     <thead>
                       <tr>
@@ -659,8 +691,8 @@ export default function Reports() {
                       </tr>
                     </thead>
                     <tbody>
-                      {dailyInv.map((r) => (
-                        <tr key={r.product_id}>
+                      {dailyInv.map((r, i) => (
+                        <tr {...dailyInvList.getRowProps(i)} key={r.product_id}>
                           <td>{r.product_name}</td>
                           <td>{r.unit_name || '—'}</td>
                           <td className="num">{fmt(r.opening_qty)}</td>
@@ -697,7 +729,7 @@ export default function Reports() {
             <div>
               <div className="panel">
                 <div className="panel-title">Weekly Inventory Summary</div>
-                <div className="table-wrap">
+                <div className="table-wrap" {...weeklyInvList.getContainerProps()}>
                   <table className="data-table">
                     <thead>
                       <tr>
@@ -711,8 +743,8 @@ export default function Reports() {
                       </tr>
                     </thead>
                     <tbody>
-                      {weeklyInv.map((r) => (
-                        <tr key={r.product_id}>
+                      {weeklyInv.map((r, i) => (
+                        <tr {...weeklyInvList.getRowProps(i)} key={r.product_id}>
                           <td>{r.product_name}</td>
                           <td>{r.unit_name || '—'}</td>
                           <td className="num">{fmt(r.opening_qty)}</td>
@@ -736,7 +768,7 @@ export default function Reports() {
             <div>
               <div className="panel">
                 <div className="panel-title">Monthly Inventory Summary</div>
-                <div className="table-wrap">
+                <div className="table-wrap" {...monthlyInvList.getContainerProps()}>
                   <table className="data-table">
                     <thead>
                       <tr>
@@ -751,8 +783,8 @@ export default function Reports() {
                       </tr>
                     </thead>
                     <tbody>
-                      {monthlyInv.map((r) => (
-                        <tr key={r.product_id}>
+                      {monthlyInv.map((r, i) => (
+                        <tr {...monthlyInvList.getRowProps(i)} key={r.product_id}>
                           <td>{r.product_name}</td>
                           <td>{r.category_name || '—'}</td>
                           <td>{r.unit_name || '—'}</td>
@@ -787,7 +819,7 @@ export default function Reports() {
             <div>
               <div className="panel">
                 <div className="panel-title">Purchase History</div>
-                <div className="table-wrap">
+                <div className="table-wrap" {...purchaseHistoryList.getContainerProps()}>
                   <table className="data-table">
                     <thead>
                       <tr>
@@ -804,8 +836,8 @@ export default function Reports() {
                       </tr>
                     </thead>
                     <tbody>
-                      {purchaseHistory.map((r) => (
-                        <tr key={r.id}>
+                      {purchaseHistory.map((r, i) => (
+                        <tr {...purchaseHistoryList.getRowProps(i)} key={r.id}>
                           <td>{r.order_date}</td>
                           <td>{r.product_name}</td>
                           <td>{r.supplier_name}</td>
@@ -851,7 +883,7 @@ export default function Reports() {
             <div>
               <div className="panel">
                 <div className="panel-title">Supplier Metrics</div>
-                <div className="table-wrap">
+                <div className="table-wrap" {...supplierMetricsList.getContainerProps()}>
                   <table className="data-table">
                     <thead>
                       <tr>
@@ -865,8 +897,8 @@ export default function Reports() {
                       </tr>
                     </thead>
                     <tbody>
-                      {supplierMetrics.map((s) => (
-                        <tr key={s.supplier_id}>
+                      {supplierMetrics.map((s, i) => (
+                        <tr {...supplierMetricsList.getRowProps(i)} key={s.supplier_id}>
                           <td>{s.supplier_name}</td>
                           <td className="num">{s.total_orders}</td>
                           <td className="num">{fmt(s.total_spent)}</td>
@@ -979,7 +1011,7 @@ export default function Reports() {
                 }}
               />
            </div>
-            <div className="table-wrap">
+            <div className="table-wrap" {...taxCategoryList.getContainerProps()}>
               <table className="data-table">
                 <thead>
                   <tr>
@@ -989,8 +1021,8 @@ export default function Reports() {
                  </tr>
                </thead>
                 <tbody>
-                  {tax.taxByCategory.map((t) => (
-                    <tr key={t.category ?? 'uncat'}>
+                  {tax.taxByCategory.map((t, i) => (
+                    <tr {...taxCategoryList.getRowProps(i)} key={t.category ?? 'uncat'}>
                       <td>{t.category ?? 'Uncategorised'}</td>
                       <td className="num">{fmt(t.sales)}</td>
                       <td className="num">{fmt(t.estimated_gst_17pct)}</td>
@@ -1031,7 +1063,7 @@ export default function Reports() {
 
           <div className="closing-card">
             <h3>By Payment Mode</h3>
-            <div className="table-wrap">
+            <div className="table-wrap" {...closingByModeList.getContainerProps()}>
               <table className="data-table">
                 <thead>
                   <tr>
@@ -1040,8 +1072,8 @@ export default function Reports() {
                  </tr>
                </thead>
                 <tbody>
-                  {closing.by_mode.map((m) => (
-                    <tr key={m.mode}>
+                  {closing.by_mode.map((m, i) => (
+                    <tr {...closingByModeList.getRowProps(i)} key={m.mode}>
                       <td>{m.mode}</td>
                       <td className="num">{fmt(m.total)}</td>
                    </tr>
@@ -1097,8 +1129,9 @@ export default function Reports() {
                 <option key={c}>{c}</option>
               ))}
            </select>
-            <input
-              type="number"
+            <KeyboardInput
+              type="text"
+              decimals
               placeholder="Amount *"
               value={expForm.amount}
               onChange={(e) => setExpForm({ ...expForm, amount: e.target.value })}
@@ -1138,7 +1171,7 @@ export default function Reports() {
                 Export Excel
              </button>
            </div>
-            <div className="table-wrap">
+            <div className="table-wrap" {...expensesList.getContainerProps()}>
               <table className="data-table">
                 <thead>
                   <tr>
@@ -1151,8 +1184,8 @@ export default function Reports() {
                  </tr>
                </thead>
                 <tbody>
-                  {expenses.map((e) => (
-                    <tr key={e.id}>
+                  {expenses.map((e, i) => (
+                    <tr {...expensesList.getRowProps(i)} key={e.id}>
                       <td>{e.expense_date}</td>
                       <td>{e.title}</td>
                       <td>{e.category}</td>
@@ -1215,7 +1248,7 @@ export default function Reports() {
               No alerts. All systems healthy.
             </div>
           ) : (
-            <table className="data-table">
+            <table className="data-table" {...alertsList.getContainerProps()}>
               <thead>
                 <tr>
                   <th>Date</th>
@@ -1227,8 +1260,8 @@ export default function Reports() {
                 </tr>
               </thead>
               <tbody>
-                {alerts.map((a) => (
-                  <tr key={a.id} style={a.is_read ? { opacity: 0.6 } : undefined}>
+                {alerts.map((a, i) => (
+                  <tr {...alertsList.getRowProps(i)} key={a.id} style={a.is_read ? { opacity: 0.6 } : undefined}>
                     <td className="num">{a.created_at ? formatDateAdmin(a.created_at) : '—'}</td>
                     <td>{a.alert_type.replace('_', ' ')}</td>
                     <td>
@@ -1313,7 +1346,7 @@ export default function Reports() {
                 <div className="muted center" style={{ padding: 24 }}>No data for this period.</div>
               ) : (
                 <>
-                  <table className="data-table">
+                  <table className="data-table" {...profitDataList.getContainerProps()}>
                     <thead>
                       <tr>
                         <th>Product</th>
@@ -1326,8 +1359,8 @@ export default function Reports() {
                       </tr>
                     </thead>
                     <tbody>
-                      {profitData.map((p) => (
-                        <tr key={p.product_id}>
+                      {profitData.map((p, i) => (
+                        <tr {...profitDataList.getRowProps(i)} key={p.product_id}>
                           <td>{p.product_name}</td>
                           <td>{p.category || '—'}</td>
                           <td className="num">{fmt(p.units_sold)}</td>
@@ -1368,7 +1401,7 @@ export default function Reports() {
               {categoryProfit.length === 0 ? (
                 <div className="muted center" style={{ padding: 24 }}>No category data.</div>
               ) : (
-                <table className="data-table">
+                <table className="data-table" {...categoryProfitList.getContainerProps()}>
                   <thead>
                     <tr>
                       <th>Category</th>
@@ -1381,8 +1414,8 @@ export default function Reports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {categoryProfit.map((c) => (
-                      <tr key={c.category_name || 'N/A'}>
+                    {categoryProfit.map((c, i) => (
+                      <tr {...categoryProfitList.getRowProps(i)} key={c.category_name || 'N/A'}>
                         <td>{c.category_name || 'Uncategorized'}</td>
                         <td className="num">{c.product_count}</td>
                         <td className="num">{fmt(c.units_sold)}</td>
@@ -1403,7 +1436,7 @@ export default function Reports() {
               {breakEven.length === 0 ? (
                 <div className="muted center" style={{ padding: 24 }}>No products with cost data.</div>
               ) : (
-                <table className="data-table">
+                <table className="data-table" {...breakEvenList.getContainerProps()}>
                   <thead>
                     <tr>
                       <th>Product</th>
@@ -1414,8 +1447,8 @@ export default function Reports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {breakEven.map((b) => (
-                      <tr key={b.product_id}>
+                    {breakEven.map((b, i) => (
+                      <tr {...breakEvenList.getRowProps(i)} key={b.product_id}>
                         <td>{b.product_name}</td>
                         <td className="num">{fmt(b.cost_price)}</td>
                         <td className="num">{fmt(b.sale_price)}</td>
@@ -1445,7 +1478,7 @@ export default function Reports() {
               {lowProfitData.length === 0 ? (
                 <div className="muted center" style={{ padding: 24 }}>No low-margin products found.</div>
               ) : (
-                <table className="data-table">
+                <table className="data-table" {...lowProfitList.getContainerProps()}>
                   <thead>
                     <tr>
                       <th>Product</th>
@@ -1458,8 +1491,8 @@ export default function Reports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {lowProfitData.map((lp) => (
-                      <tr key={lp.product_id}>
+                    {lowProfitData.map((lp, i) => (
+                      <tr {...lowProfitList.getRowProps(i)} key={lp.product_id}>
                         <td>{lp.product_name}</td>
                         <td className="num">{fmt(lp.cost_price)}</td>
                         <td className="num">{fmt(lp.sale_price)}</td>
@@ -1480,7 +1513,7 @@ export default function Reports() {
               {worstProducts.length === 0 ? (
                 <div className="muted center" style={{ padding: 24 }}>No product data.</div>
               ) : (
-                <table className="data-table">
+                <table className="data-table" {...worstProductsList.getContainerProps()}>
                   <thead>
                     <tr>
                       <th>Product</th>
@@ -1495,8 +1528,8 @@ export default function Reports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {worstProducts.map((w) => (
-                      <tr key={w.product_id}>
+                    {worstProducts.map((w, i) => (
+                      <tr {...worstProductsList.getRowProps(i)} key={w.product_id}>
                         <td>{w.product_name}</td>
                         <td>{w.category || '—'}</td>
                         <td className="num">{w.units_sold}</td>

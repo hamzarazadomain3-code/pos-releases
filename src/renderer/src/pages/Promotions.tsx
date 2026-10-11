@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ModalCloseButton } from '../components/ModalCloseButton';
 import type { Category, Product, PromotionInput, PromotionRow } from '../../../shared/types';
+import { Modal } from '../components/Modal';
+import { KeyboardInput } from '../components/KeyboardInput';
+import { useListKeyboard } from '../hooks/useListKeyboard';
+import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
 const emptyForm = (): PromotionInput => ({
   name: '',
@@ -151,6 +154,26 @@ export default function Promotions() {
     return { cls: 'ok', text: 'Active' };
   };
 
+  const promotionList = useListKeyboard({
+    count: rows.length,
+    onOpen: (i) => { const p = rows[i]; if (p) openEdit(p); },
+    onDelete: (i) => { const p = rows[i]; if (p) remove(p); },
+  });
+
+  useKeyboardScope({
+    kind: 'page',
+    label: 'Promotions',
+    actions: {
+      new_record: () => openCreate(),
+    },
+    shortcuts: [
+      { action: 'new_record', label: 'New promotion' },
+      { keys: '↑ / ↓', label: 'Move between rows' },
+      { keys: 'Enter', label: 'Edit highlighted row' },
+      { keys: 'Delete', label: 'Delete highlighted row' },
+    ],
+  });
+
   return (
     <div className="page">
       <div className="page-head">
@@ -173,7 +196,7 @@ export default function Promotions() {
             Auto-applied at checkout — best deal for the customer wins (product rule beats category rule on a tie).
           </p>
         </div>
-        <table className="tbl">
+        <table className="tbl" {...promotionList.getContainerProps()}>
           <thead>
             <tr>
               <th>Name</th>
@@ -187,10 +210,10 @@ export default function Promotions() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((p) => {
+            {rows.map((p, i) => {
               const st = statusInfo(p);
               return (
-                <tr key={p.id}>
+                <tr key={p.id} {...promotionList.getRowProps(i)}>
                   <td>{p.name}</td>
                   <td>{typeLabel(p.type)}</td>
                   <td>{scopeLabel(p)}</td>
@@ -228,12 +251,14 @@ export default function Promotions() {
       </div>
 
       {modal && (
-        <div className="modal-overlay">
-          <div className="modal modal-wide">
-            <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2>{editing === null ? 'New Promotion' : 'Edit Promotion'}</h2>
-              <ModalCloseButton onClose={() => setModal(false)} />
-            </div>
+        <Modal
+          onClose={() => setModal(false)}
+          onSubmit={save}
+          title={editing === null ? 'New Promotion' : 'Edit Promotion'}
+          className="modal-wide"
+          label="Promotion"
+          shortcuts={[{ action: 'save', label: 'Save promotion' }]}
+        >
             <label className="lbl">Name *</label>
             <input className="inp" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus />
 
@@ -291,10 +316,9 @@ export default function Promotions() {
               {form.type === 'percent' && (
                 <label className="field">
                   <span>Discount % (1-100)</span>
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
+                  <KeyboardInput
+                    type="text"
+                    decimals
                     value={form.discount_value}
                     onChange={(e) => setForm({ ...form, discount_value: Number(e.target.value) })}
                   />
@@ -303,10 +327,9 @@ export default function Promotions() {
               {form.type === 'fixed' && (
                 <label className="field">
                   <span>Amount off</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
+                  <KeyboardInput
+                    type="text"
+                    decimals
                     value={form.discount_value}
                     onChange={(e) => setForm({ ...form, discount_value: Number(e.target.value) })}
                   />
@@ -316,28 +339,27 @@ export default function Promotions() {
                 <>
                   <label className="field">
                     <span>Buy (qty)</span>
-                    <input
-                      type="number"
-                      min="1"
+                    <KeyboardInput
+                      type="text"
+                      decimals={false}
                       value={form.buy_qty}
                       onChange={(e) => setForm({ ...form, buy_qty: Number(e.target.value) })}
                     />
                   </label>
                   <label className="field">
                     <span>Get (qty)</span>
-                    <input
-                      type="number"
-                      min="1"
+                    <KeyboardInput
+                      type="text"
+                      decimals={false}
                       value={form.free_qty}
                       onChange={(e) => setForm({ ...form, free_qty: Number(e.target.value) })}
                     />
                   </label>
                   <label className="field">
                     <span>Free-item discount % (100 = free)</span>
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
+                    <KeyboardInput
+                      type="text"
+                      decimals
                       value={form.discount_value}
                       onChange={(e) => setForm({ ...form, discount_value: Number(e.target.value) })}
                     />
@@ -384,8 +406,7 @@ export default function Promotions() {
                 Cancel
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
