@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import JsBarcode from 'jsbarcode';
 import type { Product } from '@shared/types';
-import { LabelTemplate, LabelLayout, ProductOverride, PRESET_SIZES, BUILTIN_TEMPLATES, defaultTemplate, parseSavedTemplates, normalizeTemplate, isKnownTemplateId, resolveSizeSpec } from '@pages/LabelStudio/types';
+import { LabelTemplate, LabelLayout, ProductOverride, PRESET_SIZES, BUILTIN_TEMPLATES, DEFAULT_TEMPLATE_ID, defaultTemplate, parseSavedTemplates, normalizeTemplate, isKnownTemplateId, resolveSizeSpec } from '@pages/LabelStudio/types';
 import { formatMoney } from '@utils/currency';
 import { KeyboardInput } from '@components/KeyboardInput';
 import { useListKeyboard } from '@hooks/useListKeyboard';
@@ -24,7 +24,7 @@ export default function LabelStudio() {
   // pending — and every entry is normalized so patterns like `tpl.size.w` are
   // safe even for old/corrupt JSON.
   const [templates, setTemplates] = useState<LabelTemplate[]>(() => parseSavedTemplates(localStorage.getItem('labelStudio.templates')));
-  const [activeTemplateId, setActiveTemplateId] = useState<string>('builtin-retail');
+  const [activeTemplateId, setActiveTemplateId] = useState<string>(DEFAULT_TEMPLATE_ID);
   const [customSize, setCustomSize] = useState({ w: 50, h: 30, gap: 1, margins: { t: 2, r: 2, b: 2, l: 2 } });
 
   // Layout state
@@ -447,7 +447,7 @@ export default function LabelStudio() {
   const deleteTemplate = (id: string) => {
     if (id.startsWith('builtin-')) { setNotice('Cannot delete built-in template.'); return; }
     setTemplates(prev => prev.filter(t => t.id !== id));
-    if (activeTemplateId === id) setActiveTemplateId('builtin-retail');
+    if (activeTemplateId === id) setActiveTemplateId(DEFAULT_TEMPLATE_ID);
     setNotice('Template deleted.');
   };
 

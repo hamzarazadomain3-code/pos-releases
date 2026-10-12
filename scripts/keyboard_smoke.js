@@ -454,6 +454,14 @@ async function run() {
     await js('window.__kb.modalTitle()'));
   await js("window.__kb.press('Escape')");
   await waitUntil('!window.__kb.hasModal()', 'Template Manager modal to close');
+  // Ctrl+F must land on the product search input once the page is clean. This
+  // failed pre-2.15.1 only because every modal was mounted and a modal scope
+  // (above the page scope) held focus on one of its buttons.
+  await js("window.__kb.press('Ctrl+f')");
+  await sleep(150);
+  check('Ctrl+F focuses the Label Studio product search',
+    (await js('window.__kb.focusedTag()')) === 'INPUT',
+    await js('window.__kb.focusedTag()'));
 
   // ── Reports / FIFO: page scope registers (F1 shows the page heading) ──────
   for (const [nav, title, scopeLabel] of [['Reports', 'Reports & Analytics', 'Reports'], ['FIFO Stock Report', 'FIFO Stock Report', 'FIFO Stock Report']]) {

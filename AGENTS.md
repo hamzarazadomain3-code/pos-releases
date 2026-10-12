@@ -120,7 +120,8 @@ Anything not yet migrated is listed under the table.
 | Promotions / Commissions / Branches | Ctrl+N opens the primary modal; Esc closes | ✓ | |
 | Quotations / Users / Custom Reports / Invoice Designer | Ctrl+N opens the primary modal; Esc closes | ✓ | |
 | Barcode Labels | Ctrl+F focuses the product search; ↑/↓ highlights a product | ✓ | |
-| Label Studio | Ctrl+F focuses the product search; ↑/↓ navigates products; Space toggles | | ✓ |
+| Label Studio | Crash regression: mounts with corrupt saved template; no dialog stack on load | ✓ | |
+| Label Studio | Ctrl+F focuses the product search (asserted post-mount); ↑/↓ navigates products; Space toggles | ✓ | ✓ |
 | Reports / FIFO Stock Report | page scope registers (F1 shows the page heading) | ✓ | |
 | Reports | ↑/↓ across the analytics tables | | ✓ |
 | FIFO Stock Report | ↑/↓ across the per-product batch tables | | ✓ |
