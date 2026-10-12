@@ -20,7 +20,9 @@ build/puppeteer-cache/
 # MUST stay out of git: this repository is PUBLIC, and a committed key would let
 # anyone mint a valid recovery code for any shop.
 src/main/generated/
-# license-server/
+# Separate project with its own remote (hamzarazadomain3-code/license-server).
+# The app only consumes its deployed URL; keeping the local checkout untracked.
+license-server/
 cred_input.txt
 cred.txt
 cred_out.txt
