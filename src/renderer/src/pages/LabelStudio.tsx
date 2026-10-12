@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import JsBarcode from 'jsbarcode';
 import type { Product } from '@shared/types';
-import { LabelTemplate, LabelElement, LabelSize, LabelLayout, ProductOverride, PRESET_SIZES, BUILTIN_TEMPLATES } from '@pages/LabelStudio/types';
+import { LabelTemplate, LabelLayout, ProductOverride, PRESET_SIZES, BUILTIN_TEMPLATES, defaultTemplate, parseSavedTemplates, normalizeTemplate, isKnownTemplateId, resolveSizeSpec } from '@pages/LabelStudio/types';
 import { formatMoney } from '@utils/currency';
 import { KeyboardInput } from '@components/KeyboardInput';
 import { useListKeyboard } from '@hooks/useListKeyboard';
@@ -19,8 +19,11 @@ export default function LabelStudio() {
   const [selectedProducts, setSelectedProducts] = useState<Map<number, number>>(new Map());
   const [overrides, setOverrides] = useState<Map<number, ProductOverride>>(new Map());
 
-  // Template state
-  const [templates, setTemplates] = useState<LabelTemplate[]>([]);
+  // Template state. Saved templates load synchronously from localStorage during
+  // the FIRST render via the initializer, so `templates` is never empty-while-
+  // pending — and every entry is normalized so patterns like `tpl.size.w` are
+  // safe even for old/corrupt JSON.
+  const [templates, setTemplates] = useState<LabelTemplate[]>(() => parseSavedTemplates(localStorage.getItem('labelStudio.templates')));
   const [activeTemplateId, setActiveTemplateId] = useState<string>('builtin-retail');
   const [customSize, setCustomSize] = useState({ w: 50, h: 30, gap: 1, margins: { t: 2, r: 2, b: 2, l: 2 } });
 
@@ -80,24 +83,42 @@ export default function LabelStudio() {
     window.api.inventory.list().then(setProducts).catch(e => setNotice(e instanceof Error ? e.message : String(e)));
     window.api.settings.getAll().then(s => setShopName(s['shop_name'] || '')).catch(() => undefined);
     window.api.printing.getPrinterSettings().then(s => {
-      if (s.labelPaper && s.labelPaper in PRESET_SIZES) setActiveTemplateId(s.labelPaper);
+      // labelPaper is a PAPER SIZE key ("38x25", "58x40", ...), never a template
+      // id. Writing it straight into activeTemplateId used to resolve to no
+      // template — no builtin is named "58x40" (or even "38x25") — and the page
+      // crashed with "Cannot read properties of undefined (reading 'size')" on
+      // EVERY open, because the printer fallback always reports '38x25'.
       if (s.labelLayout === 'sheet' || s.labelLayout === 'roll') setLabelLayout(s.labelLayout);
       if (s.labelPrinter) setSelectedPrinter(s.labelPrinter || 'auto');
+      // FIRST-RUN convenience only: if the owner has never picked a template,
+      // start on the built-in whose size matches the configured label paper.
+      // If a template was chosen before (`labelStudio.lastUsed`), never override
+      // it — that would undo the owner's selection on every reopen.
+      if (s.labelPaper && typeof s.labelPaper === 'string' && s.labelPaper in PRESET_SIZES) {
+        let hasLast = false;
+        try { hasLast = !!localStorage.getItem('labelStudio.lastUsed'); } catch { /* ignore */ }
+        if (!hasLast) {
+          const bySize = BUILTIN_TEMPLATES.find(t => typeof t.size === 'string' && t.size === s.labelPaper);
+          if (bySize) setActiveTemplateId(bySize.id);
+        }
+      }
     }).catch(() => undefined);
     window.api.printing.getPrinters().then(list =>
       setPrinters((list || []).filter(p => !p.isVirtual))
     ).catch(() => undefined);
 
-    // Load saved templates
-    try {
-      const saved = localStorage.getItem('labelStudio.templates');
-      if (saved) setTemplates(JSON.parse(saved));
-    } catch {}
+    // Restore the last-used template only when it still exists. A stale id
+    // (deleted custom template, older build) must NOT be re-applied — the
+    // resolution below would otherwise leave `activeTemplate` undefined.
     try {
       const last = localStorage.getItem('labelStudio.lastUsed');
       if (last) {
         const parsed = JSON.parse(last);
-        if (parsed.templateId) setActiveTemplateId(parsed.templateId);
+        const id = parsed && typeof parsed.templateId === 'string' ? parsed.templateId : null;
+        if (id) {
+          if (isKnownTemplateId(id, templates)) setActiveTemplateId(id);
+          else setNotice(`Saved template "${id}" was not found — using the default Retail template.`);
+        }
       }
     } catch {}
   }, []);
@@ -112,10 +133,18 @@ export default function LabelStudio() {
     localStorage.setItem('labelStudio.lastUsed', JSON.stringify({ templateId: activeTemplateId }));
   }, [activeTemplateId]);
 
-  const activeTemplate = templates.find(t => t.id === activeTemplateId) || BUILTIN_TEMPLATES.find(t => t.id === activeTemplateId)!;
-  const sizeSpec = typeof activeTemplate.size === 'string' 
-    ? PRESET_SIZES[activeTemplate.size as Exclude<LabelSize, 'custom'>] 
-    : activeTemplate.size;
+  // `activeTemplate` must NEVER be undefined: the page reads `.size` and
+  // `.defaults` on it in the toolbar, preview, print and export paths. The
+  // saved templates, the code-built-ins, and the hard `defaultTemplate()`
+  // fallback make every resolution safe, so `activeTemplate.size` and the
+  // `sizeSpec` lookups cannot throw "reading 'size'" again.
+  const activeTemplate: LabelTemplate =
+    templates.find(t => t.id === activeTemplateId) ||
+    BUILTIN_TEMPLATES.find(t => t.id === activeTemplateId) ||
+    defaultTemplate();
+  const sizeSpec = activeTemplate.size === 'custom'
+    ? { w: customSize.w || 38, h: customSize.h || 25, gap: customSize.gap ?? 1, margins: customSize.margins }
+    : resolveSizeSpec(activeTemplate);
 
   const barcodeText = (p: Product) => p.sku || p.barcode || String(p.id);
 
@@ -454,7 +483,9 @@ export default function LabelStudio() {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const tpl = JSON.parse(e.target?.result as string) as LabelTemplate;
+        const parsed = JSON.parse(e.target?.result as string);
+        const tpl = normalizeTemplate(parsed);
+        if (!tpl) { setNotice('Invalid template file.'); return; }
         tpl.id = `custom-${Date.now()}`;
         tpl.name = `${tpl.name} (Imported)`;
         tpl.createdAt = Date.now();
@@ -584,6 +615,7 @@ export default function LabelStudio() {
       </div>
 
       {/* Template Manager Modal */}
+      {showTemplateManager && (
       <Modal
         onClose={() => setShowTemplateManager(false)}
         title="Template Manager"
@@ -601,8 +633,10 @@ export default function LabelStudio() {
           importTemplate={importTemplate}
         />
       </Modal>
+      )}
 
       {/* Label Editor Modal */}
+      {showEditor && (
       <Modal
         onClose={() => setShowEditor(false)}
         title="Label Editor"
@@ -626,8 +660,10 @@ export default function LabelStudio() {
           }}
         />
       </Modal>
+      )}
 
       {/* Full Preview Modal */}
+      {showFullPreview && (
       <Modal
         onClose={() => setShowFullPreview(false)}
         title="Full Preview"
@@ -658,8 +694,10 @@ export default function LabelStudio() {
           />
         </div>
       </Modal>
+      )}
 
       {/* Print Settings Modal */}
+      {printSettingsOpen && (
       <Modal
         onClose={() => setPrintSettingsOpen(false)}
         title="Printer Settings"
@@ -697,8 +735,10 @@ export default function LabelStudio() {
           <button className="btn" style={{ marginTop: '8px' }} onClick={openCalibration}>Print Calibration Sheet</button>
         </div>
       </Modal>
+      )}
 
       {/* Calibration Sheet Modal */}
+      {showCalibration && (
       <Modal
         onClose={() => setShowCalibration(false)}
         title="Calibration Sheet"
@@ -727,8 +767,10 @@ export default function LabelStudio() {
           </div>
         </div>
       </Modal>
+      )}
 
       {/* Print History Modal */}
+      {showPrintHistory && (
       <Modal
         onClose={() => setShowPrintHistory(false)}
         title="Print History"
@@ -762,6 +804,7 @@ export default function LabelStudio() {
           )}
         </div>
       </Modal>
+      )}
     </div>
   );
 }

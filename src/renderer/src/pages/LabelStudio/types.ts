@@ -267,3 +267,148 @@ export const BUILTIN_TEMPLATES: LabelTemplate[] = [
     updatedAt: Date.now(),
   },
 ];
+
+export const DEFAULT_TEMPLATE_ID = 'builtin-retail';
+
+export interface ResolvedSizeSpec {
+  w: number;
+  h: number;
+  gap: number;
+  margins?: { t: number; r: number; b: number; l: number };
+}
+
+/**
+ * A template that is guaranteed to exist and be renderable (38 × 25 mm retail
+ * tag). `BUILTIN_TEMPLATES` is code-defined, so the only reason the find fails
+ * is if someone deletes `builtin-retail` above — the literal fallback keeps the
+ * page alive even then.
+ */
+export function defaultTemplate(): LabelTemplate {
+  return (
+    BUILTIN_TEMPLATES.find((t) => t.id === DEFAULT_TEMPLATE_ID) || {
+      id: DEFAULT_TEMPLATE_ID,
+      name: 'Retail Price Tag',
+      size: '38x25',
+      layout: 'roll',
+      rollCols: 1,
+      elements: [],
+      defaults: { copies: 1, barcodeOnly: false },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }
+  );
+}
+
+const ELEMENT_TYPES: LabelElement['type'][] = [
+  'text', 'barcode', 'qr', 'image', 'line', 'rect', 'custom-text',
+  'price', 'expiry', 'mfg', 'batch', 'weight', 'sku', 'border',
+];
+
+const PRESET_KEYS = Object.keys(PRESET_SIZES) as Exclude<LabelSize, 'custom'>[];
+
+function normalizeElement(raw: any): LabelElement {
+  const style = raw && raw.style && typeof raw.style === 'object' ? { ...raw.style } : {};
+  return {
+    id: typeof raw?.id === 'string' && raw.id ? raw.id : `el-${Math.random().toString(36).slice(2, 10)}`,
+    type: typeof raw?.type === 'string' && ELEMENT_TYPES.includes(raw.type) ? raw.type : 'text',
+    x: Number(raw?.x) || 0,
+    y: Number(raw?.y) || 0,
+    w: Number(raw?.w) > 0 ? raw.w : 10,
+    h: Number(raw?.h) > 0 ? raw.h : 5,
+    rotation: Number(raw?.rotation) || 0,
+    visible: raw?.visible !== false,
+    locked: !!raw?.locked,
+    style,
+    content: typeof raw?.content === 'string' ? raw.content : '',
+    barcodeOptions: raw?.barcodeOptions && typeof raw.barcodeOptions === 'object' ? { ...raw.barcodeOptions } : undefined,
+  };
+}
+
+function normalizeSize(raw: any): LabelTemplate['size'] {
+  if (typeof raw === 'string' && (PRESET_KEYS as string[]).includes(raw)) return raw as LabelSize;
+  if (raw && typeof raw === 'object' && Number(raw.w) > 0 && Number(raw.h) > 0) {
+    const m = raw.margins && typeof raw.margins === 'object' ? raw.margins : {};
+    return {
+      w: Number(raw.w),
+      h: Number(raw.h),
+      gap: Number(raw.gap) >= 0 ? Number(raw.gap) : 1,
+      margins: {
+        t: Number(m.t) || 0,
+        r: Number(m.r) || 0,
+        b: Number(m.b) || 0,
+        l: Number(m.l) || 0,
+      },
+    };
+  }
+  // Unknown/legacy size key → guaranteed preset so PRESET_SIZES lookups never
+  // return undefined and previews/canvases never read `sizeSpec.w` on undefined.
+  return '38x25';
+}
+
+/**
+ * Turn whatever came out of localStorage (or an imported JSON file) into a
+ * fully-shaped LabelTemplate. Unknown/legacy fields are repaired, not trusted.
+ * Returns null only when the value has neither a name nor an id to anchor on.
+ */
+export function normalizeTemplate(raw: unknown): LabelTemplate | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const t = raw as Record<string, unknown>;
+  if (typeof t.id !== 'string' && typeof t.name !== 'string') return null;
+  const d = t.defaults && typeof t.defaults === 'object' ? (t.defaults as Record<string, unknown>) : {};
+  const copies = Number(d.copies);
+  const elements = Array.isArray(t.elements) ? (t.elements as unknown[]).map(normalizeElement) : [];
+  return {
+    id: typeof t.id === 'string' ? t.id : `custom-${Date.now()}`,
+    name: typeof t.name === 'string' ? t.name : 'Untitled template',
+    size: normalizeSize(t.size),
+    layout: t.layout === 'sheet' ? 'sheet' : 'roll',
+    rollCols: typeof t.rollCols === 'number' && t.rollCols >= 1 ? Math.floor(t.rollCols) : 1,
+    sheetRows: typeof t.sheetRows === 'number' && t.sheetRows >= 1 ? Math.floor(t.sheetRows) : 4,
+    sheetCols: typeof t.sheetCols === 'number' && t.sheetCols >= 1 ? Math.floor(t.sheetCols) : 6,
+    elements,
+    defaults: {
+      copies: copies >= 1 && copies <= 50 ? Math.floor(copies) : 1,
+      barcodeOnly: d.barcodeOnly === true,
+    },
+    createdAt: typeof t.createdAt === 'number' ? t.createdAt : 0,
+    updatedAt: typeof t.updatedAt === 'number' ? t.updatedAt : 0,
+  };
+}
+
+/** Read + repair the templates persisted in localStorage. Never throws. */
+export function parseSavedTemplates(raw: string | null): LabelTemplate[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.map(normalizeTemplate).filter((t): t is LabelTemplate => !!t);
+  } catch {
+    return [];
+  }
+}
+
+/** True when `id` resolves to a saved template or one of the code-built-ins. */
+export function isKnownTemplateId(id: string, saved: LabelTemplate[]): boolean {
+  return saved.some((t) => t.id === id) || BUILTIN_TEMPLATES.some((t) => t.id === id);
+}
+
+/**
+ * Coerce a template's `size` to a non-undefined spec. A preset string maps to
+ * PRESET_SIZES (falling back to 38×25 for unknown keys); an embedded object is
+ * carried through with sane defaults. This is what guarantees the preview/editor
+ * canvases can never read `sizeSpec.w` on undefined.
+ */
+export function resolveSizeSpec(template: Pick<LabelTemplate, 'size'>): ResolvedSizeSpec {
+  const size = template.size;
+  if (typeof size === 'string') {
+    if (size === 'custom') return { ...PRESET_SIZES['38x25'], margins: { t: 2, r: 2, b: 2, l: 2 } };
+    return PRESET_SIZES[size as Exclude<LabelSize, 'custom'>] || { ...PRESET_SIZES['38x25'] };
+  }
+  const m = size.margins;
+  return {
+    w: Number(size.w) > 0 ? size.w : 38,
+    h: Number(size.h) > 0 ? size.h : 25,
+    gap: Number(size.gap) >= 0 ? size.gap : 1,
+    margins: m ? { t: Number(m.t) || 0, r: Number(m.r) || 0, b: Number(m.b) || 0, l: Number(m.l) || 0 } : undefined,
+  };
+}

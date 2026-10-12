@@ -424,6 +424,37 @@ async function run() {
   check('Ctrl+F focuses the Barcode search box', (await js('window.__kb.focusedTag()')) === 'INPUT',
     await js('window.__kb.focusedTag()'));
 
+  // ── Label Studio: must not crash with a stale lastUsed id, corrupt saved
+  //    templates, or the legacy labelPaper ("38x25") reaching activeTemplateId.
+  //    Pre-fix this page threw "Cannot read properties of undefined (reading
+  //    'size')" on EVERY open (the printer fallback always reports '38x25',
+  //    which is a paper size key, not a template id). ────────────────────────
+  section('Label Studio (no-template crash regression)');
+  await js("localStorage.setItem('labelStudio.lastUsed', JSON.stringify({ templateId: 'builtin-ghost' }))");
+  await js("localStorage.setItem('labelStudio.templates', JSON.stringify([{ name: 'Broken legacy' }]))");
+  await navigate('Label Studio', 'Label Studio');
+  check('Label Studio mounts despite a stale saved template',
+    (await js('window.__kb.pageTitle()')) === 'Label Studio',
+    await js('window.__kb.pageTitle()'));
+  check('no modal overlay is open on page load (all 7 modals used to render unconditionally)',
+    !(await js('window.__kb.hasModal()')),
+    await js('window.__kb.hasModal()'));
+  check('page warns that the saved template was not found',
+    (await js("(document.querySelector('.notice')||{}).innerText||''")).includes('was not found'),
+    await js("(document.querySelector('.notice')||{}).innerText||''"));
+  const searchTag = await js("(() => { const i = document.querySelector('.product-picker .search-input'); if (!i) return 'NO-INPUT'; i.focus(); return document.activeElement.tagName; })()");
+  check('product search input exists and is focusable', searchTag === 'INPUT', searchTag);
+  // Open the Template Manager: a corrupt legacy template must render there too
+  // (TemplateManager reads `tpl.size`, so this proves the saved-template
+  // normalisation really repaired the broken entry).
+  await js("Array.from(document.querySelectorAll('.page-header .toolbar button')).find(b => b.innerText.trim() === 'Templates')?.click()");
+  await waitUntil('window.__kb.hasModal()', 'Template Manager modal to open');
+  check('Template Manager opens and renders the legacy template without crashing',
+    (await js('window.__kb.modalTitle()')).includes('Template Manager'),
+    await js('window.__kb.modalTitle()'));
+  await js("window.__kb.press('Escape')");
+  await waitUntil('!window.__kb.hasModal()', 'Template Manager modal to close');
+
   // ── Reports / FIFO: page scope registers (F1 shows the page heading) ──────
   for (const [nav, title, scopeLabel] of [['Reports', 'Reports & Analytics', 'Reports'], ['FIFO Stock Report', 'FIFO Stock Report', 'FIFO Stock Report']]) {
     section(title);

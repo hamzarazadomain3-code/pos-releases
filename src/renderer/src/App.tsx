@@ -72,6 +72,12 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   static getDerivedStateFromError(error: Error) {
     return { error };
   }
+  componentDidCatch(error: Error, info: { componentStack?: string }) {
+    // The "Something went wrong" screen hides the real cause — log it with the
+    // component stack so page crashes (e.g. Label Studio reading a missing
+    // template) are diagnosable from the DevTools console instead of guessing.
+    console.error('[render] page crash:', error.message, '\n', info && info.componentStack ? info.componentStack : '');
+  }
   render() {
     if (this.state.error) {
       return (

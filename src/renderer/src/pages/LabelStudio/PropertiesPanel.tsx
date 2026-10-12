@@ -309,6 +309,7 @@ export function PropertiesPanel({
       </div>
 
       {/* Save As Modal */}
+      {showSaveModal && (
       <Modal onClose={() => setShowSaveModal(false)} title="Save Template As" showClose>
         <div style={{ padding: '16px' }}>
           <label className="field" style={{ display: 'block' }}>
@@ -321,6 +322,7 @@ export function PropertiesPanel({
           </div>
         </div>
       </Modal>
+      )}
     </div>
   );
 }
