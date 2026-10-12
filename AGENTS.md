@@ -1,7 +1,7 @@
 # Rokar POS — Agent Guide
 
 ## Version
-**v2.15.0** (Perpetual one-time licence: no expiry, device-locked, revocable)
+**v2.15.1** (Perpetual one-time licence: no expiry, device-locked, revocable)
 
 ## Environment
 - Node.js v24.18.0 (portable at `C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64`)
@@ -33,13 +33,17 @@ $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win
 # first (it loads dist/renderer), and PowerShell reports exit code 1 even on
 # success because of the Electron stderr banner. Trust the "ALL PASSED" line.
 ```
-`scripts/keyboard_smoke.js` (28 checks) drives the real renderer with synthetic
+`scripts/keyboard_smoke.js` (59 checks) drives the real renderer with synthetic
 `keydown` events: it signs in, seeds a product and the default shortcut bindings,
 then asserts the global layer (Ctrl+K palette, F1 help, Escape), that Ctrl+N opens
 each migrated page's primary modal and Escape closes it, that Ctrl+F focuses the
 page search box, that ArrowDown highlights an Inventory row and Enter opens its
 Edit modal, that Ctrl+N on Audits starts an audit with focusable count cells, and
-that Enter on the login username advances to the password field and submits.
+that Enter on the login username advances to the password field and submits. It
+also runs a **Label Studio crash regression**: with a corrupt saved template and a
+stale last-used id it must still mount, show a fallback notice, keep the dialog
+stack closed on load (all 7 dialogs were unconditional until 2.15.1) and open the
+Template Manager on demand.
 
 ## Keyboard navigation
 

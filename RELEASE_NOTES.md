@@ -1,3 +1,25 @@
+## Rokar POS v2.15.1 — hotfix
+
+**Label Studio crashed on opening for every user** ("Something went wrong — Cannot read
+properties of undefined (reading 'size')"). The page read the *configured paper size*
+(`labelPaper`, which defaults to `38x25`) as if it were a template id, found no template
+with that name, and crashed before it could render.
+
+- Opening the page no longer crashes, on any machine, with or without saved templates.
+- A second, hidden defect is fixed too: all 7 Label Studio dialogs (Template Manager,
+  Label Editor, Full Preview, Printer Settings, Calibration, Print History, Save As)
+  were rendered unconditionally — one full-screen overlay stacked on top of the other,
+  masked only by the crash. Each dialog now opens only when asked.
+- Legacy/corrupt saved templates are repaired on load; a missing template id falls back
+  to the default Retail template with a notice instead of a crash.
+- Error logging added: page crashes now write the real error + component stack to the
+  DevTools console instead of only the generic "Something went wrong" screen.
+- `npm run test:keyboard` gains a Label Studio crash-regression section (mounts with a
+  corrupt saved template + stale last-used id, no dialog stack on load, fallback notice,
+  focusable search, Template Manager renders the legacy template): 59/59 checks.
+
+---
+
 ## Rokar POS v2.15.0
 
 ### Label Studio — Design & Print Your Own Product Labels
