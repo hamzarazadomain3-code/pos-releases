@@ -3077,6 +3077,33 @@ input.qty-val::-webkit-inner-spin-button {
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Billing: touch-friendly cart controls ───────────────────────────────────
+   Cashiers on touch screens miss the small −/+/× targets. Give every qty
+   control a comfortable hit area without changing the desktop density. */
+.cart-row { min-height: 52px; }
+
+.cart-qty .btn-sm,
+.cart-row > .btn-sm.btn-danger {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+@media (pointer: coarse) {
+  .cart-row {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .cart-qty .btn-sm,
+  .cart-row > .btn-sm.btn-danger {
+    min-width: 42px;
+    height: 42px;
+  }
+}
+
 .panel-summary { padding: 16px; gap: 8px; overflow-y: auto; }
 
 .summary-row {

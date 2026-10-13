@@ -15,6 +15,7 @@ const {
   serializeCartLine,
   rehydrateCartLine,
   rehydrateCartLines,
+  summarizeHeldBill,
   safeNum,
 } = require('../dist/shared/cartMath.js');
 
@@ -100,6 +101,42 @@ const garbage = lineTotals(
   {},
 );
 check('a garbage cart still yields finite totals', [garbage.subtotal, garbage.tax, garbage.total].every(Number.isFinite));
+
+// ── Held-bill summary (the Held / Quotation list) ────────────────────────────
+console.log('\n── Held bill summary ──');
+const approx = (a, b, tol = 1e-6) => Math.abs(a - b) <= tol;
+
+const heldPayload = {
+  items: cart.map(serializeCartLine),
+  customer_id: 7,
+  bill_discount: 10,
+  discount_type: 'amount',
+  service_charge: 5,
+  service_charge_type: 'amount',
+  freight: 2,
+  price_mode: 'retail',
+};
+const s = summarizeHeldBill(heldPayload);
+const sBase = lineTotals(cart, 0, 'amount', {});
+check('summary counts lines, not a mixed-unit qty', s.lineCount === 3 && s.qty === 26.5, `${s.lineCount} lines / qty ${s.qty}`);
+check('summary subtotal/tax mirror lineTotals', approx(s.subtotal, sBase.subtotal) && approx(s.tax, sBase.tax), `${s.subtotal} / ${s.tax}`);
+check('summary applies an amount bill discount', s.discount === 10, String(s.discount));
+check('summary total adds service charge + freight', approx(s.total, sBase.total - 10 + 5 + 2), String(s.total));
+check('summary exposes the customer id', s.customerId === '7', String(s.customerId));
+
+const pct = summarizeHeldBill({ items: [serializeCartLine(cart[0])], bill_discount: 10, discount_type: 'percent' });
+check('summary applies a percent bill discount', approx(pct.discount, pct.subtotal * 0.1), `${pct.discount} of ${pct.subtotal}`);
+check('a walk-in bill has no customer id', summarizeHeldBill({ items: [] }).customerId === null);
+
+const legacySummary = summarizeHeldBill({ items: [{ product_id: 3, qty: 1.5 }] });
+check('a legacy payload still summarizes (1 line, finite total)', legacySummary.lineCount === 1 && Number.isFinite(legacySummary.total));
+
+const badSummary = summarizeHeldBill({ items: 'not-an-array', bill_discount: 'x', customer_id: {} });
+check('garbage payload yields finite zeros, never NaN',
+  badSummary.lineCount === 0 && [badSummary.subtotal, badSummary.tax, badSummary.discount, badSummary.total].every(Number.isFinite),
+  JSON.stringify(badSummary));
+check('a non-scalar customer id is ignored', badSummary.customerId === null, String(badSummary.customerId));
+check('summarizeHeldBill(undefined) does not throw', (() => { try { summarizeHeldBill(undefined); return true; } catch { return false; } })());
 
 console.log(`\n${failures === 0 ? 'ALL PASSED' : 'FAILURES'}: ${checks - failures}/${checks} checks passed`);
 process.exit(failures === 0 ? 0 : 1);

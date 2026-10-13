@@ -176,3 +176,55 @@ export function rehydrateCartLines(
   for (const p of products) byId.set(p.id, p);
   return list.map((s) => rehydrateCartLine(s, byId.get(safeNum(s?.product_id)) ?? null, priceMode));
 }
+
+/** A one-line summary of a held bill, derived purely from its saved payload. */
+export interface HeldBillSummary {
+  /** Number of cart lines (the meaningful "items" count for a mixed-unit cart). */
+  lineCount: number;
+  /** Sum of quantities — shown for reference only; mixes units (kg + pieces). */
+  qty: number;
+  /** Gross of the lines (line discounts applied, before bill discount / tax inclusive). */
+  subtotal: number;
+  discount: number;
+  tax: number;
+  /** Payable total, mirroring Billing's `grandTotal` (lines + service charge + freight). */
+  total: number;
+  customerId: string | null;
+}
+
+/**
+ * Summarize a held bill for the Held/Quotation list, so the cashier can identify
+ * the bill (customer + value) before resuming it. The old list showed only the
+ * label ("3 items") and the timestamp.
+ *
+ * The payload is whatever Billing's `doHold()` saved; anything missing or corrupt
+ * degrades to sensible zeros rather than throwing, so one bad row cannot blank the
+ * modal. Total mirrors Billing: `lineTotals().total + serviceCharge + freight`.
+ */
+export function summarizeHeldBill(data: unknown): HeldBillSummary {
+  const d = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
+  const rawItems = Array.isArray(d.items) ? (d.items as Partial<CartLine>[]) : [];
+  const priceMode: 'retail' | 'wholesale' = d.price_mode === 'wholesale' ? 'wholesale' : 'retail';
+  const lines = rawItems.map((s) => rehydrateCartLine(s, null, priceMode));
+
+  const billDiscount = safeNum(d.bill_discount);
+  const discountType: 'amount' | 'percent' = d.discount_type === 'percent' ? 'percent' : 'amount';
+  const t = lineTotals(lines, billDiscount, discountType, {});
+
+  const serviceCharge = safeNum(d.service_charge);
+  const serviceChargeAmt =
+    d.service_charge_type === 'percent' ? (t.total * serviceCharge) / 100 : serviceCharge;
+  const freight = safeNum(d.freight);
+
+  const qty = lines.reduce((sum, l) => sum + safeNum(l.qty), 0);
+  const cid = d.customer_id;
+  return {
+    lineCount: lines.length,
+    qty: Math.round(qty * 1e6) / 1e6,
+    subtotal: t.subtotal,
+    discount: t.discount,
+    tax: t.tax,
+    total: Math.max(0, t.total + serviceChargeAmt + freight),
+    customerId: typeof cid === 'string' || typeof cid === 'number' ? String(cid) : null,
+  };
+}

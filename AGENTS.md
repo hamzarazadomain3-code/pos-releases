@@ -31,11 +31,13 @@ $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win
 $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; npm run test:holdresume
 $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; npm run test:shortcuts
 ```
-`test:holdresume` (15 checks) round-trips a 3-item mixed-unit cart through the
+`test:holdresume` (26 checks) round-trips a 3-item mixed-unit cart through the
 real `serializeCartLine`/`rehydrateCartLines` (in `src/shared/cartMath.ts`) and
 asserts pre-hold totals equal post-resume totals — the v2.15.1 Hold→Resume bug
 lost `name`/prices and produced NaN. It also covers legacy held payloads and
-garbage input. `test:shortcuts` (22 checks) asserts the shared registry
+garbage input, plus `summarizeHeldBill()` — the pure summary (line count, subtotal,
+discount, tax, total incl. service charge/freight, customer id) the Held/Quotation
+list now renders. `test:shortcuts` (22 checks) asserts the shared registry
 invariants (unique combos per screen, DB-seed exclusions, `resolveCombo`
 precedence, `screens` scoping, billing hint rows). Both need `npm run build:main`
 first, which the npm scripts do for you.
@@ -58,7 +60,7 @@ $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win
 # first (it loads dist/renderer), and PowerShell reports exit code 1 even on
 # success because of the Electron stderr banner. Trust the "ALL PASSED" line.
 ```
-`scripts/keyboard_smoke.js` (79 checks) drives the real renderer with synthetic
+`scripts/keyboard_smoke.js` (82 checks) drives the real renderer with synthetic
 `keydown` events: it signs in, seeds a product and the default shortcut bindings,
 then asserts the global layer (Ctrl+K palette, F1 help, Escape), that Ctrl+N opens
 each migrated page's primary modal and Escape closes it, that Ctrl+F focuses the
@@ -68,7 +70,8 @@ minimize + maximize + close and
 that maximizing/minimizing/restoring behaves (the docked dialog hands Ctrl+F back
 to the page), that ArrowDown highlights an Inventory row and Enter opens its
 Edit modal, that the Add Product form accepts an image picked from the PC and
-shows a preview, that Ctrl+N on Audits starts an audit with focusable count cells, and
+shows a preview, that Ctrl+N on Audits starts an audit with focusable count cells,
+that the Billing **Held Bills** list identifies each bill by customer and value, and
 that Enter on the login username advances to the password field and submits. It
 also runs a **Label Studio crash regression**: with a corrupt saved template and a
 stale last-used id it must still mount, show a fallback notice, keep the dialog
@@ -184,6 +187,7 @@ Anything not yet migrated is listed under the table.
 | Billing | Ctrl+Shift+R opens Return / Refund; Esc closes | ✓ | |
 | Billing | Ctrl+S = save, Ctrl+Shift+S = save+print, Ctrl+P = print last | | ✓ |
 | Billing | Hold then resume restores a full cart (no NaN) | ✓* | ✓ |
+| Billing | Held Bills list shows customer + value; Esc closes | ✓ | |
 | Billing payment modal | Enter from **any** field completes the sale (legacy semantics) | | ✓ |
 
 \* the hold→resume round-trip is asserted by `npm run test:holdresume` (pure cart
@@ -381,6 +385,7 @@ them wrong.
 - `src/renderer/src/utils/currency.ts` — cached currency symbol + `formatMoney()`/`getCurrencySymbol()` (driven by admin `currency_symbol`/`decimal_places`); use these instead of hardcoded "Rs" in new UI
 - `src/renderer/src/components/LiveClock.tsx` — timezone-aware header clock (`clock_timezone` setting)
 - `src/shared/imageMath.ts` + `src/renderer/src/utils/imageUpload.ts` + `src/renderer/src/components/ImageField.tsx` — the "upload an image from this PC" stack. `imageMath` (pure, tested by `test:imageupload`) validates MIME/size and computes the downscale; `readImageFile()` decodes, resizes via canvas (PNG for alpha sources, JPEG for photos) and returns a data URL so a phone photo never bloats a SQLite row or the localStorage quota Label Studio templates live in; `ImageField` is the shared control (Upload from PC + optional URL box + thumbnail + Remove + inline error). Used by the Label Studio image element, Inventory product photo, Settings shop logo and (validation only) the Admin wallpaper.
+- `src/renderer/src/pages/Billing.tsx` — the till screen. The Held / Quotation list identifies each bill by **customer + line count + value**, computed from the saved payload by the pure `summarizeHeldBill()` in `src/shared/cartMath.ts` (so one corrupt row degrades to zeros instead of blanking the modal), and the cart's − / + / × controls keep a ≥34px hit area (42px on coarse pointers) for touch terminals.
 - `src/renderer/src/hooks/useBarcodeScan.ts` — shared barcode scanner window keydown hook (`{ onScan, minLength=8, scanTimeout=50, enabled=true }`); used in QuickSaleGrid (refactored), Purchases PO modal (new), Inventory (new, always enabled). Scan flush = Enter with buffer >= minLength; capture-phase + preventDefault so it never also triggers staged-search Enter.
 - `src/renderer/src/pages/QuickSaleGrid.tsx` — staged search Enter flow (1× select, 2× qty box, 3× add) + shared scanner hook; mirrors Billing keyboard nav / qty dialog
 - `src/renderer/src/pages/Purchases.tsx` — PO modal staged search + barcode scan (scan adds/increments line)

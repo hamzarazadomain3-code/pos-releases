@@ -6,7 +6,7 @@ import { KeyboardInput } from '../components/KeyboardInput';
 import { formatDateTimeAdmin, formatTimeAdmin, formatDateAdmin, toLocalDateString } from '../utils/dateUtils';
 import { getCurrencySymbol, formatMoney } from '../utils/currency';
 import { eventCombo, matchesShortcut } from '../utils/shortcutKeys';
-import { type CartLine, lineTotals, rehydrateCartLines, serializeCartLine } from '@shared/cartMath';
+import { type CartLine, lineTotals, rehydrateCartLines, serializeCartLine, summarizeHeldBill, type HeldBillSummary } from '@shared/cartMath';
 import { defaultCombo, hintRows, isActionAllowedOn, resolveCombo } from '@shared/shortcuts';
 import type {
   Category,
@@ -3073,45 +3073,58 @@ const handleUnitChange = (newLevel: number) => {
           onClose={() => setHeldModal(null)}
           title={heldModal.tab === 'held' ? 'Held Bills' : 'Quotations'}
           closeOnOverlay={false}
+          className="modal-wide"
         >
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>#</th>
-                    <th>Label</th>
+                    <th>Bill</th>
+                    <th>Customer</th>
+                    <th style={{ textAlign: 'right' }}>Items</th>
+                    <th style={{ textAlign: 'right' }}>Total</th>
                     <th>Saved</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {heldModal.rows.map((h) => (
-                    <tr key={h.id}>
-                      <td>{h.id}</td>
-                      <td>{h.label}</td>
-                      <td>{h.created_at ? formatDateTimeAdmin(h.created_at) : '—'}</td>
-                      <td>
-                        <div className="row-actions">
-                          <button className="btn btn-sm" onClick={() => resumeHeld(h)}>
-                            {heldModal.tab === 'held' ? 'Resume' : 'Load'}
-                          </button>
-                          <button
-                            className="btn btn-sm btn-danger"
-                            onClick={async () => {
-                              await window.api.sales.deleteHeld(h.id);
-                              openHeld(heldModal.tab);
-                              updateHeldCounts();
-                            }}
-                          >
-                            Del
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {heldModal.rows.map((h) => {
+                    // One corrupt payload must not blank the whole list.
+                    let s: HeldBillSummary;
+                    try { s = summarizeHeldBill(JSON.parse(h.data)); }
+                    catch { s = summarizeHeldBill(null); }
+                    const cust = s.customerId ? customers.find((c) => String(c.id) === s.customerId) : null;
+                    const label = h.label || (s.lineCount ? `${s.lineCount} item${s.lineCount === 1 ? '' : 's'}` : 'Bill');
+                    return (
+                      <tr key={h.id}>
+                        <td>#{h.id} · {label}</td>
+                        <td>{cust ? cust.name : 'Walk-in'}</td>
+                        <td style={{ textAlign: 'right' }}>{s.lineCount}</td>
+                        <td style={{ textAlign: 'right' }}>{formatMoney(s.total)}</td>
+                        <td>{h.created_at ? formatDateTimeAdmin(h.created_at) : '—'}</td>
+                        <td>
+                          <div className="row-actions">
+                            <button className="btn btn-sm" onClick={() => resumeHeld(h)}>
+                              {heldModal.tab === 'held' ? 'Resume' : 'Load'}
+                            </button>
+                            <button
+                              className="btn btn-sm btn-danger"
+                              onClick={async () => {
+                                await window.api.sales.deleteHeld(h.id);
+                                openHeld(heldModal.tab);
+                                updateHeldCounts();
+                              }}
+                            >
+                              Del
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {heldModal.rows.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="muted center">
+                      <td colSpan={6} className="muted center">
                         Nothing {heldModal.tab === 'held' ? 'held' : 'quoted'} yet.
                       </td>
                     </tr>

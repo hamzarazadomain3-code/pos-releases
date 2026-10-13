@@ -164,6 +164,21 @@ window.__kb = {
     input.dispatchEvent(new Event('change', { bubbles: true }));
     return true;
   },
+  // ── Held bills list ──
+  clickHeldButton: () => {
+    const btn = Array.from(document.querySelectorAll('.billing-top .btn')).find((b) =>
+      (b.textContent || '').trim().startsWith('Held')
+    );
+    if (!btn) return false;
+    btn.click();
+    return true;
+  },
+  heldTableHeaders: () =>
+    Array.from(document.querySelectorAll('.modal .data-table thead th')).map((th) => th.textContent.trim()),
+  heldTableText: () => {
+    const row = document.querySelector('.modal .data-table tbody tr');
+    return row ? row.textContent : '';
+  },
   // ── Window-style dialog controls (min / max / close) ──
   modalWinBtnCount: () => document.querySelectorAll('.modal .modal-win-btn').length,
   modalMaximized: () => !!document.querySelector('.modal[data-maximized="true"]'),
@@ -633,6 +648,29 @@ async function run() {
   await sleep(120);
   check('F2 focuses the Billing search input',
     (await js('window.__kb.focusedTag()')) === 'INPUT', await js('window.__kb.focusedTag()'));
+
+  // Held bills list must identify the bill (customer + value), not just a label.
+  const heldPayload = {
+    items: [{
+      product_id: product.id, name: 'Keyboard Smoke Widget', qty: 2, price: 100,
+      retail_price: 100, wholesale_price: null, cost_price: 60, line_discount: 0,
+      tax_rate: 0, expired: false, shelf_location: null, stock_qty: 25, units: [], selected_unit_level: 0,
+    }],
+    customer_id: null, bill_discount: 0, discount_type: 'amount', price_mode: 'retail',
+    service_charge: 0, service_charge_type: 'amount', freight: 0,
+  };
+  await js(`window.api.sales.hold('held', 'Smoke hold', ${JSON.stringify(heldPayload)})`);
+  await js('window.__kb.clickHeldButton()');
+  await waitUntil('window.__kb.hasModal()', 'Held Bills modal to open');
+  const heldHeaders = await js('window.__kb.heldTableHeaders()');
+  check('Held Bills list shows a customer + total column',
+    heldHeaders.includes('Customer') && heldHeaders.includes('Total'), heldHeaders.join(' / '));
+  const heldText = await js('window.__kb.heldTableText()');
+  check('Held bill row shows its customer and value',
+    heldText.includes('Walk-in') && heldText.includes('200.00'), heldText.slice(0, 90));
+  await js("window.__kb.press('Escape')");
+  await waitUntil('!window.__kb.hasModal()', 'Held Bills modal to close');
+  check('Escape closes the Held Bills modal', true);
 
   // ── Login: Enter advances from username to password ──────────────────────
   section('Login keyboard');
