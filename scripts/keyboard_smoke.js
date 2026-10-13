@@ -130,6 +130,21 @@ window.__kb = {
   },
   focusedTag: () => { const a = document.activeElement; return a ? a.tagName : ''; },
   countCells: () => document.querySelectorAll('[data-kb-cell]').length,
+  // ── Labels page (merged Barcode + Label Studio): Quick / Designer mode ──
+  labelsMode: () => {
+    const m = document.querySelector('.labels-mode-bar[data-labels-mode]');
+    return m ? m.getAttribute('data-labels-mode') : '';
+  },
+  setLabelsMode: (mode) => {
+    const want = String(mode).toLowerCase();
+    const bar = document.querySelector('.labels-mode-bar');
+    if (!bar) return false;
+    const btn = Array.from(bar.querySelectorAll('.labels-mode-btn'))
+      .find((b) => b.innerText.trim().toLowerCase().startsWith(want));
+    if (!btn) return false;
+    btn.click();
+    return true;
+  },
   // ── Window-style dialog controls (min / max / close) ──
   modalWinBtnCount: () => document.querySelectorAll('.modal .modal-win-btn').length,
   modalMaximized: () => !!document.querySelector('.modal[data-maximized="true"]'),
@@ -474,13 +489,31 @@ async function run() {
     check(`Escape closes the ${title} modal`, true);
   }
 
-  // ── Barcode Labels: Ctrl+F focuses the product search box ────────────────
-  section('Barcode Labels');
-  await navigate('Barcode Labels', 'Barcode Label Printer');
+  // ── Labels: one nav entry, two modes (Quick Labels / Designer) ───────────
+  //    The former standalone "Barcode Labels" page is now the Quick Labels
+  //    mode of the "Label Studio" entry; the legacy `barcode` key still routes
+  //    to it (checked via a direct navigation below).
+  section('Labels (merged Barcode + Label Studio)');
+  await navigate('Label Studio', 'Label Studio');
+  check('Labels opens in the Designer mode by default',
+    (await js('window.__kb.labelsMode()')) === 'designer',
+    await js('window.__kb.labelsMode()'));
+  await js("window.__kb.setLabelsMode('quick')");
+  await waitUntil("window.__kb.pageTitle() === 'Barcode Label Printer'", 'Quick Labels mode to render');
+  check('Quick Labels mode shows the quick-label printer page',
+    (await js('window.__kb.labelsMode()')) === 'quick',
+    await js('window.__kb.labelsMode()'));
   await js("window.__kb.press('Ctrl+f')");
   await sleep(150);
-  check('Ctrl+F focuses the Barcode search box', (await js('window.__kb.focusedTag()')) === 'INPUT',
+  check('Ctrl+F focuses the Quick Labels search box', (await js('window.__kb.focusedTag()')) === 'INPUT',
     await js('window.__kb.focusedTag()'));
+  await js("window.__kb.setLabelsMode('designer')");
+  await waitUntil("window.__kb.pageTitle() === 'Label Studio'", 'Designer mode to render');
+  check('switching back to Designer restores the studio',
+    (await js('window.__kb.labelsMode()')) === 'designer',
+    await js('window.__kb.labelsMode()'));
+  // Leave the page so the Label Studio crash regression below mounts fresh.
+  await navigate('Inventory', 'Inventory');
 
   // ── Label Studio: must not crash with a stale lastUsed id, corrupt saved
   //    templates, or the legacy labelPaper ("38x25") reaching activeTemplateId.

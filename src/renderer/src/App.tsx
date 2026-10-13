@@ -19,7 +19,6 @@ const Audits = lazy(() => import('./pages/Audits'));
 const Promotions = lazy(() => import('./pages/Promotions'));
 const Shifts = lazy(() => import('./pages/Shifts'));
 const Branches = lazy(() => import('./pages/Branches'));
-const BarcodeGenerator = lazy(() => import('./pages/BarcodeGenerator'));
 const AdminPanel = lazy(() => import('./pages/AdminPanel'));
 const Quotations = lazy(() => import('./pages/Quotations'));
 const InvoiceDesigner = lazy(() => import('./pages/InvoiceDesigner'));
@@ -30,7 +29,9 @@ const Commissions = lazy(() => import('./pages/Commissions'));
 const CustomReports = lazy(() => import('./pages/CustomReports'));
 const FIFOStockReport = lazy(() => import('./pages/FIFOStockReport'));
 const LoginRecovery = lazy(() => import('./pages/LoginRecovery'));
-const LabelStudio = lazy(() => import('./pages/LabelStudio'));
+// One entry for label printing: Quick Labels (former Barcode Labels page) and the
+// Designer (former Label Studio) live behind a mode switch. See pages/Labels.tsx.
+const Labels = lazy(() => import('./pages/Labels'));
 
 const SESSION_KEY = 'pos_session';
 const SESSION_MAX_AGE = 24 * 60 * 60 * 1000;
@@ -179,7 +180,6 @@ const ALL_NAV: { key: NavPage; labelKey: string; minRole: 'cashier' | 'manager' 
   { key: 'quotations', labelKey: 'navigation.quotations', minRole: 'manager' },
   { key: 'invoiceAdmin', labelKey: 'navigation.invoiceAdmin', minRole: 'manager' },
   { key: 'labelStudio', labelKey: 'navigation.labelStudio', minRole: 'manager' },
-  { key: 'barcode', labelKey: 'navigation.barcode', minRole: 'manager' },
   { key: 'audits', labelKey: 'navigation.audits', minRole: 'manager' },
   { key: 'promotions', labelKey: 'navigation.promotions', minRole: 'manager' },
   { key: 'purchases', labelKey: 'navigation.purchases', minRole: 'manager' },
@@ -874,8 +874,9 @@ export default function App() {
           {page === 'transfers' && <Transfers />}
           {page === 'quotations' && <Quotations />}
           {page === 'invoiceAdmin' && <InvoiceDesigner />}
-          {page === 'labelStudio' && <LabelStudio />}
-          {page === 'barcode' && <BarcodeGenerator />}
+          {page === 'labelStudio' && <Labels initialMode="designer" />}
+          {/* Legacy key: old shortcuts / deep links land on the Quick Labels mode. */}
+          {page === 'barcode' && <Labels initialMode="quick" />}
           {page === 'audits' && <Audits />}
           {page === 'promotions' && <Promotions />}
           {page === 'purchases' && <Purchases />}

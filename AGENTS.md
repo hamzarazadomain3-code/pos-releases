@@ -47,11 +47,13 @@ $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win
 # first (it loads dist/renderer), and PowerShell reports exit code 1 even on
 # success because of the Electron stderr banner. Trust the "ALL PASSED" line.
 ```
-`scripts/keyboard_smoke.js` (74 checks) drives the real renderer with synthetic
+`scripts/keyboard_smoke.js` (77 checks) drives the real renderer with synthetic
 `keydown` events: it signs in, seeds a product and the default shortcut bindings,
 then asserts the global layer (Ctrl+K palette, F1 help, Escape), that Ctrl+N opens
 each migrated page's primary modal and Escape closes it, that Ctrl+F focuses the
-page search box, that a dialog's header exposes minimize + maximize + close and
+page search box, that the merged **Labels** page opens in Designer mode and switches
+to Quick Labels (the former Barcode page) and back, that a dialog's header exposes
+minimize + maximize + close and
 that maximizing/minimizing/restoring behaves (the docked dialog hands Ctrl+F back
 to the page), that ArrowDown highlights an Inventory row and Enter opens its
 Edit modal, that Ctrl+N on Audits starts an audit with focusable count cells, and
@@ -156,7 +158,8 @@ Anything not yet migrated is listed under the table.
 | Audits | Ctrl+Enter saves progress | | ✓ |
 | Promotions / Commissions / Branches | Ctrl+N opens the primary modal; Esc closes | ✓ | |
 | Quotations / Users / Custom Reports / Invoice Designer | Ctrl+N opens the primary modal; Esc closes | ✓ | |
-| Barcode Labels | Ctrl+F focuses the product search; ↑/↓ highlights a product | ✓ | |
+| Labels (Quick) | single nav entry (Label Studio); opens in Designer; Quick Labels mode = former Barcode Labels page; Ctrl+F focuses its search; ↑/↓ highlight | ✓ | ✓ |
+| Labels | mode switch Quick ↔ Designer | ✓ | |
 | Label Studio | Crash regression: mounts with corrupt saved template; no dialog stack on load | ✓ | |
 | Label Studio | Ctrl+F focuses the product search (asserted post-mount); ↑/↓ navigates products; Space toggles | ✓ | ✓ |
 | Reports / FIFO Stock Report | page scope registers (F1 shows the page heading) | ✓ | |
@@ -367,6 +370,7 @@ them wrong.
 - `src/renderer/src/pages/QuickSaleGrid.tsx` — staged search Enter flow (1× select, 2× qty box, 3× add) + shared scanner hook; mirrors Billing keyboard nav / qty dialog
 - `src/renderer/src/pages/Purchases.tsx` — PO modal staged search + barcode scan (scan adds/increments line)
 - `src/renderer/src/pages/Inventory.tsx` — staged search (1× select highlight, 2× open Edit) + always-enabled barcode scan (found → highlight + auto-edit; not found → prompt "add new product with barcode")
+- `src/renderer/src/pages/Labels.tsx` — one sidebar entry ("Label Studio") for all label printing: a **Quick Labels / Designer** mode switch. Quick renders `pages/BarcodeGenerator.tsx` (the former standalone Barcode Labels page); Designer renders `pages/LabelStudio.tsx`. The legacy `barcode` nav key still routes here in Quick mode, so old shortcuts/deep links keep working; the separate Barcode nav entry is gone.
 - `src/renderer/src/components/filters/SearchInput.tsx` — optional `onKeyDown` prop (used for staged search in Inventory)
 - `scripts/finalize-release.js` — finalizes GitHub release (needs GH_TOKEN — see Release above). Also uploads `RokarPOS-Setup.exe`, the version-less asset the website's `/releases/latest/download/` link depends on.
 - `scripts/after-pack.js` — electron-builder `afterPack` hook that embeds `build/icon.ico` + version metadata into the packaged `Rokar POS.exe` with vendored `build/tools/rcedit-x64.exe` (see "App icon" above)
