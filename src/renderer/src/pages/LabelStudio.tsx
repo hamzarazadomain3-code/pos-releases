@@ -123,9 +123,18 @@ export default function LabelStudio() {
     } catch {}
   }, []);
 
-  // Save templates
+  // Save templates. An image element carries a data-URL (uploaded from the PC),
+  // so a template can be large: guard setItem against QuotaExceededError — an
+  // unguarded throw here would blank the page (the effect runs after render).
   useEffect(() => {
-    if (templates.length) localStorage.setItem('labelStudio.templates', JSON.stringify(templates));
+    if (!templates.length) return;
+    try {
+      localStorage.setItem('labelStudio.templates', JSON.stringify(templates));
+    } catch {
+      setNotice(
+        'Saved templates are too large for local storage — an uploaded image is probably too big. Remove large images or export the template as a file.'
+      );
+    }
   }, [templates]);
 
   // Save last used

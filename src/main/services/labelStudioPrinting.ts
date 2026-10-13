@@ -94,6 +94,8 @@ interface LabelRowProduct extends LabelProduct {
   unit_symbol?: string | null;
   unit_name?: string | null;
   category_name?: string | null;
+  /** Product photo (data URL or path) so an image element can use `{image}`. */
+  image?: string | null;
 }
 
 interface PrintOptions {
@@ -174,6 +176,7 @@ function loadProducts(productIds: number[]): LabelRowProduct[] {
       unit_symbol: (p as { unit_symbol?: string | null }).unit_symbol ?? null,
       unit_name: (p as { unit_name?: string | null }).unit_name ?? null,
       category_name: p.category_name ?? null,
+      image: (p as { image?: string | null }).image ?? null,
     });
   }
   return out;
@@ -233,6 +236,32 @@ function moneyWithDecimals(currency: string, n: number, decimals: number): strin
 }
 
 const ALIGN_FLEX: Record<string, string> = { left: 'flex-start', center: 'center', right: 'flex-end' };
+
+/**
+ * Allow only image sources that are safe in an `<img src>`: data: images,
+ * http(s)/file URLs, and plain paths. Anything else (`javascript:`, `data:text/html`)
+ * is rejected so a hand-edited template cannot smuggle a script payload.
+ */
+function safeImageSrc(src: string): string {
+  const s = String(src || '').trim();
+  if (!s) return '';
+  if (/^data:image\//i.test(s)) return s;
+  if (/^https?:\/\//i.test(s)) return s;
+  if (/^file:\/\//i.test(s)) return s;
+  if (/^[a-z]:[\\/]/i.test(s)) return s; // C:\photos\...
+  if (/^[\\/]/.test(s)) return s; // /logo.png
+  if (/^\.{1,2}[\\/]/.test(s)) return s; // ./assets/x.png
+  if (/^[a-z0-9._-]+\.[a-z0-9]+$/i.test(s)) return s; // logo.png
+  return '';
+}
+
+/** `{image}` binds to the product's own photo; an explicit URL/path wins otherwise. */
+function resolveStudioImageSrc(content: string, productImage: string | null | undefined): string {
+  let raw = String(content || '').trim();
+  if (raw.includes('{image}')) raw = raw.split('{image}').join(productImage || '');
+  else if (!raw) raw = productImage || '';
+  return safeImageSrc(raw);
+}
 
 /** Substitute every `{placeholder}` the renderer preview understands. */
 function resolveContent(
@@ -315,8 +344,11 @@ async function renderElement(
     return `<div data-el="${esc(el.id)}" style="${common}border:${bw}mm ${esc(bs)} ${esc(bc)};border-radius:0.5mm;background:transparent;"></div>`;
   }
   if (type === 'image') {
-    // Products may carry a data-URL photo; the template object itself cannot.
-    return `<div data-el="${esc(el.id)}" style="${common}color:#aaa;font-size:5pt;">IMG</div>`;
+    // Prefer the element's own image (uploaded from the PC), else `{image}`,
+    // else the product's photo. Nothing safe to show → render nothing.
+    const src = resolveStudioImageSrc(el.content || '', p.image);
+    if (!src) return '';
+    return `<div data-el="${esc(el.id)}" style="${common}"><img src="${esc(src)}" alt="" style="width:100%;height:100%;object-fit:contain;display:block;" /></div>`;
   }
   // text / custom-text / price / expiry / mfg / batch / weight / sku
   const content = resolveContent(el.content || '', p, ctx, st);

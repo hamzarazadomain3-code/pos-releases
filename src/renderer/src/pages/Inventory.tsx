@@ -6,6 +6,7 @@ import { DateRangePicker, SearchInput, MultiSelectDropdown, FilterBar, FilterRow
 import { useBarcodeScan } from '../hooks/useBarcodeScan';
 import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
+import { ImageField } from '../components/ImageField';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
@@ -1015,37 +1016,13 @@ export default function Inventory() {
               </label>
               <div className="field span-2">
                 <span>Product Image</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <label className="image-upload-btn">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      style={{ display: 'none' }}
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                          setForm({ ...form, image: reader.result as string });
-                        };
-                        reader.readAsDataURL(file);
-                      }}
-                    />
-                    {form.image ? 'Change Image' : 'Upload Image'}
-                  </label>
-                  {form.image && (
-                    <>
-                      <img src={form.image} alt="Preview" className="image-preview" />
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-danger"
-                        onClick={() => setForm({ ...form, image: '' })}
-                      >
-                        Remove
-                      </button>
-                    </>
-                  )}
-                </div>
+                <ImageField
+                  value={form.image}
+                  onChange={(v) => setForm({ ...form, image: v })}
+                  maxDim={800}
+                  buttonText={form.image ? 'Change Image' : 'Upload from PC'}
+                  hint="PNG, JPG, WebP or GIF. Large photos are resized automatically."
+                />
               </div>
               <div className="field span-2">
                 <span>Selling Units</span>

@@ -40,6 +40,17 @@ invariants (unique combos per screen, DB-seed exclusions, `resolveCombo`
 precedence, `screens` scoping, billing hint rows). Both need `npm run build:main`
 first, which the npm scripts do for you.
 
+### Image-upload helper test (pure Node, no Electron)
+```powershell
+$env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; npm run test:imageupload
+```
+23 checks over `src/shared/imageMath.ts` — the gate every "upload an image from
+this PC" control runs through: allowed MIME types (SVG rejected), the byte ceiling,
+the empty-type passthrough, and `fitWithin()` downscale maths (landscape/portrait/
+square, 1px floor, never enlarged). The decode + canvas downscale lives in
+`utils/imageUpload.ts` and is covered end-to-end by `test:keyboard`, which fakes a
+real file pick via `DataTransfer` and asserts the preview.
+
 ### Keyboard navigation test
 ```powershell
 $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; npm run test:keyboard
@@ -47,7 +58,7 @@ $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win
 # first (it loads dist/renderer), and PowerShell reports exit code 1 even on
 # success because of the Electron stderr banner. Trust the "ALL PASSED" line.
 ```
-`scripts/keyboard_smoke.js` (77 checks) drives the real renderer with synthetic
+`scripts/keyboard_smoke.js` (79 checks) drives the real renderer with synthetic
 `keydown` events: it signs in, seeds a product and the default shortcut bindings,
 then asserts the global layer (Ctrl+K palette, F1 help, Escape), that Ctrl+N opens
 each migrated page's primary modal and Escape closes it, that Ctrl+F focuses the
@@ -56,7 +67,8 @@ to Quick Labels (the former Barcode page) and back, that a dialog's header expos
 minimize + maximize + close and
 that maximizing/minimizing/restoring behaves (the docked dialog hands Ctrl+F back
 to the page), that ArrowDown highlights an Inventory row and Enter opens its
-Edit modal, that Ctrl+N on Audits starts an audit with focusable count cells, and
+Edit modal, that the Add Product form accepts an image picked from the PC and
+shows a preview, that Ctrl+N on Audits starts an audit with focusable count cells, and
 that Enter on the login username advances to the password field and submits. It
 also runs a **Label Studio crash regression**: with a corrupt saved template and a
 stale last-used id it must still mount, show a fallback notice, keep the dialog
@@ -140,6 +152,7 @@ Anything not yet migrated is listed under the table.
 | Inventory | Ctrl+F focuses search; ↑/↓ highlight; Enter opens Edit | ✓ | |
 | Inventory | Delete removes highlighted product (with confirm) | | ✓ |
 | Inventory | Ctrl+N opens Add Product; Esc closes; Enter saves | ✓ | |
+| Inventory | Add Product: Upload from PC previews a picked image | ✓ | |
 | Any dialog | header has min / max / close; maximize toggles; minimize docks + hands the keyboard back; restoring refocuses | ✓ | |
 | Inventory | Barcode scan found → highlight + auto-edit | | ✓ |
 | Purchases | Ctrl+N opens Add Supplier; Esc closes | ✓ | |
@@ -162,6 +175,7 @@ Anything not yet migrated is listed under the table.
 | Labels | mode switch Quick ↔ Designer | ✓ | |
 | Label Studio | Crash regression: mounts with corrupt saved template; no dialog stack on load | ✓ | |
 | Label Studio | Ctrl+F focuses the product search (asserted post-mount); ↑/↓ navigates products; Space toggles | ✓ | ✓ |
+| Label Studio | image element: Upload from PC, or `{image}` binds the product photo; prints as a real image | | ✓ |
 | Reports / FIFO Stock Report | page scope registers (F1 shows the page heading) | ✓ | |
 | Reports | ↑/↓ across the analytics tables | | ✓ |
 | FIFO Stock Report | ↑/↓ across the per-product batch tables | | ✓ |
@@ -366,6 +380,7 @@ them wrong.
 - `src/main/services/backup.ts` — `runBackup()`/`restoreBackup()` (restore validates the file, checkpoints WAL, swaps the db, re-runs migrations)
 - `src/renderer/src/utils/currency.ts` — cached currency symbol + `formatMoney()`/`getCurrencySymbol()` (driven by admin `currency_symbol`/`decimal_places`); use these instead of hardcoded "Rs" in new UI
 - `src/renderer/src/components/LiveClock.tsx` — timezone-aware header clock (`clock_timezone` setting)
+- `src/shared/imageMath.ts` + `src/renderer/src/utils/imageUpload.ts` + `src/renderer/src/components/ImageField.tsx` — the "upload an image from this PC" stack. `imageMath` (pure, tested by `test:imageupload`) validates MIME/size and computes the downscale; `readImageFile()` decodes, resizes via canvas (PNG for alpha sources, JPEG for photos) and returns a data URL so a phone photo never bloats a SQLite row or the localStorage quota Label Studio templates live in; `ImageField` is the shared control (Upload from PC + optional URL box + thumbnail + Remove + inline error). Used by the Label Studio image element, Inventory product photo, Settings shop logo and (validation only) the Admin wallpaper.
 - `src/renderer/src/hooks/useBarcodeScan.ts` — shared barcode scanner window keydown hook (`{ onScan, minLength=8, scanTimeout=50, enabled=true }`); used in QuickSaleGrid (refactored), Purchases PO modal (new), Inventory (new, always enabled). Scan flush = Enter with buffer >= minLength; capture-phase + preventDefault so it never also triggers staged-search Enter.
 - `src/renderer/src/pages/QuickSaleGrid.tsx` — staged search Enter flow (1× select, 2× qty box, 3× add) + shared scanner hook; mirrors Billing keyboard nav / qty dialog
 - `src/renderer/src/pages/Purchases.tsx` — PO modal staged search + barcode scan (scan adds/increments line)
@@ -437,10 +452,16 @@ process** by `src/main/services/labelStudioPrinting.ts`:
   `buildLabelJob` layout (Inventory / Barcode Generator quick labels). `options`
   also carries `printer`, `xOffset`/`yOffset` (mm), `mirror` and `rotation`.
 - `{placeholders}` mirror the renderer preview: `{name} {price} {sku} {barcode}
-  {expiry} {mfg} {batch} {weight} {shop} {category} {date} {qty} {unit}`. Fields the
+  {expiry} {mfg} {batch} {weight} {shop} {category} {date} {qty} {unit} {image}`. Fields the
   main process cannot know (mfg/batch/weight, and a produce scale weight) render
   empty rather than lying; price uses `printCurrency()` + the `decimal_places`
   setting. Barcodes reject a bogus EAN-13 and fall back to Code 128.
+- **Image elements print a real image.** An `image` element carries either an
+  uploaded data URL (picked from the PC via `ImageField`) or `{image}`, which binds
+  to the product's own photo. Until 2.16 the printer emitted the literal text
+  `IMG`, so a logo/photo silently vanished. Only safe sources are emitted
+  (`data:image/*`, `http(s)`, `file:`, paths); anything else — e.g. `javascript:` —
+  is dropped. `print_smoke` audits the job HTML for both.
 - **`LABEL_SPECS` now carries the renderer's other stock sizes** (`40x30`, `50x25`,
   `58x40`, `60x40`) so they no longer silently fall back to 38x25, and an arbitrary
   "custom" size registers a one-off spec via `registerLabelSpec()` so the shared
@@ -457,6 +478,7 @@ process** by `src/main/services/labelStudioPrinting.ts`:
   TOP/LEFT/CENTER guides) so the owner can line the label stock up before a run.
 - Verification: `npm run test:print` now audits the custom-template job too
   (`buildLabelStudioJob`) — page box, clipping, placeholder resolution, the
+  image element (`<img>` + `{image}` + the `javascript:` guard), the
   PDF/PNG export bytes and the calibration sheet.
 
 ### Receipt typography (thermal darkness / readability)

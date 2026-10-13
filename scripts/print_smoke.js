@@ -241,6 +241,43 @@ async function run() {
     checkTrue('studio label prints the product name', !!p && flat.includes(p.name), p ? p.name : '');
     checkTrue('studio label prints money with decimals', /\d+\.\d{2}/.test(flat), '');
 
+    // ── Image elements (uploaded from the PC) must actually print ──────────
+    // Before 2.16 the printer emitted the literal text "IMG" for an image
+    // element, so an uploaded logo/photo silently vanished at print time.
+    const TINY_PNG =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+    const withImage = (content) => ({
+      ...studioTemplate,
+      elements: [
+        ...studioTemplate.elements,
+        { id: 'photo', type: 'image', x: 2, y: 2, w: 12, h: 12, visible: true, locked: false, rotation: 0, content, style: {} },
+      ],
+    });
+    const imageJob = await labelStudio.buildLabelStudioJob([productId], withImage(TINY_PNG));
+    checkTrue(
+      'an image element renders an <img> (not the old "IMG" placeholder)',
+      /<img [^>]*src="data:image\/png;base64,/.test(imageJob.html) && !/>IMG</.test(imageJob.html),
+      ''
+    );
+    await auditStudio('studio label with an uploaded image', imageJob);
+
+    // `{image}` binds to the product's own photo; unsafe schemes are dropped.
+    const db = require('../dist/main/db.js').getDb();
+    const beforeImage = db.prepare('SELECT image FROM products WHERE id = ?').get(productId);
+    db.prepare('UPDATE products SET image = ? WHERE id = ?').run(TINY_PNG, productId);
+    try {
+      const boundJob = await labelStudio.buildLabelStudioJob([productId], withImage('{image}'));
+      checkTrue(
+        'an image element resolves {image} to the product photo',
+        /<img [^>]*src="data:image\/png;base64,/.test(boundJob.html),
+        ''
+      );
+      const evilJob = await labelStudio.buildLabelStudioJob([productId], withImage('javascript:alert(1)'));
+      checkTrue('a javascript: image src is dropped from the label markup', !/javascript:/i.test(evilJob.html), '');
+    } finally {
+      db.prepare('UPDATE products SET image = ? WHERE id = ?').run(beforeImage ? beforeImage.image : null, productId);
+    }
+
     // Export entry points return real bytes (not a stub).
     const exported = await labelStudio.exportLabelBatchToPDF([productId], studioTemplate);
     checkTrue('exportLabelBatchToPDF returns PDF bytes', exported.ok && !!exported.data && exported.data.length > 1000, exported.message);

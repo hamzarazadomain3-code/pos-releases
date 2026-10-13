@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import type { AdminSettingsMap } from '../../../../shared/types';
+import { validateImageUpload } from '@shared/imageMath';
 import WallpaperEditor from '../../components/WallpaperEditor';
 import WallpaperPresets from '../../components/WallpaperPresets';
 
@@ -338,9 +339,11 @@ export default function SystemSettings() {
 
   const handleWallpaperUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setNotice('Image too large (max 5MB)');
+    const check = validateImageUpload({ type: file.type, size: file.size, name: file.name }, 5 * 1024 * 1024);
+    if (!check.ok) {
+      setNotice(check.reason);
       return;
     }
     const reader = new FileReader();
@@ -349,7 +352,6 @@ export default function SystemSettings() {
       setCropEditor({ src: dataUrl });
     };
     reader.readAsDataURL(file);
-    e.target.value = '';
   };
 
   const handleCropApply = (croppedDataUrl: string) => {

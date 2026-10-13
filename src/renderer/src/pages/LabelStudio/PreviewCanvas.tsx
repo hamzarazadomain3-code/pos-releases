@@ -69,6 +69,7 @@ function renderElement(
     .replace(/{weight}/g, (product as any).weight ? String((product as any).weight) : '')
     .replace(/{shop}/g, shopName)
     .replace(/{category}/g, product.category_name || '')
+    .replace(/{image}/g, (product as { image?: string | null }).image || '')
     .replace(/{date}/g, new Date().toLocaleDateString())
     .replace(/{qty}/g, ov?.qty?.toString() || String(selectedProducts.get(product.id) || 1));
 

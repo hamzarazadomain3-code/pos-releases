@@ -11,6 +11,7 @@ import type {
 import { formatTimestamp, formatDateTimeAdmin } from '../utils/dateUtils';
 import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
+import { ImageField } from '../components/ImageField';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
 export default function Settings() {
@@ -99,17 +100,6 @@ export default function Settings() {
     setTimeout(() => setSaved(false), 2000);
   }
 
-  // Handle logo upload: read as DataURL and store in settings
-  const handleLogoUpload = async (e: any) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setSettings((prev) => ({ ...prev, shop_logo: reader.result as string }));
-    };
-    reader.readAsDataURL(file);
-  };
-
   const actionLabel = (a: string) =>
     ({
       sale_created: 'Sale created',
@@ -176,21 +166,14 @@ export default function Settings() {
               </label>
               <label className="field">
                 <span>Shop Logo</span>
-                <input type="file" accept="image/*" onChange={handleLogoUpload} />
-                {settings.shop_logo ? (
-                  <div className="logo-upload-row">
-                    <img src={settings.shop_logo} alt="Shop logo" className="logo-preview" />
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-danger"
-                      onClick={() => setSettings({ ...settings, shop_logo: '' })}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ) : (
-                  <span className="muted small">Shows on the receipt, login screen and sidebar. Upload then click Save.</span>
-                )}
+                <ImageField
+                  value={settings.shop_logo ?? ''}
+                  onChange={(v) => setSettings({ ...settings, shop_logo: v })}
+                  maxDim={512}
+                  buttonText="Upload from PC"
+                  previewClassName="logo-preview"
+                  hint="Shows on the receipt, login screen and sidebar. Upload then click Save."
+                />
               </label>
             <div className="modal-actions">
               <button className="btn btn-primary" onClick={saveShop}>

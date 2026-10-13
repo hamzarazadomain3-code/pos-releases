@@ -5562,6 +5562,40 @@ body.theme-dark .bill-items .bill-summary-icon { background: rgba(139, 92, 246, 
   border: 1px solid var(--border);
 }
 
+/* ── Reusable "upload an image from this PC" control (components/ImageField) ── */
+.image-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.image-field-url {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.image-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.image-field-hint {
+  display: block;
+}
+
+.image-field-error {
+  display: block;
+  color: #dc2626;
+  font-size: 12px;
+}
+
 /* ═══════════════════════════════════════════
    BILTEN BILLING TABLE LAYOUT
    ═══════════════════════════════════════════ */

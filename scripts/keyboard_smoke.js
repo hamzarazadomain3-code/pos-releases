@@ -145,6 +145,25 @@ window.__kb = {
     btn.click();
     return true;
   },
+  // ── Image upload (Upload from PC) ──
+  hasImageField: () => !!document.querySelector('.modal input[type=file][accept*="image"]'),
+  imagePreviewSrc: () => {
+    const img = document.querySelector('.modal .image-field img');
+    return img ? img.getAttribute('src') || '' : '';
+  },
+  simulateImageUpload: () => {
+    const input = document.querySelector('.modal input[type=file][accept*="image"]');
+    if (!input) return false;
+    const b64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    const dt = new DataTransfer();
+    dt.items.add(new File([arr], 'tiny.png', { type: 'image/png' }));
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  },
   // ── Window-style dialog controls (min / max / close) ──
   modalWinBtnCount: () => document.querySelectorAll('.modal .modal-win-btn').length,
   modalMaximized: () => !!document.querySelector('.modal[data-maximized="true"]'),
@@ -369,6 +388,17 @@ async function run() {
   check('Ctrl+N opens the Add Product modal',
     (await js('window.__kb.modalTitle()')).includes('Add Product'),
     await js('window.__kb.modalTitle()'));
+
+  // The Add Product form must let you pick an image from this PC (not just a
+  // URL) — and picking one must produce a preview through the real
+  // readImageFile validation/downscale path.
+  check('the Add Product form exposes an image upload control',
+    (await js('window.__kb.hasImageField()')) === true);
+  await js('window.__kb.simulateImageUpload()');
+  await waitUntil("window.__kb.imagePreviewSrc().startsWith('data:image')", 'uploaded image to preview');
+  check('picking a file from the PC previews the image',
+    (await js('window.__kb.imagePreviewSrc()')).startsWith('data:image'),
+    (await js('window.__kb.imagePreviewSrc()')).slice(0, 32));
 
   // ── Window-style dialog controls: min / max / close ──────────────────────
   check('the dialog header exposes minimize + maximize + close',

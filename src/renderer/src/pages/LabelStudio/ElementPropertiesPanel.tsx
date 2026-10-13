@@ -1,6 +1,7 @@
 import { LabelElement } from '../LabelStudio/types';
 import { formatMoney } from '../../utils/currency';
 import { useState } from 'react';
+import { ImageField } from '../../components/ImageField';
 
 const PLACEHOLDERS = [
   '{name}', '{price}', '{sku}', '{barcode}', '{expiry}', 
@@ -112,10 +113,18 @@ export function ElementPropertiesPanel({
         )}
 
         {selectedEl.type === 'image' && (
-          <label className="field" style={{ display: 'block', marginTop: '8px' }}>
-            <span>Image URL / Path</span>
-            <input type="text" value={selectedEl.content} onChange={e => updateElement(selectedEl.id, { content: e.target.value })} style={{ width: '100%', padding: '6px', border: '1px solid #e2e8f0', borderRadius: '4px' }} />
-          </label>
+          <div className="field" style={{ display: 'block', marginTop: '8px' }}>
+            <span>Image</span>
+            <ImageField
+              value={selectedEl.content}
+              onChange={(v) => updateElement(selectedEl.id, { content: v })}
+              allowUrl
+              urlPlaceholder="Image URL / path, or {image}"
+              maxDim={512}
+              buttonText="Upload from PC"
+              hint="Upload a logo/photo, or type {image} to print the product's own photo."
+            />
+          </div>
         )}
 
         {selectedEl.type === 'price' && (
@@ -227,13 +236,6 @@ export function ElementPropertiesPanel({
             </label>
             <label className="field"><span>Border Color</span><input type="color" value={selectedEl.style.borderColor || '#000000'} onChange={e => updateElement(selectedEl.id, { style: { ...selectedEl.style, borderColor: e.target.value } })} style={{ width: '100%', height: '32px' }} /></label>
           </div>
-        )}
-
-        {selectedEl.type === 'image' && (
-          <label className="field" style={{ display: 'block', marginTop: '8px' }}>
-            <span>Image URL / Path</span>
-            <input type="text" value={selectedEl.content} onChange={e => updateElement(selectedEl.id, { content: e.target.value })} style={{ width: '100%', padding: '6px', border: '1px solid #e2e8f0', borderRadius: '4px' }} />
-          </label>
         )}
 
         <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
