@@ -130,6 +130,33 @@ window.__kb = {
   },
   focusedTag: () => { const a = document.activeElement; return a ? a.tagName : ''; },
   countCells: () => document.querySelectorAll('[data-kb-cell]').length,
+  // ── Window-style dialog controls (min / max / close) ──
+  modalWinBtnCount: () => document.querySelectorAll('.modal .modal-win-btn').length,
+  modalMaximized: () => !!document.querySelector('.modal[data-maximized="true"]'),
+  modalMinimized: () => !!document.querySelector('.modal[data-minimized="true"]'),
+  /** Index 0 = minimize, 1 = maximize/restore. */
+  clickModalWin: (i) => {
+    const b = document.querySelectorAll('.modal .modal-win-btn')[i];
+    if (!b) return false;
+    b.click();
+    return true;
+  },
+  /** Click a docked bar's title to restore it (not a button). */
+  restoreDocked: () => {
+    const m = document.querySelector('.modal[data-minimized="true"]');
+    if (!m) return false;
+    const h = m.querySelector('.modal-header h3');
+    if (h) h.click();
+    return true;
+  },
+  /** True when every non-header child of the docked modal is hidden. */
+  dockedBodyHidden: () => {
+    const m = document.querySelector('.modal[data-minimized="true"]');
+    if (!m) return false;
+    return Array.from(m.children).every(
+      (c) => c.classList.contains('modal-header') || c.offsetParent === null,
+    );
+  },
 };
 true;
 `;
@@ -327,6 +354,37 @@ async function run() {
   check('Ctrl+N opens the Add Product modal',
     (await js('window.__kb.modalTitle()')).includes('Add Product'),
     await js('window.__kb.modalTitle()'));
+
+  // ── Window-style dialog controls: min / max / close ──────────────────────
+  check('the dialog header exposes minimize + maximize + close',
+    (await js('window.__kb.modalWinBtnCount()')) === 2 &&
+    (await js("!!document.querySelector('.modal .btn-icon[aria-label=\"Close\"]')")) === true,
+    `winBtns=${await js('window.__kb.modalWinBtnCount()')}`);
+
+  await js('window.__kb.clickModalWin(1)');
+  await waitUntil('window.__kb.modalMaximized()', 'dialog to maximize');
+  check('maximize expands the dialog', (await js('window.__kb.modalMaximized()')) === true);
+  await js('window.__kb.clickModalWin(1)');
+  await waitUntil('!window.__kb.modalMaximized()', 'dialog to restore');
+  check('maximize toggles back to the normal size', (await js('window.__kb.modalMaximized()')) === false);
+
+  await js('window.__kb.clickModalWin(0)');
+  await waitUntil('window.__kb.modalMinimized()', 'dialog to dock');
+  check('minimize docks the dialog to a bar', (await js('window.__kb.modalMinimized()')) === true);
+  check('the docked bar hides the form body', (await js('window.__kb.dockedBodyHidden()')) === true);
+  // The modal scope is withdrawn while docked, so the page handles its own keys.
+  await js("window.__kb.press('Ctrl+f')");
+  await sleep(180);
+  check('Ctrl+F reaches the page while the dialog is docked',
+    (await js('window.__kb.focusedPlaceholder()')).toLowerCase().includes('search name') &&
+    (await js('window.__kb.focusedInModal()')) === false,
+    await js('window.__kb.focusedPlaceholder()'));
+  await js('window.__kb.restoreDocked()');
+  await waitUntil('!window.__kb.modalMinimized()', 'dialog to restore from the dock');
+  await waitUntil('window.__kb.focusedInModal()', 'focus to return to the restored dialog');
+  check('clicking the docked bar restores the dialog and refocuses it',
+    (await js('window.__kb.focusedInModal()')) === true);
+
   await js("window.__kb.press('Escape')");
   await waitUntil('!window.__kb.hasModal()', 'Add Product modal to close');
   check('Escape closes the Add Product modal', true);

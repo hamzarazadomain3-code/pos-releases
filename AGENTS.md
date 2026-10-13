@@ -47,11 +47,13 @@ $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win
 # first (it loads dist/renderer), and PowerShell reports exit code 1 even on
 # success because of the Electron stderr banner. Trust the "ALL PASSED" line.
 ```
-`scripts/keyboard_smoke.js` (67 checks) drives the real renderer with synthetic
+`scripts/keyboard_smoke.js` (74 checks) drives the real renderer with synthetic
 `keydown` events: it signs in, seeds a product and the default shortcut bindings,
 then asserts the global layer (Ctrl+K palette, F1 help, Escape), that Ctrl+N opens
 each migrated page's primary modal and Escape closes it, that Ctrl+F focuses the
-page search box, that ArrowDown highlights an Inventory row and Enter opens its
+page search box, that a dialog's header exposes minimize + maximize + close and
+that maximizing/minimizing/restoring behaves (the docked dialog hands Ctrl+F back
+to the page), that ArrowDown highlights an Inventory row and Enter opens its
 Edit modal, that Ctrl+N on Audits starts an audit with focusable count cells, and
 that Enter on the login username advances to the password field and submits. It
 also runs a **Label Studio crash regression**: with a corrupt saved template and a
@@ -99,7 +101,15 @@ Keyboard-first operation is shared infrastructure, not per-page code. The pieces
 - `hooks/useLineItemKeyboard.ts` — editable grids: `search → qty → price` cycle,
   arrow cells, Ctrl+Enter submit, Delete row, Escape cancel.
 - `components/Modal.tsx` — the shared shell every migrated page uses: registers the
-  modal scope, wires `useFormKeyboard`, renders `modal-header`/`modal-footer`.- `components/KeyboardInput.tsx` / `QtyInput.tsx` — text inputs that never step on
+  modal scope, wires `useFormKeyboard`, renders `modal-header`/`modal-footer`, and
+  carries **window-style min / max / close controls** in the header. Maximize fills
+  the viewport (`data-maximized`); minimize docks the panel to a corner bar
+  (`data-minimized`) and withdraws the modal scope + form keyboard
+  (`useKeyboardScope`/`useFormKeyboard` `enabled: false`) so the page underneath keeps
+  working — the form stays mounted, so nothing typed is lost, and clicking the bar
+  restores focus. The controls follow `showClose`: a mandatory decision dialog
+  (`showClose={false}`) hides them so it cannot be deferred or covered.
+- `components/KeyboardInput.tsx` / `QtyInput.tsx` — text inputs that never step on
   ArrowUp/ArrowDown and select on focus.
 - `components/KeyboardHelp.tsx` / `CommandPalette.tsx` — the F1 overlay (lists the
   active scope's shortcuts) and the Ctrl+K page switcher.
@@ -128,6 +138,7 @@ Anything not yet migrated is listed under the table.
 | Inventory | Ctrl+F focuses search; ↑/↓ highlight; Enter opens Edit | ✓ | |
 | Inventory | Delete removes highlighted product (with confirm) | | ✓ |
 | Inventory | Ctrl+N opens Add Product; Esc closes; Enter saves | ✓ | |
+| Any dialog | header has min / max / close; maximize toggles; minimize docks + hands the keyboard back; restoring refocuses | ✓ | |
 | Inventory | Barcode scan found → highlight + auto-edit | | ✓ |
 | Purchases | Ctrl+N opens Add Supplier; Esc closes | ✓ | |
 | Purchases | ↑/↓ rows; Enter opens the row's ledger/PO | | ✓ |
