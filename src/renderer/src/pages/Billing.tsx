@@ -6,13 +6,14 @@ import { KeyboardInput } from '../components/KeyboardInput';
 import { formatDateTimeAdmin, formatTimeAdmin, formatDateAdmin, toLocalDateString } from '../utils/dateUtils';
 import { getCurrencySymbol, formatMoney } from '../utils/currency';
 import { eventCombo, matchesShortcut } from '../utils/shortcutKeys';
+import { type CartLine, lineTotals, rehydrateCartLines, serializeCartLine } from '@shared/cartMath';
+import { defaultCombo, hintRows, isActionAllowedOn, resolveCombo } from '@shared/shortcuts';
 import type {
   Category,
   Customer,
   HeldBill,
   NavPage,
   Product,
-  ProductUnit,
   ResolvedPromotion,
   Sale,
   SaleDetail,
@@ -22,36 +23,6 @@ import type {
   ShiftRow,
   UserRow,
 } from '../../../shared/types';
-
-interface CartLine {
-  product_id: number;
-  name: string;
-  qty: number;
-  price: number;
-  retail_price: number;
-  wholesale_price: number | null;
-  cost_price: number;
-  line_discount: number;
-  tax_rate: number;
-  expired: boolean;
-  shelf_location: string | null;
-  stock_qty: number;
-  units: ProductUnit[];
-  selected_unit_level: number;
-  box_qty?: number;
-  // BayLan Label Scale integration
-  scale_plu?: string;
-  scale_price?: number;
-  scale_weight_g?: number;
-  scale_weight_kg?: number;
-  // Optional unit display fields (for multi-unit products)
-  unit_name?: string | null;
-  display_qty?: number | null;
-  // Enhancement: Item notes
-  note?: string;
-  // Enhancement: Pinned/favorite
-  isPinned?: boolean;
-}
 
 function isExpired(dateStr: string | null): boolean {
   if (!dateStr) return false;
@@ -66,35 +37,29 @@ function formatStockQty(qty: number): string {
 
 const LOW_STOCK_THRESHOLD = 10;
 
+// ── Billing-local shortcuts ──────────────────────────────────────────────────
+// The combos are NOT hard-coded here: they come from the shared registry so the
+// footer hint bar, the F1 overlay and the handler can never disagree. Lowercased
+// because `eventCombo()` compares against a lowercase combo string.
+const BILLING_KEYS = {
+  search: defaultCombo('billing_search').toLowerCase(),
+  newBill: defaultCombo('billing_new').toLowerCase(),
+  repeat: defaultCombo('billing_repeat').toLowerCase(),
+  express: defaultCombo('billing_express').toLowerCase(),
+  hold: defaultCombo('billing_hold').toLowerCase(),
+  held: defaultCombo('billing_held').toLowerCase(),
+} as const;
+
+// Registry-driven hint rows: the footer strip and the F1 overlay are generated
+// from the same list, so adding/renaming a billing shortcut updates both.
+const BILLING_HINTS = hintRows('billing');
+
 interface PayRow {
   mode: string;
   amount: string;
 }
 
 const MODES = ['Cash', 'Card', 'Easypaisa', 'JazzCash'];
-
-function lineTotals(
-  items: CartLine[],
-  billDiscount: number,
-  discountType: 'amount' | 'percent',
-  promos: Record<number, ResolvedPromotion>
-) {
-  let subtotal = 0;
-  let tax = 0;
-  let promoSavings = 0;
-  for (const it of items) {
-    const promo = promos[it.product_id];
-    const unit = promo ? promo.effective_price : it.price;
-    const taxable = unit * it.qty - it.line_discount;
-    subtotal += taxable;
-    tax += (taxable * it.tax_rate) / 100;
-    if (promo) promoSavings += (it.price - promo.effective_price) * it.qty;
-  }
-  const gross = subtotal + tax;
-  const discount = discountType === 'percent' ? (gross * billDiscount) / 100 : Math.min(billDiscount, gross);
-  const total = Math.max(0, gross - discount);
-  return { subtotal: gross, tax, discount, total, promoSavings };
-}
 
 interface BillingProps {
   onNavigate?: (page: NavPage) => void;
@@ -127,6 +92,42 @@ export default function Billing({ onNavigate, onLogout }: BillingProps) {
   const [newCustBalance, setNewCustBalance] = useState('');
   const [success, setSuccess] = useState<SaleCreateResult | null>(null);
   const [heldModal, setHeldModal] = useState<{ tab: 'held' | 'quotation'; rows: HeldBill[] } | null>(null);
+  // Return / Refund (invoice-based — returns always reference the original sale)
+  const [returnModal, setReturnModal] = useState(false);
+  const [returnLookup, setReturnLookup] = useState('');
+  const [returnResults, setReturnResults] = useState<Sale[]>([]);
+  const [returnBusy, setReturnBusy] = useState(false);
+
+  // ── Return / Refund ────────────────────────────────────────────────────────
+  // Returns are always recorded against a completed sale, so the cashier looks
+  // the original invoice up here and then finishes the refund on the Returns
+  // screen (which is handed the sale id through localStorage).
+  const openReturnModal = useCallback(() => {
+    setReturnModal(true);
+    setReturnLookup('');
+    setReturnBusy(true);
+    window.api.sales
+      .list()
+      .then((rows) => setReturnResults(rows.slice(0, 50)))
+      .catch((e) => setNotice(e instanceof Error ? e.message : String(e)))
+      .finally(() => setReturnBusy(false));
+  }, []);
+
+  const openReturnFor = useCallback((saleId: number) => {
+    localStorage.setItem('return_sale_id', String(saleId));
+    setReturnModal(false);
+    onNavigate?.('returns');
+  }, [onNavigate]);
+
+  const returnMatches = useMemo(() => {
+    const q = returnLookup.trim().toLowerCase();
+    if (!q) return returnResults;
+    return returnResults.filter(
+      (s) =>
+        (s.invoice_no ?? '').toLowerCase().includes(q) ||
+        (s.customer_name ?? '').toLowerCase().includes(q),
+    );
+  }, [returnResults, returnLookup]);
   const [history, setHistory] = useState<Sale[] | null>(null);
   const [historyFilter, setHistoryFilter] = useState<'completed' | 'voided' | 'held'>('completed');
   const [voidReason, setVoidReason] = useState('');
@@ -212,11 +213,7 @@ export default function Billing({ onNavigate, onLogout }: BillingProps) {
   const browseListRef = useRef<HTMLDivElement>(null);
   const clickTimer = useRef<number | null>(null);
   const bufferGapRef = useRef(150);
-  const lastCtrlPRef = useRef(0);
   const printInvoiceBtnRef = useRef<HTMLButtonElement>(null);
-  const lastCtrlSRef = useRef(0);
-  const saveChordPendingRef = useRef(false);
-  const saveChordTimerRef = useRef<number | null>(null);
 
   // ── Keyboard zone navigation (search → browse → cart → summary → buttons) ──
   const [kbZone, setKbZone] = useState<'none' | 'search' | 'browse' | 'cart' | 'summary' | 'buttons'>('none');
@@ -577,19 +574,10 @@ const handleOpenCashDrawer = async () => {
     if (items.length === 0) return;
     window.api.sales
       .hold('held', `${items.length} items`, { 
-        items: items.map(i => ({
-          product_id: i.product_id,
-          qty: i.qty,
-          price: i.price,
-          line_discount: i.line_discount,
-          tax_rate: i.tax_rate,
-          units: i.units,
-          selected_unit_level: i.selected_unit_level,
-          scale_plu: i.scale_plu,
-          scale_price: i.scale_price,
-          scale_weight_g: i.scale_weight_g,
-          scale_weight_kg: i.scale_weight_kg,
-        })),
+        // Persist the FULL cart line. Saving only a subset (the pre-2.15.2 bug)
+        // dropped name/retail_price/wholesale_price/cost_price, so Resume rendered
+        // an empty price box and NaN totals.
+        items: items.map(serializeCartLine),
         customer_id: customerId || null, 
         bill_discount: Number(billDiscount) || 0, 
         discount_type: discountType, 
@@ -888,6 +876,7 @@ useEffect(() => {
       if (belowCostConfirm) { setBelowCostConfirm(null); return true; }
       if (priceEditUnlockOpen) { setPriceEditUnlockOpen(false); return true; }
       if (heldModal) { setHeldModal(null); return true; }
+      if (returnModal) { setReturnModal(false); return true; }
       if (showShortcutsModal) { setShowShortcutsModal(false); return true; }
       if (shortcutModalOpen) { setShortcutModalOpen(false); return true; }
       if (cashDrawerOpen) { setCashDrawerOpen(false); return true; }
@@ -912,6 +901,9 @@ useEffect(() => {
           break;
         case 'recall_bill':
           openHeld('held');
+          break;
+        case 'new_return':
+          openReturnModal();
           break;
         case 'search':
           searchRef.current?.focus();
@@ -985,89 +977,70 @@ useEffect(() => {
         return;
       }
 
-      // 2.5) Ctrl+P — Sale Completed print dialog / direct invoice print.
-      //      Single press focuses "Print Invoice"; a second press within 600ms
-      //      prints the invoice immediately without needing the dialog.
-      //      preventDefault() suppresses the browser/Electron native print dialog.
-      //      If a Ctrl+S chord is pending, this is Ctrl+S+P → save & print receipt.
+      // 2.5) Ctrl+Shift+S — save & print receipt in one shot (replaces the old
+      //      Ctrl+S+P chord). Charge silently, print, then start a fresh bill.
+      if (e.ctrlKey && e.shiftKey && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (busy) return;
+        if (quotationMode) completeQuotation();
+        else if (items.length === 0) setNotice('Cart is empty — nothing to save');
+        else expressCheckout({ forcePrint: true, silent: true }).then((ok) => { if (ok) newBill(); });
+        return;
+      }
+
+      // 2.6) Ctrl+P — print the last completed sale (replaces the double-press
+      //      focus/print dance). preventDefault suppresses the native dialog.
       if (e.ctrlKey && (e.key === 'p' || e.key === 'P')) {
         e.preventDefault();
         e.stopPropagation();
-        const now = Date.now();
-        if (saveChordPendingRef.current && now - lastCtrlSRef.current < 600) {
-          if (saveChordTimerRef.current) window.clearTimeout(saveChordTimerRef.current);
-          saveChordTimerRef.current = null;
-          saveChordPendingRef.current = false;
-          if (quotationMode) completeQuotation();
-          else if (items.length === 0) setNotice('Cart is empty — nothing to save');
-          else expressCheckout({ forcePrint: true, silent: true }).then((ok) => { if (ok) newBill(); });
-          return;
-        }
-        const isDouble = now - lastCtrlPRef.current < 600;
-        lastCtrlPRef.current = now;
-        if (success) {
-          if (isDouble) handlePrintInvoice();
-          else printInvoiceBtnRef.current?.focus();
-        }
+        if (success) handlePrintInvoice();
+        else setNotice('No completed sale to print yet');
         return;
       }
 
-      // 2.6) Ctrl+S chords — hold Ctrl and tap S twice (Ctrl+S+S) saves & charges
-      //      in one shot; a single Ctrl+S keeps the original Save behavior.
+      // 2.7) Ctrl+S — Save: open the payment modal (or close a quotation).
       if (e.ctrlKey && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
         e.stopPropagation();
-        const now = Date.now();
-        if (saveChordPendingRef.current && now - lastCtrlSRef.current < 600) {
-          if (saveChordTimerRef.current) window.clearTimeout(saveChordTimerRef.current);
-          saveChordTimerRef.current = null;
-          saveChordPendingRef.current = false;
-          if (quotationMode) completeQuotation();
-          else if (items.length === 0) setNotice('Cart is empty — nothing to save');
-          else expressCheckout({ silent: true }).then((ok) => { if (ok) newBill(); });
-          return;
-        }
-        lastCtrlSRef.current = now;
-        saveChordPendingRef.current = true;
-        if (saveChordTimerRef.current) window.clearTimeout(saveChordTimerRef.current);
-        saveChordTimerRef.current = window.setTimeout(() => {
-          saveChordTimerRef.current = null;
-          if (!saveChordPendingRef.current) return;
-          saveChordPendingRef.current = false;
-          if (busy) return;
-          if (items.length === 0) setNotice('Cart is empty — nothing to save');
-          else if (quotationMode) completeQuotation();
-          else openPay();
-        }, 600);
+        if (busy) return;
+        if (items.length === 0) setNotice('Cart is empty — nothing to save');
+        else if (quotationMode) completeQuotation();
+        else openPay();
         return;
       }
 
-      // 3) Core billing shortcut keys take precedence over admin-assigned keys
+      // 3) Core billing keys (F2/F5/F7/F8/F9/F12) take precedence over the
+      //    admin-assigned bindings. The combos come from the shared registry.
       const combo = eventCombo(e);
-      if (combo === 'f2') { e.preventDefault(); searchRef.current?.focus(); return; }
-      if (combo === 'f5') {
+      if (combo === BILLING_KEYS.search) { e.preventDefault(); searchRef.current?.focus(); return; }
+      if (combo === BILLING_KEYS.newBill) {
         e.preventDefault();
         if (items.length === 0) setNotice('Cart is empty — nothing to clear');
         else { newBill(); setNotice('New bill started'); }
         return;
       }
-      if (combo === 'f7') { e.preventDefault(); repeatLastSale(); return; }
-      if (combo === 'f8') {
+      if (combo === BILLING_KEYS.repeat) { e.preventDefault(); repeatLastSale(); return; }
+      if (combo === BILLING_KEYS.express) {
         e.preventDefault();
         if (items.length === 0) setNotice('Cart is empty — add items before Express Checkout');
         else expressCheckout();
         return;
       }
-      if (combo === 'f9') {
+      if (combo === BILLING_KEYS.hold) {
         e.preventDefault();
         if (items.length === 0) setNotice('Cart is empty — nothing to hold');
         else doHold();
         return;
       }
-      if (combo === 'f12') { e.preventDefault(); openHeld('held'); return; }
+      if (combo === BILLING_KEYS.held) { e.preventDefault(); openHeld('held'); return; }
 
-      // 4) Admin-configured shortcuts (Alt / Ctrl / Shift combos now match correctly)
-      const action = Object.keys(shortcutMap).find((a) => matchesShortcut(shortcutMap[a], e));
+      // 4) Admin-configured shortcuts, scoped to the billing screen so a combo
+      //    that means something else elsewhere (e.g. F5 = Add product on
+      //    Inventory) can never fire here.
+      const action = Object.keys(shortcutMap).find(
+        (a) => isActionAllowedOn(a, 'billing') && matchesShortcut(shortcutMap[a], e),
+      );
       if (action) {
         e.preventDefault();
         dispatchAction(action);
@@ -1251,11 +1224,8 @@ useEffect(() => {
     window.addEventListener('keydown', handler);
     return () => {
       window.removeEventListener('keydown', handler);
-      if (saveChordTimerRef.current) window.clearTimeout(saveChordTimerRef.current);
-      saveChordTimerRef.current = null;
-      saveChordPendingRef.current = false;
     };
-  }, [scanAdd, newBill, doHold, shortcutMap, repeatLastSale, expressCheckout, items, payTotal, shift, payOpen, success, heldModal, expiredConfirm, belowCostConfirm, showShortcutsModal, splitModalOpen, cashDrawerOpen, busy, receiptTemplate, completeSale, openHeld, onNavigate, onLogout, voidTarget, priceEditUnlockOpen, shortcutModalOpen, openShiftModal, closeShiftModal, custModal, searchOpen, quotationMode, openPay, completeQuotation, browseProducts, browseIndex, openQtyDialog, handlePrintInvoice]);
+  }, [scanAdd, newBill, doHold, shortcutMap, repeatLastSale, expressCheckout, items, payTotal, shift, payOpen, success, heldModal, expiredConfirm, belowCostConfirm, showShortcutsModal, splitModalOpen, cashDrawerOpen, busy, receiptTemplate, completeSale, openHeld, onNavigate, onLogout, voidTarget, priceEditUnlockOpen, shortcutModalOpen, openShiftModal, closeShiftModal, custModal, searchOpen, quotationMode, openPay, completeQuotation, browseProducts, browseIndex, openQtyDialog, handlePrintInvoice, openReturnModal, returnModal]);
 
   // Apply round-off
   const applyRoundOff = useCallback(() => {
@@ -1510,11 +1480,16 @@ setQuotationMode(false);
   async function resumeHeld(h: HeldBill) {
     try {
       const data = JSON.parse(h.data);
-      setItems(data.items ?? []);
+      const mode: 'retail' | 'wholesale' = data.price_mode === 'wholesale' ? 'wholesale' : 'retail';
+      // Re-hydrate each line from the current product data (name, unit list,
+      // stock) and coerce every number, so bills held before the full line was
+      // saved still resume without NaN. `setPriceMode` (not `switchPriceMode`)
+      // keeps any price the cashier edited before holding.
+      setItems(rehydrateCartLines(data.items, allProducts, mode));
+      setPriceMode(mode);
       setCustomerId(data.customer_id ?? '');
       setBillDiscount(String(data.bill_discount ?? ''));
       setDiscountType(data.discount_type ?? 'amount');
-      switchPriceMode(data.price_mode === 'wholesale' ? 'wholesale' : 'retail');
       setServiceCharge(String(data.service_charge ?? ''));
       setServiceChargeType(data.service_charge_type ?? 'amount');
       setFreight(String(data.freight ?? ''));
@@ -1638,12 +1613,12 @@ setQuotationMode(false);
 
   const handleConvertToReturn = () => {
     if (!saleDetail) return;
+    const saleId = saleDetail.id;
     setSaleDetail(null);
-    // Navigate to Returns page with sale pre-selected
-    // Store sale ID in localStorage for Returns page to pick up
-    localStorage.setItem('return_sale_id', String(saleDetail.id));
-    // The Returns page should check for this on load
+    // Store sale ID in localStorage for Returns page to pick up, then navigate.
+    localStorage.setItem('return_sale_id', String(saleId));
     setNotice('Opening Returns page...');
+    onNavigate?.('returns');
   }
 
   const handleDuplicateAsNewSale = async () => {
@@ -2596,13 +2571,16 @@ const handleUnitChange = (newLevel: number) => {
                   <button className="action-btn-hold" onClick={doHold} disabled={items.length === 0}>
                     Hold
                   </button>
+                  <button className="action-btn-return" onClick={openReturnModal} title="Return / Refund against the original invoice (Ctrl+Shift+R)">
+                    Return / Refund
+                  </button>
                   <button className="action-btn-reset" onClick={() => { setItems([]); setCustomerId(''); setBillDiscount(''); setDiscountType('amount'); setServiceCharge(''); setFreight(''); }}>
                     Reset
                   </button>
                 </div>
               </div>
               <div className="shortcuts muted small" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                <span>F2 search · F5 new · F7 repeat · F8 express · F9 hold · F12 held · Ctrl+S+S save · Ctrl+S+P save+print</span>
+                <span>{BILLING_HINTS.map((r) => `${resolveCombo(r.id, shortcutMap)} ${r.short}`).join(' · ')}</span>
                 <button
                   className="btn btn-sm"
                   style={{ width: 18, height: 18, borderRadius: '50%', padding: 0, fontSize: 11, fontWeight: 700, lineHeight: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--muted-bg, #e5e7eb)', color: 'var(--muted, #6b7280)', border: 'none', cursor: 'pointer', flexShrink: 0 }}
@@ -2623,17 +2601,14 @@ const handleUnitChange = (newLevel: number) => {
         >
             <div style={{ fontSize: 13, lineHeight: 1.8 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr', gap: '2px 12px' }}>
-                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>F2</kbd><span>Focus search / barcode input</span>
-                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>F5</kbd><span>New bill (clear cart)</span>
-                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>F7</kbd><span>Repeat last sale</span>
-                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>F8</kbd><span>Express checkout (cash)</span>
-                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>F9</kbd><span>Hold current bill</span>
-                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>F12</kbd><span>Open held bills list</span>
+                {BILLING_HINTS.map((r) => (
+                  <div key={r.id} style={{ display: 'contents' }}>
+                    <kbd style={{ fontWeight: 600, textAlign: 'right' }}>{resolveCombo(r.id, shortcutMap)}</kbd>
+                    <span>{r.label}</span>
+                  </div>
+                ))}
                 <kbd style={{ fontWeight: 600, textAlign: 'right' }}>Enter</kbd><span>Confirm payment / search</span>
                 <kbd style={{ fontWeight: 600, textAlign: 'right' }}>Escape</kbd><span>Close modal / cancel</span>
-                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>Ctrl+P</kbd><span>Focus print invoice (double-press = print)</span>
-                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>Ctrl+S+S</kbd><span>Save &amp; charge in one shot</span>
-                <kbd style={{ fontWeight: 600, textAlign: 'right' }}>Ctrl+S+P</kbd><span>Save &amp; print receipt</span>
               </div>
               {Object.keys(shortcutMap).length > 0 && (
                 <>
@@ -3023,6 +2998,73 @@ const handleUnitChange = (newLevel: number) => {
                 Save
               </button>
             </div>
+        </Modal>
+      )}
+
+      {returnModal && (
+        <Modal
+          onClose={() => setReturnModal(false)}
+          title="Return / Refund"
+          closeOnOverlay={false}
+        >
+          <p className="muted small" style={{ marginTop: 0 }}>
+            Returns are always recorded against a completed sale. Search the original
+            invoice below, then set the quantities and refund mode on the Returns screen.
+          </p>
+          {items.length > 0 && (
+            <div className="notice" style={{ marginBottom: 8 }}>
+              This bill has {items.length} item{items.length === 1 ? '' : 's'} in the cart.
+              Starting a return does not clear the cart.
+            </div>
+          )}
+          <div className="row" style={{ gap: 8, alignItems: 'center', marginBottom: 8 }}>
+            <input
+              className="input"
+              placeholder="Search invoice no. or customer…"
+              value={returnLookup}
+              onChange={(e) => setReturnLookup(e.target.value)}
+              autoFocus
+              style={{ flex: 1 }}
+            />
+            <button className="btn" onClick={openReturnModal}>Refresh</button>
+          </div>
+          {returnBusy ? (
+            <div className="muted center pad">Loading recent sales…</div>
+          ) : (
+            <div className="table-wrap" style={{ maxHeight: 320, overflow: 'auto' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Invoice</th>
+                    <th>Date</th>
+                    <th>Customer</th>
+                    <th>Total</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {returnMatches.map((s) => (
+                    <tr key={s.id}>
+                      <td>{s.invoice_no}</td>
+                      <td>{s.created_at ? formatDateTimeAdmin(s.created_at) : '—'}</td>
+                      <td>{s.customer_name ?? 'Walk-in'}</td>
+                      <td>{formatMoney(s.total_amount)}</td>
+                      <td>
+                        <button className="btn btn-sm btn-primary" onClick={() => openReturnFor(s.id)}>
+                          Open Return
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {returnMatches.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="muted center pad">No matching sales.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Modal>
       )}
 

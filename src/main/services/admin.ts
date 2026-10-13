@@ -4,6 +4,7 @@ import { logActivity } from './activity';
 import { scryptSync } from 'node:crypto';
 import fs from 'node:fs';
 import { getDbPath } from '../db';
+import { DEFAULT_SHORTCUTS } from '../../shared/shortcuts';
 
 // ═══════════════════════════════════════════
 //  SHORTCUTS
@@ -58,28 +59,9 @@ export function createShortcut(action: string, shortcutKey: string): ShortcutRow
 export function resetShortcuts(): void {
   if (!can('owner')) throw new Error('Only the owner can reset shortcuts');
   const db = getDb();
-  const defaults: [string, string][] = [
-    ['new_sale', 'F2'],
-    ['new_product', 'F5'],
-    ['new_customer', 'F9'],
-    ['cash_drawer', 'Ctrl+D'],
-    ['save', 'Ctrl+S'],
-    ['print', 'Ctrl+P'],
-    ['quit', 'Ctrl+Q'],
-    ['search', 'Ctrl+F'],
-    ['reports', 'Ctrl+R'],
-    ['logout', 'Ctrl+L'],
-    ['settings', 'Alt+S'],
-    ['admin_panel', 'Alt+A'],
-    ['duplicate_sale', 'Shift+F2'],
-    ['bulk_product', 'Shift+F5'],
-    ['permanent_delete', 'Shift+Delete'],
-    ['open_shift', 'Ctrl+O'],
-    ['close_shift', 'Ctrl+Shift+C'],
-    ['new_return', 'Ctrl+Shift+R'],
-    ['hold_bill', 'Ctrl+H'],
-    ['recall_bill', 'Ctrl+Shift+H'],
-  ];
+  // The canonical combos live in src/shared/shortcuts.ts so the renderer, the
+  // F1 help and this seed can never drift apart.
+  const defaults: [string, string][] = Object.entries(DEFAULT_SHORTCUTS);
   const stmt = db.prepare('UPDATE shortcuts SET shortcut_key = ?, updated_at = CURRENT_TIMESTAMP WHERE action = ?');
   for (const [action, key] of defaults) {
     stmt.run(key, action);

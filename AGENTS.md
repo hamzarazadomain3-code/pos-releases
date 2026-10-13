@@ -26,6 +26,20 @@ $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win
 $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; node scripts/test_inventoryReports.js
 ```
 
+### Billing / shortcut unit tests (pure Node, no Electron)
+```powershell
+$env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; npm run test:holdresume
+$env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; npm run test:shortcuts
+```
+`test:holdresume` (15 checks) round-trips a 3-item mixed-unit cart through the
+real `serializeCartLine`/`rehydrateCartLines` (in `src/shared/cartMath.ts`) and
+asserts pre-hold totals equal post-resume totals — the v2.15.1 Hold→Resume bug
+lost `name`/prices and produced NaN. It also covers legacy held payloads and
+garbage input. `test:shortcuts` (22 checks) asserts the shared registry
+invariants (unique combos per screen, DB-seed exclusions, `resolveCombo`
+precedence, `screens` scoping, billing hint rows). Both need `npm run build:main`
+first, which the npm scripts do for you.
+
 ### Keyboard navigation test
 ```powershell
 $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; npm run test:keyboard
@@ -33,7 +47,7 @@ $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win
 # first (it loads dist/renderer), and PowerShell reports exit code 1 even on
 # success because of the Electron stderr banner. Trust the "ALL PASSED" line.
 ```
-`scripts/keyboard_smoke.js` (59 checks) drives the real renderer with synthetic
+`scripts/keyboard_smoke.js` (67 checks) drives the real renderer with synthetic
 `keydown` events: it signs in, seeds a product and the default shortcut bindings,
 then asserts the global layer (Ctrl+K palette, F1 help, Escape), that Ctrl+N opens
 each migrated page's primary modal and Escape closes it, that Ctrl+F focuses the
@@ -58,10 +72,23 @@ Keyboard-first operation is shared infrastructure, not per-page code. The pieces
   scopes rank above page scopes, so an open modal masks the page. `active()` is the
   highest-id modal, else the highest-id page. When no scope is registered the
   provider does nothing, so un-migrated screens keep owning their own keys.
-- `keyboard/shortcuts.ts` — `GLOBAL_SHORTCUTS` (Ctrl+K palette, F1 help) always
-  work; `BUILTIN_DEFAULTS` supplies Ctrl+N for `new_record` when the admin
-  `shortcuts` table has no binding. Everything else (`search`/`save`/`print` …)
-  comes from the `admin.shortcuts` table, so the owner can rebind it.
+- `shared/shortcuts.ts` — **the single source of truth for every combo.** Each row
+  is `{ id, label, defaultKey, screens }` (plus `global` / `dbBacked` / `hint`).
+  The main process seeds the admin `shortcuts` table from `DEFAULT_SHORTCUTS`, the
+  renderer resolves combos with `resolveCombo()` (admin binding → registry default),
+  lookups are **scoped by `screens`** (`isActionAllowedOn`) so F5 means "New bill" on
+  Billing but "Add product" on Inventory, and Billing's footer strip + F1 overlay are
+  generated from `hintRows('billing')`. Adding a shortcut is one row here.
+- `keyboard/shortcuts.ts` — thin re-export of the shared registry for the renderer;
+  `GLOBAL_SHORTCUTS` (Ctrl+K palette, F1 help) always work; `BUILTIN_DEFAULTS` only
+  carries `new_record` (Ctrl+N) for the provider fallback. Verify the invariants with
+  `npm run test:shortcuts`.
+- `src/main/main.ts` — the application-menu `reload` / `forceReload` /
+  `toggleDevTools` roles carry default accelerators (Ctrl+R, **Ctrl+Shift+R**,
+  Ctrl+Shift+I) that would shadow the app's own keys. They are **dev-only** now
+  (`app.isPackaged ? [] : [...]`), so a packaged build exposes no Electron
+  accelerator that can steal a billing keystroke. Support Recovery
+  (Ctrl+Shift+Alt+R) is registered explicitly and kept in both.
 - `hooks/useFormKeyboard.ts` — inside a modal: Enter = next field (last = submit),
   Shift+Enter = previous, Escape = close, first control autofocused, numeric fields
   select-all on focus, focus trap. It early-returns on `defaultPrevented`, so a
@@ -72,8 +99,7 @@ Keyboard-first operation is shared infrastructure, not per-page code. The pieces
 - `hooks/useLineItemKeyboard.ts` — editable grids: `search → qty → price` cycle,
   arrow cells, Ctrl+Enter submit, Delete row, Escape cancel.
 - `components/Modal.tsx` — the shared shell every migrated page uses: registers the
-  modal scope, wires `useFormKeyboard`, renders `modal-header`/`modal-footer`.
-- `components/KeyboardInput.tsx` / `QtyInput.tsx` — text inputs that never step on
+  modal scope, wires `useFormKeyboard`, renders `modal-header`/`modal-footer`.- `components/KeyboardInput.tsx` / `QtyInput.tsx` — text inputs that never step on
   ArrowUp/ArrowDown and select on focus.
 - `components/KeyboardHelp.tsx` / `CommandPalette.tsx` — the F1 overlay (lists the
   active scope's shortcuts) and the Ctrl+K page switcher.
@@ -126,7 +152,14 @@ Anything not yet migrated is listed under the table.
 | Reports | ↑/↓ across the analytics tables | | ✓ |
 | FIFO Stock Report | ↑/↓ across the per-product batch tables | | ✓ |
 | Cash Drawer | focus trap; Esc closes; opening/closing cash don't step | | ✓ |
+| Billing | Ctrl+F / F2 focus the search box; footer hints come from the registry | ✓ | |
+| Billing | Ctrl+Shift+R opens Return / Refund; Esc closes | ✓ | |
+| Billing | Ctrl+S = save, Ctrl+Shift+S = save+print, Ctrl+P = print last | | ✓ |
+| Billing | Hold then resume restores a full cart (no NaN) | ✓* | ✓ |
 | Billing payment modal | Enter from **any** field completes the sale (legacy semantics) | | ✓ |
+
+\* the hold→resume round-trip is asserted by `npm run test:holdresume` (pure cart
+maths), because the failure mode was a data-loss bug rather than a keydown one.
 
 **Migration status.** Every nav page's modals now use the shared `<Modal>` shell and
 `<KeyboardInput>`; `useListKeyboard` runs on the tables and `useKeyboardScope` on the

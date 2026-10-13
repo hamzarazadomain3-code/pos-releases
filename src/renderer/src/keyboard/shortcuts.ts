@@ -1,45 +1,60 @@
+import {
+  SHORTCUT_ACTIONS,
+  DEFAULT_SHORTCUTS,
+  resolveCombo,
+  isActionAllowedOn,
+  actionsForScreen,
+  hintRows,
+  defaultCombo,
+  getAction,
+  type ScreenId,
+  type ShortcutActionDef,
+} from '@shared/shortcuts';
+
+export {
+  SHORTCUT_ACTIONS,
+  DEFAULT_SHORTCUTS,
+  resolveCombo,
+  isActionAllowedOn,
+  actionsForScreen,
+  hintRows,
+  defaultCombo,
+  getAction,
+  type ScreenId,
+  type ShortcutActionDef,
+};
+
 /**
- * Catalog of keyboard actions used by the global shortcut layer and the F1
- * help overlay.
- *
- * `GLOBAL_SHORTCUTS` are app-wide built-ins. They always work, regardless of
- * the admin `shortcuts` table, so a fresh install (or one that never ran
- * "Reset shortcuts") still has a command palette and a help overlay.
- *
- * Everything else is admin-driven: the owner can rebind the combo in
- * Admin → Shortcuts, and each page declares which actions it can actually run.
+ * Backwards-compatible alias for the registry definition. Prefer importing
+ * `ShortcutActionDef` from `@shared/shortcuts` directly in new code.
  */
+export type ShortcutDef = ShortcutActionDef;
 
-export interface ShortcutDef {
-  /** Action id (matches `admin.shortcuts.action` where one exists). */
-  id: string;
-  /** Human description. */
-  label: string;
-  /** Combo used when the admin shortcut table has no binding for this action. */
-  defaultKey: string;
-  /** Built-ins cannot be rebound and are always active. */
-  global?: boolean;
-}
+/**
+ * The catalog now lives in `src/shared/shortcuts.ts` so the main process (which
+ * seeds the admin `shortcuts` table), the global provider and the F1 overlay all
+ * read the same rows. These re-exports keep the old import sites working.
+ */
+export const GLOBAL_SHORTCUTS: ShortcutActionDef[] = SHORTCUT_ACTIONS.filter((a) => a.global);
 
-export const GLOBAL_SHORTCUTS: ShortcutDef[] = [
-  { id: 'command_palette', label: 'Go to page (command palette)', defaultKey: 'Ctrl+K', global: true },
-  { id: 'help', label: 'Keyboard shortcuts help', defaultKey: 'F1', global: true },
-];
-
-/** Fallback combos for page actions that do not have to exist in the DB. */
+/**
+ * Fallback combos for the handful of actions the global provider needs even on a
+ * fresh install, before the admin table has been seeded. Everything else uses
+ * the admin binding first and the registry default second (`resolveCombo`).
+ */
 export const BUILTIN_DEFAULTS: Record<string, string> = {
-  command_palette: 'Ctrl+K',
-  help: 'F1',
+  command_palette: defaultCombo('command_palette'),
+  help: defaultCombo('help'),
   new_record: 'Ctrl+N',
 };
 
 /**
- * Resolve the effective combo for an action: admin binding first, then a
- * built-in default. Returns '' when unbound.
+ * Resolve the effective combo for an action: admin binding first, then the
+ * registry default, then the provider's BUILTIN_DEFAULTS. Returns '' when unbound.
  */
 export function resolveActionKey(
   action: string,
   shortcutMap: Record<string, string>,
 ): string {
-  return shortcutMap[action] ?? BUILTIN_DEFAULTS[action] ?? '';
+  return resolveCombo(action, shortcutMap) || BUILTIN_DEFAULTS[action] || '';
 }

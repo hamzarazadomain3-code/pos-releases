@@ -16,6 +16,8 @@
     "test:receipt": "npm run build:main && electron scripts/receipt_design_check.js",
     "test:recovery": "npm run build:main && electron scripts/test_recovery.js",
     "test:recovery:ui": "npm run build && electron scripts/test_recovery_ui.js",
+    "test:holdresume": "npm run build:main && node scripts/test_hold_resume.js",
+    "test:shortcuts": "npm run build:main && node scripts/test_shortcuts.js",
     "gen:key": "node scripts/gen-support-key.js",
     "build:main": "npm run gen:key && tsc -p tsconfig.main.json",
     "build:renderer": "vite build",

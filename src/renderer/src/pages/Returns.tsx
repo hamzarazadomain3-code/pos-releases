@@ -68,6 +68,19 @@ export default function Returns() {
     setIncludeMap(inc);
   };
 
+  // Billing hands a sale over via `return_sale_id` (the Return / Refund button,
+  // or a past invoice's "Convert to return"). Open it as soon as the list loads.
+  useEffect(() => {
+    if (!sales.length) return;
+    const pending = localStorage.getItem('return_sale_id');
+    if (!pending) return;
+    localStorage.removeItem('return_sale_id');
+    const match = sales.find((s) => String(s.id) === pending);
+    if (match) void openSale(match);
+    // openSale is stable enough here and re-running on `sales` is the point.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sales]);
+
   const doReturn = async () => {
     if (!saleDetail) return;
     const items = saleDetail.items

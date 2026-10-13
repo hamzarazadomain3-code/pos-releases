@@ -477,6 +477,42 @@ async function run() {
     await waitUntil('!window.__kb.helpOpen()', 'help to close');
   }
 
+  // ── Billing: registry-driven footer + Return/Refund wiring ────────────────
+  section('Billing keyboard');
+  await js("window.__kb.nav('Billing')");
+  await waitUntil("window.__kb.activeNavLabel() === 'Billing'", 'nav "Billing" to activate');
+  await waitUntil("!!document.querySelector('.shortcuts')", 'Billing to render');
+  check('Billing page mounted', (await js("!!document.querySelector('.shortcuts')")) === true);
+
+  // The one-line footer hint bar is generated from the shared shortcut registry.
+  const footer = await js("(document.querySelector('.shortcuts')?.innerText || '').replace(/\\s+/g, ' ')");
+  check('Billing footer lists Ctrl+Shift+R return',
+    /Ctrl\+Shift\+R return/i.test(footer), footer.trim().slice(0, 140));
+  check('Billing footer lists save / save+print / print',
+    /Ctrl\+S save/i.test(footer) && /Ctrl\+Shift\+S save\+print/i.test(footer) && /Ctrl\+P print/i.test(footer));
+
+  // Ctrl+F focuses the search / barcode input.
+  await js("window.__kb.press('Ctrl+f')");
+  await sleep(150);
+  check('Ctrl+F focuses the Billing search input',
+    (await js('window.__kb.focusedTag()')) === 'INPUT', await js('window.__kb.focusedTag()'));
+
+  // Ctrl+Shift+R opens Return / Refund. Pre-2.16 this combo matched an unhandled
+  // action (toast) and/or Electron's forceReload; it must open the modal now.
+  await js("window.__kb.press('Ctrl+Shift+r')");
+  await waitUntil('window.__kb.hasModal()', 'Return / Refund modal to open');
+  const retTitle = await js('window.__kb.modalTitle()');
+  check('Ctrl+Shift+R opens the Return / Refund modal', /Return\s*\/\s*Refund/i.test(retTitle), retTitle);
+  await js("window.__kb.press('Escape')");
+  await waitUntil('!window.__kb.hasModal()', 'Return / Refund modal to close');
+  check('Escape closes the Return / Refund modal', true);
+
+  // F2 is the registry-defined "focus search" key for the billing screen.
+  await js("window.__kb.press('F2')");
+  await sleep(120);
+  check('F2 focuses the Billing search input',
+    (await js('window.__kb.focusedTag()')) === 'INPUT', await js('window.__kb.focusedTag()'));
+
   // ── Login: Enter advances from username to password ──────────────────────
   section('Login keyboard');
   await goToLoginScreen();

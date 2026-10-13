@@ -194,15 +194,24 @@ app.whenReady().then(async () => {
   scheduleTimeBasedTriggers();
 
   // ── Application Menu ──
-  // Create the application menu with View menu containing Support Recovery
-  const template: Electron.MenuItemConstructorOptions[] = [
-    {
-      label: 'View',
-      submenu: [
+  // Create the application menu with View menu containing Support Recovery.
+  // The reload/forceReload/toggleDevTools roles carry DEFAULT accelerators
+  // (Ctrl+R, Ctrl+Shift+R, Ctrl+Shift+I / F12) which shadow the app's own
+  // shortcuts — notably Ctrl+Shift+R = Return/Refund. They are dev-only now; a
+  // packaged build exposes no accelerator that can steal a billing keystroke.
+  const viewSubmenu: Electron.MenuItemConstructorOptions[] = app.isPackaged
+    ? []
+    : [
         { role: 'reload' },
         { role: 'forceReload' },
         { role: 'toggleDevTools' },
         { type: 'separator' },
+      ];
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: 'View',
+      submenu: [
+        ...viewSubmenu,
         { role: 'resetZoom' },
         { role: 'zoomIn' },
         { role: 'zoomOut' },
