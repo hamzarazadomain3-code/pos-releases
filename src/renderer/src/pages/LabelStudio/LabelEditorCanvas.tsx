@@ -571,7 +571,7 @@ export function LabelEditorCanvas({ template, sizeSpec, onSave }: Props) {
               onMouseDown={e => handleMouseDown(e as any, el.id, 'move')}
               onClick={e => { e.stopPropagation(); selectElement(el.id); }}
             >
-              {el.type === 'text' && el.content}
+              {(el.type === 'text' || el.type === 'custom-text' || el.type === 'price' || el.type === 'expiry' || el.type === 'mfg' || el.type === 'batch' || el.type === 'weight' || el.type === 'sku') && el.content}
               {el.type === 'barcode' && <span style={{ fontFamily: 'monospace', fontSize: '6pt' }}>{el.content || '||||||||||'}</span>}
               {el.type === 'qr' && (
                 <img
@@ -591,6 +591,7 @@ export function LabelEditorCanvas({ template, sizeSpec, onSave }: Props) {
               {el.type === 'image' && <img src={el.content || '/logo.png'} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />}
               {el.type === 'line' && <div style={{ width: '100%', height: '100%', borderBottom: '1px solid #000' }} />}
               {el.type === 'rect' && <div style={{ width: '100%', height: '100%', border: '1px solid #000', borderRadius: '2px' }} />}
+              {el.type === 'border' && <div style={{ width: '100%', height: '100%', border: '1px solid #000', borderRadius: '2px' }} />}
               {!el.visible && <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '6pt' }}>Hidden</div>}
               {el.locked && <div style={{ position: 'absolute', top: '2px', right: '2px', fontSize: '6pt', color: '#999' }}>🔒</div>}
             </div>

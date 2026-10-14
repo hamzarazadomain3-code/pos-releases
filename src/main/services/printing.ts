@@ -469,4 +469,5 @@ export {
   exportLabelBatchToPDF,
   exportLabelBatchToPNG,
   printCalibrationLabel,
+  type LabelRunOptions,
 } from './labelStudioPrinting';

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import JsBarcode from 'jsbarcode';
 import type { Product } from '@shared/types';
-import { LabelTemplate, LabelLayout, ProductOverride, PRESET_SIZES, BUILTIN_TEMPLATES, DEFAULT_TEMPLATE_ID, defaultTemplate, parseSavedTemplates, normalizeTemplate, isKnownTemplateId, resolveSizeSpec } from '@pages/LabelStudio/types';
+import { LabelTemplate, LabelLayout, ProductOverride, LabelRunOptions, PRESET_SIZES, BUILTIN_TEMPLATES, DEFAULT_TEMPLATE_ID, defaultTemplate, parseSavedTemplates, normalizeTemplate, isKnownTemplateId, resolveSizeSpec } from '@pages/LabelStudio/types';
 import { formatMoney } from '@utils/currency';
 import { KeyboardInput } from '@components/KeyboardInput';
 import { useListKeyboard } from '@hooks/useListKeyboard';
@@ -12,6 +12,7 @@ import { PreviewCanvas } from '@pages/LabelStudio/PreviewCanvas';
 import { PropertiesPanel } from '@pages/LabelStudio/PropertiesPanel';
 import { TemplateManager } from '@pages/LabelStudio/TemplateManager';
 import { LabelEditorCanvas } from '@pages/LabelStudio/LabelEditorCanvas';
+import { PrintRunModal } from '@pages/LabelStudio/PrintRunModal';
 
 export default function LabelStudio() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -73,6 +74,11 @@ export default function LabelStudio() {
     printer: string;
   }>>([]);
   const [showCalibration, setShowCalibration] = useState(false);
+
+  // Print Run dialog. `runOptions` holds the last confirmed values so the live
+  // preview always matches what will print; the dialog seeds itself from it.
+  const [showPrintRun, setShowPrintRun] = useState(false);
+  const [runOptions, setRunOptions] = useState<LabelRunOptions>({});
 
   // Refs
   const searchRef = useRef<HTMLInputElement>(null);
@@ -154,6 +160,19 @@ export default function LabelStudio() {
   const sizeSpec = activeTemplate.size === 'custom'
     ? { w: customSize.w || 38, h: customSize.h || 25, gap: customSize.gap ?? 1, margins: customSize.margins }
     : resolveSizeSpec(activeTemplate);
+
+  // Adopt the active template's layout whenever the selection (or the template
+  // itself) changes, so the preview and the printed job agree. These are still
+  // user-adjustable afterwards, and the Print Run dialog can override the column
+  // count for a single run without editing the template.
+  useEffect(() => {
+    setLabelLayout(activeTemplate.layout);
+    setRollCols(activeTemplate.rollCols ?? 1);
+    setSheetRows(activeTemplate.sheetRows ?? 4);
+    setSheetCols(activeTemplate.sheetCols ?? 6);
+    setSheetStartPos(activeTemplate.startPos ?? 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTemplateId, activeTemplate.layout, activeTemplate.rollCols, activeTemplate.sheetRows, activeTemplate.sheetCols, activeTemplate.startPos]);
 
   const barcodeText = (p: Product) => p.sku || p.barcode || String(p.id);
 
@@ -266,24 +285,45 @@ export default function LabelStudio() {
   const selectedIds = () => Array.from(selectedProducts.keys());
 
   // Print / Preview
-  const handlePrint = async () => {
+  //
+  // The Print button opens the Print Run dialog so per-run values (mfg date,
+  // expiry, price source/override, weight, start column, columns-across, DPI)
+  // are chosen before anything is sent to the printer. `doPrint` performs the
+  // actual run with those overrides.
+  const handlePrint = () => {
     if (selectedProducts.size === 0) return;
+    setShowPrintRun(true);
+  };
+
+  const doPrint = async (run: LabelRunOptions) => {
+    if (selectedProducts.size === 0) return;
+    setShowPrintRun(false);
+    setRunOptions(run);
+    // Keep the live preview consistent with what was just sent to the printer.
+    if (run.rollCols) setRollCols(run.rollCols);
+    if (run.startCol) setSheetStartPos(run.startCol);
     setBusy(true);
     try {
       const productIds = Array.from(selectedProducts.keys());
       const size = typeof activeTemplate.size === 'string' ? activeTemplate.size : undefined;
       const copies = Math.max(1, Math.min(50, activeTemplate.defaults.copies));
+      // The run may select a different column count than the saved template.
+      const effectiveTemplate: LabelTemplate = {
+        ...activeTemplate,
+        rollCols: run.rollCols ?? activeTemplate.rollCols ?? 1,
+      };
       const r = await window.api.printing.printBarcodeBatchWithOptions(productIds, size, copies, {
         printer: selectedPrinter === 'auto' ? undefined : selectedPrinter,
         xOffset,
         yOffset,
         mirror,
         rotation,
-        template: activeTemplate,
+        template: effectiveTemplate,
+        run,
       });
       if (r.ok) {
         const labelCount = selectedProducts.size * copies;
-        addToPrintHistory(productIds, activeTemplate, labelCount, selectedPrinter === 'auto' ? 'System default' : selectedPrinter, size);
+        addToPrintHistory(productIds, effectiveTemplate, labelCount, selectedPrinter === 'auto' ? 'System default' : selectedPrinter, size);
         setNotice(`Printed ${labelCount} label(s).`);
       } else setNotice(r.message);
     } catch (e) {
@@ -312,7 +352,7 @@ export default function LabelStudio() {
       const productIds = Array.from(selectedProducts.keys());
       const size = typeof activeTemplate.size === 'string' ? activeTemplate.size : undefined;
       const copies = Math.max(1, Math.min(50, activeTemplate.defaults.copies));
-      const result = await window.api.printing.exportLabelBatchToPDF(productIds, activeTemplate, size, copies);
+      const result = await window.api.printing.exportLabelBatchToPDF(productIds, activeTemplate, size, copies, runOptions);
       if (!result.ok || !result.data) {
         setNotice(result.message || 'Export failed');
         return;
@@ -338,7 +378,7 @@ export default function LabelStudio() {
       const productIds = Array.from(selectedProducts.keys());
       const size = typeof activeTemplate.size === 'string' ? activeTemplate.size : undefined;
       const copies = Math.max(1, Math.min(50, activeTemplate.defaults.copies));
-      const result = await window.api.printing.exportLabelBatchToPNG(productIds, activeTemplate, size, copies);
+      const result = await window.api.printing.exportLabelBatchToPNG(productIds, activeTemplate, size, copies, runOptions);
       if (!result.ok || !result.data) {
         setNotice(result.message || 'Export failed');
         return;
@@ -434,6 +474,28 @@ export default function LabelStudio() {
   }, []);
 
   // Template actions
+  //
+  // `updateTemplate` persists a patch onto the active template. A built-in is
+  // cloned to a custom template on first edit (same rule as the editor), so a
+  // designer change never silently mutates a shipped built-in.
+  const updateTemplate = (patch: Partial<LabelTemplate>) => {
+    if (activeTemplateId.startsWith('builtin-')) {
+      const custom: LabelTemplate = {
+        ...activeTemplate,
+        ...patch,
+        id: `custom-${Date.now()}`,
+        name: `${activeTemplate.name} (Custom)`,
+        elements: activeTemplate.elements.map(e => ({ ...e })),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      setTemplates(prev => [...prev, custom]);
+      setActiveTemplateId(custom.id);
+    } else {
+      setTemplates(prev => prev.map(t => (t.id === activeTemplateId ? { ...t, ...patch, updatedAt: Date.now() } : t)));
+    }
+  };
+
   const saveTemplate = (name: string) => {
     const newTemplate: LabelTemplate = {
       id: `custom-${Date.now()}`,
@@ -443,8 +505,10 @@ export default function LabelStudio() {
       rollCols: activeTemplate.rollCols,
       sheetRows: activeTemplate.sheetRows,
       sheetCols: activeTemplate.sheetCols,
+      startPos: activeTemplate.startPos,
+      options: activeTemplate.options,
       elements: activeTemplate.elements.map(e => ({ ...e, id: `${e.id}-${Date.now()}` })),
-      defaults: activeTemplate.defaults,
+      defaults: { ...activeTemplate.defaults },
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -580,6 +644,7 @@ export default function LabelStudio() {
           sheetCols={sheetCols}
           sheetStartPos={sheetStartPos}
           shopName={shopName}
+          run={runOptions}
           zoom={zoom}
           setZoom={setZoom}
           showRuler={showRuler}
@@ -620,6 +685,7 @@ export default function LabelStudio() {
           setShowEditor={setShowEditor}
           printSettingsOpen={printSettingsOpen}
           setPrintSettingsOpen={setPrintSettingsOpen}
+          updateTemplate={updateTemplate}
         />
       </div>
 
@@ -692,6 +758,7 @@ export default function LabelStudio() {
             sheetCols={sheetCols}
             sheetStartPos={sheetStartPos}
             shopName={shopName}
+            run={runOptions}
             zoom={100}
             setZoom={() => {}}
             showRuler={false}
@@ -703,6 +770,19 @@ export default function LabelStudio() {
           />
         </div>
       </Modal>
+      )}
+
+      {/* Print Run Modal */}
+      {showPrintRun && (
+        <PrintRunModal
+          onClose={() => setShowPrintRun(false)}
+          onConfirm={doPrint}
+          initial={runOptions}
+          rollCols={rollCols}
+          labelLayout={labelLayout}
+          labelCount={selectedProducts.size * Math.max(1, activeTemplate.defaults.copies)}
+          busy={busy}
+        />
       )}
 
       {/* Print Settings Modal */}

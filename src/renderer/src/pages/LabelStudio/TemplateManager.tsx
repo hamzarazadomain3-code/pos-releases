@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { KeyboardInput } from '@components/KeyboardInput';
 import { Modal } from '@components/Modal';
 import type { LabelTemplate } from './types';
+import { LabelThumbnail } from './LabelThumbnail';
 
 interface Props {
   templates: LabelTemplate[];
@@ -50,6 +51,7 @@ export function TemplateManager({
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
           <thead>
             <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+              <th style={{ textAlign: 'left', padding: '8px' }}>Preview</th>
               <th style={{ textAlign: 'left', padding: '8px' }}>Name</th>
               <th style={{ textAlign: 'left', padding: '8px' }}>Size</th>
               <th style={{ textAlign: 'left', padding: '8px' }}>Layout</th>
@@ -61,6 +63,9 @@ export function TemplateManager({
           <tbody>
             {filtered.map(tpl => (
               <tr key={tpl.id} style={{ borderBottom: '1px solid #f1f1f1', background: activeTemplateId === tpl.id ? '#eff6ff' : undefined }}>
+                <td style={{ padding: '8px' }}>
+                  <LabelThumbnail template={tpl} width={72} />
+                </td>
                 <td style={{ padding: '8px', fontWeight: 500 }}>{tpl.name}</td>
                 <td style={{ padding: '8px' }}>
                   {typeof tpl.size === 'string' ? tpl.size : `${tpl.size.w}×${tpl.size.h}mm`}

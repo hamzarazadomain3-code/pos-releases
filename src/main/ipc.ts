@@ -56,6 +56,7 @@ import {
   type ReceiptTemplate,
   type LabelSize,
   type PaperKind,
+  type LabelRunOptions,
 } from './services/printing';
 import { getAvailableTemplates } from './services/receiptTemplates';
 import {
@@ -65,6 +66,7 @@ import {
   getLabelLayout,
   getPrintMode,
   invalidatePrinterCache,
+  getBarcodeDpi,
   PAPER_SPECS,
   LABEL_SPECS,
 } from './services/printService';
@@ -316,23 +318,23 @@ export function registerIpcHandlers(): void {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:printBarcodeBatchWithOptions', async (_e, productIds: number[], size: LabelSize | undefined, copies: number, options: { printer?: string; xOffset?: number; yOffset?: number; mirror?: boolean; rotation?: number; template?: unknown }) => {
+  ipcMain.handle('printing:printBarcodeBatchWithOptions', async (_e, productIds: number[], size: LabelSize | undefined, copies: number, options: { printer?: string; xOffset?: number; yOffset?: number; mirror?: boolean; rotation?: number; template?: unknown; run?: LabelRunOptions }) => {
     try {
       return await printBarcodeBatchWithOptions(Array.isArray(productIds) ? productIds : [], size, copies, options);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:exportLabelBatchToPDF', async (_e, productIds: number[], template: any, size: LabelSize | undefined, copies: number) => {
+  ipcMain.handle('printing:exportLabelBatchToPDF', async (_e, productIds: number[], template: any, size: LabelSize | undefined, copies: number, run?: LabelRunOptions) => {
     try {
-      return await exportLabelBatchToPDF(Array.isArray(productIds) ? productIds : [], template, size, copies);
+      return await exportLabelBatchToPDF(Array.isArray(productIds) ? productIds : [], template, size, copies, run);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:exportLabelBatchToPNG', async (_e, productIds: number[], template: any, size: LabelSize | undefined, copies: number) => {
+  ipcMain.handle('printing:exportLabelBatchToPNG', async (_e, productIds: number[], template: any, size: LabelSize | undefined, copies: number, run?: LabelRunOptions) => {
     try {
-      return await exportLabelBatchToPNG(Array.isArray(productIds) ? productIds : [], template, size, copies);
+      return await exportLabelBatchToPNG(Array.isArray(productIds) ? productIds : [], template, size, copies, run);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
@@ -382,6 +384,7 @@ export function registerIpcHandlers(): void {
       labelPaper: '38x25',
       labelLayout: 'roll',
       printMode: 'silent',
+      barcodeDpi: 203,
       papers: PAPER_SPECS,
       labelSizes: LABEL_SPECS,
     };
@@ -395,6 +398,7 @@ export function registerIpcHandlers(): void {
         labelPaper: getConfiguredPaper('label') || '38x25',
         labelLayout: getLabelLayout(),
         printMode: getPrintMode(),
+        barcodeDpi: getBarcodeDpi(),
         papers: PAPER_SPECS,
         labelSizes: LABEL_SPECS,
       };

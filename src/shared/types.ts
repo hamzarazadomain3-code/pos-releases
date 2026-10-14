@@ -47,6 +47,14 @@ export interface Product {
   box_barcode: string | null;
   box_price: number | null;
   image?: string | null;
+  /** Printed pack size for labels, e.g. "100g" / "500 ml" (migration 053). */
+  net_weight?: string | null;
+  /** Loose / variable-weight item — a label prints the "±" prefix. */
+  is_loose?: number | null;
+  /** Manufacturing / batch date (ISO yyyy-mm-dd) shown as {mfg}. */
+  mfg_date?: string | null;
+  /** Human batch / lot code shown as {batch}. */
+  batch_no?: string | null;
   units?: ProductUnit[];
 }
 
@@ -65,6 +73,10 @@ export interface ProductInput {
   tax_rate?: number;
   expiry_date?: string | null;
   image?: string | null;
+  net_weight?: string | null;
+  is_loose?: number | boolean | null;
+  mfg_date?: string | null;
+  batch_no?: string | null;
   units?: {
     level: 0 | 1 | 2;
     name: string;
@@ -823,6 +835,8 @@ export interface PrinterSettingsSnapshot {
   labelPaper: string;
   labelLayout: 'roll' | 'sheet';
   printMode: 'silent' | 'dialog';
+  /** Printer head resolution used to rasterise barcode bars. */
+  barcodeDpi: number;
   papers: Record<string, PaperSpecInfo>;
   labelSizes: Record<string, LabelSpecInfo>;
 }
@@ -919,9 +933,9 @@ export interface PosBridge {
     printBarcodeLabel: (productId: number, copies?: number) => Promise<PrintResult>;
     printBarcodeBatch: (productIds: number[], size?: string, copies?: number) => Promise<PrintResult>;
     previewBarcodeBatch: (productIds: number[], size?: string, copies?: number) => Promise<PrintResult>;
-    printBarcodeBatchWithOptions: (productIds: number[], size?: string, copies?: number, options?: { printer?: string; xOffset?: number; yOffset?: number; mirror?: boolean; rotation?: number; template?: unknown }) => Promise<PrintResult>;
-    exportLabelBatchToPDF: (productIds: number[], template: any, size?: string, copies?: number) => Promise<{ ok: boolean; message: string; data?: Blob | Uint8Array }>;
-    exportLabelBatchToPNG: (productIds: number[], template: any, size?: string, copies?: number) => Promise<{ ok: boolean; message: string; data?: Blob | Uint8Array }>;
+    printBarcodeBatchWithOptions: (productIds: number[], size?: string, copies?: number, options?: { printer?: string; xOffset?: number; yOffset?: number; mirror?: boolean; rotation?: number; template?: unknown; run?: unknown }) => Promise<PrintResult>;
+    exportLabelBatchToPDF: (productIds: number[], template: any, size?: string, copies?: number, run?: unknown) => Promise<{ ok: boolean; message: string; data?: Blob | Uint8Array }>;
+    exportLabelBatchToPNG: (productIds: number[], template: any, size?: string, copies?: number, run?: unknown) => Promise<{ ok: boolean; message: string; data?: Blob | Uint8Array }>;
     printCalibrationLabel: (size: string) => Promise<PrintResult>;
     openCashDrawer: () => Promise<{ ok: boolean; message: string }>;
     previewReceipt: (saleId: number, template?: string) => Promise<PrintResult>;

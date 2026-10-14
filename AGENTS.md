@@ -1,7 +1,7 @@
 # Rokar POS — Agent Guide
 
 ## Version
-**v2.17.0** (Perpetual one-time licence: no expiry, device-locked, revocable)
+**v2.17.1** (Perpetual one-time licence: no expiry, device-locked, revocable)
 
 ## Environment
 - Node.js v24.18.0 (portable at `C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64`)
@@ -202,7 +202,7 @@ Anything not yet migrated is listed under the table.
 | Cash Drawer | focus trap; Esc closes; opening/closing cash don't step | | ✓ |
 | Billing | Ctrl+F / F2 focus the search box; footer hints come from the registry | ✓ | |
 | Billing | Ctrl+Shift+F opens Return / Refund; Esc closes | ✓ | |
-| Billing | Ctrl+S = save, Ctrl+Shift+S = save+print, Ctrl+P = print last | | ✓ |
+| Billing | Ctrl+S = save, Ctrl+Shift+S = save+print, Ctrl+P = print last — on ANY keyboard layout | ✓ | |
 | Billing | Hold then resume restores a full cart (no NaN) | ✓* | ✓ |
 | Billing | Held Bills list shows customer + value; Esc closes | ✓ | |
 | Billing payment modal | Enter from **any** field completes the sale (legacy semantics) | | ✓ |
@@ -224,6 +224,34 @@ page. Two things are deliberately still bespoke:
   Enter→next-field behavior would otherwise make the cashier Tab to "Complete Sale".
 - **`App.tsx`'s "Installing update" spinner** and `components/WallpaperEditor.tsx` stay
   as inline overlays — they are non-interactive progress/editor surfaces, not forms.
+
+### Billing's Ctrl+S / Ctrl+Shift+S / Ctrl+P (layout- and browser-proof)
+
+Billing's window handler is bespoke (above), so its three money chords are **hard-coded**
+rather than read from the registry. Two rules keep them working everywhere:
+
+- **Resolve the physical key, never `e.key`.** The chord checks compare
+  `keyFromEvent(e)` (which falls back to `e.code`), so a non-Latin layout — where
+  Ctrl+Shift+S arrives as `key='س', code='KeyS'` — still fires. Comparing `e.key`
+  directly is how a shipped build silently degraded to the toast
+  `Shortcut "Ctrl+Shift+S" is not available on the billing screen`: only `save_print`
+  and `print` had no `dispatchAction` case, and `save_print` now has one too.
+- **Every hard-coded chord is `!e.altKey`**, so `Ctrl+Alt+…` falls through to the
+  admin/registry bindings at step 4. That is what lets the **web** build offer a
+  different save+print chord.
+
+`save_print` is the only chord a browser can steal. Edge reserves `Ctrl+Shift+S` for
+"Web capture" and Firefox for "Take screenshot" — the `keydown` never reaches the page,
+so no script can rescue it. `cloud/web/electron-browser.ts` therefore answers
+`admin:shortcuts:getAll` with `save_print = Ctrl+Alt+S` **only while the row still holds
+the seeded default** (an owner's own binding is left alone), and the normal registry
+path then runs it. One more piece of `src/utils/shortcutKeys.ts` matters here:
+`MODIFIER_ORDER` must match the order `eventCombo()` emits (`ctrl`→`alt`→`shift`); the
+old `['alt','ctrl','shift']` order meant *any* `Ctrl+Alt+X` binding could never match.
+`scripts/test_shortcutKeys.js`
+mirrors the module and covers it; `npm run test:keyboard` asserts the native and
+layout-proof chords, and `npm run smoke:web` asserts the served binding, the footer hint
+and that the combo is consumed.
 
 ### Licensing (perpetual, since 2026-10-03)
 
@@ -408,6 +436,7 @@ them wrong.
 - `src/renderer/src/pages/Purchases.tsx` — PO modal staged search + barcode scan (scan adds/increments line)
 - `src/renderer/src/pages/Inventory.tsx` — staged search (1× select highlight, 2× open Edit) + always-enabled barcode scan (found → highlight + auto-edit; not found → prompt "add new product with barcode")
 - `src/renderer/src/pages/Labels.tsx` — one sidebar entry ("Label Studio") for all label printing: a **Quick Labels / Designer** mode switch. Quick renders `pages/BarcodeGenerator.tsx` (the former standalone Barcode Labels page); Designer renders `pages/LabelStudio.tsx`. The legacy `barcode` nav key still routes here in Quick mode, so old shortcuts/deep links keep working; the separate Barcode nav entry is gone.
+- `src/renderer/src/pages/LabelStudio/` — the Designer: `types.ts` (sizes, built-ins incl. the 2-across Al Bagdad templates, `normalizeTemplate`), `PreviewCanvas.tsx` (multi-column live preview), `format.ts` (renderer mirror of the main-process token/date/price resolver), `PrintRunModal.tsx` (per-run overrides), `LabelThumbnail.tsx` (schematic SVG used by the template picker + manager), `PropertiesPanel.tsx` / `TemplateManager.tsx` / `LabelEditorCanvas.tsx`
 - `src/renderer/src/components/filters/SearchInput.tsx` — optional `onKeyDown` prop (used for staged search in Inventory)
 - `scripts/finalize-release.js` — finalizes GitHub release (needs GH_TOKEN — see Release above). Also uploads `RokarPOS-Setup.exe`, the version-less asset the website's `/releases/latest/download/` link depends on.
 - `scripts/after-pack.js` — electron-builder `afterPack` hook that embeds `build/icon.ico` + version metadata into the packaged `Rokar POS.exe` with vendored `build/tools/rcedit-x64.exe` (see "App icon" above)
@@ -474,10 +503,11 @@ process** by `src/main/services/labelStudioPrinting.ts`:
   per-element design when `options.template` is supplied, otherwise the stock
   `buildLabelJob` layout (Inventory / Barcode Generator quick labels). `options`
   also carries `printer`, `xOffset`/`yOffset` (mm), `mirror` and `rotation`.
-- `{placeholders}` mirror the renderer preview: `{name} {price} {sku} {barcode}
-  {expiry} {mfg} {batch} {weight} {shop} {category} {date} {qty} {unit} {image}`. Fields the
-  main process cannot know (mfg/batch/weight, and a produce scale weight) render
-  empty rather than lying; price uses `printCurrency()` + the `decimal_places`
+- `{placeholders}` mirror the renderer preview: `{name} {price} {price_plain}
+  {sku} {barcode} {expiry} {mfg} {batch} {weight} {approx} {shop} {category}
+  {date} {qty} {unit} {image}`. `{mfg}`/`{batch}`/`{weight}` now resolve from the
+  product's own `mfg_date`/`batch_no`/`net_weight` columns (migration 053) with a
+  per-run override on top; price uses `printCurrency()` + the `decimal_places`
   setting. Barcodes reject a bogus EAN-13 and fall back to Code 128.
 - **Image elements print a real image.** An `image` element carries either an
   uploaded data URL (picked from the PC via `ImageField`) or `{image}`, which binds
@@ -503,6 +533,53 @@ process** by `src/main/services/labelStudioPrinting.ts`:
   (`buildLabelStudioJob`) — page box, clipping, placeholder resolution, the
   image element (`<img>` + `{image}` + the `javascript:` guard), the
   PDF/PNG export bytes and the calibration sheet.
+
+#### Multi-across rolls, per-run overrides, and the "Al Bagdad Grocery" template
+
+A shop that buys a **2-across roll** (two labels side by side on one liner) needs
+the printed page to be the combined width, not one label. The engine models this
+with `PrintJob.labelCols`; `rollPageWidthMm()` returns `w*cols + gap*(cols-1)` and
+`jobWidthMm()` uses it, so a 2-across 38mm roll gets a **78mm** page and the two
+columns land where the stock expects. `rollColsFor()` caps it at 6 and ignores it
+for sheet media. A half-used row is finished by starting at **column 2**
+(`labelStartPos` / `template.startPos`); the builder emits empty `ls-fill` cells so
+the first real label lands in column 2.
+
+Two built-ins ship for this stock: `builtin-al-bagdad-38x28` ("Al Bagdad Grocery
+(2-across)", `38x28`, `rollCols: 2`) and `builtin-al-bagdad-50x30`. The `38x28`
+size is in `LABEL_SPECS` (`{w:38,h:28,sheetCols:4,gap:2}`) and in the renderer's
+`PRESET_SIZES`; a custom template's `rollCols`/`startPos`/`options` round-trip
+through `normalizeTemplate()`, and changing any layout control in the properties
+panel persists onto the active template (cloning a built-in to a `custom-*` first).
+
+- **Per-run overrides** live in `run` on the print options (`LabelRunOptions`), never
+  on the template — `PrintRunModal` collects mfg date, expiry override, price source
+  (retail / wholesale / custom), custom price, weight, barcode DPI, columns-across
+  and start column; `doPrint()` forwards it as `options.run`, and the live preview
+  reads the same object so preview and paper agree. The dialog's columns-across is
+  applied by cloning the template in `doPrint` (built-ins are never mutated).
+- **Date tokens** are per-element: `{mfg:d/m/yy}` vs `{expiry:dd/mm/yyyy}` on the
+  same line are formatted independently. Tokens: `yyyy yy mm m dd d M` (short month).
+  The resolver lives in the main process and is mirrored in the renderer
+  (`pages/LabelStudio/format.ts`) so the preview is byte-for-byte the same string.
+- **Product fields** back the placeholders: migration `053_label_product_fields.js`
+  adds `products.net_weight`, `is_loose`, `mfg_date`, `batch_no` (surfaced in
+  Inventory → Add/Edit Product). `{weight}` prints a `±` prefix when `is_loose` is
+  set (or when the product is a scale/PLU item — a 5-digit `1xxxx` barcode, the same
+  rule `scaleBarcode.listPluMappings()` uses) and the template option `showApprox` is
+  on. When a product has no expiry and
+  `hideDatesWhenNoExpiry` is on, a line carrying `{mfg}`/`{expiry}` is omitted
+  entirely rather than printing a dangling "Mfg".
+- **Barcode DPI** is a per-run value AND an admin setting (`barcode_dpi`, default
+  203, in Settings → Printers & Paper → Barcode Labels). It only changes the raster
+  `scale` fed to bwip-js; the element renders at a fixed height with `width:auto`, so
+  changing DPI never stretches the bars.
+- Template-picker / Template-Manager thumbnails come from `LabelThumbnail` (a cheap
+  schematic SVG — bars for barcodes, rules for text — that never rasterises a real
+  barcode).
+- `print_smoke` covers all of it: a 6-label **2-across roll** (page 78×92mm = 3
+  rows), per-run price/date/weight resolution, `start-at-column-2` filling, the `±`
+  marker, date hiding, and a PNG of the exact roll for eyeballing.
 
 ### Receipt typography (thermal darkness / readability)
 

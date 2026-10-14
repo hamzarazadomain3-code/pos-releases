@@ -282,6 +282,23 @@ export default function Settings() {
                           <option value="sheet">A4 label sheet (grid)</option>
                         </select>
                       </label>
+                      <label className="field" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                        <span>Barcode DPI</span>
+                        <select
+                          value={printSettings?.barcodeDpi ?? 203}
+                          onChange={async (e) => {
+                            const n = parseInt(e.target.value) || 203;
+                            setPrintSettings((s) => (s ? { ...s, barcodeDpi: n } : s));
+                            const r = await window.api.admin.settings.set('barcode_dpi', String(n));
+                            if (r !== true) setNotice('Could not save the barcode DPI.');
+                          }}
+                          style={{ width: 'auto' }}
+                        >
+                          <option value={203}>203 dpi (most label printers)</option>
+                          <option value={300}>300 dpi</option>
+                        </select>
+                        <span className="muted small">Match your label printer's head so barcode bars snap to whole dots.</span>
+                      </label>
                     </div>
                   )}
                 </div>

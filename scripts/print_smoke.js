@@ -241,6 +241,76 @@ async function run() {
     checkTrue('studio label prints the product name', !!p && flat.includes(p.name), p ? p.name : '');
     checkTrue('studio label prints money with decimals', /\d+\.\d{2}/.test(flat), '');
 
+    // ── Multi-across roll + per-run overrides (the "Al Bagdad Grocery" case) ──
+    // A 38x28 template laid out two-across must widen the roll page to both
+    // columns (2 x 38 + one 2mm gutter = 78mm) and a 6-label run must fill 3
+    // rows. Per-run values (mfg/expiry/price/weight/start column/DPI) override
+    // the product for that one run without touching the template.
+    console.log('\nMulti-across roll + per-run overrides');
+    const alBagdad = {
+      id: 'smoke-al-bagdad',
+      name: 'Al Bagdad Grocery (2-across)',
+      size: '38x28',
+      layout: 'roll',
+      rollCols: 2,
+      options: { autoShrinkName: true, showApprox: true, hideDatesWhenNoExpiry: true, barcodeDpi: 203, border: false },
+      defaults: { copies: 1, barcodeOnly: false },
+      elements: [
+        { id: 'n', type: 'text', x: 1, y: 1, w: 36, h: 4, visible: true, locked: false, rotation: 0, content: '{name}', style: { fontSize: 7, bold: true, align: 'center', autoShrink: true, minFontSize: 4 } },
+        { id: 'd', type: 'text', x: 1, y: 6, w: 36, h: 3, visible: true, locked: false, rotation: 0, content: 'Mfg {mfg:d/m/yy}  Exp {expiry:dd/mm/yyyy}', style: { fontSize: 6, align: 'center' } },
+        { id: 'w', type: 'text', x: 1, y: 9.5, w: 36, h: 3, visible: true, locked: false, rotation: 0, content: '{weight}', style: { fontSize: 6, align: 'center' } },
+        { id: 'bc', type: 'barcode', x: 2, y: 13, w: 34, h: 9, visible: true, locked: false, rotation: 0, content: '{barcode}', barcodeOptions: { height: 9, barWidth: 2, showText: true }, style: {} },
+        { id: 'p', type: 'text', x: 1, y: 23, w: 36, h: 4, visible: true, locked: false, rotation: 0, content: '{price}', style: { fontSize: 8, bold: true, align: 'center' } },
+      ],
+    };
+    const run = { mfgDate: '2026-10-02', expOverride: '2027-01-02', priceSource: 'custom', customPrice: 100, weight: '100g', startCol: 1, barcodeDpi: 300, rollCols: 2 };
+    const multiJob = await labelStudio.buildLabelStudioJob([productId], alBagdad, undefined, 6, run);
+    const multiPdf = await printService.printJobToPdf(multiJob);
+    fs.writeFileSync(path.join(outDir, 'label-al-bagdad-2across.pdf'), multiPdf.data);
+    const multi = measurePdf(multiPdf.data);
+    checkTrue('2-across roll produced a readable PDF', !!multi);
+    if (multi) check('2-across roll page width', multi.widthMm, 78, 3);
+    const multiText = (await printService.readJobText(multiJob)).replace(/\s+/g, ' ');
+    checkTrue('per-run custom price prints', multiText.includes('100'), '');
+    checkTrue('per-run mfg date honours {mfg:d/m/yy}', multiText.includes('2/10/26'), '');
+    checkTrue('per-run expiry honours {expiry:dd/mm/yyyy}', multiText.includes('02/01/2027'), '');
+    checkTrue('per-run weight prints', multiText.includes('100g'), '');
+    await auditStudio('2-across 6-label roll (3 rows)', multiJob);
+
+    // A PNG of the exact 2-across roll so the layout can be eyeballed.
+    const multiPng = path.join(outDir, 'shot-label-al-bagdad-2across.png');
+    const multiGeo = await printService.printJobToPng(multiJob, multiPng);
+    checkTrue('2-across roll renders to a PNG', multiGeo.widthMm > 70, `${multiGeo.widthMm.toFixed(1)}x${multiGeo.heightMm.toFixed(1)}mm`);
+
+    // Start-at-column 2 must push the first row's first cell into column 2.
+    const startJob = await labelStudio.buildLabelStudioJob([productId], alBagdad, undefined, 1, { ...run, startCol: 2 });
+    checkTrue('start-at-column-2 inserts one leading blank cell', (startJob.html.match(/class="ls-fill"/g) || []).length === 1, '');
+    const normalJob = await labelStudio.buildLabelStudioJob([productId], alBagdad, undefined, 1, { ...run, startCol: 1 });
+    checkTrue('start-at-column-1 inserts no blank cell', (normalJob.html.match(/class="ls-fill"/g) || []).length === 0, '');
+
+    // The ± approximation marker appears for a loose product (flag OR scale/PLU
+    // barcode), and the dates hide when there is no expiry (per-template option).
+    const smokeDb = require('../dist/main/db.js').getDb();
+    const before = smokeDb.prepare('SELECT is_loose, net_weight, mfg_date, expiry_date, barcode FROM products WHERE id = ?').get(productId);
+    if (before) {
+      try {
+        smokeDb.prepare("UPDATE products SET is_loose = 1, net_weight = '100g', mfg_date = NULL, expiry_date = NULL WHERE id = ?").run(productId);
+        const looseJob = await labelStudio.buildLabelStudioJob([productId], alBagdad, undefined, 1, { priceSource: 'retail' });
+        const looseText = (await printService.readJobText(looseJob)).replace(/\s+/g, ' ');
+        checkTrue('a loose product prints the ± marker', looseText.includes('\u00b1100g'), looseText.slice(0, 60));
+        checkTrue('dates hide when the product has no expiry', !/Mfg \d/.test(looseText), '');
+
+        // Scale/PLU fallback: not flagged, but a 5-digit `1xxxx` barcode is weighed.
+        smokeDb.prepare("UPDATE products SET is_loose = 0, barcode = '10001' WHERE id = ?").run(productId);
+        const pluJob = await labelStudio.buildLabelStudioJob([productId], alBagdad, undefined, 1, { priceSource: 'retail' });
+        const pluText = (await printService.readJobText(pluJob)).replace(/\s+/g, ' ');
+        checkTrue('a scale/PLU product prints the ± marker', pluText.includes('\u00b1100g'), pluText.slice(0, 60));
+      } finally {
+        smokeDb.prepare('UPDATE products SET is_loose = ?, net_weight = ?, mfg_date = ?, expiry_date = ?, barcode = ? WHERE id = ?')
+          .run(before.is_loose ?? 0, before.net_weight ?? null, before.mfg_date ?? null, before.expiry_date ?? null, before.barcode ?? null, productId);
+      }
+    }
+
     // ── Image elements (uploaded from the PC) must actually print ──────────
     // Before 2.16 the printer emitted the literal text "IMG" for an image
     // element, so an uploaded logo/photo silently vanished at print time.

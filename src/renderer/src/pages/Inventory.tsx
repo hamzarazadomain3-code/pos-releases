@@ -45,6 +45,10 @@ interface FormState {
   low_stock_threshold: string;
   tax_rate: string;
   expiry_date: string;
+  net_weight: string;
+  is_loose: boolean;
+  mfg_date: string;
+  batch_no: string;
   image: string;
   units: ProductUnit[];
 }
@@ -63,6 +67,10 @@ const EMPTY_FORM: FormState = {
   low_stock_threshold: '',
   tax_rate: '',
   expiry_date: '',
+  net_weight: '',
+  is_loose: false,
+  mfg_date: '',
+  batch_no: '',
   image: '',
   units: [
     { level: 0, name: 'Piece', quantity_in_base_units: 1, barcode: '', price: '', is_base: true },
@@ -226,6 +234,10 @@ export default function Inventory() {
       low_stock_threshold: p.low_stock_threshold != null ? String(p.low_stock_threshold) : '',
       tax_rate: p.tax_rate != null ? String(p.tax_rate) : '',
       expiry_date: p.expiry_date ?? '',
+      net_weight: p.net_weight ?? '',
+      is_loose: !!p.is_loose,
+      mfg_date: p.mfg_date ?? '',
+      batch_no: p.batch_no ?? '',
       image: p.image ?? '',
       units,
     });
@@ -298,6 +310,10 @@ export default function Inventory() {
         low_stock_threshold: form.low_stock_threshold ? Number(form.low_stock_threshold) : 0,
         tax_rate: form.tax_rate ? Number(form.tax_rate) : 0,
         expiry_date: form.expiry_date || null,
+        net_weight: form.net_weight.trim() || null,
+        is_loose: form.is_loose ? 1 : 0,
+        mfg_date: form.mfg_date || null,
+        batch_no: form.batch_no.trim() || null,
         image: form.image || null,
         units: unitsPayload,
       };
@@ -1013,6 +1029,40 @@ export default function Inventory() {
                   value={form.expiry_date}
                   onChange={(e) => setForm({ ...form, expiry_date: e.target.value })}
                 />
+              </label>
+              <label className="field">
+                <span>Net Weight</span>
+                <KeyboardInput
+                  type="text"
+                  value={form.net_weight}
+                  onChange={(e) => setForm({ ...form, net_weight: e.target.value })}
+                  placeholder="e.g. 100 g, 500 ml"
+                />
+              </label>
+              <label className="field">
+                <span>Mfg Date</span>
+                <input
+                  type="date"
+                  value={form.mfg_date}
+                  onChange={(e) => setForm({ ...form, mfg_date: e.target.value })}
+                />
+              </label>
+              <label className="field">
+                <span>Batch No</span>
+                <KeyboardInput
+                  type="text"
+                  value={form.batch_no}
+                  onChange={(e) => setForm({ ...form, batch_no: e.target.value })}
+                  placeholder="Optional"
+                />
+              </label>
+              <label className="field span-2" style={{ flexDirection: 'row', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="checkbox"
+                  checked={form.is_loose}
+                  onChange={(e) => setForm({ ...form, is_loose: e.target.checked })}
+                />
+                <span>Loose product (sold by weight — labels print a <b>±</b> approximate marker)</span>
               </label>
               <div className="field span-2">
                 <span>Product Image</span>

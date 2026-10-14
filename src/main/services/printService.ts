@@ -54,7 +54,7 @@ export const mmToPx = (mm: number): number => (mm * 96) / 25.4;
 // ═══════════════════════════════════════════════════════════════════
 
 export type PaperKind = 'thermal58' | 'thermal80' | 'a4' | 'a5';
-export type LabelSize = '38x25' | '50x30' | '100x50';
+export type LabelSize = '38x25' | '38x28' | '50x30' | '100x50';
 export type PaperOrLabel = PaperKind | LabelSize;
 export type LabelLayout = 'roll' | 'sheet';
 
@@ -102,6 +102,8 @@ export const LABEL_SPECS: Record<LabelSize, LabelSpec> = {
   // (floor((190 + gap) / (w + gap))). The old template hard-coded 8 columns of
   // 38mm = 304mm, which is wider than A4 and got sliced by the print pipeline.
   '38x25': { kind: '38x25', label: '38 x 25mm', w: 38, h: 25, sheetCols: 4, gap: 1, barH: 8, fontPt: 5.5 },
+  // 2-across grocery roll (gap 2mm); sheetCols fits A4's 190mm printable width.
+  '38x28': { kind: '38x28', label: '38 x 28mm', w: 38, h: 28, sheetCols: 4, gap: 2, barH: 10, fontPt: 7 },
   '50x30': { kind: '50x30', label: '50 x 30mm', w: 50, h: 30, sheetCols: 3, gap: 1, barH: 10, fontPt: 7 },
   '100x50': { kind: '100x50', label: '100 x 50mm', w: 100, h: 50, sheetCols: 1, gap: 1.5, barH: 15, fontPt: 9 },
 };
@@ -141,12 +143,35 @@ function widthMmFor(paper: PaperOrLabel): number {
 }
 
 /**
+ * Columns laid across a label ROLL. A 2-across roll carries two labels side by
+ * side on one physical page, so the printed page width is
+ * `cols * labelW + (cols - 1) * gap` — not one label. `labelCols` defaults to 1
+ * (the historical single-across roll) and is ignored for sheet media.
+ */
+function rollColsFor(job: PrintJob): number {
+  if (job.labelLayout === 'sheet') return 1;
+  const n = Math.floor(Number(job.labelCols));
+  return Number.isFinite(n) && n >= 1 ? Math.min(6, n) : 1;
+}
+
+/** Printed page width for a label roll, accounting for multi-across media. */
+function rollPageWidthMm(paper: LabelSize, cols: number): number {
+  const spec = LABEL_SPECS[paper];
+  const gap = Number.isFinite(spec.gap) ? spec.gap : 0;
+  return spec.w * cols + gap * (cols - 1);
+}
+
+/**
  * Printed page width for a job. A label batch on A4 sheets is a 210mm page
  * carrying a grid, not a page as wide as one label — the page size and the CSS
- * @page rule must both say A4 or the sheet is cut to a single label column.
+ * @page rule must both say A4 or the sheet is cut to a single label column. A
+ * multi-across ROLL is the combined label width.
  */
 function jobWidthMm(job: PrintJob): number {
-  if (isLabelSize(job.paper) && job.labelLayout === 'sheet') return PAPER_SPECS.a4.widthMm;
+  if (isLabelSize(job.paper)) {
+    if (job.labelLayout === 'sheet') return PAPER_SPECS.a4.widthMm;
+    return rollPageWidthMm(job.paper, rollColsFor(job));
+  }
   return widthMmFor(job.paper);
 }
 
@@ -325,6 +350,15 @@ export function getPrintMode(): 'silent' | 'dialog' {
   return safeAdminSetting('print_mode') === 'dialog' ? 'dialog' : 'silent';
 }
 
+/**
+ * Label-printer head resolution used to make barcode bars land on whole dots.
+ * 203dpi (8 dots/mm) is the common thermal label head; 300dpi is the other one
+ * in the field. Stored as an admin setting so it can be set once per shop.
+ */
+export function getBarcodeDpi(): 203 | 300 {
+  return Number(safeAdminSetting('barcode_dpi')) === 300 ? 300 : 203;
+}
+
 interface Target {
   silent: boolean;
   deviceName: string;
@@ -370,6 +404,10 @@ export interface PrintJob {
   paper: PaperOrLabel;
   /** Label batches only. */
   labelLayout?: LabelLayout;
+  /** Label batches only: columns laid across a ROLL (default 1). */
+  labelCols?: number;
+  /** Label batches only: 1-based cell where the first label starts (skip a half-used row). */
+  labelStartPos?: number;
   /** Label batches only: how many rows the roll must hold. */
   labelRows?: number;
   copies?: number;
@@ -391,7 +429,9 @@ export interface PrintResult {
 /** On-screen width (px) that matches the real printed content width. */
 function previewWidthPx(job: PrintJob): number {
   if (isLabelSize(job.paper)) {
-    return job.labelLayout === 'sheet' ? mmToPx(190) : mmToPx(LABEL_SPECS[job.paper].w);
+    return job.labelLayout === 'sheet'
+      ? mmToPx(190)
+      : mmToPx(rollPageWidthMm(job.paper, rollColsFor(job)));
   }
   return mmToPx(PAPER_SPECS[job.paper].contentMm);
 }
@@ -590,10 +630,11 @@ function geometryFromSpec(job: PrintJob): PageGeometry | null {
       return { pageSize: { width: mmToMicrons(210), height: mmToMicrons(heightMm) }, widthMm: 210, heightMm };
     }
     // Roll media: page height must be an exact multiple of the label pitch or
-    // the printer mis-feeds between labels.
+    // the printer mis-feeds between labels. A multi-across roll widens the page.
     const rows = Math.max(1, Math.floor(job.labelRows || 1));
     const heightMm = rows * spec.h + (rows + 1) * spec.gap;
-    return { pageSize: { width: mmToMicrons(spec.w), height: mmToMicrons(heightMm) }, widthMm: spec.w, heightMm };
+    const widthMm = rollPageWidthMm(paper, rollColsFor(job));
+    return { pageSize: { width: mmToMicrons(widthMm), height: mmToMicrons(heightMm) }, widthMm, heightMm };
   }
 
   const spec = PAPER_SPECS[paper];

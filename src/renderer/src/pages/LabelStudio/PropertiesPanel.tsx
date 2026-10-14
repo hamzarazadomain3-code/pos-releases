@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { KeyboardInput } from '@components/KeyboardInput';
 import { Modal } from '@components/Modal';
 import type { LabelTemplate, LabelElement } from './types';
+import { PRESET_SIZES } from './types';
+import { LabelThumbnail } from './LabelThumbnail';
 
 interface Props {
   activeTemplate: LabelTemplate;
@@ -32,17 +34,9 @@ interface Props {
   setShowEditor: (v: boolean) => void;
   printSettingsOpen: boolean;
   setPrintSettingsOpen: (v: boolean) => void;
+  /** Persist a patch onto the active template (clones a built-in on first edit). */
+  updateTemplate: (patch: Partial<LabelTemplate>) => void;
 }
-
-const PRESET_SIZES: Record<string, { label: string; w: number; h: number; gap: number }> = {
-  '38x25': { label: '38 × 25 mm', w: 38, h: 25, gap: 1 },
-  '40x30': { label: '40 × 30 mm', w: 40, h: 30, gap: 1 },
-  '50x25': { label: '50 × 25 mm', w: 50, h: 25, gap: 1 },
-  '50x30': { label: '50 × 30 mm', w: 50, h: 30, gap: 1 },
-  '58x40': { label: '58 × 40 mm', w: 58, h: 40, gap: 1.5 },
-  '60x40': { label: '60 × 40 mm', w: 60, h: 40, gap: 1.5 },
-  '100x50': { label: '100 × 50 mm', w: 100, h: 50, gap: 2 },
-};
 
 const SYMBOLOGIES = ['CODE128', 'EAN13', 'EAN8', 'UPCA', 'CODE39', 'ITF', 'QR', 'DataMatrix'];
 const FONTS = ['Segoe UI', 'Arial', 'Tahoma', 'Noto Nastaliq Urdu', 'Jameel Noori Nastaliq', 'Consolas', 'Courier New'];
@@ -76,6 +70,7 @@ export function PropertiesPanel({
   setShowEditor,
   printSettingsOpen,
   setPrintSettingsOpen,
+  updateTemplate,
 }: Props) {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveName, setSaveName] = useState('');
@@ -159,6 +154,13 @@ export function PropertiesPanel({
               </optgroup>
             )}
           </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <LabelThumbnail template={activeTemplate} width={96} />
+            <div style={{ fontSize: '11px', color: '#666' }}>
+              <div>{activeTemplate.elements.length} element(s)</div>
+              <div>{typeof activeTemplate.size === 'string' ? activeTemplate.size : 'custom'} · {activeTemplate.layout}{activeTemplate.layout === 'roll' && (activeTemplate.rollCols || 1) > 1 ? ` · ${activeTemplate.rollCols} across` : ''}</div>
+            </div>
+          </div>
 
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button className="btn btn-sm btn-primary" onClick={() => { setSaveName(activeTemplate.name + ' (Copy)'); setShowSaveModal(true); }}>Save As</button>
@@ -281,31 +283,77 @@ export function PropertiesPanel({
         <h4 style={{ margin: '0 0 8px', fontSize: '13px' }}>Layout</h4>
         <label className="field" style={{ display: 'flex', gap: '12px', marginBottom: '8px' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <input type="radio" name="layout" value="roll" checked={labelLayout === 'roll'} onChange={e => setLabelLayout('roll')} /> Roll
+            <input type="radio" name="layout" value="roll" checked={labelLayout === 'roll'} onChange={() => { setLabelLayout('roll'); updateTemplate({ layout: 'roll' }); }} /> Roll
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <input type="radio" name="layout" value="sheet" checked={labelLayout === 'sheet'} onChange={e => setLabelLayout('sheet')} /> Sheet (A4)
+            <input type="radio" name="layout" value="sheet" checked={labelLayout === 'sheet'} onChange={() => { setLabelLayout('sheet'); updateTemplate({ layout: 'sheet' }); }} /> Sheet (A4)
           </label>
         </label>
 
         {labelLayout === 'roll' && (
-          <label className="field"><span>Columns Across Roll</span>
-            <select className="field-select" value={rollCols} onChange={e => setRollCols(parseInt(e.target.value))} style={{ width: '80px' }}>
-              <option value={1}>1 Across</option>
-              <option value={2}>2 Across</option>
-              <option value={3}>3 Across</option>
-            </select>
-          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <label className="field"><span>Columns Across</span>
+              <select className="field-select" value={rollCols} onChange={e => { const v = parseInt(e.target.value) || 1; setRollCols(v); updateTemplate({ rollCols: v }); }} style={{ width: '100%' }}>
+                <option value={1}>1 Across</option>
+                <option value={2}>2 Across (2-across roll)</option>
+                <option value={3}>3 Across</option>
+                <option value={4}>4 Across</option>
+              </select>
+            </label>
+            <label className="field"><span>Start at Column</span>
+              <KeyboardInput type="text" decimals={false} value={sheetStartPos} onChange={e => { const v = Math.max(1, Math.min(rollCols, parseInt(e.target.value) || 1)); setSheetStartPos(v); updateTemplate({ startPos: v }); }} />
+            </label>
+          </div>
+        )}
+
+        {labelLayout === 'roll' && (
+          <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#888' }}>
+            Start at column 2 to finish a half-used row before beginning a new one.
+          </p>
         )}
 
         {labelLayout === 'sheet' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            <label className="field"><span>Sheet Rows</span><KeyboardInput type="text" decimals={false} value={sheetRows} onChange={e => setSheetRows(Math.max(1, parseInt(e.target.value) || 1))} /></label>
-            <label className="field"><span>Sheet Cols</span><KeyboardInput type="text" decimals={false} value={sheetCols} onChange={e => setSheetCols(Math.max(1, parseInt(e.target.value) || 1))} /></label>
-            <label className="field"><span>Start at Label #</span><KeyboardInput type="text" decimals={false} value={sheetStartPos} onChange={e => setSheetStartPos(Math.max(1, parseInt(e.target.value) || 1))} /></label>
+            <label className="field"><span>Sheet Rows</span><KeyboardInput type="text" decimals={false} value={sheetRows} onChange={e => { const v = Math.max(1, parseInt(e.target.value) || 1); setSheetRows(v); updateTemplate({ sheetRows: v }); }} /></label>
+            <label className="field"><span>Sheet Cols</span><KeyboardInput type="text" decimals={false} value={sheetCols} onChange={e => { const v = Math.max(1, parseInt(e.target.value) || 1); setSheetCols(v); updateTemplate({ sheetCols: v }); }} /></label>
+            <label className="field"><span>Start at Label #</span><KeyboardInput type="text" decimals={false} value={sheetStartPos} onChange={e => { const v = Math.max(1, parseInt(e.target.value) || 1); setSheetStartPos(v); updateTemplate({ startPos: v }); }} /></label>
             <label className="field"><span>Labels/Sheet</span><KeyboardInput type="text" decimals={false} value={sheetRows * sheetCols} disabled /></label>
           </div>
         )}
+
+        <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px dashed #e2e8f0' }}>
+          <h4 style={{ margin: '0 0 8px', fontSize: '13px' }}>Label Options</h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+              <input type="checkbox" checked={activeTemplate.options?.autoShrinkName !== false}
+                onChange={e => updateTemplate({ options: { ...activeTemplate.options, autoShrinkName: e.target.checked } })} />
+              Auto-shrink a long product name to fit one line
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+              <input type="checkbox" checked={activeTemplate.options?.showApprox !== false}
+                onChange={e => updateTemplate({ options: { ...activeTemplate.options, showApprox: e.target.checked } })} />
+              Show <b>±</b> on loose-weight items
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+              <input type="checkbox" checked={activeTemplate.options?.hideDatesWhenNoExpiry !== false}
+                onChange={e => updateTemplate({ options: { ...activeTemplate.options, hideDatesWhenNoExpiry: e.target.checked } })} />
+              Hide the Mfg/Exp line when a product has no expiry
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+              <input type="checkbox" checked={activeTemplate.options?.border === true}
+                onChange={e => updateTemplate({ options: { ...activeTemplate.options, border: e.target.checked } })} />
+              Draw a cut border around each label
+            </label>
+            <label className="field" style={{ marginTop: '4px' }}><span>Barcode DPI</span>
+              <select className="field-select" style={{ width: '100%' }}
+                value={activeTemplate.options?.barcodeDpi ?? 203}
+                onChange={e => updateTemplate({ options: { ...activeTemplate.options, barcodeDpi: parseInt(e.target.value) || 203 } })}>
+                <option value={203}>203 dpi (most label printers)</option>
+                <option value={300}>300 dpi</option>
+              </select>
+            </label>
+          </div>
+        </div>
       </div>
 
       {/* Save As Modal */}

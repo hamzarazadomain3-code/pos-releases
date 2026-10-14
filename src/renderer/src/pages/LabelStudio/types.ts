@@ -1,6 +1,6 @@
 import type { Product } from '../../../../shared/types';
 
-export type LabelSize = '38x25' | '40x30' | '50x25' | '50x30' | '58x40' | '60x40' | '100x50' | 'custom';
+export type LabelSize = '38x25' | '38x28' | '40x30' | '50x25' | '50x30' | '58x40' | '60x40' | '100x50' | 'custom';
 export type LabelLayout = 'roll' | 'sheet';
 
 export interface LabelElement {
@@ -27,6 +27,9 @@ export interface LabelElement {
     dateFormat?: string;
     batchPrefix?: string;
     skuPrefix?: string;
+    /** Shrink the text until it fits one line (between minFontSize and fontSize). */
+    autoShrink?: boolean;
+    minFontSize?: number;
   };
   content: string; // for text: template string with {placeholders}
   barcodeOptions?: {
@@ -39,6 +42,19 @@ export interface LabelElement {
   };
 }
 
+export interface LabelTemplateOptions {
+  /** Auto-shrink a `{name}` line until it fits on one line. Default true. */
+  autoShrinkName?: boolean;
+  /** Print the `±` prefix on a loose/variable-weight item. Default true. */
+  showApprox?: boolean;
+  /** Drop Mfg/Exp lines when the product has no expiry. Default true. */
+  hideDatesWhenNoExpiry?: boolean;
+  /** Printer head resolution for barcode bars (203 or 300). */
+  barcodeDpi?: number;
+  /** Draw a cut border around each label. Default false. */
+  border?: boolean;
+}
+
 export interface LabelTemplate {
   id: string;
   name: string;
@@ -47,8 +63,11 @@ export interface LabelTemplate {
   rollCols?: number;
   sheetRows?: number;
   sheetCols?: number;
+  /** 1-based column the first label starts at (skip a half-used roll row). */
+  startPos?: number;
   elements: LabelElement[];
   defaults: { copies: number; barcodeOnly: boolean };
+  options?: LabelTemplateOptions;
   createdAt: number;
   updatedAt: number;
 }
@@ -60,8 +79,29 @@ export interface ProductOverride {
   qty?: number;
 }
 
+/** Per-print-run values chosen in the Print Run dialog. */
+export interface LabelRunOptions {
+  /** Overrides the product mfg date for the whole run. */
+  mfgDate?: string | null;
+  /** Overrides every product's expiry for the run. */
+  expOverride?: string | null;
+  /** Which price the `{price}` element prints. */
+  priceSource?: 'retail' | 'wholesale' | 'custom';
+  /** Price used when priceSource = 'custom'. */
+  customPrice?: number | null;
+  /** Overrides `{weight}` for the whole run. */
+  weight?: string | null;
+  /** 1-based column the first label starts at. */
+  startCol?: number | null;
+  /** Printer head resolution for barcode bars (203 or 300). */
+  barcodeDpi?: number | null;
+  /** Columns across the roll for this run (overrides the template). */
+  rollCols?: number | null;
+}
+
 export const PRESET_SIZES: Record<Exclude<LabelSize, 'custom'>, { label: string; w: number; h: number; gap: number }> = {
   '38x25': { label: '38 × 25 mm', w: 38, h: 25, gap: 1 },
+  '38x28': { label: '38 × 28 mm (2-across)', w: 38, h: 28, gap: 2 },
   '40x30': { label: '40 × 30 mm', w: 40, h: 30, gap: 1 },
   '50x25': { label: '50 × 25 mm', w: 50, h: 25, gap: 1 },
   '50x30': { label: '50 × 30 mm', w: 50, h: 30, gap: 1 },
@@ -71,6 +111,84 @@ export const PRESET_SIZES: Record<Exclude<LabelSize, 'custom'>, { label: string;
 };
 
 export const BUILTIN_TEMPLATES: LabelTemplate[] = [
+  {
+    id: 'builtin-al-bagdad-38x28',
+    name: 'Al Bagdad Grocery (2-across)',
+    size: '38x28',
+    layout: 'roll',
+    rollCols: 2,
+    sheetCols: 4,
+    startPos: 1,
+    options: {
+      autoShrinkName: true,
+      showApprox: true,
+      hideDatesWhenNoExpiry: true,
+      barcodeDpi: 203,
+      border: false,
+    },
+    elements: [
+      { id: 'shop', type: 'text', x: 1.5, y: 1.2, w: 35, h: 3, rotation: 0, visible: true, locked: false,
+        style: { fontFamily: 'Segoe UI', fontSize: 5.5, bold: true, align: 'center', color: '#000' },
+        content: '{shop}' },
+      { id: 'name', type: 'text', x: 1.5, y: 4.4, w: 35, h: 3.8, rotation: 0, visible: true, locked: false,
+        style: { fontFamily: 'Segoe UI', fontSize: 6.5, bold: true, align: 'center', color: '#000', autoShrink: true, minFontSize: 4 },
+        content: '{name} {weight}{unit}' },
+      { id: 'barcode', type: 'barcode', x: 2, y: 8.4, w: 34, h: 8.6, rotation: 0, visible: true, locked: false,
+        style: {}, content: '{barcode}',
+        barcodeOptions: { symbology: 'CODE128', height: 8.2, barWidth: 2, showText: false, quietZone: 1, validateEan: true } },
+      { id: 'barcode-text', type: 'text', x: 1.5, y: 17.2, w: 35, h: 2.4, rotation: 0, visible: true, locked: false,
+        style: { fontFamily: 'Consolas,monospace', fontSize: 4.5, bold: false, align: 'left', color: '#000' },
+        content: '{barcode}' },
+      { id: 'dates', type: 'text', x: 1.5, y: 19.8, w: 35, h: 2.6, rotation: 0, visible: true, locked: false,
+        style: { fontFamily: 'Segoe UI', fontSize: 4.5, bold: true, align: 'center', color: '#000' },
+        content: 'Mfg {mfg:d/m/yy}  Exp {expiry:dd/mm/yyyy}' },
+      { id: 'price', type: 'price', x: 1.5, y: 22.6, w: 35, h: 4, rotation: 0, visible: true, locked: false,
+        style: { fontFamily: 'Segoe UI', fontSize: 10, bold: true, fontWeight: '800', align: 'right', color: '#000' },
+        content: '{price}' },
+    ],
+    defaults: { copies: 1, barcodeOnly: false },
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  },
+  {
+    id: 'builtin-al-bagdad-50x30',
+    name: 'Al Bagdad Grocery (2-across, 50 × 30)',
+    size: '50x30',
+    layout: 'roll',
+    rollCols: 2,
+    sheetCols: 3,
+    startPos: 1,
+    options: {
+      autoShrinkName: true,
+      showApprox: true,
+      hideDatesWhenNoExpiry: true,
+      barcodeDpi: 203,
+      border: false,
+    },
+    elements: [
+      { id: 'shop', type: 'text', x: 1.5, y: 1.2, w: 47, h: 3.2, rotation: 0, visible: true, locked: false,
+        style: { fontFamily: 'Segoe UI', fontSize: 6, bold: true, align: 'center', color: '#000' },
+        content: '{shop}' },
+      { id: 'name', type: 'text', x: 1.5, y: 4.6, w: 47, h: 4.2, rotation: 0, visible: true, locked: false,
+        style: { fontFamily: 'Segoe UI', fontSize: 7, bold: true, align: 'center', color: '#000', autoShrink: true, minFontSize: 4 },
+        content: '{name} {weight}{unit}' },
+      { id: 'barcode', type: 'barcode', x: 3, y: 9, w: 44, h: 9.4, rotation: 0, visible: true, locked: false,
+        style: {}, content: '{barcode}',
+        barcodeOptions: { symbology: 'CODE128', height: 9, barWidth: 2, showText: false, quietZone: 1, validateEan: true } },
+      { id: 'barcode-text', type: 'text', x: 1.5, y: 18.6, w: 47, h: 2.6, rotation: 0, visible: true, locked: false,
+        style: { fontFamily: 'Consolas,monospace', fontSize: 5, bold: false, align: 'left', color: '#000' },
+        content: '{barcode}' },
+      { id: 'dates', type: 'text', x: 1.5, y: 21.4, w: 47, h: 3, rotation: 0, visible: true, locked: false,
+        style: { fontFamily: 'Segoe UI', fontSize: 5.5, bold: true, align: 'center', color: '#000' },
+        content: 'Mfg {mfg:d/m/yy}  Exp {expiry:dd/mm/yyyy}' },
+      { id: 'price', type: 'price', x: 1.5, y: 24.4, w: 47, h: 4, rotation: 0, visible: true, locked: false,
+        style: { fontFamily: 'Segoe UI', fontSize: 12, bold: true, fontWeight: '800', align: 'right', color: '#000' },
+        content: '{price}' },
+    ],
+    defaults: { copies: 1, barcodeOnly: false },
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  },
   {
     id: 'builtin-retail',
     name: 'Retail Price Tag',
@@ -365,13 +483,28 @@ export function normalizeTemplate(raw: unknown): LabelTemplate | null {
     rollCols: typeof t.rollCols === 'number' && t.rollCols >= 1 ? Math.floor(t.rollCols) : 1,
     sheetRows: typeof t.sheetRows === 'number' && t.sheetRows >= 1 ? Math.floor(t.sheetRows) : 4,
     sheetCols: typeof t.sheetCols === 'number' && t.sheetCols >= 1 ? Math.floor(t.sheetCols) : 6,
+    startPos: typeof t.startPos === 'number' && t.startPos >= 1 ? Math.floor(t.startPos) : 1,
     elements,
     defaults: {
       copies: copies >= 1 && copies <= 50 ? Math.floor(copies) : 1,
       barcodeOnly: d.barcodeOnly === true,
     },
+    options: normalizeOptions(t.options),
     createdAt: typeof t.createdAt === 'number' ? t.createdAt : 0,
     updatedAt: typeof t.updatedAt === 'number' ? t.updatedAt : 0,
+  };
+}
+
+/** Repair a template's label-wide option flags. */
+function normalizeOptions(raw: unknown): LabelTemplateOptions {
+  const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const dpi = Number(o.barcodeDpi);
+  return {
+    autoShrinkName: o.autoShrinkName !== false,
+    showApprox: o.showApprox !== false,
+    hideDatesWhenNoExpiry: o.hideDatesWhenNoExpiry !== false,
+    barcodeDpi: dpi === 300 ? 300 : 203,
+    border: o.border === true,
   };
 }
 

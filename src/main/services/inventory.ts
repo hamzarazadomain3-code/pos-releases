@@ -149,8 +149,8 @@ export function createProduct(input: ProductInput): Product {
     .prepare(
       `INSERT INTO products
         (sku, barcode, name, category_id, unit_id, cost_price, sale_price, wholesale_price, shelf_location,
-         stock_qty, low_stock_threshold, tax_rate, expiry_date, image, active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 1)`
+         stock_qty, low_stock_threshold, tax_rate, expiry_date, image, net_weight, is_loose, mfg_date, batch_no, active)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
     )
     .run(
       sku,
@@ -165,7 +165,11 @@ export function createProduct(input: ProductInput): Product {
       input.low_stock_threshold ?? 0,
       input.tax_rate ?? 0,
       input.expiry_date ?? null,
-      input.image ?? null
+      input.image ?? null,
+      input.net_weight ?? null,
+      input.is_loose ? 1 : 0,
+      input.mfg_date ?? null,
+      input.batch_no ?? null
     );
 
   const id = Number(info.lastInsertRowid);
@@ -217,6 +221,7 @@ export function updateProduct(id: number, input: ProductInput): Product {
        sku = ?, barcode = ?, name = ?, category_id = ?, unit_id = ?,
        cost_price = ?, sale_price = ?, wholesale_price = ?, shelf_location = ?,
        low_stock_threshold = ?, tax_rate = ?, expiry_date = ?, image = ?,
+       net_weight = ?, is_loose = ?, mfg_date = ?, batch_no = ?,
        updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`
   ).run(
@@ -233,6 +238,10 @@ export function updateProduct(id: number, input: ProductInput): Product {
     input.tax_rate ?? existing.tax_rate,
     input.expiry_date ?? existing.expiry_date,
     input.image !== undefined ? input.image : existing.image ?? null,
+    input.net_weight !== undefined ? input.net_weight : existing.net_weight ?? null,
+    input.is_loose !== undefined ? (input.is_loose ? 1 : 0) : existing.is_loose ?? 0,
+    input.mfg_date !== undefined ? input.mfg_date : existing.mfg_date ?? null,
+    input.batch_no !== undefined ? input.batch_no : existing.batch_no ?? null,
     id
   );
 
