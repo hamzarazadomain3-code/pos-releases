@@ -179,6 +179,24 @@ window.__kb = {
     const row = document.querySelector('.modal .data-table tbody tr');
     return row ? row.textContent : '';
   },
+  /** Click the first held bill's Resume button to load it back into the cart. */
+  resumeFirstHeld: () => {
+    const row = document.querySelector('.modal .data-table tbody tr');
+    if (!row) return false;
+    const btn = Array.from(row.querySelectorAll('button')).find((b) =>
+      /^(resume|load)/i.test((b.textContent || '').trim())
+    );
+    if (!btn) return false;
+    btn.click();
+    return true;
+  },
+  // ── Return / Refund ──
+  cartLineCount: () => document.querySelectorAll('.cart-row').length,
+  returnBadge: () => !!document.querySelector('.return-mode-badge'),
+  noticeText: () => {
+    const n = document.querySelector('.notice');
+    return n ? n.innerText.trim() : '';
+  },
   // ── Window-style dialog controls (min / max / close) ──
   modalWinBtnCount: () => document.querySelectorAll('.modal .modal-win-btn').length,
   modalMaximized: () => !!document.querySelector('.modal[data-maximized="true"]'),
@@ -622,8 +640,8 @@ async function run() {
 
   // The one-line footer hint bar is generated from the shared shortcut registry.
   const footer = await js("(document.querySelector('.shortcuts')?.innerText || '').replace(/\\s+/g, ' ')");
-  check('Billing footer lists Ctrl+Shift+R return',
-    /Ctrl\+Shift\+R return/i.test(footer), footer.trim().slice(0, 140));
+  check('Billing footer lists Ctrl+Shift+F return',
+    /Ctrl\+Shift\+F return/i.test(footer), footer.trim().slice(0, 140));
   check('Billing footer lists save / save+print / print',
     /Ctrl\+S save/i.test(footer) && /Ctrl\+Shift\+S save\+print/i.test(footer) && /Ctrl\+P print/i.test(footer));
 
@@ -633,12 +651,19 @@ async function run() {
   check('Ctrl+F focuses the Billing search input',
     (await js('window.__kb.focusedTag()')) === 'INPUT', await js('window.__kb.focusedTag()'));
 
-  // Ctrl+Shift+R opens Return / Refund. Pre-2.16 this combo matched an unhandled
+  // Ctrl+Shift+F opens Return / Refund. Pre-2.16 this combo matched an unhandled
   // action (toast) and/or Electron's forceReload; it must open the modal now.
-  await js("window.__kb.press('Ctrl+Shift+r')");
+  // With an empty cart it can only offer to pull a past invoice in, so the frame
+  // shown is the "Find Invoice" helper and the cashier gets a nudge toast.
+  await js("window.__kb.press('Ctrl+Shift+f')");
   await waitUntil('window.__kb.hasModal()', 'Return / Refund modal to open');
   const retTitle = await js('window.__kb.modalTitle()');
-  check('Ctrl+Shift+R opens the Return / Refund modal', /Return\s*\/\s*Refund/i.test(retTitle), retTitle);
+  check('Ctrl+Shift+F with an empty cart opens the find-invoice helper',
+    /Return\s*\/\s*Refund/i.test(retTitle) && /Find Invoice/i.test(retTitle), retTitle);
+  check('empty-cart Return / Refund shows the hint',
+    /Add products to return/i.test(await js('window.__kb.noticeText()')), await js('window.__kb.noticeText()'));
+  check('no RETURN MODE badge while the find helper is open',
+    (await js('window.__kb.returnBadge()')) === false);
   await js("window.__kb.press('Escape')");
   await waitUntil('!window.__kb.hasModal()', 'Return / Refund modal to close');
   check('Escape closes the Return / Refund modal', true);
@@ -668,9 +693,27 @@ async function run() {
   const heldText = await js('window.__kb.heldTableText()');
   check('Held bill row shows its customer and value',
     heldText.includes('Walk-in') && heldText.includes('200.00'), heldText.slice(0, 90));
+
+  // Resume the held bill so the cart has a line, then Return / Refund must open
+  // the confirmation popup (not the find helper) and cancel must not touch the cart.
+  await js('window.__kb.resumeFirstHeld()');
+  await waitUntil('window.__kb.cartLineCount() > 0', 'held bill to resume into the cart');
+  check('Resuming a held bill puts a line back in the cart',
+    (await js('window.__kb.cartLineCount()')) >= 1, String(await js('window.__kb.cartLineCount()')));
+  const cartBefore = await js('window.__kb.cartLineCount()');
+  await js("window.__kb.press('Ctrl+Shift+f')");
+  await waitUntil('window.__kb.hasModal()', 'Confirm Return modal to open');
+  check('Return / Refund with a cart opens the confirmation',
+    /Confirm Return\s*\/\s*Refund/i.test(await js('window.__kb.modalTitle()')),
+    await js('window.__kb.modalTitle()'));
+  check('RETURN MODE badge shows while confirming',
+    (await js('window.__kb.returnBadge()')) === true);
   await js("window.__kb.press('Escape')");
-  await waitUntil('!window.__kb.hasModal()', 'Held Bills modal to close');
-  check('Escape closes the Held Bills modal', true);
+  await waitUntil('!window.__kb.hasModal()', 'Confirm Return modal to close');
+  check('Cancel (Escape) leaves the cart untouched',
+    (await js('window.__kb.cartLineCount()')) === cartBefore, String(await js('window.__kb.cartLineCount()')));
+  check('RETURN MODE badge clears after cancel',
+    (await js('window.__kb.returnBadge()')) === false);
 
   // ── Login: Enter advances from username to password ──────────────────────
   section('Login keyboard');

@@ -650,6 +650,25 @@ export interface ReturnInputItem {
   unit_price: number;
 }
 
+/** One cart line the Billing "Return / Refund" flow refunds (no invoice needed). */
+export interface ReturnBillItemInput {
+  product_id: number;
+  qty: number;
+  unit_price: number;
+}
+
+export interface ReturnBillInput {
+  items: ReturnBillItemInput[];
+  customer_id?: number | null;
+  reason?: string;
+  note?: string;
+  /** 'cash' | 'credit' | any configured payment mode. Defaults to 'cash'. */
+  refund_mode: string;
+  restock: boolean;
+  /** Optional original invoice the return is being filed against. */
+  linked_sale_id?: number | null;
+}
+
 export interface CashRefundRow {
   id: number;
   amount: number;
@@ -1035,6 +1054,17 @@ export interface PosBridge {
   returns: {
     create: (
       input: { sale_id: number; items: ReturnInputItem[]; reason?: string; refund_mode: 'cash' | 'credit'; restock: boolean }
+    ) => Promise<ReturnRow & { items: ReturnItemRow[] }>;
+    createBill: (
+      input: {
+        items: ReturnBillItemInput[];
+        customer_id?: number | null;
+        reason?: string;
+        note?: string;
+        refund_mode: string;
+        restock: boolean;
+        linked_sale_id?: number | null;
+      }
     ) => Promise<ReturnRow & { items: ReturnItemRow[] }>;
     list: (from?: string, to?: string, customerId?: number, productId?: number) => Promise<ReturnRow[]>;
     get: (id: number) => Promise<(ReturnRow & { items: ReturnItemRow[] }) | null>;

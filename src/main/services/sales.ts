@@ -362,6 +362,9 @@ export function listSales(
     if (status === 'voided') {
       sql += " AND s.status = 'voided'";
     }
+    // Return bills (status 'returned') are their own negative-sale records and
+    // never belong in the normal sales list — the Returns screen shows them.
+    sql += " AND s.status != 'returned'";
   }
   
   if (from) {

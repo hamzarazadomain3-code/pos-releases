@@ -372,6 +372,7 @@ body {
 .logo { max-width: 60mm; max-height: 12mm; display: block; margin: 0 auto 1mm; }
 .shop-name { font-size: ${shopPt}px; font-weight: 800; text-align: center; line-height: 1.15; margin: 0 0 0.6mm; overflow-wrap: anywhere; }
 .shop-lines { text-align: center; font-size: ${addrPt}px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.return-banner { text-align: center; font-size: ${sz(16)}px; font-weight: 900; letter-spacing: 0.4px; border: 0.4mm solid #000; padding: 0.6mm 0; margin: 1mm 0 0.4mm; }
 .hdr-line { text-align: center; font-size: ${addrPt}px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; margin-top: 0.3mm; }
 .line { border-top: 0.3mm dashed #000; margin: 1mm 0; }
 /* meta: label:value left, invoice number (one line) right */
@@ -418,6 +419,7 @@ table.totals tr.net td.lg { font-size: ${sz(14)}px; }
 <h1 class="shop-name">${esc(s.shop_name)}</h1>
 ${shopLines ? `<div class="shop-lines">${shopLines}</div>` : ''}
 ${headerLinesHtml}
+${sale.status === 'returned' ? '<div class="return-banner">RETURN / REFUND</div>' : ''}
 <div class="line"></div>
 <table class="meta">
   <tr>

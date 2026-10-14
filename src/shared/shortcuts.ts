@@ -81,7 +81,7 @@ export const SHORTCUT_ACTIONS: ShortcutActionDef[] = [
   { id: 'save', label: 'Save (Pay & Save)', defaultKey: 'Ctrl+S', screens: ['billing', 'quicksale', 'purchases'], hint: true, short: 'save' },
   { id: 'save_print', label: 'Save & print receipt', defaultKey: 'Ctrl+Shift+S', screens: ['billing'], hint: true, short: 'save+print' },
   { id: 'print', label: 'Print last sale', defaultKey: 'Ctrl+P', screens: ['billing', 'quotations'], hint: true, short: 'print' },
-  { id: 'new_return', label: 'Return / Refund', defaultKey: 'Ctrl+Shift+R', screens: ['billing'], hint: true, short: 'return' },
+  { id: 'new_return', label: 'Return / Refund', defaultKey: 'Ctrl+Shift+F', screens: ['billing'], hint: true, short: 'return' },
   { id: 'search', label: 'Focus search', defaultKey: 'Ctrl+F', screens: ['inventory', 'billing', 'udhaar', 'returns', 'barcode', 'labelStudio', 'purchases', 'expenses', 'transfers', 'promotions', 'commissions', 'branches', 'users', 'customReports', 'quotations', 'audits', 'invoiceAdmin', 'fifoStock', 'reports'] },
   { id: 'duplicate_sale', label: 'Repeat last sale', defaultKey: 'Shift+F2', screens: ['billing'] },
   { id: 'bulk_product', label: 'Bulk add products', defaultKey: 'Shift+F5', screens: ['inventory'] },

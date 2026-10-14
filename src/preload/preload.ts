@@ -225,6 +225,7 @@ const bridge: PosBridge = {
   },
   returns: {
     create: (input) => ipcRenderer.invoke('returns:create', input),
+    createBill: (input) => ipcRenderer.invoke('returns:createBill', input),
     list: (from?: string, to?: string, customerId?: number, productId?: number) => ipcRenderer.invoke('returns:list', from, to, customerId, productId),
     get: (id: number) => ipcRenderer.invoke('returns:get', id),
     createCashRefund: (amount: number, reason?: string, mode?: string) =>

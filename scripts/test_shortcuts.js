@@ -80,7 +80,7 @@ check('DEFAULT_SHORTCUTS includes save_print = Ctrl+Shift+S',
 check('the agreed combos are unchanged',
   DEFAULT_SHORTCUTS.save === 'Ctrl+S' &&
   DEFAULT_SHORTCUTS.print === 'Ctrl+P' &&
-  DEFAULT_SHORTCUTS.new_return === 'Ctrl+Shift+R',
+  DEFAULT_SHORTCUTS.new_return === 'Ctrl+Shift+F',
   `save=${DEFAULT_SHORTCUTS.save} print=${DEFAULT_SHORTCUTS.print} return=${DEFAULT_SHORTCUTS.new_return}`);
 
 // ── resolveCombo precedence ──────────────────────────────────────────────────

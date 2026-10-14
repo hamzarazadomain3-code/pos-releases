@@ -136,7 +136,14 @@ import {
   receivePurchaseOrder,
   supplierLedger,
 } from './services/purchases';
-import { createReturn, createCashRefund, getReturn, listReturns, listCashRefunds } from './services/returns';
+import {
+  createReturn,
+  createReturnBill,
+  createCashRefund,
+  getReturn,
+  listReturns,
+  listCashRefunds,
+} from './services/returns';
 import {
   completeAudit,
   createAudit,
@@ -578,6 +585,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('purchases:priceHistory', (_e, productId: number) => purchasePriceHistory(productId));
 
   ipcMain.handle('returns:create', (_e, input) => createReturn(input));
+  ipcMain.handle('returns:createBill', (_e, input) => createReturnBill(input));
   ipcMain.handle('returns:list', (_e, from?: string, to?: string) => listReturns(from, to));
   ipcMain.handle('returns:get', (_e, id: number) => getReturn(id));
   ipcMain.handle('returns:createCashRefund', (_e, amount: number, reason?: string, mode?: string) =>

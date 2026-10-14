@@ -1857,7 +1857,67 @@ body:has(.billing-page) {
   font-weight: 700;
 }
 
-/* ─── Action buttons: 2×2 grid ─── */
+/* ─── Return mode ─── */
+/* Purple badge shown ONLY while the Confirm Return popup is open; the summary
+   values flip to red negatives at the same time. */
+.return-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.bill-summary-value.return-negative {
+  color: var(--danger, #dc2626) !important;
+}
+.return-modal-items {
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.return-find-input,
+.return-note-input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #fff;
+  transition: all 0.2s ease;
+}
+.return-note-input {
+  resize: vertical;
+  line-height: 1.4;
+}
+.return-find-input:focus,
+.return-note-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+.return-refund-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 800;
+  font-size: 15px;
+  padding: 8px 10px;
+  margin-top: 8px;
+  border-radius: 8px;
+  background: rgba(139, 92, 246, 0.1);
+  color: #6d28d9;
+}
+
+/* ─── Action buttons: 2-column grid (5 buttons → 3 rows) ─── */
 .billing-page > .billen-billing-body .billten-actions-col {
   display: grid !important;
   grid-template-columns: 1fr 1fr !important;
@@ -1866,10 +1926,17 @@ body:has(.billing-page) {
 .billing-page > .billen-billing-body .action-btn-pay-save,
 .billing-page > .billen-billing-body .action-btn-save,
 .billing-page > .billen-billing-body .action-btn-hold,
+.billing-page > .billen-billing-body .action-btn-return,
 .billing-page > .billen-billing-body .action-btn-reset {
-  padding: 6px 8px !important;
-  min-height: 30px !important;
+  padding: 5px 8px !important;
+  min-height: 28px !important;
   font-size: 11px !important;
+  line-height: 1.1 !important;
+}
+/* The 5th button (Reset) sits alone on the last row — stretch it full width
+   so the column never shows a half-filled row at a short window height. */
+.billing-page > .billen-billing-body .action-btn-reset {
+  grid-column: 1 / -1 !important;
 }
 
 /* ─── Shortcuts bar ─── */
@@ -5330,6 +5397,7 @@ input[type="range"]::-moz-range-thumb {
 .action-btn-pay-save,
 .action-btn-save,
 .action-btn-hold,
+.action-btn-return,
 .action-btn-reset {
   width: 100%;
   padding: 8px 10px;
@@ -5376,6 +5444,36 @@ input[type="range"]::-moz-range-thumb {
 .action-btn-hold:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 18px rgba(245, 158, 11, 0.4);
+}
+
+/* Return / Refund — same shell as its four siblings, indigo/purple identity */
+.action-btn-return {
+  background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.35);
+}
+
+.action-btn-return:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(139, 92, 246, 0.45);
+}
+
+.action-btn-return:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(139, 92, 246, 0.45);
+}
+
+.action-btn-return:focus-visible {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 2px;
+}
+
+.action-btn-return:disabled,
+.action-btn-return[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .action-btn-reset {

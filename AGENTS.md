@@ -1,7 +1,7 @@
 # Rokar POS — Agent Guide
 
 ## Version
-**v2.16.0** (Perpetual one-time licence: no expiry, device-locked, revocable)
+**v2.17.0** (Perpetual one-time licence: no expiry, device-locked, revocable)
 
 ## Environment
 - Node.js v24.18.0 (portable at `C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64`)
@@ -41,6 +41,23 @@ list now renders. `test:shortcuts` (22 checks) asserts the shared registry
 invariants (unique combos per screen, DB-seed exclusions, `resolveCombo`
 precedence, `screens` scoping, billing hint rows). Both need `npm run build:main`
 first, which the npm scripts do for you.
+
+### Cart Return / Refund test (Electron + throwaway DB)
+```powershell
+$env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; npm run test:return
+```
+29 checks over the real `returns.createReturnBill` — the service behind Billing's
+**Return / Refund** button. A cart return is recorded as its own **negative sale**
+(`status = 'returned'`, `invoice_no = RET-YYYYMMDD-NNNN`, `total_amount < 0`), not as
+a line against an old invoice, so the suite pins the three things that would break
+quietly: the negative sale must **never** surface in `listSales()` (every report and
+the cash drawer filter `status = 'completed'`, and the refund reaches the drawer once
+via `returns.refund_amount` where `refund_mode = 'cash'`); stock must go back up by
+the returned qty (with one `stock_movements` row) unless `restock: false`; and a
+**credit** refund must move the customer ledger while a **cash** refund does not. It
+also covers the validation gates (empty cart, negative price, zero refund), the
+owner-only-above-`refund_manager_threshold` rule (read from `admin_settings`, the same
+table the Admin UI writes), and the "open a shift first" refusal.
 
 ### Image-upload helper test (pure Node, no Electron)
 ```powershell
@@ -184,7 +201,7 @@ Anything not yet migrated is listed under the table.
 | FIFO Stock Report | ↑/↓ across the per-product batch tables | | ✓ |
 | Cash Drawer | focus trap; Esc closes; opening/closing cash don't step | | ✓ |
 | Billing | Ctrl+F / F2 focus the search box; footer hints come from the registry | ✓ | |
-| Billing | Ctrl+Shift+R opens Return / Refund; Esc closes | ✓ | |
+| Billing | Ctrl+Shift+F opens Return / Refund; Esc closes | ✓ | |
 | Billing | Ctrl+S = save, Ctrl+Shift+S = save+print, Ctrl+P = print last | | ✓ |
 | Billing | Hold then resume restores a full cart (no NaN) | ✓* | ✓ |
 | Billing | Held Bills list shows customer + value; Esc closes | ✓ | |
@@ -403,6 +420,7 @@ them wrong.
 - `src/main/services/labelStudioPrinting.ts` — Label Studio's main-process half: rebuilds a renderer serialized template into HTML (mm-coordinate elements + `{placeholders}`, barcode/QR via `printDocs.toDataUrl`) and exposes `printBarcodeBatchWithOptions` / `exportLabelBatchToPDF` / `exportLabelBatchToPNG` / `printCalibrationLabel` / `buildLabelStudioJob` / `buildCalibrationLabelHtml`
 - `scripts/print_smoke.js` — Print geometry/enumeration suite (page box + layout audit + content audit), run with `npm run test:print`
 - `scripts/receipt_design_check.js` — thermal redesign scenario suite (1 item / 6 items + discount + 0.57kg unit / udhaar) against a disposable DB, `npm run test:receipt`
+- `scripts/test_return_bill.js` — cart Return / Refund suite against a throwaway DB (`npm run test:return`); asserts the negative-sale write, restock, cash-drawer vs customer-credit split, the manager threshold and the validation gates (see "Cart Return / Refund test" above)
 - `src/main/services/recovery.ts` — password recovery: Option A (security question + owner recovery
   code) and Option B (developer-issued support code). Recovery answers are salted with
   `pos-recovery-salt`, NOT the password salt `pos-salt` — a shared app-wide salt would put answers

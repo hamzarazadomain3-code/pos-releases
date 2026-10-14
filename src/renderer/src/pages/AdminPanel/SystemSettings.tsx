@@ -40,6 +40,7 @@ const SECTIONS: Section[] = [
       { key: 'round_off_total', label: 'Round Off Total', type: 'toggle' },
       { key: 'default_payment_mode', label: 'Default Payment Mode', type: 'select', options: ['Cash', 'Card', 'Easypaisa', 'JazzCash'] },
       { key: 'require_customer', label: 'Require Customer for Every Bill', type: 'toggle' },
+      { key: 'refund_manager_threshold', label: 'Manager Refund Threshold', type: 'number', hint: 'Refunds above this amount need a manager (0 = off)' },
       { key: 'allow_negative_stock', label: 'Allow Negative Stock', type: 'toggle' },
       { key: 'invoice_prefix', label: 'Invoice Prefix', type: 'text' },
       { key: 'invoice_start_number', label: 'Starting Invoice Number', type: 'number' },
