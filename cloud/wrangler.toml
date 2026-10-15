@@ -1,0 +1,30 @@
+name = "rokar-pos"
+# Must point at the PREBUILT bundle: wrangler's own bundler cannot apply the
+# esbuild aliases (../db -> web-db, crypto -> crypto-shim) the foundation needs.
+# Always `npm run build` (or dev/test/deploy, which build first) before using it.
+main = "dist/index.js"
+compatibility_date = "2026-09-30"
+compatibility_flags = ["nodejs_compat"]
+
+# Bindings
+[[d1_databases]]
+binding = "ACCOUNTS"
+database_name = "rokar-accounts"
+database_id = "a9a6371a-8ea0-4664-9dcc-5fc9fb510fee"
+
+[[durable_objects.bindings]]
+name = "SHOP"
+class_name = "ShopObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ShopObject"]
+
+# Static assets: the REAL desktop renderer, built by `npm run build:web` into
+# web-dist/app and served at /app (see web/vite.config.mjs). There is no root
+# index.html, so "/" still falls through to the Worker (the lite dashboard SPA).
+# `binding = "ASSETS"` also lets index.ts delegate explicitly where useful.
+[assets]
+directory = "./web-dist"
+binding = "ASSETS"
+not_found_handling = "none"

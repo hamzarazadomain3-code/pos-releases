@@ -1,0 +1,32 @@
+{
+  "name": "rokar-cloud",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Rokar POS web foundation — Cloudflare Workers + Durable Objects (SQLite) + D1 accounts",
+  "scripts": {
+    "build": "node scripts/build.mjs && node scripts/build-web.mjs && node scripts/fix-workerd.mjs",
+    "build:worker": "node scripts/build.mjs",
+    "build:web": "node scripts/build-web.mjs",
+    "dev": "npm run build && wrangler dev --config wrangler.toml",
+    "test": "npm run build && node scripts/run-tests.mjs",
+    "smoke:web": "node scripts/run-web-smoke.mjs",
+    "typecheck": "npm run build:worker && tsc -p tsconfig.json --noEmit",
+    "deploy": "npm run build && wrangler deploy --config wrangler.toml",
+    "fix-workerd": "node scripts/fix-workerd.mjs"
+  },
+  "dependencies": {
+    "@noble/hashes": "^1.8.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261012.1",
+    "esbuild": "^0.28.2",
+    "miniflare": "^5.20261006.1-alpha",
+    "typescript": "^5.4.3",
+    "wrangler": "^4.149.0"
+  },
+  "allowScripts": {
+    "esbuild": true,
+    "workerd": true
+  }
+}
