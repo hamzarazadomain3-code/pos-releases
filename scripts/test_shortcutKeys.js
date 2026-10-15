@@ -1,7 +1,7 @@
 // Mirror of src/renderer/src/utils/shortcutKeys.ts — keep both in sync.
 // Verifies the modifier canonicalization used by the billing keyboard handler.
 
-const MODIFIER_ORDER = ['alt', 'ctrl', 'shift'];
+const MODIFIER_ORDER = ['ctrl', 'alt', 'shift'];
 const MOD = (x) => MODIFIER_ORDER.includes(x);
 
 function keyFromEvent(e) {
@@ -53,6 +53,13 @@ eq('Shift+F2 duplicate last sale', 'Shift+F2', { key: 'F2', ctrlKey: false, altK
 eq('Ctrl+Shift+H recall held', 'Ctrl+Shift+H', { key: 'h', ctrlKey: true, altKey: false, shiftKey: true, metaKey: false, code: 'KeyH' }, true);
 eq('Alt+S settings', 'Alt+S', { key: 's', ctrlKey: false, altKey: true, shiftKey: false, metaKey: false, code: 'KeyS' }, true);
 eq('Ctrl+H hold bill', 'Ctrl+H', { key: 'h', ctrlKey: true, altKey: false, shiftKey: false, metaKey: false, code: 'KeyH' }, true);
+
+// ── Ctrl+Alt mixes (browser-safe save+print fallback; regression: the old
+//    modifier order emitted `alt+ctrl+s`, so these never matched) ──
+eq('Ctrl+Alt+S matches', 'Ctrl+Alt+S', { key: 's', ctrlKey: true, altKey: true, shiftKey: false, metaKey: false, code: 'KeyS' }, true);
+eq('Alt+Ctrl+S reorders to the live combo', 'Alt+Ctrl+S', { key: 's', ctrlKey: true, altKey: true, shiftKey: false, metaKey: false, code: 'KeyS' }, true);
+eq('Ctrl+Alt+S needs alt', 'Ctrl+Alt+S', { key: 's', ctrlKey: true, altKey: false, shiftKey: false, metaKey: false, code: 'KeyS' }, false);
+eq('Ctrl+Alt+S survives a non-Latin layout', 'Ctrl+Alt+S', { key: '\u0633', ctrlKey: true, altKey: true, shiftKey: false, metaKey: false, code: 'KeyS' }, true);
 
 // ── Single modifier / plain keys ──
 eq('Ctrl+F focus search', 'Ctrl+F', { key: 'f', ctrlKey: true, altKey: false, shiftKey: false, metaKey: false, code: 'KeyF' }, true);

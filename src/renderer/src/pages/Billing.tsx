@@ -5,7 +5,7 @@ import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
 import { formatDateTimeAdmin, formatTimeAdmin, formatDateAdmin, toLocalDateString } from '../utils/dateUtils';
 import { getCurrencySymbol, formatMoney } from '../utils/currency';
-import { eventCombo, matchesShortcut } from '../utils/shortcutKeys';
+import { eventCombo, keyFromEvent, matchesShortcut } from '../utils/shortcutKeys';
 import { type CartLine, lineTotals, rehydrateCartLines, serializeCartLine, summarizeHeldBill, type HeldBillSummary } from '@shared/cartMath';
 import { defaultCombo, hintRows, isActionAllowedOn, resolveCombo } from '@shared/shortcuts';
 import type {
@@ -1092,6 +1092,15 @@ useEffect(() => {
             openPay();
           }
           break;
+        case 'save_print':
+          // Same path as the hard-coded Ctrl+Shift+S chord above. Reachable when
+          // the owner rebinds save+print, and on the web where it is offered as
+          // Ctrl+Alt+S because Edge/Firefox reserve Ctrl+Shift+S.
+          if (busy) break;
+          if (quotationMode) completeQuotation();
+          else if (items.length === 0) setNotice('Cart is empty — nothing to save');
+          else expressCheckout({ forcePrint: true, silent: true }).then((ok) => { if (ok) newBill(); });
+          break;
         case 'print':
           if (success) {
             window.api.printing
@@ -1131,7 +1140,11 @@ useEffect(() => {
 
       // 2.5) Ctrl+Shift+S — save & print receipt in one shot (replaces the old
       //      Ctrl+S+P chord). Charge silently, print, then start a fresh bill.
-      if (e.ctrlKey && e.shiftKey && (e.key === 's' || e.key === 'S')) {
+      //      `keyFromEvent()` resolves the PHYSICAL key (falls back to e.code), so
+      //      this still fires on a non-Latin layout where e.key is not 's'. The
+      //      `!altKey` guard leaves every Ctrl+Alt+… chord to the admin bindings
+      //      resolved at step 4 (e.g. the web's Ctrl+Alt+S save+print fallback).
+      if (e.ctrlKey && !e.altKey && e.shiftKey && keyFromEvent(e) === 's') {
         e.preventDefault();
         e.stopPropagation();
         if (busy) return;
@@ -1143,7 +1156,7 @@ useEffect(() => {
 
       // 2.6) Ctrl+P — print the last completed sale (replaces the double-press
       //      focus/print dance). preventDefault suppresses the native dialog.
-      if (e.ctrlKey && (e.key === 'p' || e.key === 'P')) {
+      if (e.ctrlKey && !e.altKey && keyFromEvent(e) === 'p') {
         e.preventDefault();
         e.stopPropagation();
         if (success) handlePrintInvoice();
@@ -1152,7 +1165,7 @@ useEffect(() => {
       }
 
       // 2.7) Ctrl+S — Save: open the payment modal (or close a quotation).
-      if (e.ctrlKey && (e.key === 's' || e.key === 'S')) {
+      if (e.ctrlKey && !e.altKey && keyFromEvent(e) === 's') {
         e.preventDefault();
         e.stopPropagation();
         if (busy) return;

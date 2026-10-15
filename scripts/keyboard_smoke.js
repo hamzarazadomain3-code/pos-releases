@@ -645,6 +645,49 @@ async function run() {
   check('Billing footer lists save / save+print / print',
     /Ctrl\+S save/i.test(footer) && /Ctrl\+Shift\+S save\+print/i.test(footer) && /Ctrl\+P print/i.test(footer));
 
+  // ── Native input events ─────────────────────────────────────────────────
+  // `window.__kb.press()` (above) dispatches a synthetic KeyboardEvent straight
+  // at a DOM node, so it can NEVER prove the OS, Chromium or the Electron
+  // application menu has not already eaten the combo — which is exactly how a
+  // shipped build can lose Ctrl+S / Ctrl+Shift+S / Ctrl+P while the rest of the
+  // keyboard suite stays green. `sendInputEvent` goes through the real input
+  // pipeline, so these three checks are the ones that catch that class of bug.
+  const nativeCombo = async (modifiers, keyCode) => {
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
+    win.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers });
+    await sleep(250);
+  };
+
+  // Cart is empty here, so each combo must answer with its own notice.
+  await nativeCombo(['control'], 's');
+  const nCtrlS = await js('window.__kb.noticeText()');
+  check('native Ctrl+S reaches Billing', /Cart is empty/i.test(nCtrlS), nCtrlS);
+
+  await nativeCombo(['control', 'shift'], 'S');
+  const nCtrlShiftS = await js('window.__kb.noticeText()');
+  check('native Ctrl+Shift+S reaches Billing', /Cart is empty/i.test(nCtrlShiftS), nCtrlShiftS);
+
+  await nativeCombo(['control'], 'p');
+  const nCtrlP = await js('window.__kb.noticeText()');
+  check('native Ctrl+P reaches Billing', /No completed sale to print/i.test(nCtrlP), nCtrlP);
+
+  // ── Layout-proofing ─────────────────────────────────────────────────────
+  // On an Urdu (or any non-Latin) layout the keydown arrives with key='س' and
+  // code='KeyS'. The handler used to compare e.key, so Ctrl+Shift+S fell through
+  // to the default branch and toast'd `Shortcut "Ctrl+Shift+S" is not available…`
+  // — the customer's "the shortcut doesn't work". It must resolve the physical key.
+  await js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'\\u0633',code:'KeyS',ctrlKey:true,shiftKey:true,bubbles:true,cancelable:true}))");
+  await sleep(200);
+  const layoutNotice = await js('window.__kb.noticeText()');
+  check('Ctrl+Shift+S works on a non-Latin layout (key=س, code=KeyS)',
+    /Cart is empty/i.test(layoutNotice) && !/not available/i.test(layoutNotice), layoutNotice);
+
+  await js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'\\u067e',code:'KeyP',ctrlKey:true,bubbles:true,cancelable:true}))");
+  await sleep(200);
+  const layoutP = await js('window.__kb.noticeText()');
+  check('Ctrl+P works on a non-Latin layout (key=پ, code=KeyP)',
+    /No completed sale to print/i.test(layoutP) && !/not available/i.test(layoutP), layoutP);
+
   // Ctrl+F focuses the search / barcode input.
   await js("window.__kb.press('Ctrl+f')");
   await sleep(150);

@@ -1,4 +1,8 @@
-const MODIFIER_ORDER = ['alt', 'ctrl', 'shift'] as const;
+// Must match the order `eventCombo()` emits below (ctrl → alt → shift). With the
+// old `['alt','ctrl','shift']` order, `normalizeStoredKey('Ctrl+Alt+S')` produced
+// `alt+ctrl+s` while the live event produced `ctrl+alt+s`, so ANY admin binding
+// that mixes Alt with Ctrl/Shift silently never matched.
+const MODIFIER_ORDER = ['ctrl', 'alt', 'shift'] as const;
 
 type KeyEventLike = {
   key: string;
