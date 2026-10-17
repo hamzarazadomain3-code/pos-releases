@@ -1,4 +1,6 @@
-﻿export interface Category {
+﻿import type { ReceiptDesign, ReceiptLibrary } from './receiptDesign';
+
+export interface Category {
   id: number;
   name: string;
   created_at?: string;
@@ -168,7 +170,101 @@ export interface Customer {
   address: string | null;
   balance: number;
   credit_limit?: number;
+  /** Grace period (days) before an unpaid credit entry counts as overdue. 0 = never overdue. */
+  credit_days?: number;
+  /** 1 = block a sale that would exceed the credit limit instead of only warning. */
+  block_on_exceed?: number;
   created_at?: string;
+
+  // ── Phase 3 profile fields (migration 060; all optional) ──
+  urdu_name?: string | null;
+  /** retail | wholesale | medical | other */
+  customer_type?: string | null;
+  business_name?: string | null;
+  contact_person?: string | null;
+  /** data URL or path */
+  photo?: string | null;
+  /** active | inactive */
+  status?: string | null;
+  customer_code?: string | null;
+  group_name?: string | null;
+  tags?: string | null;
+  phone_alt?: string | null;
+  whatsapp?: string | null;
+  email?: string | null;
+  city?: string | null;
+  area?: string | null;
+  maps_link?: string | null;
+  /** en | ur */
+  message_language?: string | null;
+  cnic?: string | null;
+  ntn?: string | null;
+  drug_licence?: string | null;
+  guarantor?: string | null;
+  guarantor_phone?: string | null;
+  /** retail | wholesale */
+  price_level?: string | null;
+  default_discount_pct?: number;
+  /** 0 = no cap */
+  max_single_bill?: number;
+  /** allow | warn | block — how the credit limit is enforced. */
+  credit_action?: string | null;
+  opening_balance_as_of?: string | null;
+  notes?: string | null;
+  birthday?: string | null;
+  anniversary?: string | null;
+  /** none | weekly | monthly */
+  reminder_freq?: string | null;
+}
+
+/**
+ * Everything the tabbed Add/Edit customer form collects. Numbers may arrive as
+ * strings from the renderer; the service sanitises them (never NaN).
+ */
+export interface CustomerInput {
+  name: string;
+  phone?: string | null;
+  address?: string | null;
+  urdu_name?: string | null;
+  customer_type?: string | null;
+  business_name?: string | null;
+  contact_person?: string | null;
+  photo?: string | null;
+  status?: string | null;
+  customer_code?: string | null;
+  group_name?: string | null;
+  tags?: string | null;
+  phone_alt?: string | null;
+  whatsapp?: string | null;
+  email?: string | null;
+  city?: string | null;
+  area?: string | null;
+  maps_link?: string | null;
+  message_language?: string | null;
+  cnic?: string | null;
+  ntn?: string | null;
+  drug_licence?: string | null;
+  guarantor?: string | null;
+  guarantor_phone?: string | null;
+  credit_limit?: number | string | null;
+  credit_days?: number | string | null;
+  price_level?: string | null;
+  default_discount_pct?: number | string | null;
+  credit_action?: string | null;
+  max_single_bill?: number | string | null;
+  /** Negative = shop owes the customer (Cr); positive = customer owes the shop (Dr). */
+  opening_balance?: number | string | null;
+  opening_balance_as_of?: string | null;
+  notes?: string | null;
+  birthday?: string | null;
+  anniversary?: string | null;
+  reminder_freq?: string | null;
+}
+
+/** Returned by `customers:findDuplicates` so the form can warn + "open existing". */
+export interface CustomerDuplicates {
+  phone: Customer[];
+  name: Customer[];
 }
 
 export interface Sale {
@@ -287,6 +383,199 @@ export interface CustomerTransaction {
   type: string;
   created_at?: string;
   running: number;
+}
+
+/** One line item on a credit (udhaar) entry — from a sale bill or a manual entry. */
+export interface UdhaarItemLine {
+  /** Stable key for React (`sale:<id>` / `manual:<id>`). */
+  key: string;
+  source: 'sale' | 'manual';
+  transaction_id: number | null;
+  sale_id: number | null;
+  invoice_no: string | null;
+  product_id: number | null;
+  barcode: string | null;
+  name: string;
+  unit: string | null;
+  qty: number;
+  rate: number;
+  discount: number;
+  line_total: number;
+  direction: 'debit' | 'credit';
+  batch?: string | null;
+  expiry?: string | null;
+  created_at?: string | null;
+}
+
+/** A ledger row with the item lines it carries and its FIFO settlement state. */
+export interface UdhaarLedgerRow extends CustomerTransaction {
+  invoice_no: string | null;
+  note: string | null;
+  reference: string | null;
+  cashier_name: string | null;
+  direction: 'debit' | 'credit';
+  /** Money still owed on this entry after older payments are allocated first. */
+  remaining: number;
+  paid: boolean;
+  due_date: string | null;
+  overdue: boolean;
+  items: UdhaarItemLine[];
+}
+
+export interface UdhaarAccountSummary {
+  outstanding: number;
+  credit_limit: number;
+  available: number;
+  last_payment_at: string | null;
+  last_sale_at: string | null;
+  overdue_amount: number;
+  credit_days: number;
+  blocked: boolean;
+  over_limit: boolean;
+  /** Value of all item lines carried on credit (debits only). */
+  items_value: number;
+}
+
+export interface UdhaarLedger {
+  customer: Customer;
+  rows: UdhaarLedgerRow[];
+  summary: UdhaarAccountSummary;
+}
+
+/** Amount owed in one aging bucket. */
+export interface UdhaarAgingBucket {
+  /** Not yet due (or no credit period configured). */
+  current: number;
+  /** 1–30 days past due. */
+  d1_30: number;
+  /** 31–60 days past due. */
+  d31_60: number;
+  /** 61–90 days past due. */
+  d61_90: number;
+  /** More than 90 days past due. */
+  d90_plus: number;
+  /** Sum of the five buckets (reconciled to the customer balance). */
+  total: number;
+}
+
+/** One customer's row in the aging report. */
+export interface UdhaarAgingRow {
+  customer_id: number;
+  name: string;
+  phone: string | null;
+  /** The customer's running balance (authoritative outstanding). */
+  outstanding: number;
+  /** Earliest due date among unpaid debits, or null when nothing is scheduled. */
+  oldest_due_date: string | null;
+  /** Days past the earliest due date (0 when not overdue / no due date). */
+  days_overdue: number;
+  buckets: UdhaarAgingBucket;
+}
+
+export interface UdhaarAging {
+  /** Date the report was computed (YYYY-MM-DD). */
+  as_of: string;
+  rows: UdhaarAgingRow[];
+  totals: UdhaarAgingBucket;
+}
+
+/** Generic success/failure result for ledger-mutating operations. */
+export interface OpResult {
+  ok: boolean;
+  message?: string;
+}
+
+/** Result of scanning/typing a barcode in the Add Udhaar dialog. */
+export interface UdhaarItemLookup {
+  found: boolean;
+  source: 'inventory' | 'catalog' | 'none';
+  /** Inventory products only. */
+  product_id: number | null;
+  barcode: string | null;
+  name: string;
+  unit: string | null;
+  /** Inventory retail price. */
+  retail: number;
+  /** Inventory wholesale price (falls back to retail). */
+  wholesale: number;
+  /** Catalog price. */
+  price: number;
+  /** Inventory stock on hand (0 for catalog-only items). */
+  stock: number;
+  batch: string | null;
+  expiry: string | null;
+}
+
+/** A row in the Add/Return Udhaar grid. */
+export interface UdhaarEntryLineInput {
+  /** Inventory product id when the line came from stock. */
+  product_id?: number | null;
+  barcode?: string | null;
+  name: string;
+  unit?: string | null;
+  qty: number;
+  rate: number;
+  discount?: number;
+  batch?: string | null;
+  expiry?: string | null;
+  /** Persist this barcode → item mapping into the catalog. */
+  remember?: boolean;
+  /** Create a new inventory product for this line. */
+  add_to_inventory?: boolean;
+}
+
+export interface UdhaarEntryInput {
+  customer_id: number;
+  /** ISO date (YYYY-MM-DD); defaults to today. */
+  date?: string | null;
+  note?: string | null;
+  reference?: string | null;
+  /** Deduct stock for inventory-backed debit lines (ignored for credit lines). */
+  deduct_stock: boolean;
+  /**
+   * 'debit' = the customer owes the shop (items taken).
+   * 'credit' = the shop owes the customer (items returned).
+   */
+  direction: 'debit' | 'credit';
+  lines: UdhaarEntryLineInput[];
+  /** Set when a manager PIN authorised a credit-limit override. */
+  override_user_id?: number | null;
+}
+
+export interface UdhaarEntryResult {
+  ok: boolean;
+  message: string;
+  transaction_id?: number;
+  total?: number;
+  /** Populated when the credit limit blocked the entry (no PIN supplied). */
+  blocked?: boolean;
+  credit_limit?: number;
+  current_balance?: number;
+}
+
+export interface UdhaarCatalogItem {
+  id: number;
+  barcode: string | null;
+  name: string;
+  price: number;
+  unit: string | null;
+  created_at?: string;
+}
+
+/** One manual 'Udhaar (items)' entry, with its lines — the credit slip data. */
+export interface UdhaarEntryDetail {
+  transaction_id: number;
+  customer: Customer;
+  /** Signed amount on the ledger row (debit positive, credit negative). */
+  amount: number;
+  direction: 'debit' | 'credit';
+  note: string | null;
+  reference: string | null;
+  deduct_stock: boolean;
+  created_at: string | null;
+  /** Unsigned total of the lines. */
+  total: number;
+  items: UdhaarItemLine[];
 }
 
 export interface Expense {
@@ -847,6 +1136,18 @@ export interface PrintResult {
 }
 
 /**
+ * Per-call options for printing / previewing a receipt (Phase 4).
+ *  - `copies`   overrides the shop's `receipt_copies` setting for one job.
+ *  - `duplicate` marks a reprint of an ALREADY-ISSUED sale → "DUPLICATE COPY".
+ *  - `kickDrawer` pulses the cash drawer after a successful print.
+ */
+export interface PrintSaleOptions {
+  copies?: number;
+  duplicate?: boolean;
+  kickDrawer?: boolean;
+}
+
+/**
  * Where a free trial currently stands.
  *
  * `serverAnchored` is the field worth understanding: while it is false the countdown
@@ -921,6 +1222,47 @@ export interface PosBridge {
     ledger: (customerId: number) => Promise<CustomerTransaction[]>;
     receivePayment: (customerId: number, amount: number, mode: string, note?: string) => Promise<Customer>;
     setCreditLimit: (customerId: number, limit: number) => Promise<Customer>;
+    /** Full profile read used by the Edit / Profile dialogs. */
+    get: (id: number) => Promise<Customer | null>;
+    /** Create (no id) or update (with id) from the tabbed form. */
+    save: (input: CustomerInput, id?: number | null) => Promise<{ ok: boolean; message?: string; customer?: Customer }>;
+    deactivate: (id: number) => Promise<Customer>;
+    reactivate: (id: number) => Promise<Customer>;
+    /** Hard delete — refused when the customer has any transactions or sales. */
+    remove: (id: number) => Promise<{ ok: boolean; message?: string }>;
+    findDuplicates: (opts: { phone?: string | null; name?: string; excludeId?: number | null }) => Promise<CustomerDuplicates>;
+    /** Owner-only: move all history from one customer onto another and delete the source. */
+    merge: (sourceId: number, targetId: number) => Promise<{ ok: boolean; message?: string; merged?: number }>;
+  };
+  udhaar: {
+    /** Ledger with item lines, FIFO settlement + header summary in one call. */
+    ledger: (customerId: number) => Promise<UdhaarLedger>;
+    /** Barcode/SKU lookup: inventory first, then the Udhaar item catalog. */
+    lookupItem: (code: string) => Promise<UdhaarItemLookup>;
+    /** Name autocomplete across inventory + catalog. */
+    searchItems: (term: string) => Promise<UdhaarItemLookup[]>;
+    /** Create a manual 'Udhaar (items)' entry (debit) or a return (credit). */
+    createEntry: (input: UdhaarEntryInput) => Promise<UdhaarEntryResult>;
+    catalogList: () => Promise<UdhaarCatalogItem[]>;
+    catalogUpsert: (item: { id?: number; barcode?: string | null; name: string; price: number; unit?: string | null }) => Promise<UdhaarCatalogItem>;
+    catalogDelete: (id: number) => Promise<boolean>;
+    catalogExport: () => Promise<boolean>;
+    catalogImport: () => Promise<{ ok: boolean; message: string; imported?: number }>;
+    /** Print a slip for one manual entry (thermal roll only). */
+    printEntrySlip: (transactionId: number, paper?: 'thermal80' | 'thermal58') => Promise<PrintResult>;
+    /** WhatsApp a slip for one manual entry. */
+    shareEntrySlip: (transactionId: number, phone?: string) => Promise<WhatsAppSendResult>;
+    printStatement: (customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') => Promise<PrintResult>;
+    previewStatement: (customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') => Promise<PrintResult>;
+    exportStatementPdf: (customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') => Promise<{ ok: boolean; message: string; data?: Blob | Uint8Array }>;
+    /** WhatsApp a text statement (item list included). */
+    shareStatement: (customerId: number, from?: string, to?: string, phone?: string) => Promise<WhatsAppSendResult>;
+    /** Receivables aging across every customer with a balance. */
+    aging: () => Promise<UdhaarAging>;
+    /** Owner-only: forgive part of a customer's debt (writes a negative ledger row). */
+    writeOff: (customerId: number, amount: number, note?: string) => Promise<{ ok: boolean; message?: string; customer?: Customer }>;
+    /** WhatsApp a short payment reminder to the customer's phone. */
+    remind: (customerId: number, phone?: string) => Promise<WhatsAppSendResult>;
   };
   settings: {
     getAll: () => Promise<SettingsMap>;
@@ -928,7 +1270,7 @@ export interface PosBridge {
     chooseCloudFolder: () => Promise<string | null>;
   };
   printing: {
-    printSale: (saleId: number, template?: string) => Promise<PrintResult>;
+    printSale: (saleId: number, template?: string, opts?: PrintSaleOptions) => Promise<PrintResult>;
     printLabel: (productId: number, copies?: number) => Promise<PrintResult>;
     printBarcodeLabel: (productId: number, copies?: number) => Promise<PrintResult>;
     printBarcodeBatch: (productIds: number[], size?: string, copies?: number) => Promise<PrintResult>;
@@ -938,9 +1280,15 @@ export interface PosBridge {
     exportLabelBatchToPNG: (productIds: number[], template: any, size?: string, copies?: number, run?: unknown) => Promise<{ ok: boolean; message: string; data?: Blob | Uint8Array }>;
     printCalibrationLabel: (size: string) => Promise<PrintResult>;
     openCashDrawer: () => Promise<{ ok: boolean; message: string }>;
-    previewReceipt: (saleId: number, template?: string) => Promise<PrintResult>;
+    previewReceipt: (saleId: number, template?: string, opts?: PrintSaleOptions) => Promise<PrintResult>;
+    reprintLastReceipt: () => Promise<PrintResult>;
     previewInvoice: (saleId: number) => Promise<PrintResult>;
     printInvoice: (saleId: number) => Promise<PrintResult>;
+    // Phase 5: X/Z reports
+    printXReport: (shiftId?: number) => Promise<PrintResult>;
+    printZReport: () => Promise<PrintResult>;
+    previewXReport: (shiftId?: number) => Promise<string | null>;
+    previewZReport: () => Promise<string | null>;
     printDrawerSummary: (data: { opening_cash: number; closing_cash: number; cash_sales: number; card_sales: number; udhaar_sales: number; other_payments: number; cash_refunds: number; cash_in: number; cash_out: number; expected_cash: number; actual_cash: number; variance: number; opened_at: string; closed_at: string; cashier: string; notes?: string }) => Promise<PrintResult>;
     getPrinters: () => Promise<PrinterInfo[]>;
     getPrinterSettings: () => Promise<PrinterSettingsSnapshot>;
@@ -1048,6 +1396,7 @@ export interface PosBridge {
     exportProducts: (filters?: { search?: string; includeInactive?: boolean; categoryId?: number; stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock'; supplierId?: number; expiryFrom?: string; expiryTo?: string }) => Promise<boolean>;
     exportSales: (from?: string, to?: string) => Promise<boolean>;
     exportCustomers: (filters?: { status?: 'paid' | 'pending' | 'all'; from?: string; to?: string }) => Promise<boolean>;
+    exportUdhaarStatement: (customerId: number, from?: string, to?: string) => Promise<boolean>;
     exportPurchaseOrders: (filters?: { status?: string; from?: string; to?: string; supplierId?: number }) => Promise<boolean>;
     exportExpenses: (from?: string, to?: string) => Promise<boolean>;
     downloadTemplate: () => Promise<boolean>;
@@ -1196,6 +1545,13 @@ export interface PosBridge {
     sendSms: (saleId: number, phone: string) => Promise<{ ok: boolean; message: string }>;
     sendEmail: (saleId: number, email: string) => Promise<{ ok: boolean; message: string }>;
     getTemplates: () => Promise<Array<{ id: string; name: string; description: string; width: string }>>;
+    getDesign: () => Promise<{ design: ReceiptDesign; enabled: boolean }>;
+    setDesign: (design: ReceiptDesign, enabled?: boolean) => Promise<{ ok: boolean; message: string }>;
+    resetDesign: () => Promise<{ ok: boolean; message: string }>;
+    previewDesign: (design: ReceiptDesign, paper: string, sample?: string) => Promise<string>;
+    getLibrary: () => Promise<ReceiptLibrary>;
+    setLibrary: (library: ReceiptLibrary) => Promise<{ ok: boolean; message: string }>;
+    testDesign: (design: ReceiptDesign, paper: string, copies?: number) => Promise<PrintResult>;
   };
   quotations: {
     list: (filters?: { status?: string; customer_id?: number; from_date?: string; to_date?: string; search?: string }) => Promise<QuotationRow[]>;

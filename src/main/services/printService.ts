@@ -31,7 +31,7 @@
  *  - Thermal page height is MEASURED from the rendered DOM, then converted
  *    px -> microns, so the roll cuts to exactly one page with no blank tail.
  */
-import { BrowserWindow, app, protocol } from 'electron';
+import { BrowserWindow, app, dialog, protocol } from 'electron';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -250,6 +250,18 @@ export const PAPER_SETTING_KEYS: Record<'receipt' | 'invoice' | 'label', string>
 
 export const AUTO_PRINTER = 'auto';
 
+/**
+ * Explicit "print to whatever Windows currently has set as the default printer"
+ * sentinel, resolved SILENTLY.
+ *
+ * `AUTO_PRINTER` still means "ask every time" (see `resolveTarget`), which is a
+ * deliberate decision — auto-print must never silently hijack an unrelated
+ * default device (a PDF printer, OneNote, …). This value is the owner opting IN
+ * to the default device, chosen from Settings → Printers, so a till loaded with
+ * one thermal printer can print with no dialog and no per-device config.
+ */
+export const DEFAULT_PRINTER = 'default';
+
 export interface PrinterInfo {
   name: string;
   displayName: string;
@@ -359,6 +371,27 @@ export function getBarcodeDpi(): 203 | 300 {
   return Number(safeAdminSetting('barcode_dpi')) === 300 ? 300 : 203;
 }
 
+/** How many copies a receipt prints. 1 by default; clamped to a sane range. */
+export function getReceiptCopies(): number {
+  const raw = safeAdminSetting('receipt_copies');
+  const n = raw === '' ? NaN : Number(raw);
+  return Number.isFinite(n) && n >= 1 ? Math.min(10, Math.floor(n)) : 1;
+}
+
+/**
+ * Extra roll feed (mm) appended below the last line before the page — the
+ * "cut margin". A thermal roll page IS the cut (the driver/cutter fires at the
+ * page boundary), so this is the only place the pipeline can guarantee the
+ * cutter never slices through the footer. `4` keeps the historical behaviour.
+ */
+export function getReceiptBottomFeedMm(): number {
+  // NB: `safeAdminSetting` returns '' for a missing key, and Number('') is 0 —
+  // treat an empty value as "unset" so the 4mm default actually applies.
+  const raw = safeAdminSetting('receipt_bottom_feed_mm');
+  const n = raw === '' ? NaN : Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.min(30, n) : 4;
+}
+
 interface Target {
   silent: boolean;
   deviceName: string;
@@ -384,6 +417,11 @@ function resolveTarget(job: PrintJob): Target {
 
   if (job.mode === 'dialog' || (job.mode !== 'silent' && getPrintMode() === 'dialog')) {
     return { silent: false, deviceName: '', reason: 'print mode set to show the print dialog' };
+  }
+  // Explicit opt-in to the OS default printer: silent, deviceName '' tells
+  // Chromium to use the system default. Distinct from AUTO_PRINTER ("ask").
+  if (configured === DEFAULT_PRINTER) {
+    return { silent: true, deviceName: '', reason: 'printing to the system default printer' };
   }
   if (configured && configured !== AUTO_PRINTER) {
     return { silent: true, deviceName: configured, reason: `printing to "${configured}"` };
@@ -664,9 +702,12 @@ async function resolveGeometry(win: BrowserWindow, job: PrintJob): Promise<PageG
   // the roll. A one-item receipt can be ~70mm tall, so the floor is width + 2mm
   // (a real receipt is always taller than this, so it costs no blank paper).
   const portraitFloor = spec.widthMm + 2;
+  // The trailing feed is the cut margin: the page ends here, and the printer's
+  // auto-cutter fires at the page boundary. `receipt_bottom_feed_mm` (default 4)
+  // gives the cutter room so it never slices the footer.
   const heightMm = Math.min(
     MAX_ROLL_HEIGHT_MM,
-    Math.max(MIN_ROLL_HEIGHT_MM, portraitFloor, Math.ceil(measured) + 4)
+    Math.max(MIN_ROLL_HEIGHT_MM, portraitFloor, Math.ceil(measured) + getReceiptBottomFeedMm())
   );
   return {
     pageSize: { width: mmToMicrons(spec.widthMm), height: mmToMicrons(heightMm) },
@@ -947,13 +988,25 @@ export async function auditJobLayout(job: PrintJob): Promise<LayoutAudit> {
  * calling `window.print()` in a sandboxed renderer (which Electron cannot do).
  * The toolbar button fetches `posprint://print/<token>`, handled by
  * `registerPrintProtocol()`, so no preload or contextBridge is required.
+ *
+ * Phase 4 widens the window so the roll sits centred on a grey backdrop (a real
+ * "sheet" preview instead of a web page), and adds Download PDF / WhatsApp share
+ * beside Print, plus an Enter=print / Esc=close keyboard layer. Print and the
+ * export both run the identical job through `printDocument` / `printJobToPdf`,
+ * so what is previewed, printed and exported can never diverge.
  */
 export const PRINT_SCHEME = 'posprint';
 
 const previewJobs = new Map<string, PrintJob>();
 const previewWindows = new Map<string, BrowserWindow>();
+/** Sale behind a receipt preview — enables the WhatsApp share button. */
+const previewSaleIds = new Map<string, number>();
 let protocolRegistered = false;
 let tokenSeq = 0;
+
+function textResponse(body: string, status = 200): Response {
+  return new Response(body, { status, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+}
 
 export function registerPrintProtocol(): void {
   if (protocolRegistered) return;
@@ -962,28 +1015,74 @@ export function registerPrintProtocol(): void {
     protocol.handle(PRINT_SCHEME, async (request) => {
       let host = '';
       let token = '';
+      let params: URLSearchParams;
       try {
         const url = new URL(request.url);
         host = url.hostname;
         token = url.pathname.replace(/^\//, '');
+        params = url.searchParams;
       } catch {
-        return new Response('bad request', { status: 400 });
+        return textResponse('bad request', 400);
       }
 
       if (host === 'close') {
         const w = previewWindows.get(token);
         if (w && !w.isDestroyed()) w.close();
-        return new Response('closed', { headers: { 'Content-Type': 'text/plain' } });
+        return textResponse('closed');
       }
 
       if (host === 'print') {
         const job = previewJobs.get(token);
-        if (!job) return new Response('Unknown print job.', { status: 404 });
-        const res = await printDocument(job);
-        return new Response(res.message, { headers: { 'Content-Type': 'text/plain' } });
+        if (!job) return textResponse('Unknown print job.', 404);
+        // The toolbar's copies box rides along on the query string.
+        const copies = Math.floor(Number(params.get('copies')));
+        const effective = Number.isFinite(copies) && copies > 0 ? { ...job, copies } : job;
+        const res = await printDocument(effective);
+        return textResponse(res.message);
       }
 
-      return new Response('unknown action', { status: 404 });
+      if (host === 'pdf') {
+        const job = previewJobs.get(token);
+        if (!job) return textResponse('Unknown print job.', 404);
+        try {
+          const { data } = await printJobToPdf(job);
+          const base = (job.jobName || 'document').replace(/[^\w.-]+/g, '_');
+          const parent = previewWindows.get(token);
+          const options = {
+            title: 'Save PDF',
+            defaultPath: `${base}.pdf`,
+            filters: [{ name: 'PDF document', extensions: ['pdf'] }],
+          };
+          const result =
+            parent && !parent.isDestroyed()
+              ? await dialog.showSaveDialog(parent, options)
+              : await dialog.showSaveDialog(options);
+          if (result.canceled || !result.filePath) return textResponse('PDF download cancelled.');
+          fs.writeFileSync(result.filePath, data);
+          log(`preview PDF written: ${result.filePath}`);
+          return textResponse(`Saved PDF: ${result.filePath}`);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          log(`preview PDF failed: ${msg}`);
+          return textResponse(`Could not create the PDF: ${msg}`, 500);
+        }
+      }
+
+      if (host === 'share') {
+        const saleId = previewSaleIds.get(token);
+        if (!saleId) return textResponse('This preview cannot be shared on WhatsApp.', 404);
+        try {
+          // Dynamic import: whatsapp-gateway pulls in the client + print stack,
+          // and printing.ts imports this module — keep it off the static graph.
+          const { sendSaleReceiptOnWhatsApp } = await import('../whatsapp-gateway');
+          const res = await sendSaleReceiptOnWhatsApp(saleId);
+          return textResponse(res.message);
+        } catch (e) {
+          return textResponse(`WhatsApp share failed: ${e instanceof Error ? e.message : String(e)}`, 500);
+        }
+      }
+
+      return textResponse('unknown action', 404);
     });
     log('print preview protocol registered (posprint://)');
   } catch (e) {
@@ -991,36 +1090,82 @@ export function registerPrintProtocol(): void {
   }
 }
 
+/**
+ * Toolbar injected into every preview window. Written with plain string
+ * concatenation (no backticks / `${}`) because it is itself embedded in a
+ * template literal by `injectToolbar`.
+ */
 const TOOLBAR_JS = `
 (() => {
-  const style = document.createElement('style');
-  style.textContent = '#__posbar{position:fixed;top:0;left:0;right:0;z-index:2147483647;display:flex;gap:8px;align-items:center;padding:8px 12px;background:#0f172a;color:#fff;font:600 13px "Segoe UI",Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.4)}#__posbar .meta{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400;font-size:12px;opacity:.85}#__posbar button{padding:6px 16px;border:none;border-radius:4px;font:600 13px "Segoe UI",Arial,sans-serif;cursor:pointer}#__posbar .go{background:#2563eb;color:#fff}#__posbar .x{background:#334155;color:#fff}#__posbar .go[disabled]{background:#475569;cursor:progress}';
-  document.head.appendChild(style);
+  const TOKEN = __TOKEN__;
+  const PRINT_LABEL = __PRINT_LABEL__;
+  const SHOW_PDF = __SHOW_PDF__;
+  const SHOW_SHARE = __SHOW_SHARE__;
+  const COPIES = __COPIES__;
   const bar = document.createElement('div');
   bar.id = '__posbar';
   const meta = document.createElement('span');
   meta.className = 'meta';
   meta.textContent = __META__;
+  bar.appendChild(meta);
+  const busy = { on: false };
+  const call = (url, btn, workingLabel) => {
+    if (busy.on) return;
+    busy.on = true;
+    const original = btn.textContent;
+    btn.disabled = true;
+    if (workingLabel) btn.textContent = workingLabel;
+    fetch(url)
+      .then((r) => r.text())
+      .then((t) => { meta.textContent = t; })
+      .catch((err) => { meta.textContent = 'Error: ' + err; })
+      .finally(() => { busy.on = false; btn.disabled = false; btn.textContent = original; });
+  };
+  const copiesBox = document.createElement('input');
+  copiesBox.id = '__poscopies';
+  copiesBox.type = 'number';
+  copiesBox.min = '1';
+  copiesBox.max = '10';
+  copiesBox.value = String(COPIES || 1);
+  copiesBox.title = 'Number of copies';
+  bar.appendChild(copiesBox);
   const go = document.createElement('button');
   go.className = 'go';
-  go.textContent = __PRINT_LABEL__;
+  go.textContent = PRINT_LABEL;
   go.onclick = () => {
-    go.disabled = true;
-    go.textContent = 'Printing…';
-    fetch('posprint://print/' + __TOKEN__)
-      .then(r => r.text())
-      .then(t => { go.disabled = false; go.textContent = __PRINT_LABEL__; meta.textContent = t; })
-      .catch(err => { go.disabled = false; go.textContent = __PRINT_LABEL__; meta.textContent = 'Print error: ' + err; });
+    const n = Math.max(1, Math.min(10, parseInt(copiesBox.value, 10) || 1));
+    call('posprint://print/' + TOKEN + '?copies=' + n, go, 'Printing…');
   };
+  bar.appendChild(go);
+  if (SHOW_PDF) {
+    const pdf = document.createElement('button');
+    pdf.className = 'alt';
+    pdf.textContent = 'Download PDF';
+    pdf.onclick = () => call('posprint://pdf/' + TOKEN, pdf, 'Saving…');
+    bar.appendChild(pdf);
+  }
+  if (SHOW_SHARE) {
+    const share = document.createElement('button');
+    share.className = 'alt';
+    share.textContent = 'WhatsApp';
+    share.onclick = () => call('posprint://share/' + TOKEN, share, 'Sending…');
+    bar.appendChild(share);
+  }
   const x = document.createElement('button');
   x.className = 'x';
   x.textContent = 'Close';
-  x.onclick = () => { fetch('posprint://close/' + __TOKEN__).catch(() => {}); };
-  bar.appendChild(meta);
-  bar.appendChild(go);
+  x.onclick = () => { fetch('posprint://close/' + TOKEN).catch(() => {}); };
   bar.appendChild(x);
   document.body.appendChild(bar);
   document.body.style.paddingTop = '46px';
+  // Enter = print, Esc = close — unless a control already has focus, so the
+  // copies box and the buttons keep their native Enter behaviour.
+  document.addEventListener('keydown', (e) => {
+    const t = e.target || {};
+    const isField = t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.tagName === 'BUTTON';
+    if (e.key === 'Escape') { e.preventDefault(); x.click(); return; }
+    if ((e.key === 'Enter' || e.key === '\\r') && !isField) { e.preventDefault(); go.click(); }
+  });
 })();
 `;
 
@@ -1034,16 +1179,31 @@ const TOOLBAR_CSS = `
 #__posbar button { padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer;
   font: 600 13px "Segoe UI", Arial, sans-serif; }
 #__posbar .go { background: #2563eb; color: #fff; }
+#__posbar .alt { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; }
 #__posbar .x { background: #334155; color: #fff; }
-#__posbar .go[disabled] { background: #475569; cursor: progress; }
+#__posbar button[disabled] { background: #475569; cursor: progress; }
+#__posbar #__poscopies { width: 52px; padding: 5px 6px; border-radius: 4px; border: 1px solid #334155;
+  background: #0b1220; color: #fff; font: 600 13px "Segoe UI", Arial, sans-serif; }
+/* The paper sits centred on a grey backdrop so the roll reads as a sheet, not a
+   web page. Preview only — printing re-renders the job in its own window. */
+html { background: #e5e7eb; }
+body { background: #fff; box-shadow: 0 1px 8px rgba(0,0,0,.35); }
 @media print { #__posbar { display: none !important; } body { padding-top: 0 !important; } }
 `;
 
-function injectToolbar(win: BrowserWindow, token: string, meta: string, printLabel: string): void {
+function injectToolbar(
+  win: BrowserWindow,
+  token: string,
+  meta: string,
+  opts: { printLabel: string; showPdf: boolean; showShare: boolean; copies: number }
+): void {
   const js = TOOLBAR_JS
-    .replace(/__TOKEN__/g, token)
+    .replace(/__TOKEN__/g, JSON.stringify(token))
     .replace(/__META__/g, JSON.stringify(meta))
-    .replace(/__PRINT_LABEL__/g, JSON.stringify(printLabel));
+    .replace(/__PRINT_LABEL__/g, JSON.stringify(opts.printLabel))
+    .replace(/__SHOW_PDF__/g, opts.showPdf ? 'true' : 'false')
+    .replace(/__SHOW_SHARE__/g, opts.showShare ? 'true' : 'false')
+    .replace(/__COPIES__/g, String(Math.max(1, Math.floor(opts.copies) || 1)));
   win.webContents
     .executeJavaScript(`(() => {
       const s = document.createElement('style');
@@ -1058,20 +1218,34 @@ export interface PreviewOptions {
   /** Shown in the preview toolbar. */
   title: string;
   printButtonLabel?: string;
+  /** Sale behind a receipt preview — turns on the Download PDF + WhatsApp buttons. */
+  saleId?: number;
+  /** Offer the "Download PDF" button (default: on). */
+  allowPdf?: boolean;
+  /** Offer the "WhatsApp" share button (needs `saleId`; default: on). */
+  allowShare?: boolean;
+  /** Copies pre-filled in the toolbar. */
+  copies?: number;
 }
 
 /** Open a true-to-paper preview whose Print button runs the real print pipeline. */
 export async function previewDocument(job: PrintJob, opts: PreviewOptions): Promise<PrintResult> {
   registerPrintProtocol();
 
-  const win = newPrintWindow(previewWidthPx(job), 700);
+  // Widen the window so a receipt roll is a centred "sheet" on a grey backdrop
+  // instead of a razor-thin strip filling the whole window.
+  const paperPx = previewWidthPx(job);
+  const winPx = Math.max(paperPx + 56, 480);
+  const win = newPrintWindow(winPx, 700);
   win.setTitle(opts.title);
   const token = `p${++tokenSeq}-${Date.now()}`;
   previewJobs.set(token, job);
   previewWindows.set(token, win);
+  if (opts.saleId) previewSaleIds.set(token, opts.saleId);
   win.once('closed', () => {
     previewJobs.delete(token);
     previewWindows.delete(token);
+    previewSaleIds.delete(token);
   });
 
   try {
@@ -1083,10 +1257,19 @@ export async function previewDocument(job: PrintJob, opts: PreviewOptions): Prom
     // Match the real paper width and content height so the preview reads
     // exactly like the output, not like a generic 400x600 web page.
     win.setContentSize(
-      Math.round(previewWidthPx(job)),
+      Math.round(winPx),
       Math.max(300, Math.min(1600, Math.round(mmToPx(geo.heightMm)) + 46))
     );
-    injectToolbar(win, token, `${opts.title} — ${geo.widthMm}mm wide`, opts.printButtonLabel || 'Print');
+    injectToolbar(win, token, `${opts.title} — ${geo.widthMm}mm wide`, {
+      printLabel: opts.printButtonLabel || 'Print',
+      showPdf: opts.allowPdf !== false,
+      showShare: opts.allowShare !== false && !!opts.saleId,
+      copies: opts.copies && opts.copies > 0 ? opts.copies : 1,
+    });
+    // The loaded document carries its own <title>Receipt</title>, which Chromium
+    // pushes onto the window title. Re-assert ours AFTER the load so the window
+    // is titled exactly as spec'd ("Receipt preview"), not "Receipt".
+    win.setTitle(opts.title);
     // newPrintWindow is created hidden (hidden windows must stay hidden while
     // printing). A preview is user-facing, so it has to be shown explicitly —
     // otherwise the button appears to do nothing at all.

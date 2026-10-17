@@ -105,6 +105,20 @@ interface TemplateOpts {
   termsText: string;
   footerMessage: string;
   softwareBy: string;
+  /** Logo max height in px (thermal logos were pinned at ~45px before). */
+  logoMaxHeightPx: number;
+  /** Greyscale + high contrast so the logo survives a 1-bit thermal head. */
+  logoGrayscale: boolean;
+  /** Show the "---- SOFTWARE BY ----" block at all. */
+  showSoftwareCredit: boolean;
+  /** Show the "Items: N, Qty: N" line under the items table. */
+  showItemsSummary: boolean;
+  /**
+   * Stamp "DUPLICATE COPY" at the top. Set only for a REPRINT of an
+   * already-issued sale (Phase 4); the immediate post-sale print leaves it off
+   * so the original receipt is never mislabelled.
+   */
+  duplicate: boolean;
 }
 
 /** `receipt_header_lines` is a JSON array (one header line per row). */
@@ -132,10 +146,19 @@ function resolveOpts(): TemplateOpts {
     termsText: s.receipt_terms_text || (legacyFooter && !s.receipt_footer_text ? legacyFooter : ''),
     footerMessage: s.receipt_footer_text || 'Come again soon!',
     softwareBy: s.receipt_software_by || 'Rokar POS',
+    logoMaxHeightPx: Math.max(16, Number(s.receipt_logo_max_height_px) || 64),
+    logoGrayscale: s.receipt_logo_grayscale !== 'false',
+    showSoftwareCredit: s.receipt_show_software_credit !== 'false',
+    showItemsSummary: s.receipt_show_items_summary !== 'false',
+    duplicate: false,
   };
 }
 
-export function buildReceiptHtml(saleId: number, template?: ReceiptTemplate): string {
+export function buildReceiptHtml(
+  saleId: number,
+  template?: ReceiptTemplate,
+  extra?: { duplicate?: boolean }
+): string {
   const sale = getSale(saleId);
   if (!sale) throw new Error('Sale not found');
   const s = getPrintSettings();
@@ -144,6 +167,8 @@ export function buildReceiptHtml(saleId: number, template?: ReceiptTemplate): st
   const fmt = makeMoney(currency);
   const cashier = getUser(sale.user_id ?? 0);
   const opts = resolveOpts();
+  // Reprint stamp — see TemplateOpts.duplicate. Default off ⇒ byte-identical.
+  opts.duplicate = extra?.duplicate === true;
 
   // The "a4" receipt template IS the canonical invoice — one builder, no copy.
   if (tmpl === 'a4') {
@@ -178,15 +203,15 @@ function columnSet(
   const order = narrow ? ['no', 'name', 'qty', 'rate', 'amt'] : ['no', 'name', 'qty', 'rate', 'disc', 'amt'];
   const widths: Record<string, string> = narrow
     ? showSerial
-      ? { no: '7%', name: '40%', qty: '13%', rate: '18%', amt: '22%' }
-      : { name: '47%', qty: '13%', rate: '18%', amt: '22%' }
+      ? { no: '7%', name: '40%', qty: '14%', rate: '17%', amt: '22%' }
+      : { name: '47%', qty: '14%', rate: '17%', amt: '22%' }
     : showSerial && showDisc
-      ? { no: '6%', name: '36%', qty: '12%', rate: '16%', disc: '10%', amt: '20%' }
+      ? { no: '6%', name: '36%', qty: '12%', rate: '18%', disc: '10%', amt: '18%' }
       : showSerial && !showDisc
-        ? { no: '6%', name: '42%', qty: '13%', rate: '17%', amt: '22%' }
+        ? { no: '6%', name: '42%', qty: '13%', rate: '18%', amt: '21%' }
         : !showSerial && showDisc
-          ? { name: '42%', qty: '12%', rate: '16%', disc: '10%', amt: '20%' }
-          : { name: '45%', qty: '13%', rate: '17%', amt: '25%' };
+          ? { name: '42%', qty: '12%', rate: '18%', disc: '10%', amt: '18%' }
+          : { name: '45%', qty: '13%', rate: '18%', amt: '24%' };
   return order.filter((k) => widths[k] !== undefined).map((k) => ({ key: k, width: widths[k] }));
 }
 
@@ -251,7 +276,14 @@ function buildRoll(
   const change = Math.max(0, paid - sale.total_amount);
   const balance = Math.max(0, sale.total_amount - paid);
 
-  const cols = columnSet(narrow, opts.showSerial, opts.showDiscount);
+  // The DISC column is shown only when at least one line actually carries a
+  // discount (the owner asked for it to disappear on an all-full-price bill),
+  // AND the "show discount breakdown" setting is on.
+  const anyLineDiscount = sale.items.some((it) => Number(it.discount || 0) > 0);
+  const showDiscCol = opts.showDiscount && anyLineDiscount;
+
+  const cols = columnSet(narrow, opts.showSerial, showDiscCol);
+  const hasNo = cols.some((c) => c.key === 'no');
   const colTags = cols.map((c) => `<col class="c-${c.key}" style="width:${c.width}">`).join('');
   const HEAD: Record<string, string> = {
     no: '#',
@@ -263,6 +295,10 @@ function buildRoll(
   };
   const headCells = cols.map((c) => `<th class="${c.key === 'no' || c.key !== 'name' ? 'r' : ''}">${HEAD[c.key]}</th>`).join('');
 
+  // Each item prints as TWO rows so a long name can use the full width without
+  // ever colliding with the money columns:
+  //   row 1  # | <name + optional unit, colspan across the value columns>
+  //   row 2    | <qty, rate, (disc), amount aligned under their own headers>
   const rows = sale.items
     .map((it, i) => {
       const useUnit = !!it.unit_name && it.display_qty != null;
@@ -278,29 +314,46 @@ function buildRoll(
       const rate = plain(unitPrice);
       const disc = it.discount ? plain(it.discount) : '';
       const amt = plain(it.line_total);
-      const cell: Record<string, string> = {
-        no: `<td class="r no">${i + 1}</td>`,
-        name: `<td class="name">${name}${promo}${unitBlock}</td>`,
-        qty: `<td class="r qty">${esc(qtyLabel)}</td>`,
-        rate: `<td class="r rate${numCls(rate)}">${rate}</td>`,
-        disc: `<td class="r disc${numCls(disc)}">${disc}</td>`,
-        amt: `<td class="r amt${numCls(amt)}">${amt}</td>`,
-      };
-      return `<tr>${cols.map((c) => cell[c.key]).join('')}</tr>`;
+      const nameCell = `<td class="name" colspan="${cols.length - (hasNo ? 1 : 0)}">${name}${promo}${unitBlock}</td>`;
+      const valCells = cols
+        .map((c) => {
+          if (c.key === 'qty') return `<td class="r qty">${esc(qtyLabel)}</td>`;
+          if (c.key === 'rate') return `<td class="r rate${numCls(rate)}">${rate}</td>`;
+          if (c.key === 'disc') return `<td class="r disc${numCls(disc)}">${disc}</td>`;
+          if (c.key === 'amt') return `<td class="r amt${numCls(amt)}">${amt}</td>`;
+          return `<td class="void"></td>`;
+        })
+        .join('');
+      const noCell = hasNo ? `<td class="r no">${i + 1}</td>` : '';
+      return `<tr class="item-row">${noCell}${nameCell}</tr><tr class="item-vals">${valCells}</tr>`;
     })
     .join('');
 
-  const metaRows = [
+  const itemCount = sale.items.length;
+  // Sum the DISPLAYED quantity (grams/ml for loose items), so the summary agrees
+  // with the QTY column instead of reporting "1" for a 1000 g line.
+  const totalQty = sale.items.reduce((sum, it) => {
+    const useUnit = !!it.unit_name && it.display_qty != null;
+    return sum + Number((useUnit ? it.display_qty : it.qty) || 0);
+  }, 0);
+  const qtyText = Number.isInteger(totalQty)
+    ? String(totalQty)
+    : totalQty.toLocaleString(undefined, { maximumFractionDigits: 3 });
+
+  // Meta: left column = CUSTOMER / CASHIER; right column = invoice number with
+  // the Date + Time on ONE line beneath it (the old layout let "9:14 PM" wrap).
+  const metaLeft = [
     `<div class="mrow"><span class="mlbl">CUSTOMER</span> ${esc(sale.customer_name || 'Walk-in')}</div>`,
     opts.showCashierName
       ? `<div class="mrow"><span class="mlbl">CASHIER</span> ${esc(cashier?.username ?? '—')}</div>`
       : '',
-    `<div class="mrow"><span class="mlbl">DATE</span> ${sale.created_at ? formatReceiptDateTime(sale.created_at) : ''}</div>`,
   ]
     .filter(Boolean)
     .join('');
 
   const inv = invoiceLabel(sale.invoice_no);
+  const metaRight = `<div class="inv-no${inv.short ? ' short' : ''}">${esc(inv.text)}</div>
+    <div class="mrow meta-dt">${sale.created_at ? esc(formatReceiptDateTime(sale.created_at)) : ''}</div>`;
 
   const paymentRows = opts.showPaymentMethod
     ? sale.payments
@@ -317,6 +370,8 @@ function buildRoll(
     balance > 0
       ? `<tr><td class="pm">UDHAAR/BALANCE</td><td class="r">${plain(balance)}</td></tr>`
       : '';
+  // Aggregate "PAID" (all tenders) sits above the per-method breakdown.
+  const paidRow = paid > 0 ? `<tr><td class="pm">PAID</td><td class="r">${plain(paid)}</td></tr>` : '';
 
   const netText = fmt(sale.total_amount);
   const net = `<tr class="net"><td>NET TOTAL</td><td class="r${numCls(netText)}">${netText}</td></tr>`;
@@ -327,16 +382,18 @@ function buildRoll(
     ${sale.freight && sale.freight > 0 ? `<tr><td>FREIGHT</td><td class="r">${plain(sale.freight)}</td></tr>` : ''}
     ${net}`;
 
-  const payRows = `${paymentRows}${returnRow}${changeRow}${balanceRow}`;
+  // Order matches the spec: Net Total (largest) first, then PAID, then
+  // Change/Balance, then the per-tender breakdown (Cash/Card/Credit).
+  const payRows = `${paidRow}${changeRow}${balanceRow}${returnRow}${paymentRows}`;
   const payBlock = payRows ? `<table class="pay">${payRows}</table>` : '';
   const totalsBlock = `<table class="totals">${totalsBody}</table>`;
-  // Payments first, then SUB TOTAL / DISCOUNT / NET — full-width rows with
-  // right-aligned values on BOTH rolls. Side-by-side columns were measured to
-  // overflow the printable width (the 80mm layout audit once found the totals
-  // table sticking +11..+18px past the right edge when a wide payment mode met
-  // a long NET TOTAL), so they stack; this is exactly what keeps every row on
-  // ONE line — the requirement this template was rebuilt around.
-  const totwrap = `<div class="totwrap">${payBlock}${totalsBlock}</div>`;
+  // Totals first (Sub Total … Net Total), then the payments block — full-width
+  // rows with right-aligned values on BOTH rolls. Side-by-side columns were
+  // measured to overflow the printable width (the 80mm layout audit once found
+  // the totals table sticking +11..+18px past the right edge when a wide payment
+  // mode met a long NET TOTAL), so they stack; this is exactly what keeps every
+  // row on ONE line — the requirement this template was rebuilt around.
+  const totwrap = `<div class="totwrap">${totalsBlock}${payBlock}</div>`;
 
   const shopLines = [
     s.shop_address,
@@ -369,10 +426,11 @@ body {
   -webkit-print-color-adjust: exact; print-color-adjust: exact;
   -webkit-text-stroke: 0.15pt #000;
 }
-.logo { max-width: 60mm; max-height: 12mm; display: block; margin: 0 auto 1mm; }
+.logo { max-width: 60mm; max-height: ${opts.logoMaxHeightPx}px; display: block; margin: 0 auto 1mm; object-fit: contain;${opts.logoGrayscale ? ' filter: grayscale(100%) contrast(140%); image-rendering: pixelated;' : ''} }
 .shop-name { font-size: ${shopPt}px; font-weight: 800; text-align: center; line-height: 1.15; margin: 0 0 0.6mm; overflow-wrap: anywhere; }
 .shop-lines { text-align: center; font-size: ${addrPt}px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
 .return-banner { text-align: center; font-size: ${sz(16)}px; font-weight: 900; letter-spacing: 0.4px; border: 0.4mm solid #000; padding: 0.6mm 0; margin: 1mm 0 0.4mm; }
+.duplicate-banner { text-align: center; font-size: ${sz(14)}px; font-weight: 900; letter-spacing: 1px; border: 0.4mm dashed #000; padding: 0.6mm 0; margin: 0.4mm 0; }
 .hdr-line { text-align: center; font-size: ${addrPt}px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; margin-top: 0.3mm; }
 .line { border-top: 0.3mm dashed #000; margin: 1mm 0; }
 /* meta: label:value left, invoice number (one line) right */
@@ -384,13 +442,22 @@ td.meta-right { width: 58%; text-align: right; }
 .mrow .mlbl { font-weight: 800; }
 .inv-no { font-size: ${bodyPt}px; font-weight: 800; white-space: nowrap; text-align: right; }
 .inv-no.short { font-size: ${sz(12)}px; }
+/* Date + time on ONE line (never "9:14 / PM") — shrinks a step on 58mm. */
+.meta-dt { white-space: nowrap; font-size: ${narrow ? sz(11) : bodyPt}px; }
+.items-summary { font-size: ${bodyPt}px; font-weight: 700; text-align: right; margin-top: 0.5mm; }
 /* items table — fixed layout + explicit column widths, never merged */
 table.items { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 0.8mm 0; }
 table.items thead th { font-size: ${headPt}px; font-weight: 800; text-align: left; text-transform: uppercase; padding: 0.4mm 0.3mm; border-top: 0.4mm solid #000; border-bottom: 0.3mm solid #000; }
 table.items th.r, table.items td.r { text-align: right; }
 table.items td { font-size: ${bodyPt}px; font-weight: 700; vertical-align: top; padding: 0.4mm 0.3mm; line-height: 1.3; }
+table.items { font-variant-numeric: tabular-nums; }
 td.name { overflow-wrap: anywhere; word-break: break-word; }
-td.qty, td.rate, td.disc, td.amt { white-space: nowrap; }
+td.qty, td.rate, td.disc, td.amt { white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Item = two rows: a full-width name row, then the value row aligned under the
+   headers. Kill the extra vertical padding between them so it reads as one item. */
+tr.item-vals td { padding-top: 0; }
+tr.item-row td { padding-bottom: 0; }
+td.void { padding: 0; }
 td.amt, td.no { font-weight: 800; }
 td.lg { font-size: ${sz(10)}px; }
 .unit { font-size: ${unitPt}px; font-weight: 700; }
@@ -400,8 +467,8 @@ td.lg { font-size: ${sz(10)}px; }
    EASYPAYSA meets a long NET TOTAL, so this is the layout-merge-free way to
    guarantee nothing escapes the right edge. */
 .totwrap { width: 100%; }
-table.pay { width: 100%; border-collapse: collapse; }
-table.totals { width: 100%; border-collapse: collapse; margin-top: 0.6mm; }
+table.pay { width: 100%; border-collapse: collapse; margin-top: 0.8mm; }
+table.totals { width: 100%; border-collapse: collapse; }
 table.pay td { font-size: ${bodyPt}px; font-weight: 700; padding: 0.25mm 0; }
 table.pay td.r { text-align: right; white-space: nowrap; font-weight: 800; padding-left: 2mm; }
 table.totals td { font-size: ${bodyPt}px; font-weight: 700; padding: 0.3mm 0; }
@@ -415,16 +482,17 @@ table.totals tr.net td.lg { font-size: ${sz(14)}px; }
 .foot .sw { font-size: ${footPt}px; font-weight: 700; margin-top: 0.8mm; line-height: 1.3; }
 `;
 
-  const body = `${s.shop_logo ? `<img class="logo" src="${esc(s.shop_logo)}" alt="" />` : ''}
+  const body = `${s.shop_logo ? `<img class="logo" src="${esc(s.shop_logo)}" alt="" onerror="this.style.display='none'" />` : ''}
 <h1 class="shop-name">${esc(s.shop_name)}</h1>
 ${shopLines ? `<div class="shop-lines">${shopLines}</div>` : ''}
 ${headerLinesHtml}
 ${sale.status === 'returned' ? '<div class="return-banner">RETURN / REFUND</div>' : ''}
+${opts.duplicate ? '<div class="duplicate-banner">DUPLICATE COPY</div>' : ''}
 <div class="line"></div>
 <table class="meta">
   <tr>
-    <td class="meta-left">${metaRows}</td>
-    <td class="meta-right"><div class="inv-no${inv.short ? ' short' : ''}">${esc(inv.text)}</div></td>
+    <td class="meta-left">${metaLeft}</td>
+    <td class="meta-right">${metaRight}</td>
   </tr>
 </table>
 <div class="line"></div>
@@ -433,13 +501,14 @@ ${sale.status === 'returned' ? '<div class="return-banner">RETURN / REFUND</div>
   <thead><tr>${headCells}</tr></thead>
   <tbody>${rows}</tbody>
 </table>
+${opts.showItemsSummary ? `<div class="items-summary">Items: ${itemCount}, Qty: ${esc(qtyText)}</div>` : ''}
 <div class="line"></div>
 ${totwrap}
 <div class="line"></div>
 <div class="foot">
   ${termsHtml}
   <div class="msg">${esc(opts.footerMessage)}</div>
-  ${opts.softwareBy ? `<div class="sw">---- SOFTWARE BY ----<br />${esc(opts.softwareBy)}</div>` : ''}
+  ${opts.showSoftwareCredit && opts.softwareBy ? `<div class="sw">---- SOFTWARE BY ----<br />${esc(opts.softwareBy)}</div>` : ''}
 </div>`;
 
   return htmlDocument(`Receipt ${sale.invoice_no}`, css, body);

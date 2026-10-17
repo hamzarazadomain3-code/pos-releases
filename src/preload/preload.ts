@@ -54,12 +54,47 @@ const bridge: PosBridge = {
   },
   customers: {
     list: () => ipcRenderer.invoke('customers:list'),
-    create: (name: string, phone?: string) => ipcRenderer.invoke('customers:create', name, phone),
+    create: (name: string, phone?: string, openingBalance?: number) =>
+      ipcRenderer.invoke('customers:create', name, phone, openingBalance),
     ledger: (customerId: number) => ipcRenderer.invoke('customers:ledger', customerId),
     receivePayment: (customerId: number, amount: number, mode: string, note?: string) =>
       ipcRenderer.invoke('customers:receivePayment', customerId, amount, mode, note),
     setCreditLimit: (customerId: number, limit: number) =>
       ipcRenderer.invoke('customers:setCreditLimit', customerId, limit),
+    get: (id: number) => ipcRenderer.invoke('customers:get', id),
+    save: (input: unknown, id?: number | null) => ipcRenderer.invoke('customers:save', input, id ?? null),
+    deactivate: (id: number) => ipcRenderer.invoke('customers:deactivate', id),
+    reactivate: (id: number) => ipcRenderer.invoke('customers:reactivate', id),
+    remove: (id: number) => ipcRenderer.invoke('customers:remove', id),
+    merge: (sourceId: number, targetId: number) => ipcRenderer.invoke('customers:merge', sourceId, targetId),
+    findDuplicates: (opts: unknown) => ipcRenderer.invoke('customers:findDuplicates', opts),
+  },
+  udhaar: {
+    ledger: (customerId: number) => ipcRenderer.invoke('udhaar:ledger', customerId),
+    printStatement: (customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') =>
+      ipcRenderer.invoke('udhaar:printStatement', customerId, from, to, paper),
+    previewStatement: (customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') =>
+      ipcRenderer.invoke('udhaar:previewStatement', customerId, from, to, paper),
+    exportStatementPdf: (customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') =>
+      ipcRenderer.invoke('udhaar:exportStatementPdf', customerId, from, to, paper),
+    shareStatement: (customerId: number, from?: string, to?: string, phone?: string) =>
+      ipcRenderer.invoke('udhaar:shareStatement', customerId, from, to, phone),
+    lookupItem: (code: string) => ipcRenderer.invoke('udhaar:lookupItem', code),
+    searchItems: (term: string) => ipcRenderer.invoke('udhaar:searchItems', term),
+    createEntry: (input: unknown) => ipcRenderer.invoke('udhaar:createEntry', input),
+    catalogList: () => ipcRenderer.invoke('udhaar:catalogList'),
+    catalogUpsert: (item: unknown) => ipcRenderer.invoke('udhaar:catalogUpsert', item),
+    catalogDelete: (id: number) => ipcRenderer.invoke('udhaar:catalogDelete', id),
+    catalogExport: () => ipcRenderer.invoke('udhaar:catalogExport'),
+    catalogImport: () => ipcRenderer.invoke('udhaar:catalogImport'),
+    printEntrySlip: (transactionId: number, paper?: 'thermal80' | 'thermal58') =>
+      ipcRenderer.invoke('udhaar:printEntrySlip', transactionId, paper),
+    shareEntrySlip: (transactionId: number, phone?: string) =>
+      ipcRenderer.invoke('udhaar:shareEntrySlip', transactionId, phone),
+    aging: () => ipcRenderer.invoke('udhaar:aging'),
+    remind: (customerId: number, phone?: string) => ipcRenderer.invoke('udhaar:remind', customerId, phone),
+    writeOff: (customerId: number, amount: number, note?: string) =>
+      ipcRenderer.invoke('udhaar:writeOff', customerId, amount, note),
   },
   // BayLan Label Scale barcode handlers
   scaleBarcode: {
@@ -74,7 +109,7 @@ const bridge: PosBridge = {
   },
   printing: {
     // ── Documents ──
-    printSale: (saleId: number, template?: string) => ipcRenderer.invoke('printing:printSale', saleId, template),
+    printSale: (saleId: number, template?: string, opts?: { copies?: number; duplicate?: boolean; kickDrawer?: boolean }) => ipcRenderer.invoke('printing:printSale', saleId, template, opts),
     printLabel: (productId: number, copies?: number) => ipcRenderer.invoke('printing:printLabel', productId, copies),
     printBarcodeLabel: (productId: number, copies?: number) => ipcRenderer.invoke('printing:printBarcodeLabel', productId, copies),
     printBarcodeBatch: (productIds: number[], size?: string, copies?: number) => ipcRenderer.invoke('printing:printBarcodeBatch', productIds, size, copies),
@@ -84,8 +119,14 @@ const bridge: PosBridge = {
     exportLabelBatchToPNG: (productIds: number[], template: unknown, size?: string, copies?: number, run?: unknown) => ipcRenderer.invoke('printing:exportLabelBatchToPNG', productIds, template, size, copies, run),
     printCalibrationLabel: (size: string) => ipcRenderer.invoke('printing:printCalibrationLabel', size),
     openCashDrawer: () => ipcRenderer.invoke('printing:openCashDrawer'),
-    previewReceipt: (saleId: number, template?: string) => ipcRenderer.invoke('printing:previewReceipt', saleId, template),
+    previewReceipt: (saleId: number, template?: string, opts?: { copies?: number; duplicate?: boolean }) => ipcRenderer.invoke('printing:previewReceipt', saleId, template, opts),
+    reprintLastReceipt: () => ipcRenderer.invoke('printing:reprintLastReceipt'),
     previewInvoice: (saleId: number) => ipcRenderer.invoke('printing:previewInvoice', saleId),
+    // Phase 5: X/Z reports
+    printXReport: (shiftId?: number) => ipcRenderer.invoke('printing:printXReport', shiftId),
+    printZReport: () => ipcRenderer.invoke('printing:printZReport'),
+    previewXReport: (shiftId?: number) => ipcRenderer.invoke('printing:previewXReport', shiftId),
+    previewZReport: () => ipcRenderer.invoke('printing:previewZReport'),
     printInvoice: (saleId: number) => ipcRenderer.invoke('printing:printInvoice', saleId),
     printDrawerSummary: (data: { opening_cash: number; closing_cash: number; cash_sales: number; card_sales: number; udhaar_sales: number; other_payments: number; cash_refunds: number; cash_in: number; cash_out: number; expected_cash: number; actual_cash: number; variance: number; opened_at: string; closed_at: string; cashier: string; notes?: string }) => ipcRenderer.invoke('printing:printDrawerSummary', data),
     // ── Printer selection ──
@@ -100,6 +141,15 @@ const bridge: PosBridge = {
     getTemplates: () => ipcRenderer.invoke('receipt:getTemplates'),
     sendSms: (saleId: number, phone: string) => ipcRenderer.invoke('receipt:sendSms', saleId, phone),
     sendEmail: (saleId: number, email: string) => ipcRenderer.invoke('receipt:sendEmail', saleId, email),
+    getDesign: () => ipcRenderer.invoke('receipt:design:get'),
+    setDesign: (design: unknown, enabled?: boolean) => ipcRenderer.invoke('receipt:design:set', design, enabled),
+    resetDesign: () => ipcRenderer.invoke('receipt:design:reset'),
+    previewDesign: (design: unknown, paper: string, sample?: string) =>
+      ipcRenderer.invoke('receipt:design:preview', design, paper, sample),
+    getLibrary: () => ipcRenderer.invoke('receipt:library:get'),
+    setLibrary: (library: unknown) => ipcRenderer.invoke('receipt:library:set', library),
+    testDesign: (design: unknown, paper: string, copies?: number) =>
+      ipcRenderer.invoke('receipt:design:test', design, paper, copies),
   },
   licensing: {
     activate: (key: string) => ipcRenderer.invoke('licensing:activate', key),
@@ -204,6 +254,7 @@ const bridge: PosBridge = {
     exportProducts: (filters?: { search?: string; includeInactive?: boolean; categoryId?: number; stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock'; supplierId?: number; expiryFrom?: string; expiryTo?: string }) => ipcRenderer.invoke('excel:exportProducts', filters),
     exportSales: (from?: string, to?: string) => ipcRenderer.invoke('excel:exportSales', from, to),
     exportCustomers: (filters?: { status?: 'paid' | 'pending' | 'all'; from?: string; to?: string }) => ipcRenderer.invoke('excel:exportCustomers', filters),
+    exportUdhaarStatement: (customerId: number, from?: string, to?: string) => ipcRenderer.invoke('excel:exportUdhaarStatement', customerId, from, to),
     exportPurchaseOrders: (filters?: { status?: string; from?: string; to?: string; supplierId?: number }) => ipcRenderer.invoke('excel:exportPurchaseOrders', filters),
     exportExpenses: (from?: string, to?: string) => ipcRenderer.invoke('excel:exportExpenses', from, to),
     downloadTemplate: () => ipcRenderer.invoke('excel:downloadTemplate'),

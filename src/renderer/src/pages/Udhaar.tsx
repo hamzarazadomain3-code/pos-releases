@@ -1,48 +1,98 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { Customer, CustomerTransaction } from '../../../shared/types';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { Customer, UdhaarAging, UdhaarAgingRow } from '../../../shared/types';
 import { DateRangePicker, SearchInput, FilterBar, FilterRow } from '../components/filters';
-import { formatDateTimeAdmin } from '../utils/dateUtils';
-import { getCurrencySymbol } from '../utils/currency';
-import { Modal } from '../components/Modal';
-import { KeyboardInput } from '../components/KeyboardInput';
+import { UdhaarLedgerModal } from '../components/UdhaarLedger';
+import { UdhaarEntryModal } from '../components/UdhaarEntryModal';
+import { UdhaarCustomerModal } from '../components/UdhaarCustomerModal';
+import { CustomerProfileModal } from '../components/CustomerProfileModal';
+import { ReceivePaymentModal } from '../components/ReceivePaymentModal';
+import { formatMoney } from '../utils/currency';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
+type Notice = { text: string; kind: 'ok' | 'error' };
+type View = 'list' | 'aging';
+
+/** 'YYYY-MM-DD HH:MM:SS' → 'YYYY-MM-DD' (for range compare). */
+const dateOnly = (ts?: string | null): string => (ts ? String(ts).slice(0, 10) : '');
+const fmt = (n: number): string =>
+  (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 export default function Udhaar() {
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [aging, setAging] = useState<UdhaarAging | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<View>('list');
   const [search, setSearch] = useState('');
-  const [notice, setNotice] = useState<string | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newPhone, setNewPhone] = useState('');
-  const [newBalance, setNewBalance] = useState('');
-  const [ledger, setLedger] = useState<{ customer: Customer; rows: CustomerTransaction[] } | null>(null);
-  const [payAmount, setPayAmount] = useState('');
-  const [payMode, setPayMode] = useState('Cash');
-  const [payNote, setPayNote] = useState('');
-  const [limitInput, setLimitInput] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [customerModal, setCustomerModal] = useState<{ customer: Customer | null } | null>(null);
+  const [profileId, setProfileId] = useState<number | null>(null);
+  const [showInactive, setShowInactive] = useState(false);
+  const [ledgerCustomerId, setLedgerCustomerId] = useState<number | null>(null);
+  const [entryCustomer, setEntryCustomer] = useState<Customer | null>(null);
+  const [receiveCustomer, setReceiveCustomer] = useState<Customer | null>(null);
 
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [status, setStatus] = useState<'paid' | 'pending' | 'all'>('all');
 
+  const flash = useCallback((text: string, kind: 'ok' | 'error' = 'ok') => {
+    setNotice({ text, kind });
+  }, []);
+  const fail = useCallback(
+    (e: unknown) => flash(e instanceof Error ? e.message : String(e), 'error'),
+    [flash]
+  );
+
   const load = useCallback(async () => {
-    setCustomers(await window.api.customers.list());
+    setLoading(true);
+    try {
+      const list = await window.api.customers.list();
+      setCustomers(list);
+    } finally {
+      setLoading(false);
+    }
+    // Aging is a derived report — a failure here must not blank the customer list.
+    try {
+      setAging(await window.api.udhaar.aging());
+    } catch {
+      setAging(null);
+    }
   }, []);
 
   useEffect(() => {
-    load().catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
-  }, [load]);
+    load().catch(fail);
+  }, [load, fail]);
+
+  /** Per-customer aging row, keyed by id — drives the due badges + aging view. */
+  const agingById = useMemo(() => {
+    const map = new Map<number, UdhaarAgingRow>();
+    for (const r of aging?.rows ?? []) map.set(r.customer_id, r);
+    return map;
+  }, [aging]);
 
   const filtered = customers
-    .filter((c) => !search.trim() || c.name.toLowerCase().includes(search.trim().toLowerCase()) || (c.phone ?? '').includes(search.trim()))
+    .filter((c) => showInactive || (c.status ?? 'active') !== 'inactive')
+    .filter(
+      (c) =>
+        !search.trim() ||
+        c.name.toLowerCase().includes(search.trim().toLowerCase()) ||
+        (c.phone ?? '').includes(search.trim())
+    )
     .filter((c) => {
       if (status === 'paid') return c.balance <= 0;
       if (status === 'pending') return c.balance > 0;
       return true;
+    })
+    .filter((c) => {
+      const d = dateOnly(c.created_at);
+      if (from && (!d || d < from)) return false;
+      if (to && (!d || d > to)) return false;
+      return true;
     });
+
   const totalDue = customers.reduce((s, c) => s + c.balance, 0);
+  const agingRows = aging?.rows ?? [];
 
   async function exportCustomers() {
     try {
@@ -51,52 +101,20 @@ export default function Udhaar() {
         from: from || undefined,
         to: to || undefined,
       });
-      if (ok) setNotice('Customer list exported to Excel.');
+      if (ok) flash('Customer list exported to Excel.');
     } catch (e) {
-      setNotice(e instanceof Error ? e.message : String(e));
+      fail(e);
     }
   }
 
-  async function openLedger(c: Customer) {
+  async function remind(c: Customer) {
     try {
-      const rows = await window.api.customers.ledger(c.id);
-      setLedger({ customer: c, rows });
-      setPayAmount('');
-      setPayNote('');
-      setLimitInput(c.credit_limit ? String(c.credit_limit) : '');
+      const res = await window.api.udhaar.remind(c.id);
+      if (res.ok) flash(`Reminder sent to ${c.name}.`);
+      else flash(res.message || 'Could not send the reminder.', 'error');
     } catch (e) {
-      setNotice(e instanceof Error ? e.message : String(e));
+      fail(e);
     }
-  }
-
-  async function submitPayment() {
-    if (!ledger) return;
-    const amount = Number(payAmount);
-    if (!amount || amount <= 0) return;
-    setBusy(true);
-    try {
-      await window.api.customers.receivePayment(ledger.customer.id, amount, payMode, payNote.trim() || undefined);
-      const rows = await window.api.customers.ledger(ledger.customer.id);
-      const cust = (await window.api.customers.list()).find((c) => c.id === ledger.customer.id);
-      if (cust) setLedger({ customer: cust, rows });
-      setPayAmount('');
-      setPayNote('');
-      await load();
-    } catch (e) {
-      setNotice(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function createCustomer() {
-    if (!newName.trim()) return;
-    await window.api.customers.create(newName, newPhone, Number(newBalance) || 0);
-    setNewName('');
-    setNewPhone('');
-    setNewBalance('');
-    setAddOpen(false);
-    await load();
   }
 
   const statusOptions = [
@@ -112,26 +130,44 @@ export default function Udhaar() {
     setSearch('');
   };
 
-  // ── Keyboard: arrow between customers, Enter opens the ledger ──
+  // ── Keyboard: arrow between rows, Enter opens (ledger in list view, profile in aging) ──
   const customerList = useListKeyboard({
-    count: filtered.length,
-    onOpen: (i) => { const c = filtered[i]; if (c) openLedger(c); },
+    count: view === 'aging' ? agingRows.length : filtered.length,
+    onOpen: (i) => {
+      if (view === 'aging') {
+        const r = agingRows[i];
+        if (r) setProfileId(r.customer_id);
+      } else {
+        const c = filtered[i];
+        if (c) setLedgerCustomerId(c.id);
+      }
+    },
   });
-
-  const ledgerList = useListKeyboard({ count: ledger?.rows.length ?? 0 });
 
   useKeyboardScope({
     kind: 'page',
     label: 'Udhaar / Khata',
     actions: {
-      new_record: () => setAddOpen(true),
+      new_record: () => setCustomerModal({ customer: null }),
     },
     shortcuts: [
       { action: 'new_record', label: 'Add customer' },
-      { keys: '↑ / ↓', label: 'Move between customers' },
-      { keys: 'Enter', label: 'Open the ledger' },
+      { keys: '↑ / ↓', label: 'Move between rows' },
+      { keys: 'Enter', label: 'Open the ledger / profile' },
     ],
   });
+
+  /** A "days overdue" / "due on" badge for the list view. */
+  function dueBadge(row: UdhaarAgingRow | undefined) {
+    if (!row) return <span className="muted">—</span>;
+    if (row.days_overdue > 0) {
+      return <span className="badge badge-danger">Overdue {row.days_overdue}d</span>;
+    }
+    if (row.oldest_due_date) {
+      return <span className="badge badge-ok">Due {row.oldest_due_date}</span>;
+    }
+    return <span className="muted">—</span>;
+  }
 
   return (
     <div className="page">
@@ -149,8 +185,8 @@ export default function Udhaar() {
               from={from}
               to={to}
               onChange={(from: string, to: string) => { setFrom(from); setTo(to); }}
-              labelFrom="From"
-              labelTo="To"
+              labelFrom="Joined from"
+              labelTo="Joined to"
             />
             <select
               className="field-select"
@@ -162,13 +198,39 @@ export default function Udhaar() {
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
+            <label className="inline-check">
+              <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+              Show inactive
+            </label>
           </FilterRow>
           <FilterRow style={{ justifyContent: 'flex-end' }}>
-            <span className="badge badge-warn" style={{ marginRight: 'auto' }}>Total due: {totalDue.toFixed(2)}</span>
+            <span className="badge badge-warn" style={{ marginRight: 'auto' }}>
+              Total due: {formatMoney(totalDue)}
+            </span>
+            <div className="view-toggle" role="tablist" aria-label="View">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === 'list'}
+                className={view === 'list' ? 'active' : ''}
+                onClick={() => setView('list')}
+              >
+                Customers
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === 'aging'}
+                className={view === 'aging' ? 'active' : ''}
+                onClick={() => setView('aging')}
+              >
+                Aging
+              </button>
+            </div>
             <button className="btn btn-sm" onClick={exportCustomers}>
               Export Excel
             </button>
-            <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
+            <button className="btn btn-primary" onClick={() => setCustomerModal({ customer: null })}>
               + Add Customer
             </button>
           </FilterRow>
@@ -176,209 +238,223 @@ export default function Udhaar() {
       </div>
 
       {notice && (
-        <div className="notice" onClick={() => setNotice(null)}>
-          {notice}
+        <div className={`notice ${notice.kind === 'error' ? 'error' : ''}`} onClick={() => setNotice(null)}>
+          {notice.text}
         </div>
       )}
 
-      <div className="table-wrap" {...customerList.getContainerProps()}>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Phone</th>
-              <th className="num">Outstanding</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((c, i) => {
-              const overLimit = c.credit_limit != null && c.credit_limit > 0 && c.balance > c.credit_limit;
-              return (
-                <tr key={c.id} className={overLimit ? 'row-danger' : c.balance > 0 ? 'row-low' : ''} {...customerList.getRowProps(i)}>
-                  <td>
-                    <strong>{c.name}</strong>
-                    {overLimit && <div className="small text-warn">Over credit limit!</div>}
-                  </td>
-                  <td>{c.phone ?? '—'}</td>
-                  <td className={`num ${c.balance > 0 ? 'text-warn' : 'text-ok'}`}>
-                    {c.balance > 0 ? c.balance.toFixed(2) : '0.00'}
-                  </td>
-                  <td>
-                    <div className="row-actions">
-                      <button className="btn btn-sm" onClick={() => openLedger(c)}>
-                        Ledger
+      {view === 'list' && (
+        <div className="table-wrap" {...customerList.getContainerProps()}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Phone</th>
+                <th className="num">Outstanding</th>
+                <th>Due</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && customers.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="muted center">Loading…</td>
+                </tr>
+              )}
+              {filtered.map((c, i) => {
+                const overLimit = c.credit_limit != null && c.credit_limit > 0 && c.balance > c.credit_limit;
+                const inactive = (c.status ?? 'active') === 'inactive';
+                return (
+                  <tr key={c.id} className={overLimit ? 'row-danger' : c.balance > 0 ? 'row-low' : ''} {...customerList.getRowProps(i)}>
+                    <td>
+                      <button className="link-btn name" onClick={() => setProfileId(c.id)}>
+                        <strong>{c.name}</strong>
                       </button>
-                    </div>
+                      {inactive && <span className="badge" style={{ marginLeft: 6 }}>Inactive</span>}
+                      {overLimit && <div className="small text-warn">Over credit limit!</div>}
+                    </td>
+                    <td>{c.phone ?? '—'}</td>
+                    <td className={`num ${c.balance > 0 ? 'text-warn' : 'text-ok'}`}>
+                      {c.balance.toFixed(2)}
+                    </td>
+                    <td>{dueBadge(agingById.get(c.id))}</td>
+                    <td>
+                      <div className="row-actions">
+                        <button className="btn btn-sm" onClick={() => setProfileId(c.id)}>
+                          Profile
+                        </button>
+                        <button className="btn btn-sm" onClick={() => setLedgerCustomerId(c.id)}>
+                          Ledger
+                        </button>
+                        <button className="btn btn-sm btn-primary" onClick={() => setEntryCustomer(c)}>
+                          + Udhaar items
+                        </button>
+                        {c.balance > 0 && (
+                          <button className="btn btn-sm" onClick={() => setReceiveCustomer(c)}>
+                            Receive
+                          </button>
+                        )}
+                        {c.balance > 0 && (
+                          <button className="btn btn-sm" onClick={() => remind(c)} title="Send a WhatsApp reminder">
+                            Remind
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {!loading && filtered.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="muted center">
+                    No customers found. Add a customer to start giving udhaar.
                   </td>
                 </tr>
-              );
-            })}
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={4} className="muted center">
-                  No customers found. Add a customer to start giving udhaar.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {addOpen && (
-        <Modal
-          onClose={() => setAddOpen(false)}
-          onSubmit={createCustomer}
-          title="Add Customer"
-          className="modal-sm"
-          label="Add Customer"
-          shortcuts={[{ action: 'save', label: 'Save customer' }]}
-        >
-          <label className="field">
-            <span>Name *</span>
-            <input value={newName} onChange={(e) => setNewName(e.target.value)} />
-          </label>
-          <label className="field">
-            <span>Phone</span>
-            <input value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
-          </label>
-          <label className="field">
-            <span>Opening Balance ({getCurrencySymbol()})</span>
-            <KeyboardInput
-              type="text"
-              decimals
-              value={newBalance}
-              onChange={(e) => setNewBalance(e.target.value)}
-              placeholder="0.00"
-            />
-          </label>
-          <div className="modal-actions">
-            <button className="btn" onClick={() => setAddOpen(false)}>
-              Cancel
-            </button>
-            <button className="btn btn-primary" disabled={!newName.trim()} onClick={createCustomer}>
-              Save
-            </button>
-          </div>
-        </Modal>
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
 
-      {ledger && (
-        <Modal
-          onClose={() => setLedger(null)}
-          onSubmit={submitPayment}
-          title={`Ledger — ${ledger.customer.name}`}
-          className="modal-wide"
-          label="Customer Ledger"
-          shortcuts={[{ keys: 'Enter', label: 'Receive payment' }]}
-        >
-          {(() => {
-            const limit = ledger.customer.credit_limit ?? 0;
-            const over = limit > 0 && ledger.customer.balance > limit;
-            return (
-              <>
-                <div className="ledger-head">
-                  <span>
-                    Outstanding: <strong className={over ? 'text-warn' : ''}>{ledger.customer.balance.toFixed(2)}</strong>
-                  </span>
-                  <span className="muted small">Phone: {ledger.customer.phone ?? '—'}</span>
-                  <span className="muted small">
-                    Credit limit:
-                    <KeyboardInput
-                      type="text"
-                      className="limit-input"
-                      value={limitInput}
-                      onChange={(e) => setLimitInput(e.target.value)}
-                      placeholder="0"
-                    />
-                    <button
-                      className="btn btn-sm"
-                      onClick={async () => {
-                        const c = await window.api.customers.setCreditLimit(ledger.customer.id, Number(limitInput) || 0);
-                        setLedger({ ...ledger, customer: c });
-                        await load();
-                      }}
-                    >
-                      Set
-                    </button>
-                  </span>
-                </div>
-                {over && (
-                  <div className="notice">
-                    Warning: Udhaar limit exceeded! Balance {ledger.customer.balance.toFixed(2)} exceeds limit {limit.toFixed(2)}.
-                  </div>
-                )}
-              </>
-            );
-          })()}
-
-          <div className="pay-box">
-            <select value={payMode} onChange={(e) => setPayMode(e.target.value)}>
-              <option>Cash</option>
-              <option>Card</option>
-              <option>Easypaisa</option>
-              <option>JazzCash</option>
-              <option>Bank Transfer</option>
-            </select>
-            <KeyboardInput
-              type="text"
-              decimals
-              placeholder="Amount"
-              value={payAmount}
-              onChange={(e) => setPayAmount(e.target.value)}
-            />
-            <input placeholder="Note (optional)" value={payNote} onChange={(e) => setPayNote(e.target.value)} />
-            <button className="btn btn-primary" onClick={submitPayment} disabled={busy || !payAmount || Number(payAmount) <= 0}>
-              Receive Payment
-            </button>
-          </div>
-
-          <div className="table-wrap" {...ledgerList.getContainerProps()}>
-            <table className="data-table">
-              <thead>
+      {view === 'aging' && (
+        <div className="table-wrap" {...customerList.getContainerProps()}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Phone</th>
+                <th className="num">Current</th>
+                <th className="num">1–30</th>
+                <th className="num">31–60</th>
+                <th className="num">61–90</th>
+                <th className="num">90+</th>
+                <th className="num">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && !aging && (
                 <tr>
-                  <th>Date</th>
-                  <th>Type</th>
-                  <th className="num">Amount</th>
-                  <th className="num">Balance</th>
+                  <td colSpan={8} className="muted center">Loading…</td>
                 </tr>
-              </thead>
-              <tbody>
-                {[...ledger.rows].reverse().map((r, i) => (
-                  <tr key={r.id} {...ledgerList.getRowProps(i)}>
-                    <td>{r.created_at ? formatDateTimeAdmin(r.created_at) : '—'}</td>
-                    <td>
-                      {r.type.startsWith('payment') ? (
-                        <span className="text-ok">Payment ({r.type.split(':')[1]})</span>
-                      ) : r.type === 'sale' ? (
-                        <span className="text-warn">Sale (udhaar)</span>
-                      ) : (
-                        <span className="muted">Void</span>
-                      )}
-                    </td>
-                    <td className={`num ${r.amount < 0 ? 'text-ok' : 'text-warn'}`}>
-                      {r.amount > 0 ? '+' : ''}
-                      {r.amount.toFixed(2)}
-                    </td>
-                    <td className="num">{r.running.toFixed(2)}</td>
-                  </tr>
-                ))}
-                {ledger.rows.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="muted center">
-                      No transactions yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="modal-actions">
-            <button className="btn" onClick={() => setLedger(null)}>
-              Close
-            </button>
-          </div>
-        </Modal>
+              )}
+              {agingRows.map((r, i) => (
+                <tr
+                  key={r.customer_id}
+                  className={r.days_overdue > 0 ? 'row-danger' : r.outstanding > 0 ? 'row-low' : ''}
+                  {...customerList.getRowProps(i)}
+                >
+                  <td>
+                    <button className="link-btn name" onClick={() => setProfileId(r.customer_id)}>
+                      <strong>{r.name}</strong>
+                    </button>
+                    {r.days_overdue > 0 && (
+                      <span className="badge badge-danger" style={{ marginLeft: 6 }}>
+                        {r.days_overdue}d
+                      </span>
+                    )}
+                  </td>
+                  <td>{r.phone ?? '—'}</td>
+                  <td className="num">{fmt(r.buckets.current)}</td>
+                  <td className="num text-warn">{fmt(r.buckets.d1_30)}</td>
+                  <td className="num text-warn">{fmt(r.buckets.d31_60)}</td>
+                  <td className="num text-warn">{fmt(r.buckets.d61_90)}</td>
+                  <td className="num text-warn">{fmt(r.buckets.d90_plus)}</td>
+                  <td className="num"><strong>{fmt(r.buckets.total)}</strong></td>
+                </tr>
+              ))}
+              {agingRows.length > 0 && (
+                <tr className="aging-total">
+                  <td><strong>Total</strong></td>
+                  <td />
+                  <td className="num">{fmt(aging!.totals.current)}</td>
+                  <td className="num">{fmt(aging!.totals.d1_30)}</td>
+                  <td className="num">{fmt(aging!.totals.d31_60)}</td>
+                  <td className="num">{fmt(aging!.totals.d61_90)}</td>
+                  <td className="num">{fmt(aging!.totals.d90_plus)}</td>
+                  <td className="num"><strong>{fmt(aging!.totals.total)}</strong></td>
+                </tr>
+              )}
+              {!loading && agingRows.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="muted center">
+                    Nothing outstanding — no receivables to age.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          {aging && (
+            <p className="muted small" style={{ padding: '6px 4px' }}>
+              Receivables as of {aging.as_of} · {agingRows.length} customer(s) with a balance.
+            </p>
+          )}
+        </div>
+      )}
+
+      {customerModal && (
+        <UdhaarCustomerModal
+          customer={customerModal.customer}
+          onClose={() => setCustomerModal(null)}
+          onSaved={(c) => {
+            setCustomerModal(null);
+            load().catch(() => undefined);
+            if (c) flash(`${c.name} saved.`);
+          }}
+          onOpenExisting={(id) => {
+            setCustomerModal(null);
+            setProfileId(id);
+          }}
+        />
+      )}
+
+      {profileId != null && (
+        <CustomerProfileModal
+          customerId={profileId}
+          onClose={() => setProfileId(null)}
+          onEdit={(c) => {
+            setProfileId(null);
+            setCustomerModal({ customer: c });
+          }}
+          onChanged={() => {
+            load().catch(() => undefined);
+          }}
+          onOpenLedger={(id) => {
+            setProfileId(null);
+            setLedgerCustomerId(id);
+          }}
+        />
+      )}
+
+      {receiveCustomer && (
+        <ReceivePaymentModal
+          customer={receiveCustomer}
+          onClose={() => setReceiveCustomer(null)}
+          onSaved={(c) => {
+            setReceiveCustomer(null);
+            load().catch(() => undefined);
+            flash(`Payment received from ${c.name}.`);
+          }}
+        />
+      )}
+
+      {ledgerCustomerId != null && (
+        <UdhaarLedgerModal
+          customerId={ledgerCustomerId}
+          onClose={() => setLedgerCustomerId(null)}
+          onChanged={load}
+        />
+      )}
+
+      {entryCustomer && (
+        <UdhaarEntryModal
+          customerId={entryCustomer.id}
+          customerName={entryCustomer.name}
+          customerBalance={entryCustomer.balance}
+          onClose={() => setEntryCustomer(null)}
+          onSaved={() => {
+            load().catch(() => undefined);
+          }}
+        />
       )}
     </div>
   );

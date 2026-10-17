@@ -60,6 +60,12 @@ export function getPrintSettings(): Record<string, string> {
     if (admin.receipt_terms_text !== undefined) base.receipt_terms_text = admin.receipt_terms_text;
     if (admin.receipt_software_by !== undefined) base.receipt_software_by = admin.receipt_software_by;
     if (admin.receipt_show_serial_number !== undefined) base.receipt_show_serial_number = admin.receipt_show_serial_number;
+    // Receipt layout phase 1 (migration 054): logo sizing/grayscale, removable
+    // software credit and the "Items: N, Qty: N" summary line.
+    if (admin.receipt_logo_max_height_px !== undefined) base.receipt_logo_max_height_px = admin.receipt_logo_max_height_px;
+    if (admin.receipt_logo_grayscale !== undefined) base.receipt_logo_grayscale = admin.receipt_logo_grayscale;
+    if (admin.receipt_show_software_credit !== undefined) base.receipt_show_software_credit = admin.receipt_show_software_credit;
+    if (admin.receipt_show_items_summary !== undefined) base.receipt_show_items_summary = admin.receipt_show_items_summary;
     return base;
   } catch {
     return getAllSettings();

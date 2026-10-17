@@ -570,6 +570,9 @@ async function run() {
         ? [sale.invoice_no, `${invMatch[1]}-${invMatch[2].slice(4)}-${invMatch[3]}`]
         : [sale.invoice_no];
 
+      // The DISC column is now conditional: it only appears when at least one
+      // line carries a discount. Compute the expectation from the sale itself.
+      const anyLineDiscount = sale.items.some((it) => Number(it.discount || 0) > 0);
       for (const paper of ['thermal58', 'thermal80']) {
         const restore = setPrintSetting('receipt_paper', paper);
         try {
@@ -579,22 +582,30 @@ async function run() {
           checkTrue(`receipt ${paper}: product name is printed`, name ? flat.includes(name) : true, name);
           checkTrue(`receipt ${paper}: line total is printed`, hasMoney(flat, item.line_total), money(item.line_total));
           checkTrue(`receipt ${paper}: NET TOTAL is printed`, flat.includes('NET TOTAL'), '');
+          // Header sequence proves the fixed column grid (and that DISC is
+          // present/absent on purpose — bare includes('DISC') would false-match
+          // the "DISCOUNT" totals row).
           if (paper === 'thermal58') {
-            // 58mm uses the compact 5-column table (# | ITEM | QTY | RATE | AMOUNT).
             checkTrue(
-              'receipt thermal58: 5-column item header is printed',
-              flat.includes('ITEM') && flat.includes('QTY') && flat.includes('RATE') && flat.includes('AMOUNT'),
+              'receipt thermal58: 5-column item header (# ITEM QTY RATE AMOUNT) is printed',
+              flat.includes('#') && flat.includes('ITEM') && /QTY\s+RATE\s+AMOUNT/.test(flat),
               ''
             );
+            checkTrue('receipt thermal58: DISC column is absent', !/QTY\s+RATE\s+DISC/.test(flat), '');
           } else {
-            // 80mm uses the 6-column fixed table. If a markup slip drops the
-            // header row the columns collapse back into one run of text.
+            const hasGrid = flat.includes('#') && flat.includes('PARTICULARS') && /QTY\s+RATE\s+(DISC\s+)?AMOUNT/.test(flat);
+            checkTrue('receipt thermal80: fixed item header is printed', hasGrid, '');
             checkTrue(
-              'receipt thermal80: 6-column item header is printed',
-              flat.includes('#') && flat.includes('PARTICULARS') && flat.includes('QTY') && flat.includes('RATE') && flat.includes('DISC') && flat.includes('AMOUNT'),
+              `receipt thermal80: DISC column is ${anyLineDiscount ? 'present' : 'absent'}`,
+              anyLineDiscount === /QTY\s+RATE\s+DISC/.test(flat),
               ''
             );
           }
+          checkTrue(
+            `receipt ${paper}: Items/Qty summary is printed`,
+            /Items:\s*\d+,\s*Qty:\s*[\d.,]+/.test(flat),
+            ''
+          );
           checkTrue(
             `receipt ${paper}: invoice number is on the receipt`,
             invTexts.some((t) => t && flat.includes(t)),
@@ -602,6 +613,25 @@ async function run() {
           );
         } finally {
           restore();
+        }
+      }
+      // Conditional DISC column, positive case: give a line a discount and prove
+      // the column appears (only meaningful when the seeded sale has none).
+      if (!anyLineDiscount && sale.items.length) {
+        const db = require('../dist/main/db.js').getDb();
+        const first = sale.items[0];
+        db.prepare('UPDATE sale_items SET discount = ? WHERE id = ?').run(5, first.id);
+        const restore = setPrintSetting('receipt_paper', 'thermal80');
+        try {
+          const flat = (await printService.readJobText(printing.buildReceiptJob(saleId, 'standard'))).replace(/\s+/g, ' ');
+          checkTrue(
+            'receipt thermal80: DISC column appears when a line is discounted',
+            /QTY\s+RATE\s+DISC\s+AMOUNT/.test(flat),
+            ''
+          );
+        } finally {
+          restore();
+          db.prepare('UPDATE sale_items SET discount = 0 WHERE id = ?').run(first.id);
         }
       }
       for (const paper of ['a4', 'a5']) {

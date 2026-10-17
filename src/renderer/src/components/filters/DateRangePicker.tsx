@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toLocalDateString } from '../../utils/dateUtils';
 
 type Preset = 'today' | 'yesterday' | 'week' | 'month' | 'lastmonth' | 'custom';
@@ -25,6 +25,15 @@ export function DateRangePicker({
   const [localFrom, setLocalFrom] = useState(from);
   const [localTo, setLocalTo] = useState(to);
   const [localPreset, setLocalPreset] = useState<Preset>(preset ?? 'custom');
+
+  // Keep the visible inputs in step when the parent resets the range (e.g. the
+  // filter-bar "Clear" button) or drives it from elsewhere. Without this the
+  // picker showed stale dates after the parent cleared them.
+  useEffect(() => setLocalFrom(from), [from]);
+  useEffect(() => setLocalTo(to), [to]);
+  useEffect(() => {
+    if (preset !== undefined) setLocalPreset(preset);
+  }, [preset]);
 
   const presets: { value: Preset; label: string }[] = [
     { value: 'today', label: 'Today' },
@@ -96,8 +105,10 @@ export function DateRangePicker({
           type="date"
           value={localFrom}
           onChange={(e) => {
-            setLocalFrom(e.target.value);
+            const v = e.target.value;
+            setLocalFrom(v);
             if (localPreset !== 'custom') setLocalPreset('custom');
+            onChange(v, localTo);
           }}
           style={{ width: '130px', marginLeft: 4 }}
         />
@@ -109,8 +120,10 @@ export function DateRangePicker({
           type="date"
           value={localTo}
           onChange={(e) => {
-            setLocalTo(e.target.value);
+            const v = e.target.value;
+            setLocalTo(v);
             if (localPreset !== 'custom') setLocalPreset('custom');
+            onChange(localFrom, v);
           }}
           style={{ width: '130px', marginLeft: 4 }}
         />

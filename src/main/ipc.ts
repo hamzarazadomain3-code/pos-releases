@@ -51,14 +51,34 @@ import {
   printInvoice,
   printDrawerSummary,
   printTestSheet,
+  printDesignSample,
+  reprintLastReceipt,
+  printReport,
+  previewReport,
   openCashDrawer,
   AUTO_PRINTER,
   type ReceiptTemplate,
   type LabelSize,
   type PaperKind,
   type LabelRunOptions,
+  type PrintSaleOptions,
 } from './services/printing';
 import { getAvailableTemplates } from './services/receiptTemplates';
+import {
+  buildDesignedReceiptAsync,
+  buildSampleSale,
+  getReceiptDesign,
+  getReceiptLibrary,
+  isReceiptDesignEnabled,
+  RECEIPT_DESIGN_ENABLED_KEY,
+  RECEIPT_DESIGN_KEY,
+  saveReceiptLibrary,
+} from './services/receiptDesigner';
+import {
+  normalizeReceiptDesign,
+  type ReceiptDesign,
+  type ReceiptPaper,
+} from '../shared/receiptDesign';
 import {
   getAvailablePrinters,
   getConfiguredPrinter,
@@ -125,7 +145,11 @@ import {
 } from './services/recovery';
 import { runBackup, restoreBackup } from './services/backup';
 import { openShift, closeShift, forceCloseShift, currentShift, listShifts, getShift } from './services/shifts';
-import { saveCsv, saveXlsx, exportProductsXlsx, exportSalesXlsx, exportCustomersXlsx, exportPurchaseOrdersXlsx, exportExpensesXlsx, downloadProductTemplate, importProductsFromExcel } from './services/export';
+import { saveCsv, saveXlsx, exportProductsXlsx, exportSalesXlsx, exportCustomersXlsx, exportUdhaarStatementXlsx, exportPurchaseOrdersXlsx, exportExpensesXlsx, downloadProductTemplate, importProductsFromExcel, exportUdhaarCatalogCsv, importUdhaarCatalogCsv } from './services/export';
+import { getUdhaarLedger, getUdhaarAging, writeOffUdhaar, lookupUdhaarItem, searchUdhaarItems, createUdhaarEntry, getUdhaarEntry, listUdhaarCatalog, upsertUdhaarCatalog, deleteUdhaarCatalog } from './services/udhaar';
+import { printStatement, previewStatement, exportStatementPdf, statementText, printEntrySlip, entrySlipText, reminderText } from './services/udhaarPrinting';
+import { getCustomer, saveCustomer, findCustomerDuplicates, setCustomerStatus, deleteCustomer, mergeCustomers } from './services/customers';
+import type { UdhaarEntryInput, CustomerInput } from '../shared/types';
 import {
   cancelPurchaseOrder,
   createPurchaseOrder,
@@ -238,12 +262,81 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('sales:deleteHeld', (_e, id: number) => deleteHeldBill(id));
 
   ipcMain.handle('customers:list', () => listCustomers());
-  ipcMain.handle('customers:create', (_e, name: string, phone?: string) => createCustomer(name, phone));
+  ipcMain.handle('customers:create', (_e, name: string, phone?: string, openingBalance?: number) =>
+    createCustomer(name, phone, openingBalance ?? 0)
+  );
   ipcMain.handle('customers:ledger', (_e, customerId: number) => customerLedger(customerId));
   ipcMain.handle('customers:receivePayment', (_e, customerId: number, amount: number, mode: string, note?: string) =>
     receivePayment(customerId, amount, mode, note)
   );
   ipcMain.handle('customers:setCreditLimit', (_e, customerId: number, limit: number) => setCreditLimit(customerId, limit));
+  ipcMain.handle('customers:get', (_e, id: number) => getCustomer(id));
+  ipcMain.handle('customers:save', (_e, input: CustomerInput, id?: number | null) => saveCustomer(input, id ?? null));
+  ipcMain.handle('customers:deactivate', (_e, id: number) => setCustomerStatus(id, 'inactive'));
+  ipcMain.handle('customers:reactivate', (_e, id: number) => setCustomerStatus(id, 'active'));
+  ipcMain.handle('customers:remove', (_e, id: number) => deleteCustomer(id));
+  ipcMain.handle('customers:merge', (_e, sourceId: number, targetId: number) => {
+    if (!can('owner')) return { ok: false, message: 'Only the owner can merge customers' };
+    return mergeCustomers(sourceId, targetId);
+  });
+  ipcMain.handle('customers:findDuplicates', (_e, opts: { phone?: string | null; name?: string; excludeId?: number | null }) =>
+    findCustomerDuplicates(opts)
+  );
+
+  ipcMain.handle('udhaar:ledger', (_e, customerId: number) => getUdhaarLedger(customerId));
+  ipcMain.handle('udhaar:printStatement', (_e, customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') =>
+    printStatement(customerId, from, to, paper)
+  );
+  ipcMain.handle('udhaar:previewStatement', (_e, customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') =>
+    previewStatement(customerId, from, to, paper)
+  );
+  ipcMain.handle('udhaar:exportStatementPdf', (_e, customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') =>
+    exportStatementPdf(customerId, from, to, paper)
+  );
+  ipcMain.handle('udhaar:shareStatement', async (_e, customerId: number, from?: string, to?: string, phone?: string) => {
+    const ledger = getUdhaarLedger(customerId);
+    const target = (phone && phone.trim()) || ledger.customer.phone || '';
+    if (!target) return { ok: false, message: 'This customer has no phone number to share to.' };
+    return sendWhatsAppReceipt(target, statementText(customerId, from, to));
+  });
+
+  // ── Phase 4: receivables aging, reminders, write-off ────────────────
+  ipcMain.handle('udhaar:aging', () => getUdhaarAging());
+  ipcMain.handle('udhaar:remind', async (_e, customerId: number, phone?: string) => {
+    const ledger = getUdhaarLedger(customerId);
+    if (ledger.summary.outstanding <= 0) {
+      return { ok: false, message: 'This customer has no outstanding balance.' };
+    }
+    const target = (phone && phone.trim()) || ledger.customer.phone || '';
+    if (!target) return { ok: false, message: 'This customer has no phone number to send the reminder to.' };
+    return sendWhatsAppReceipt(target, reminderText(customerId));
+  });
+  ipcMain.handle('udhaar:writeOff', (_e, customerId: number, amount: number, note?: string) => {
+    if (!can('owner')) return { ok: false, message: 'Only the owner can write off debt' };
+    return writeOffUdhaar(customerId, amount, note);
+  });
+
+  // ── Phase 2: manual item entries + the Udhaar item catalog ──────────
+  ipcMain.handle('udhaar:lookupItem', (_e, code: string) => lookupUdhaarItem(code));
+  ipcMain.handle('udhaar:searchItems', (_e, term: string) => searchUdhaarItems(term));
+  ipcMain.handle('udhaar:createEntry', (_e, input: UdhaarEntryInput) => createUdhaarEntry(input));
+  ipcMain.handle('udhaar:catalogList', () => listUdhaarCatalog());
+  ipcMain.handle('udhaar:catalogUpsert', (_e, item: { id?: number; barcode?: string | null; name: string; price: number; unit?: string | null }) =>
+    upsertUdhaarCatalog(item)
+  );
+  ipcMain.handle('udhaar:catalogDelete', (_e, id: number) => deleteUdhaarCatalog(id));
+  ipcMain.handle('udhaar:catalogExport', () => exportUdhaarCatalogCsv(BrowserWindow.getFocusedWindow()));
+  ipcMain.handle('udhaar:catalogImport', () => importUdhaarCatalogCsv(BrowserWindow.getFocusedWindow()));
+  ipcMain.handle('udhaar:printEntrySlip', (_e, transactionId: number, paper?: 'thermal80' | 'thermal58') =>
+    printEntrySlip(transactionId, paper)
+  );
+  ipcMain.handle('udhaar:shareEntrySlip', async (_e, transactionId: number, phone?: string) => {
+    const entry = getUdhaarEntry(transactionId);
+    if (!entry) return { ok: false, message: 'Entry not found.' };
+    const target = (phone && phone.trim()) || entry.customer.phone || '';
+    if (!target) return { ok: false, message: 'This customer has no phone number to share to.' };
+    return sendWhatsAppReceipt(target, entrySlipText(transactionId));
+  });
 
   ipcMain.handle('settings:getAll', () => getAllSettings());
   ipcMain.handle('settings:set', (_e, key: string, value: string) => {
@@ -269,16 +362,52 @@ export function registerIpcHandlers(): void {
   // All printing funnels through printService, the only module that calls
   // webContents.print(). Every handler resolves to a PrintResult so the renderer
   // always gets a reason on failure instead of a silent hang.
-  ipcMain.handle('printing:printSale', async (_e, saleId: number, template?: ReceiptTemplate) => {
+  ipcMain.handle('printing:printSale', async (_e, saleId: number, template?: ReceiptTemplate, opts?: PrintSaleOptions) => {
     try {
-      return await printSale(saleId, template);
+      return await printSale(saleId, template, opts);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:previewReceipt', async (_e, saleId: number, template?: ReceiptTemplate) => {
+  ipcMain.handle('printing:previewReceipt', async (_e, saleId: number, template?: ReceiptTemplate, opts?: PrintSaleOptions) => {
     try {
-      return await previewReceipt(saleId, template);
+      return await previewReceipt(saleId, template, opts);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  ipcMain.handle('printing:reprintLastReceipt', async () => {
+    try {
+      return await reprintLastReceipt();
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  // Phase 5: X/Z reports
+  ipcMain.handle('printing:printXReport', async (_e, shiftId?: number) => {
+    try {
+      return await printReport('x', shiftId);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  ipcMain.handle('printing:printZReport', async () => {
+    try {
+      return await printReport('z');
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  ipcMain.handle('printing:previewXReport', async (_e, shiftId?: number) => {
+    try {
+      return await previewReport('x', shiftId);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  ipcMain.handle('printing:previewZReport', async () => {
+    try {
+      return await previewReport('z');
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
@@ -364,6 +493,46 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('receipt:getTemplates', () => {
     return getAvailableTemplates();
+  });
+
+  // ── Receipt Designer (phase 2) ──────────────────────────────────────────
+  ipcMain.handle('receipt:design:get', () => {
+    return { design: getReceiptDesign(), enabled: isReceiptDesignEnabled() };
+  });
+
+  ipcMain.handle('receipt:design:set', (_e, design: ReceiptDesign, enabled?: boolean) => {
+    const clean = normalizeReceiptDesign(design);
+    setAdminSetting(RECEIPT_DESIGN_KEY, JSON.stringify(clean));
+    if (enabled !== undefined) setAdminSetting(RECEIPT_DESIGN_ENABLED_KEY, enabled ? 'true' : 'false');
+    return { ok: true, message: 'Receipt design saved' };
+  });
+
+  ipcMain.handle('receipt:design:reset', () => {
+    setAdminSetting(RECEIPT_DESIGN_KEY, '');
+    setAdminSetting(RECEIPT_DESIGN_ENABLED_KEY, 'false');
+    return { ok: true, message: 'Receipt design reset to the built-in layout' };
+  });
+
+  ipcMain.handle('receipt:design:preview', async (_e, design: ReceiptDesign, paper: ReceiptPaper, sample?: string) => {
+    const s = buildSampleSale(undefined, sample === 'return' ? 'return' : 'sale');
+    return buildDesignedReceiptAsync(s, paper, normalizeReceiptDesign(design));
+  });
+
+  // Phase 4 — print the sample sale with the on-screen (possibly unsaved) design.
+  ipcMain.handle('receipt:design:test', async (_e, design: ReceiptDesign, paper: ReceiptPaper, copies?: number) => {
+    try {
+      return await printDesignSample(design, paper, copies);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+  // ── Receipt template library (phase 3) ──────────────────────────────────────
+  ipcMain.handle('receipt:library:get', () => getReceiptLibrary());
+
+  ipcMain.handle('receipt:library:set', (_e, library: unknown) => {
+    saveReceiptLibrary(library);
+    return { ok: true, message: 'Receipt templates saved' };
   });
 
   // ── Printer selection ───────────────────────────────────────────────────
@@ -568,6 +737,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('excel:exportProducts', (_e, filters?: { search?: string; includeInactive?: boolean; categoryId?: number; stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock'; supplierId?: number; expiryFrom?: string; expiryTo?: string }) => exportProductsXlsx(BrowserWindow.getFocusedWindow(), filters?.search, filters?.includeInactive, filters?.categoryId, filters?.stockStatus, filters?.supplierId, filters?.expiryFrom, filters?.expiryTo));
   ipcMain.handle('excel:exportSales', (_e, from?: string, to?: string) => exportSalesXlsx(BrowserWindow.getFocusedWindow(), from, to));
   ipcMain.handle('excel:exportCustomers', (_e, filters?: { status?: 'paid' | 'pending' | 'all'; from?: string; to?: string }) => exportCustomersXlsx(BrowserWindow.getFocusedWindow(), filters?.status, filters?.from, filters?.to));
+  ipcMain.handle('excel:exportUdhaarStatement', (_e, customerId: number, from?: string, to?: string) => exportUdhaarStatementXlsx(BrowserWindow.getFocusedWindow(), customerId, from, to));
   ipcMain.handle('excel:exportPurchaseOrders', (_e, filters?: { status?: string; from?: string; to?: string; supplierId?: number }) => exportPurchaseOrdersXlsx(BrowserWindow.getFocusedWindow(), filters?.status, filters?.from, filters?.to, filters?.supplierId));
   ipcMain.handle('excel:exportExpenses', (_e, from?: string, to?: string) => exportExpensesXlsx(BrowserWindow.getFocusedWindow(), from, to));
   ipcMain.handle('excel:downloadTemplate', () => downloadProductTemplate(BrowserWindow.getFocusedWindow()));

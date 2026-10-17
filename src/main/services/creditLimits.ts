@@ -28,7 +28,7 @@ export interface CreditLimitHistoryRow {
 
 function getCustomer(customerId: number): any {
   return getDb().prepare(`
-    SELECT id, name, balance, credit_limit, block_on_exceed, warning_threshold_pct
+    SELECT id, name, balance, credit_limit, block_on_exceed, warning_threshold_pct, credit_action
     FROM customers WHERE id = ?
   `).get(customerId);
 }
@@ -64,6 +64,15 @@ export function checkCredit(customerId: number, additionalAmount = 0): CreditChe
 
     const utilization = (projected / limit) * 100;
     const available = Math.max(0, limit - projected);
+
+    // The shop explicitly asked for no enforcement — allow, but keep the numbers.
+    if (c.credit_action === 'allow') {
+      return {
+        allowed: true, severity: 'ok',
+        current_balance: balance, credit_limit: limit, available,
+        utilization_pct: utilization, warning_threshold_pct: warningPct,
+      };
+    }
 
     if (c.block_on_exceed && projected > limit) {
       return {

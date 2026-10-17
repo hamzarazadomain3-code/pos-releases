@@ -31,8 +31,22 @@ import {
   paperForTemplate,
   type ReceiptTemplate,
 } from './receiptTemplates';
+import {
+  buildDesignedReceiptAsync,
+  buildSampleSale,
+  isReceiptDesignEnabled,
+  renderAppliedReceipt,
+} from './receiptDesigner';
+import {
+  printReport,
+  previewReport,
+} from './xzReports';
+import { normalizeReceiptDesign, type ReceiptPaper } from '../../shared/receiptDesign';
+import type { PrintSaleOptions } from '../../shared/types';
 import { buildLabelBatchHtml, type LabelProduct } from './labelTemplates';
 import { getProduct } from './inventory';
+import { getAdminSetting } from './admin';
+import { getDb } from '../db';
 import {
   printDocument,
   previewDocument,
@@ -46,6 +60,7 @@ import {
   getConfiguredPaper,
   getConfiguredPrinter,
   getLabelLayout,
+  getReceiptCopies,
   invalidatePrinterCache,
   type LabelSize,
   type PaperKind,
@@ -54,7 +69,41 @@ import {
 } from './printService';
 
 export { buildReceiptHtml, buildInvoiceHtml, getAvailableTemplates, registerPrintProtocol };
-export type { PrintResult, ReceiptTemplate, LabelSize, PaperKind };
+export type { PrintResult, ReceiptTemplate, LabelSize, PaperKind, PrintSaleOptions };
+
+/** Is the "DUPLICATE COPY" stamp enabled? Default ON; only an explicit 'false' hides it. */
+function duplicateLabelEnabled(): boolean {
+  try {
+    return getAdminSetting('receipt_duplicate_label') !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+/** Should a completed sale pulse the cash drawer? Opt-in: default OFF. */
+function cashDrawerKickEnabled(): boolean {
+  try {
+    return getAdminSetting('cash_drawer_kick') === 'true';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Record which sale was last sent to a printer, so "Reprint last receipt" works
+ * after the sale modal is gone. Written straight to `admin_settings` (a
+ * system-managed key) because `setAdminSetting` is owner-gated and a cashier
+ * must be able to print.
+ */
+function recordLastPrintedSale(saleId: number): void {
+  try {
+    getDb()
+      .prepare('INSERT OR REPLACE INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)')
+      .run('last_printed_sale_id', String(saleId));
+  } catch {
+    /* the reprint shortcut is a convenience — never fail a print over it */
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════
 //  RECEIPTS
@@ -75,7 +124,7 @@ function resolveReceiptPaper(): PaperKind {
   return 'thermal80';
 }
 
-export function buildReceiptJob(saleId: number, template?: ReceiptTemplate): PrintJob {
+export function buildReceiptJob(saleId: number, template?: ReceiptTemplate, duplicate = false): PrintJob {
   const paper = resolveReceiptPaper();
   const requested: ReceiptTemplate = template || 'standard';
   const { template: fitted, adjusted } = fitTemplateToPaper(requested, paper);
@@ -88,7 +137,9 @@ export function buildReceiptJob(saleId: number, template?: ReceiptTemplate): Pri
     );
   }
   return {
-    html: buildReceiptHtml(saleId, fitted),
+    // `duplicate` stamps "DUPLICATE COPY"; default false keeps the shipped
+    // layout byte-identical for every existing caller and the test harness.
+    html: buildReceiptHtml(saleId, fitted, { duplicate }),
     paper,
     printerKey: 'receipt',
     jobName: 'Receipt',
@@ -96,15 +147,108 @@ export function buildReceiptJob(saleId: number, template?: ReceiptTemplate): Pri
   };
 }
 
-export async function printSale(saleId: number, template?: ReceiptTemplate): Promise<PrintResult> {
-  return printDocument(buildReceiptJob(saleId, template));
+/**
+ * The receipt job the REAL print/preview path uses. When a Receipt Design has
+ * been applied (`receipt_design_enabled`), it renders through the designer's
+ * builder so the printed roll matches the live preview exactly; otherwise it
+ * falls back to the shipped `buildReceiptJob`. Kept ASYNC because the designed
+ * QR/barcode blocks resolve bwip-js data URLs, while the sync `buildReceiptJob`
+ * stays untouched for the test harness and any caller that needs a string now.
+ */
+export async function buildReceiptJobAsync(
+  saleId: number,
+  template?: ReceiptTemplate,
+  opts: PrintSaleOptions = {}
+): Promise<PrintJob> {
+  const duplicate = !!opts.duplicate && duplicateLabelEnabled();
+  if (isReceiptDesignEnabled()) {
+    const paper = resolveReceiptPaper();
+    try {
+      const html = await renderAppliedReceipt(saleId, paper, duplicate);
+      if (html) {
+        return { html, paper, printerKey: 'receipt', jobName: 'Receipt', warnings: [] };
+      }
+    } catch (e) {
+      log(`receipt design render failed, falling back to the shipped layout: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+  return buildReceiptJob(saleId, template, duplicate);
 }
 
-export async function previewReceipt(saleId: number, template?: ReceiptTemplate): Promise<PrintResult> {
-  return previewDocument(buildReceiptJob(saleId, template), {
+export async function printSale(
+  saleId: number,
+  template?: ReceiptTemplate,
+  opts: PrintSaleOptions = {}
+): Promise<PrintResult> {
+  const job = await buildReceiptJobAsync(saleId, template, opts);
+  const copies = opts.copies ?? getReceiptCopies();
+  if (Number.isFinite(copies) && copies > 1) job.copies = Math.min(10, Math.floor(copies));
+  const result = await printDocument(job);
+  if (result.ok) {
+    recordLastPrintedSale(saleId);
+    // A reprint must not pop the drawer — only a fresh sale's print does.
+    const kick = opts.kickDrawer ?? (!opts.duplicate && cashDrawerKickEnabled());
+    if (kick) {
+      // Fire-and-forget: a drawer that isn't wired must not fail the print.
+      void openCashDrawer().then((r) => {
+        if (!r.ok) log(`cash drawer kick after print: ${r.message}`);
+      });
+    }
+  }
+  return result;
+}
+
+export async function previewReceipt(
+  saleId: number,
+  template?: ReceiptTemplate,
+  opts: PrintSaleOptions = {}
+): Promise<PrintResult> {
+  return previewDocument(await buildReceiptJobAsync(saleId, template, opts), {
+    // Title is spec'd to read EXACTLY "Receipt preview".
     title: 'Receipt preview',
     printButtonLabel: 'Print receipt',
+    saleId,
+    copies: opts.copies ?? getReceiptCopies(),
   });
+}
+
+/**
+ * Reprint the most recently printed sale. Stamped "DUPLICATE COPY" (when the
+ * toggle is on) because by definition the original already went to paper.
+ */
+export async function reprintLastReceipt(): Promise<PrintResult> {
+  let id = 0;
+  try {
+    id = Number(getAdminSetting('last_printed_sale_id')) || 0;
+  } catch {
+    id = 0;
+  }
+  if (!id) return { ok: false, message: 'No receipt has been printed yet.' };
+  if (!getSale(id)) return { ok: false, message: 'The last printed sale could not be found.' };
+  return printSale(id, undefined, { duplicate: true });
+}
+
+/**
+ * Phase 4 "Test print": print the designer's representative SAMPLE sale using
+ * the design currently on screen — including unsaved edits — so the owner can
+ * hold the physical roll next to the preview before committing it.
+ */
+export async function printDesignSample(
+  designInput: unknown,
+  paper: ReceiptPaper = 'thermal80',
+  copies = 1
+): Promise<PrintResult> {
+  const design = normalizeReceiptDesign(designInput);
+  const sample = buildSampleSale(getPrintSettings(), 'sale');
+  const html = await buildDesignedReceiptAsync(sample, paper, design);
+  const job: PrintJob = {
+    html,
+    paper,
+    printerKey: 'receipt',
+    jobName: 'Receipt test print',
+  };
+  if (Number.isFinite(copies) && copies > 1) job.copies = Math.min(10, Math.floor(copies));
+  return printDocument(job);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -471,3 +615,9 @@ export {
   printCalibrationLabel,
   type LabelRunOptions,
 } from './labelStudioPrinting';
+
+// Phase 5: X/Z reports
+export {
+  printReport,
+  previewReport,
+} from './xzReports';

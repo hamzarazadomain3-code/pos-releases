@@ -6,6 +6,7 @@ import { formatDateYMD } from '../utils/timezone';
 import { createProduct, listProducts } from './inventory';
 import { listSales } from './sales';
 import { listCustomers } from './sales';
+import { getUdhaarStatement, listUdhaarCatalog, parseCatalogCsv, bulkUpsertCatalog } from './udhaar';
 import { listPurchaseOrders, getPurchaseOrder } from './purchases';
 import { listExpenses } from './reports';
 import { listCategories, listUnits } from './inventory';
@@ -136,6 +137,80 @@ export function exportCustomersXlsx(win: BrowserWindow | null, status?: 'paid' |
       rows: customers.map((c) => [c.id, c.name, c.phone ?? '', c.address ?? '', c.balance, c.credit_limit ?? '']),
     },
   ]);
+}
+
+/** A customer's statement as a workbook: the ledger plus the item detail behind it. */
+export function exportUdhaarStatementXlsx(
+  win: BrowserWindow | null,
+  customerId: number,
+  from?: string,
+  to?: string
+): Promise<boolean> {
+  const { ledger, statement } = getUdhaarStatement(customerId, from, to);
+  const particulars = (type: string, amount: number, saleId: number | null, invoice: string | null, note: string | null): string => {
+    if (amount < 0) return `Payment (${type.split(':')[1] || 'Cash'})${note ? ` — ${note}` : ''}`;
+    if (type === 'opening_balance') return 'Opening balance';
+    if (saleId && invoice) return `Credit sale (${invoice})`;
+    return note || type;
+  };
+  const ledgerRows = statement.rows.map((r) => [
+    (r.created_at ?? '').slice(0, 10),
+    particulars(r.type, r.amount, r.sale_id, r.invoice_no, r.note),
+    r.amount > 0 ? r.amount : '',
+    r.amount < 0 ? Math.abs(r.amount) : '',
+    r.running,
+  ]);
+  const itemRows = statement.items.map((it) => [
+    (it.created_at ?? '').slice(0, 10),
+    it.invoice_no ?? '',
+    it.name,
+    it.unit ?? '',
+    it.qty,
+    it.rate,
+    it.discount,
+    it.line_total,
+  ]);
+  const summaryRows: (string | number)[][] = [
+    ['Customer', ledger.customer.name],
+    ['Phone', ledger.customer.phone ?? ''],
+    ['Period', from || to ? `${from || 'start'} — ${to || 'now'}` : 'All transactions'],
+    ['Opening balance', statement.opening_balance],
+    ['Closing balance', statement.closing_balance],
+    ['Outstanding', ledger.summary.outstanding],
+    ['Credit limit', ledger.summary.credit_limit],
+    ['Overdue amount', ledger.summary.overdue_amount],
+  ];
+  return saveXlsx(win, `statement-${ledger.customer.name.replace(/[^\w-]+/g, '_')}.xlsx`, [
+    { name: 'Summary', headers: ['Field', 'Value'], rows: summaryRows },
+    { name: 'Transactions', headers: ['Date', 'Particulars', 'Debit', 'Credit', 'Balance'], rows: ledgerRows },
+    { name: 'Items', headers: ['Date', 'Invoice', 'Item', 'Unit', 'Qty', 'Rate', 'Discount', 'Amount'], rows: itemRows },
+  ]);
+}
+
+/** Export the Udhaar item catalog as `barcode,name,price,unit` CSV. */
+export function exportUdhaarCatalogCsv(win: BrowserWindow | null): Promise<boolean> {
+  const rows = listUdhaarCatalog().map((c) => [c.barcode ?? '', c.name, c.price, c.unit ?? '']);
+  return saveCsv(win, 'udhaar-catalog.csv', ['barcode', 'name', 'price', 'unit'], rows);
+}
+
+/** Import a Udhaar item catalog CSV. Rows with a bad shape are skipped. */
+export function importUdhaarCatalogCsv(win: BrowserWindow | null): Promise<{ ok: boolean; message: string; imported?: number }> {
+  return (async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(win ?? undefined!, {
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+      properties: ['openFile'],
+    });
+    if (canceled || !filePaths.length) return { ok: false, message: 'Import cancelled.' };
+    try {
+      const text = fs.readFileSync(filePaths[0], 'utf8');
+      const items = parseCatalogCsv(text);
+      if (!items.length) return { ok: false, message: 'No usable rows found. Expected: barcode,name,price,unit' };
+      const imported = bulkUpsertCatalog(items);
+      return { ok: true, message: `Imported ${imported} item${imported === 1 ? '' : 's'}.`, imported };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  })();
 }
 
 export function exportPurchaseOrdersXlsx(win: BrowserWindow | null, status?: string, from?: string, to?: string, supplierId?: number): Promise<boolean> {

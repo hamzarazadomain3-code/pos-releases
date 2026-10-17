@@ -17,7 +17,8 @@
  *     degrades from INV-YYYYMMDD-NNNN to INV-MMDD-NNNN,
  *   - NET TOTAL prints as ONE line,
  *   - the item table headers and every line total are present,
- *   - the DISC column exists on 80mm and is absent on 58mm.
+ *   - the DISC column is present on 80mm only when a line carries a per-line
+ *     discount, and is always absent on 58mm,
  *
  * Usage (after `npm run build`):
  *   electron scripts/receipt_design_check.js
@@ -162,12 +163,12 @@ async function run() {
   });
   console.log(`\nScenario (a) one item — sale ${saleA.sale.id} ${saleA.sale.invoice_no}`);
 
-  // ── scenario (b): 6 items, long name + 0.57 Kg unit + bill discount ─────
+  // ── scenario (b): 6 items, long name + 0.57 Kg unit + line & bill discount ─
   const itemsB = [
     { product_id: pB1.id, qty: 1, price: 1320, line_discount: 0, tax_rate: 0 },
     { product_id: pB2.id, qty: 1, price: 1850, line_discount: 0, tax_rate: 0 },
     { product_id: pB3.id, qty: 1, price: 3820, line_discount: 0, tax_rate: 0 },
-    { product_id: pB4.id, qty: 1, price: 380, line_discount: 0, tax_rate: 0 },
+    { product_id: pB4.id, qty: 1, price: 380, line_discount: 25, tax_rate: 0 },
     { product_id: pB5.id, qty: 1, price: 99, line_discount: 0, tax_rate: 0 },
     { product_id: pB6.id, qty: 0.57, price: 80, line_discount: 0, tax_rate: 0, unit_name: 'Kilogram', display_qty: 0.57 },
   ];
@@ -259,7 +260,9 @@ async function run() {
             );
           }
 
-          // Item table headers.
+          // Item table headers. The DISC column is conditional — it only exists
+          // when a line carries a per-line discount.
+          const anyLineDiscount = sale.items.some((it) => Number(it.discount || 0) > 0);
           if (paper === 'thermal58') {
             checkTrue(
               `${paper} ${sc.key}: 5-column header (ITEM QTY RATE AMOUNT)`,
@@ -268,16 +271,22 @@ async function run() {
             );
             checkTrue(
               `${paper} ${sc.key}: DISC column is absent on 58mm`,
-              flat.includes('RATE AMOUNT'),
+              flat.includes('RATE AMOUNT') && !flat.includes('RATE DISC'),
               flat.slice(flat.indexOf('RATE'), flat.indexOf('RATE') + 40) || ''
             );
           } else {
             checkTrue(
-              `${paper} ${sc.key}: 6-column header (# PARTICULARS QTY RATE DISC AMOUNT)`,
-              flat.includes('#') && flat.includes('PARTICULARS') && flat.includes('QTY') && flat.includes('RATE') && flat.includes('DISC') && flat.includes('AMOUNT'),
+              `${paper} ${sc.key}: fixed item header (# PARTICULARS QTY RATE [DISC] AMOUNT)`,
+              flat.includes('#') &&
+                flat.includes('PARTICULARS') &&
+                /QTY RATE (DISC )?AMOUNT/.test(flat),
               ''
             );
-            checkTrue(`${paper} ${sc.key}: DISC column sits before AMOUNT`, flat.includes('RATE DISC AMOUNT'), '');
+            checkTrue(
+              `${paper} ${sc.key}: DISC column is ${anyLineDiscount ? 'present' : 'absent'}`,
+              anyLineDiscount === flat.includes('RATE DISC'),
+              ''
+            );
           }
         } finally {
           restore();

@@ -43,6 +43,11 @@ export interface ModalProps {
   showWindowControls?: boolean;
   /** Entries shown in the F1 overlay while this modal is open. */
   shortcuts?: ScopeShortcut[];
+  /**
+   * Admin action id → handler, so a documented combo actually does something
+   * here (e.g. `{ save: onSubmit }` wires Ctrl+S to submit).
+   */
+  actions?: Record<string, (e: KeyboardEvent) => void>;
   label?: string;
 }
 
@@ -91,6 +96,7 @@ export function Modal({
   showClose = true,
   showWindowControls = true,
   shortcuts,
+  actions,
   label,
 }: ModalProps) {
   const boxRef = useRef<HTMLDivElement>(null);
@@ -110,6 +116,7 @@ export function Modal({
     kind: 'modal',
     onEscape: onClose,
     shortcuts,
+    actions,
     label,
     // A docked modal must not mask the page's own keyboard scope.
     enabled: !minimized,

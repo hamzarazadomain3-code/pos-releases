@@ -1,7 +1,7 @@
 # Rokar POS — Agent Guide
 
 ## Version
-**v2.17.2** (Perpetual one-time licence: no expiry, device-locked, revocable)
+**v2.18.0** (Perpetual one-time licence: no expiry, device-locked, revocable)
 
 ## Environment
 - Node.js v24.18.0 (portable at `C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64`)
@@ -624,3 +624,131 @@ Editable receipt content lives in migration `050_receipt_design.js`
 
 Run `npm run test:print` after any typography change; it measures real element boxes
 against the printable width.
+
+### Receipt Designer (phases 2–3)
+
+Settings → **Receipt Designer** edits a JSON `ReceiptDesign` and previews it live.
+The design is **opt-in**: `buildReceiptHtml` keeps using the shipped `buildRoll`
+until `receipt_design_enabled` is true, so an existing install's receipts are
+byte-identical until the owner clicks **Save & apply**. `defaultReceiptDesign()`
+reproduces the shipped section order, so the first apply is a visual no-op.
+
+- `src/shared/receiptDesign.ts` — the pure (dependency-free) model: `ReceiptDesign`
+  (ordered `sections` + `global` + `table` + `branchOverrides`), block types
+  (built-in sections incl. `return_banner`, custom
+  `text`/`divider`/`image`/`barcode`/`spacer`/`two_col`/`banner`),
+  `defaultReceiptDesign()`, `normalizeReceiptDesign()` (forward-compatible, drops
+  unknown fields), `blockStyleCss()` and `applyTokens()`. **Phase 3** adds the
+  template library: `ReceiptTemplateEntry` / `ReceiptLibrary`, `builtinTemplates()`
+  (six shipped starting points), `defaultLibrary()` (built-ins, **no defaults set**),
+  `normalizeLibrary()` (built-ins canonical, customs kept, junk dropped),
+  `resolveLibraryDefault()` and `templateDesign()`. Imported by BOTH processes.
+- `src/main/services/receiptDesigner.ts` — renders FROM a design.
+  `buildDesignedReceiptAsync(sale, paper, design)` resolves QR/barcode data URLs
+  (bwip-js via `printDocs.toDataUrl`) then renders; `buildSampleSale(settings, kind)`
+  is the representative sample (long name + Kilogram unit + a discounted line; `kind:
+  'return'` gives the negative return sample). Preview and print share this one
+  builder, so they agree by construction. It reuses the shipped roll CSS/classes
+  (`.lg` long-money shrink; 58mm removing the DISC **column** while the DISCOUNT
+  **totals row** stays; one-line `.meta-dt`). Money is printed **plain** (no currency
+  prefix) in the items/totals and the currency appears **once** on NET TOTAL — via
+  `makePlainMoney()`, mirroring `buildRoll`'s `plain()`; the earlier double prefix
+  (`Rs Rs …`) is fixed. `resolveAppliedDesign(paper, branchId?)` picks branch
+  default → global default → the phase-2 applied design, and `renderAppliedReceipt`
+  is what the print path uses.
+- `migrations/055_receipt_designer.js` — seeds `receipt_design_enabled = 'false'`
+  (the safety switch). `migrations/056_receipt_library.js` seeds an empty
+  `receipt_design_library_json`; absent ⇒ built-ins with no defaults, so the phase-2
+  applied design still drives printing until the owner sets a default.
+- `src/renderer/src/pages/ReceiptDesigner.tsx` — the editor: section list
+  (show/hide, ↑/↓ reorder, add/remove custom blocks), per-block properties
+  (font size/bold/italic/align/uppercase/line-height/margins + the token list),
+  items-table column toggles + widths, global options (base font, margins,
+  currency symbol/position/decimals, date format, Urdu font), and a **live preview
+  iframe** fed by `receipt:design:preview` (debounced) with a **Normal / Return
+  sample** switch. **Phase 3** adds the template toolbar: pick a template, Save /
+  Save As / Rename / Duplicate / Delete / Reset, **Set default** per paper (All
+  branches or a specific branch), Import / Export JSON, **Undo / Redo**
+  (Ctrl+Z / Ctrl+Y; also buttons — the keys are skipped while a field is focused so
+  text inputs keep native undo), an **autosaved draft** (`localStorage`, restored
+  with a notice), an **unsaved-changes prompt** on close/switch, and an
+  **owner/admin-only gate** (`window.api.auth.currentUser().role !== 'cashier'`;
+  a cashier sees a read-only notice and a disabled `<fieldset>`).
+- IPC: `receipt:design:get|set|reset|preview` plus `receipt:library:get|set`
+  (Phase 3) in `src/main/ipc.ts`, bridged in `preload.ts`
+  (`window.api.receipt.*Design` / `getLibrary` / `setLibrary`). Saving goes through
+  `setAdminSetting` (owner-gated) in both the design and the library paths.
+
+Verify with `npm run test:receiptdesigner` (needs `build:main`): it renders the
+designed receipt for 80mm and 58mm, reads the text back and measures every element
+against the printable width (the same audit `print_smoke` runs), and covers the
+conditional DISC column, hidden software credit, a custom text/divider block,
+reordering, a QR block and the global options. Phase-3 checks add: currency printed
+once (no double prefix, no prefix in item cells), the six built-ins, the
+Return/Refund banner (only on a negative sale) + negative NET TOTAL, a custom
+`banner` block, library normalisation/resolution, export→import round-trip, and that
+a **library default drives the real print path** (`buildReceiptJobAsync`) only while
+`receipt_design_enabled` is true.
+
+### Receipt printing (phase 4)
+
+Phase 4 turns the designer's output into a printer the shop can run a till on. Everything
+is opt-in with a safe code default, so an install that never touches these controls keeps
+the phase-3 behaviour.
+
+- **The preview window** (`previewDocument`, `printService.ts`) is widened to
+  `max(paperPx + 56, 480)` so the roll reads as a centred white sheet on a grey backdrop
+  (`TOOLBAR_CSS` re-declares `html`/`body` backgrounds *after* the document CSS, so it wins
+  on equal specificity), titled exactly **"Receipt preview"** — `win.setTitle()` is called
+  *after* `loadDocument`, because the receipt's own `<title>Receipt</title>` otherwise
+  overwrites it. The toolbar (injected with `executeJavaScript`, no preload needed) offers a
+  copies box, **Print**, **Download PDF**, **WhatsApp** and **Close**; Enter = print and
+  Esc = close unless a field/button already has focus. Print and Download PDF both run the
+  *same* job (`printDocument` / `printJobToPdf`), so preview, paper and PDF cannot diverge.
+  The WhatsApp button is only shown for a receipt preview (it needs the sale id) and calls
+  `sendSaleReceiptOnWhatsApp` through a **dynamic `import()`** — the gateway pulls in the
+  client + print stack, and `printing.ts` imports `printService`, so a static import would
+  close a cycle.
+- **`printing:printSale` / `printing:previewReceipt` now take `PrintSaleOptions`**
+  (`{ copies?, duplicate?, kickDrawer? }`, declared once in `shared/types.ts` and re-exported
+  from `printing.ts`). `previewReceipt` also sets the window title the spec pins.
+- **Reprints are stamped.** `buildReceiptJobAsync(saleId, template, { duplicate: true })`
+  threads a `duplicate` flag into both builders: `buildReceiptHtml(…, { duplicate })` renders
+  a `.duplicate-banner` in `buildRoll`, and the designed path renders
+  `<div class="duplicate-banner">DUPLICATE COPY</div>` from `renderDocument` (outside the
+  design's own sections, so a stripped-down design still shows it). The stamp is gated by
+  `receipt_duplicate_label` (default **on**; only an explicit `'false'` hides it). History
+  reprints (`Billing.tsx` sale-detail "Reprint Receipt", the Ctrl+P "print last" action) pass
+  `duplicate: true`; the immediate post-sale print never does.
+- **"Reprint last receipt"**: `reprintLastReceipt()` reprints `admin_settings.last_printed_sale_id`,
+  written **directly via `getDb()`** by `recordLastPrintedSale()` (not `setAdminSetting`,
+  which is owner-gated — a cashier must be able to print). A **Reprint Last** button sits in
+  the sale-success modal.
+- **Copies**: `receipt_copies` (default 1, clamped 1–10) via `getReceiptCopies()`; a per-job
+  `copies` override rides on the preview toolbar's copies box (`?copies=N`) and on
+  `PrintSaleOptions`.
+- **Cash-drawer kick**: `cash_drawer_kick` (default **off**, opt-in) via `cashDrawerKickEnabled()`.
+  `printSale` kicks only on a successful **fresh** print (`kick = opts.kickDrawer ?? (!opts.duplicate && setting)`),
+  never on a reprint, fire-and-forget so an unwired drawer cannot fail the print.
+- **"Silent print to the system default printer"** is the `DEFAULT_PRINTER = 'default'`
+  sentinel the owner picks in Settings → Printers. This deliberately does **not** change
+  `AUTO_PRINTER = 'auto'` ("ask every time"): the app still never substitutes the Windows
+  default for `auto` (file-output/`nul:`-port defaults caused save prompts and vanished jobs).
+  `resolveTarget` prints silently with `deviceName: ''` only for the explicit sentinel.
+- **"Cut command at end"** cannot be an ESC/POS cut: the pipeline is
+  Chromium → Windows driver (`webContents.print`), which exposes no raw cut bytes. The safe
+  substitute is that the roll page ends exactly at the measured content height (the driver's
+  auto-cutter then fires at the page boundary) plus a configurable cut margin
+  `receipt_bottom_feed_mm` (default **4**, clamped 0–30) read by `getReceiptBottomFeedMm()`.
+  `getReceiptCopies`/`getReceiptBottomFeedMm` treat `safeAdminSetting`'s `''`-for-missing as
+  "unset" — `Number('')` is `0`, which would silently turn the 4mm default into no feed.
+- **Test print** from the designer: `receipt:design:test` → `printDesignSample(design, paper, copies)`
+  prints the representative **sample** bill with the design currently on screen (including
+  unsaved edits), so the owner can hold the roll next to the preview before saving.
+- `migrations/059_receipt_print_settings.js` seeds `receipt_copies`, `cash_drawer_kick`,
+  `receipt_duplicate_label`, `receipt_bottom_feed_mm`. Admin → System Settings → Billing
+  exposes all four; Settings → Printers adds the "System default printer" option.
+- `npm run test:receiptdesigner` now also covers: the shipped + designed duplicate stamp
+  (present on a reprint, absent on an original, hidden by the toggle), and the copies/bottom-feed
+  defaults and clamps. `npm run test:print` (138) and `npm run test:receipt` (68) still pass.
+

@@ -1124,6 +1124,218 @@ body.theme-dark .bilten-bill-summary-item {
   color: #fff;
 }
 
+/* ── Udhaar Phase 4: view toggle + aging report ───────────────────── */
+.view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.view-toggle button {
+  padding: 6px 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.view-toggle button + button {
+  border-left: 1px solid var(--border, #d1d5db);
+}
+
+.view-toggle button.active {
+  background: var(--accent, #2563eb);
+  color: #fff;
+}
+
+.aging-total td {
+  border-top: 2px solid var(--border, #d1d5db);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.write-off-box {
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.write-off-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.write-off-field.grow {
+  flex: 1;
+  min-width: 180px;
+}
+
+.write-off-field input {
+  font-weight: 400;
+}
+
+
+/* ═══════════════════════════════════════════
+   PHASE 3 — CUSTOMER PROFILE (tabbed modal + profile dialog)
+   ═══════════════════════════════════════════ */
+
+.modal-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.modal-tab {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  border-radius: 8px 8px 0 0;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.modal-tab:hover {
+  color: var(--text);
+  background: rgba(79, 70, 229, 0.06);
+}
+
+.modal-tab.is-active {
+  color: var(--primary, #4f46e5);
+  border-bottom-color: var(--primary, #4f46e5);
+}
+
+.modal-tab-body {
+  min-height: 180px;
+}
+
+.modal-actions-note {
+  margin-right: auto;
+  align-self: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.field textarea {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+  background: #fff;
+  width: 100%;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.field textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+.udhaar-dup ul {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+
+.udhaar-dup li {
+  margin: 2px 0;
+}
+
+/* Customer profile dialog */
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 0 14px;
+}
+
+.profile-photo {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.profile-photo-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary, #4f46e5);
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.profile-head-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.profile-head-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  flex-wrap: wrap;
+}
+
+.profile-head-balance {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.profile-head-balance b {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 18px;
+}
+
+.profile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.profile-field span {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.profile-field b {
+  font-size: 13px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
 /* ═══════════════════════════════════════════
    SHARED MODAL STRUCTURE (keyboard layer)
    ═══════════════════════════════════════════ */
@@ -2642,6 +2854,7 @@ body:has(.billing-page) {
 }
 
 .modal-sm { width: 420px; }
+.modal-lg { width: 780px; max-width: 96vw; }
 
 /* ── Window-style dialog controls (min / max / close) ─────────────────────── */
 
@@ -3284,6 +3497,88 @@ input.qty-val::-webkit-inner-spin-button {
   margin-bottom: 12px;
 }
 
+/* ── Udhaar ledger (Phase 1: item-aware statement) ─────────────── */
+.ledger-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.ledger-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.ledger-summary strong {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.ledger-toolbar .field-select {
+  width: auto;
+}
+
+.ledger-item-row td {
+  background: #f8fafc;
+  font-size: 12px;
+}
+
+.item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.item-detail {
+  background: #fff;
+}
+
+.item-detail th,
+.item-detail td {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--primary, #4f46e5);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: inherit;
+}
+
+.link-btn:hover {
+  opacity: 0.8;
+}
+
 .pay-box {
   display: flex;
   gap: 8px;
@@ -3309,6 +3604,69 @@ input.qty-val::-webkit-inner-spin-button {
 
 .pay-box input[type='number'] { width: 110px; }
 .pay-box input[placeholder='Note (optional)'] { flex: 1; min-width: 140px; }
+
+/* ── Udhaar items (Phase 2) ──────────────────────────────────── */
+
+.udhaar-scanbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.udhaar-scanbar > input {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  transition: all 0.2s ease;
+}
+.udhaar-scanbar > input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+.udhaar-scanbar > input:first-child { flex: 1 1 260px; }
+.udhaar-scanbar > input:nth-child(2) { flex: 1 1 200px; }
+.udhaar-scanbar .field-select { width: auto; padding: 5px 8px; }
+
+.udhaar-notfound {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.udhaar-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+.udhaar-options .field { min-width: 130px; }
+
+.udhaar-lines td { padding: 4px 6px; }
+.udhaar-lines .cell-input {
+  width: 100%;
+  min-width: 56px;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
+  font-family: inherit;
+}
+.udhaar-lines .cell-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.12);
+}
+.udhaar-lines .cell-input.num { text-align: right; }
+.udhaar-lines .name { min-width: 150px; }
 
 .limit-input {
   width: 80px;

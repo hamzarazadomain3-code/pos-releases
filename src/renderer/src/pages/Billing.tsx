@@ -1104,7 +1104,7 @@ useEffect(() => {
         case 'print':
           if (success) {
             window.api.printing
-              .printSale(success.sale.id, receiptTemplate)
+              .printSale(success.sale.id, receiptTemplate, { duplicate: true })
               .then((r) => { if (r && r.ok === false) setNotice(r.message); })
               .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
           } else {
@@ -3015,6 +3015,17 @@ const handleUnitChange = (newLevel: number) => {
                 </button>
                 <button
                   className="btn"
+                  title="Print the last completed sale again, stamped DUPLICATE COPY"
+                  onClick={() => {
+                    window.api.printing.reprintLastReceipt()
+                      .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+                      .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
+                  }}
+                >
+                  Reprint Last
+                </button>
+                <button
+                  className="btn"
                   onClick={() => {
                     window.api.printing
                       .previewInvoice(success.sale.id)
@@ -3681,7 +3692,7 @@ const handleUnitChange = (newLevel: number) => {
             <div style={{ display: 'flex', gap: '8px' }}>
               <button className="btn btn-secondary" onClick={handleConvertToReturn}>Convert to Return</button>
               <button className="btn btn-secondary" onClick={() => {
-                window.api.printing.printSale(saleDetail.id)
+                window.api.printing.printSale(saleDetail.id, undefined, { duplicate: true })
                   .then((r) => { if (r && r.ok === false) setNotice(r.message); })
                   .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
               }}>Reprint Receipt</button>
@@ -3748,7 +3759,7 @@ const handleUnitChange = (newLevel: number) => {
             <div className="modal-actions" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
               <button className="btn btn-secondary" onClick={handleConvertToReturn}>Convert to Return</button>
               <button className="btn btn-secondary" onClick={() => {
-                window.api.printing.printSale(saleDetail.id)
+                window.api.printing.printSale(saleDetail.id, undefined, { duplicate: true })
                   .then((r) => { if (r && r.ok === false) setNotice(r.message); })
                   .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
               }}>Reprint Receipt</button>

@@ -13,6 +13,7 @@ import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
 import { ImageField } from '../components/ImageField';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
+import ReceiptDesigner from './ReceiptDesigner';
 
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsMap>({});
@@ -34,6 +35,7 @@ export default function Settings() {
   const [pluMappings, setPluMappings] = useState<ScalePluMapping[]>([]);
   const [receiptTemplates, setReceiptTemplates] = useState<Array<{ id: string; name: string; description: string; width: string }>>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string>('standard');
+  const [designerOpen, setDesignerOpen] = useState(false);
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [printSettings, setPrintSettings] = useState<PrinterSettingsSnapshot | null>(null);
   const [printBusy, setPrintBusy] = useState(false);
@@ -229,6 +231,7 @@ export default function Settings() {
                         }}
                       >
                         <option value="auto">Ask every time (show Windows dialog)</option>
+                        <option value="default">System default printer (print silently)</option>
                         {printers.map((p) => (
                           <option key={p.name} value={p.name}>
                             {p.displayName}
@@ -447,6 +450,9 @@ export default function Settings() {
                 }}
               >
                 {previewBusy ? 'Opening…' : 'Preview Receipt'}
+              </button>
+              <button className="btn" onClick={() => setDesignerOpen(true)}>
+                Receipt Designer
               </button>
             </div>
           </div>
@@ -863,6 +869,7 @@ export default function Settings() {
           </table>
         </div>
       </div>
+      {designerOpen && <ReceiptDesigner onClose={() => setDesignerOpen(false)} />}
     </div>
   );
 }
