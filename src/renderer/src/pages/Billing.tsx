@@ -141,7 +141,7 @@ export default function Billing({ onNavigate, onLogout }: BillingProps) {
     sortBy: 'date' | 'amount' | 'saleNo';
     sortOrder: 'asc' | 'desc';
     onlyMySales: boolean;
-    status: 'completed' | 'voided' | 'held';
+    status: 'completed' | 'voided' | 'held' | 'returned' | 'all';
   }>({
     from: '',
     to: '',
@@ -1138,19 +1138,15 @@ useEffect(() => {
         return;
       }
 
-      // 2.5) Ctrl+Shift+S — save & print receipt in one shot (replaces the old
-      //      Ctrl+S+P chord). Charge silently, print, then start a fresh bill.
-      //      `keyFromEvent()` resolves the PHYSICAL key (falls back to e.code), so
-      //      this still fires on a non-Latin layout where e.key is not 's'. The
-      //      `!altKey` guard leaves every Ctrl+Alt+… chord to the admin bindings
-      //      resolved at step 4 (e.g. the web's Ctrl+Alt+S save+print fallback).
+      // 2.5) Ctrl+Shift+S — Alias for one-click save (same as Ctrl+S).
+      // Kept for muscle memory and web where Ctrl+S may be reserved.
       if (e.ctrlKey && !e.altKey && e.shiftKey && keyFromEvent(e) === 's') {
         e.preventDefault();
         e.stopPropagation();
         if (busy) return;
-        if (quotationMode) completeQuotation();
-        else if (items.length === 0) setNotice('Cart is empty — nothing to save');
-        else expressCheckout({ forcePrint: true, silent: true }).then((ok) => { if (ok) newBill(); });
+        if (items.length === 0) { setNotice('Cart is empty — nothing to save'); return; }
+        if (quotationMode) { completeQuotation(); return; }
+        expressCheckout({ forcePrint: true, silent: true }).then((ok) => { if (ok) newBill(); });
         return;
       }
 
@@ -1164,14 +1160,26 @@ useEffect(() => {
         return;
       }
 
-      // 2.7) Ctrl+S — Save: open the payment modal (or close a quotation).
+      // 2.7) Ctrl+S — Save: one-click express cash sale (like Ctrl+Shift+S).
+      // Opens payment modal only when Alt is held (Ctrl+Alt+S) or in quotation mode.
       if (e.ctrlKey && !e.altKey && keyFromEvent(e) === 's') {
         e.preventDefault();
         e.stopPropagation();
         if (busy) return;
-        if (items.length === 0) setNotice('Cart is empty — nothing to save');
-        else if (quotationMode) completeQuotation();
-        else openPay();
+        if (items.length === 0) { setNotice('Cart is empty — nothing to save'); return; }
+        if (quotationMode) { completeQuotation(); return; }
+        // One-click cash sale: save + print + new bill
+        expressCheckout({ forcePrint: true, silent: true }).then((ok) => { if (ok) newBill(); });
+        return;
+      }
+      // 2.8) Ctrl+Alt+S — Open payment modal (for card/udhaar/split payments)
+      if (e.ctrlKey && e.altKey && keyFromEvent(e) === 's') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (busy) return;
+        if (items.length === 0) { setNotice('Cart is empty — nothing to save'); return; }
+        if (quotationMode) { completeQuotation(); return; }
+        openPay();
         return;
       }
 
@@ -3494,8 +3502,10 @@ const handleUnitChange = (newLevel: number) => {
         >
             <select className="field-select" value={historyFilter} onChange={(e) => { setHistoryFilter(e.target.value as any); applyHistoryFilters(); }} style={{ width: '160px', marginBottom: '12px' }}>
               <option value="completed">Completed</option>
+              <option value="returned">Refunds/Returns</option>
               <option value="voided">Voided</option>
               <option value="held">Held</option>
+              <option value="all">All</option>
             </select>
             
             {/* Filter Bar */}
@@ -3514,10 +3524,12 @@ const handleUnitChange = (newLevel: number) => {
                 <span className="muted">to</span>
                 <input type="date" value={historyFilters.to} onChange={(e) => setHistoryFilters(f => ({ ...f, to: e.target.value }))} title="To Date" style={{ width: '140px' }} />
                 <input type="text" value={historyFilters.saleNo} onChange={(e) => setHistoryFilters(f => ({ ...f, saleNo: e.target.value }))} placeholder="Sale No (INV-...)" style={{ width: '180px' }} />
-                <select className="field-select" value={historyFilters.status} onChange={(e) => { setHistoryFilters(f => ({ ...f, status: e.target.value as 'completed' | 'voided' | 'held' })); applyHistoryFilters(); }} style={{ width: '140px' }}>
+                <select className="field-select" value={historyFilters.status} onChange={(e) => { setHistoryFilters(f => ({ ...f, status: e.target.value as 'completed' | 'voided' | 'held' | 'returned' | 'all' })); applyHistoryFilters(); }} style={{ width: '140px' }}>
                   <option value="completed">Completed</option>
+                  <option value="returned">Refunds/Returns</option>
                   <option value="voided">Voided</option>
                   <option value="held">Held</option>
+                  <option value="all">All</option>
                 </select>
                 <select className="field-select" value={historyFilters.sortBy} onChange={(e) => { setHistoryFilters(f => ({ ...f, sortBy: e.target.value as 'date' | 'amount' | 'saleNo' })); applyHistoryFilters(); }} style={{ width: '140px' }}>
                   <option value="date">Sort: Date</option>

@@ -26,6 +26,7 @@ export default function Returns() {
   const [cfReason, setCfReason] = useState('');
   const [cfBusy, setCfBusy] = useState(false);
   const [cashRefunds, setCashRefunds] = useState<CashRefundRow[]>([]);
+  const [historyView, setHistoryView] = useState<'all' | 'returns' | 'cash'>('all');
 
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -131,6 +132,55 @@ export default function Returns() {
     setCustomerId('');
     setProductId('');
   };
+
+  // Combined history: merge returns + cash refunds, sorted by date descending
+  const allHistory = useMemo(() => {
+    const all: Array<{
+      id: number;
+      date: string;
+      type: 'return' | 'cash_refund';
+      invoice_no?: string | null;
+      amount: number;
+      mode: string;
+      restock?: number;
+      reason?: string | null;
+      username?: string | null;
+    }> = [];
+
+    // Add returns
+    for (const r of returns) {
+      all.push({
+        id: r.id,
+        date: r.created_at ?? '',
+        type: 'return',
+        invoice_no: r.invoice_no ?? null,
+        amount: r.refund_amount,
+        mode: r.refund_mode,
+        restock: r.restock,
+        reason: r.reason ?? null,
+        username: null,
+      });
+    }
+
+    // Add cash refunds
+    for (const r of cashRefunds) {
+      all.push({
+        id: r.id,
+        date: r.created_at ?? '',
+        type: 'cash_refund',
+        invoice_no: null,
+        amount: r.amount,
+        mode: r.mode,
+        restock: undefined,
+        reason: r.reason ?? null,
+        username: r.username ?? null,
+      });
+    }
+
+    // Sort by date descending (newest first)
+    all.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return all;
+  }, [returns, cashRefunds]);
 
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -382,79 +432,145 @@ export default function Returns() {
         </p>
       </div>
 
-      <div className="card">
-        <div className="card-head">
-          <h2>Returns History</h2>
-        </div>
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Invoice</th>
-              <th>Date</th>
-              <th>Refund</th>
-              <th>Mode</th>
-              <th>Restocked</th>
-              <th>Reason</th>
-            </tr>
-          </thead>
-          <tbody>
-            {returns.map((r) => (
-              <tr key={r.id}>
-                <td>{r.id}</td>
-                <td>{r.invoice_no ?? '—'}</td>
-                <td>{formatDateTimeAdmin(r.created_at ?? '')}</td>
-                <td className="text-warn">({r.refund_amount.toFixed(2)})</td>
-                <td>{r.refund_mode}</td>
-                <td>{r.restock ? 'Yes' : 'No'}</td>
-                <td>{r.reason ?? '—'}</td>
-              </tr>
-            ))}
-            {!returns.length && (
-              <tr>
-                <td colSpan={7} className="muted">
-                  No returns yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      {/* History tabs */}
+      <div className="tabs" style={{ marginBottom: 16 }}>
+        {(['all', 'returns', 'cash'] as const).map((k) => (
+          <button
+            key={k}
+            className={historyView === k ? 'tab-btn active' : 'tab-btn'}
+            onClick={() => setHistoryView(k)}
+          >
+            {k === 'all' ? 'All History' : k === 'returns' ? 'Returns History' : 'Cash Refunds History'}
+          </button>
+        ))}
       </div>
 
-      <div className="card">
-        <div className="card-head">
-          <h2>Cash Refunds History</h2>
-        </div>
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Date</th>
-              <th>Refund</th>
-              <th>By</th>
-              <th>Reason</th>
-            </tr>
-          </thead>
-          <tbody>
-            {cashRefunds.map((r) => (
-              <tr key={r.id}>
-                <td>{r.id}</td>
-                <td>{formatDateTimeAdmin(r.created_at ?? '')}</td>
-                <td className="text-warn">({r.amount.toFixed(2)})</td>
-                <td>{r.username ?? '—'}</td>
-                <td>{r.reason ?? '—'}</td>
-              </tr>
-            ))}
-            {!cashRefunds.length && (
+      {historyView === 'all' && (
+        <div className="card">
+          <div className="card-head">
+            <h2>All History (Returns + Cash Refunds)</h2>
+          </div>
+          <table className="tbl">
+            <thead>
               <tr>
-                <td colSpan={5} className="muted">
-                  No cash refunds yet.
-                </td>
+                <th>Type</th>
+                <th>#</th>
+                <th>Date</th>
+                <th>Invoice</th>
+                <th>Refund</th>
+                <th>Mode</th>
+                <th>Restocked</th>
+                <th>By</th>
+                <th>Reason</th>
               </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {allHistory.map((r) => (
+                <tr key={`${r.type}-${r.id}`}>
+                  <td>
+                    <span className={`badge ${r.type === 'return' ? 'badge-ok' : 'badge-warn'}`}>
+                      {r.type === 'return' ? 'Return' : 'Cash Refund'}
+                    </span>
+                  </td>
+                  <td>{r.id}</td>
+                  <td>{formatDateTimeAdmin(r.date)}</td>
+                  <td>{r.invoice_no ?? '—'}</td>
+                  <td className="text-warn">({r.amount.toFixed(2)})</td>
+                  <td>{r.mode}</td>
+                  <td>{r.restock !== undefined ? (r.restock ? 'Yes' : 'No') : '—'}</td>
+                  <td>{r.username ?? '—'}</td>
+                  <td>{r.reason ?? '—'}</td>
+                </tr>
+              ))}
+              {!allHistory.length && (
+                <tr>
+                  <td colSpan={9} className="muted">
+                    No refund history yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {historyView === 'returns' && (
+        <div className="card">
+          <div className="card-head">
+            <h2>Returns History</h2>
+          </div>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Invoice</th>
+                <th>Date</th>
+                <th>Refund</th>
+                <th>Mode</th>
+                <th>Restocked</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {returns.map((r) => (
+                <tr key={r.id}>
+                  <td>{r.id}</td>
+                  <td>{r.invoice_no ?? '—'}</td>
+                  <td>{formatDateTimeAdmin(r.created_at ?? '')}</td>
+                  <td className="text-warn">({r.refund_amount.toFixed(2)})</td>
+                  <td>{r.refund_mode}</td>
+                  <td>{r.restock ? 'Yes' : 'No'}</td>
+                  <td>{r.reason ?? '—'}</td>
+                </tr>
+              ))}
+              {!returns.length && (
+                <tr>
+                  <td colSpan={7} className="muted">
+                    No returns yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {historyView === 'cash' && (
+        <div className="card">
+          <div className="card-head">
+            <h2>Cash Refunds History</h2>
+          </div>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Date</th>
+                <th>Refund</th>
+                <th>By</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cashRefunds.map((r) => (
+                <tr key={r.id}>
+                  <td>{r.id}</td>
+                  <td>{formatDateTimeAdmin(r.created_at ?? '')}</td>
+                  <td className="text-warn">({r.amount.toFixed(2)})</td>
+                  <td>{r.username ?? '—'}</td>
+                  <td>{r.reason ?? '—'}</td>
+                </tr>
+              ))}
+              {!cashRefunds.length && (
+                <tr>
+                  <td colSpan={5} className="muted">
+                    No cash refunds yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

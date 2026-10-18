@@ -624,7 +624,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
         {/* ── template toolbar ── */}
         <div className="row-btns" style={{ flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
           <label className="muted small">Template</label>
-          <select value={activeId} onChange={(e) => switchTemplate(e.target.value)} style={{ minWidth: 190 }}>
+          <select value={activeId} onChange={(e) => switchTemplate(e.target.value)} style={{ minWidth: 190 }} disabled={!canEdit}>
             {library.templates.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
@@ -700,7 +700,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
         {/* ── default-per-paper / per-branch ── */}
         <div className="row-btns" style={{ flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
           <label className="muted small">Default for</label>
-          <select value={defaultScope} onChange={(e) => setDefaultScope(e.target.value)} style={{ minWidth: 150 }}>
+          <select value={defaultScope} onChange={(e) => setDefaultScope(e.target.value)} style={{ minWidth: 150 }} disabled={!canEdit}>
             <option value="">All branches</option>
             {branches.map((b) => (
               <option key={b.id} value={String(b.id)}>
@@ -760,7 +760,6 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
           {/* ── editor column ── */}
           <fieldset
-            disabled={!canEdit}
             style={{
               border: 0,
               margin: 0,
@@ -781,6 +780,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
                     setPaper(p);
                     patchDesign({ paper: p });
                   }}
+                  disabled={!canEdit}
                 >
                   {RECEIPT_PAPERS.map((p) => (
                     <option key={p.value} value={p.value}>
@@ -791,7 +791,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
               </div>
               <div className="form-group">
                 <label>Preview sample</label>
-                <select value={sample} onChange={(e) => setSample(e.target.value as 'sale' | 'return')}>
+                <select value={sample} onChange={(e) => setSample(e.target.value as 'sale' | 'return')} disabled={!canEdit}>
                   <option value="sale">Normal sale</option>
                   <option value="return">Return / refund (negative)</option>
                 </select>
@@ -832,6 +832,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
                           onClick={(e) => e.stopPropagation()}
                           onChange={(e) => updateBlock(b.id, { enabled: e.target.checked })}
                           title="Show / hide"
+                          disabled={!canEdit}
                         />
                       </td>
                       <td>
@@ -841,7 +842,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
                       <td style={{ width: 108, textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <button
                           className="btn btn-sm"
-                          disabled={i === 0}
+                          disabled={i === 0 || !canEdit}
                           onClick={(e) => {
                             e.stopPropagation();
                             move(b.id, -1);
@@ -852,7 +853,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
                         </button>{' '}
                         <button
                           className="btn btn-sm"
-                          disabled={i === design.sections.length - 1}
+                          disabled={i === design.sections.length - 1 || !canEdit}
                           onClick={(e) => {
                             e.stopPropagation();
                             move(b.id, 1);
@@ -870,6 +871,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
                               removeBlock(b.id);
                             }}
                             title="Remove"
+                            disabled={!canEdit}
                           >
                             ✕
                           </button>
@@ -880,14 +882,14 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
                 </tbody>
               </table>
               <div className="row-btns" style={{ marginTop: 8 }}>
-                <select value={newBlockType} onChange={(e) => setNewBlockType(e.target.value as ReceiptBlockType)}>
+                <select value={newBlockType} onChange={(e) => setNewBlockType(e.target.value as ReceiptBlockType)} disabled={!canEdit}>
                   {CUSTOM_BLOCK_TYPES.map((t) => (
                     <option key={t} value={t}>
                       {BLOCK_LABELS[t]}
                     </option>
                   ))}
                 </select>
-                <button className="btn btn-sm btn-primary" onClick={addBlock}>
+                <button className="btn btn-sm btn-primary" onClick={addBlock} disabled={!canEdit}>
                   Add block
                 </button>
               </div>
@@ -897,6 +899,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
             {selected && (
               <BlockProperties
                 block={selected}
+                canEdit={canEdit}
                 onPatch={(p) => updateBlock(selected.id, p)}
                 onStyle={(p) => updateStyle(selected.id, p)}
               />
@@ -915,6 +918,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
                         const cols = design.table.columns.map((x, xi) => (xi === i ? { ...x, enabled: e.target.checked } : x));
                         patchDesign({ table: { ...design.table, columns: cols } });
                       }}
+                      disabled={!canEdit}
                     />
                     {TABLE_COLUMN_LABELS[c.key]}
                   </label>
@@ -922,16 +926,16 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
               </div>
               <div className="form-row" style={{ marginTop: 8 }}>
                 <label className="muted small">
-                  <input type="checkbox" checked={design.table.showHeader} onChange={(e) => patchDesign({ table: { ...design.table, showHeader: e.target.checked } })} /> Header row
+                  <input type="checkbox" checked={design.table.showHeader} onChange={(e) => patchDesign({ table: { ...design.table, showHeader: e.target.checked } })} disabled={!canEdit} /> Header row
                 </label>
                 <label className="muted small">
-                  <input type="checkbox" checked={design.table.rowSeparators} onChange={(e) => patchDesign({ table: { ...design.table, rowSeparators: e.target.checked } })} /> Row separators
+                  <input type="checkbox" checked={design.table.rowSeparators} onChange={(e) => patchDesign({ table: { ...design.table, rowSeparators: e.target.checked } })} disabled={!canEdit} /> Row separators
                 </label>
                 <label className="muted small">
-                  <input type="checkbox" checked={design.table.boldItemNames} onChange={(e) => patchDesign({ table: { ...design.table, boldItemNames: e.target.checked } })} /> Bold item names
+                  <input type="checkbox" checked={design.table.boldItemNames} onChange={(e) => patchDesign({ table: { ...design.table, boldItemNames: e.target.checked } })} disabled={!canEdit} /> Bold item names
                 </label>
                 <label className="muted small">
-                  <input type="checkbox" checked={design.table.urduNameUnderEnglish} onChange={(e) => patchDesign({ table: { ...design.table, urduNameUnderEnglish: e.target.checked } })} /> Urdu name under English
+                  <input type="checkbox" checked={design.table.urduNameUnderEnglish} onChange={(e) => patchDesign({ table: { ...design.table, urduNameUnderEnglish: e.target.checked } })} disabled={!canEdit} /> Urdu name under English
                 </label>
               </div>
               <div className="form-row" style={{ marginTop: 8 }}>
@@ -941,6 +945,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
                     type="number"
                     value={design.table.fontSizePx ?? 13}
                     onChange={(e) => patchDesign({ table: { ...design.table, fontSizePx: Number(e.target.value) } })}
+                    disabled={!canEdit}
                   />
                 </div>
                 <div className="form-group">
@@ -959,6 +964,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
                       const cols = design.table.columns.map((x, xi) => (xi === i ? { ...x, width: e.target.value } : x));
                       patchDesign({ table: { ...design.table, columns: cols } });
                     }}
+                    disabled={!canEdit}
                   />
                 ))}
               </div>
@@ -970,42 +976,42 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
               <div className="form-row">
                 <div className="form-group">
                   <label>Base font size (px)</label>
-                  <input type="number" value={design.global.baseFontSizePx ?? 13} onChange={(e) => patchDesign({ global: { ...design.global, baseFontSizePx: Number(e.target.value) } })} />
+                  <input type="number" value={design.global.baseFontSizePx ?? 13} onChange={(e) => patchDesign({ global: { ...design.global, baseFontSizePx: Number(e.target.value) } })} disabled={!canEdit} />
                 </div>
                 <div className="form-group">
                   <label>Page margin (mm)</label>
-                  <input type="number" value={design.global.marginMm ?? 4} onChange={(e) => patchDesign({ global: { ...design.global, marginMm: Number(e.target.value) } })} />
+                  <input type="number" value={design.global.marginMm ?? 4} onChange={(e) => patchDesign({ global: { ...design.global, marginMm: Number(e.target.value) } })} disabled={!canEdit} />
                 </div>
                 <div className="form-group">
                   <label>Chars / line (ESC/POS)</label>
-                  <input type="number" value={design.global.charsPerLine ?? 32} onChange={(e) => patchDesign({ global: { ...design.global, charsPerLine: Number(e.target.value) } })} />
+                  <input type="number" value={design.global.charsPerLine ?? 32} onChange={(e) => patchDesign({ global: { ...design.global, charsPerLine: Number(e.target.value) } })} disabled={!canEdit} />
                 </div>
               </div>
               <div className="form-row">
                 <div className="form-group">
                   <label>Currency symbol</label>
-                  <input value={design.global.currencySymbol ?? ''} onChange={(e) => patchDesign({ global: { ...design.global, currencySymbol: e.target.value } })} />
+                  <input value={design.global.currencySymbol ?? ''} onChange={(e) => patchDesign({ global: { ...design.global, currencySymbol: e.target.value } })} disabled={!canEdit} />
                 </div>
                 <div className="form-group">
                   <label>Currency position</label>
-                  <select value={design.global.currencyPosition ?? 'before'} onChange={(e) => patchDesign({ global: { ...design.global, currencyPosition: e.target.value as 'before' | 'after' } })}>
+                  <select value={design.global.currencyPosition ?? 'before'} onChange={(e) => patchDesign({ global: { ...design.global, currencyPosition: e.target.value as 'before' | 'after' } })} disabled={!canEdit}>
                     <option value="before">Before (Rs 100)</option>
                     <option value="after">After (100 Rs)</option>
                   </select>
                 </div>
                 <div className="form-group">
                   <label>Decimals</label>
-                  <input type="number" value={design.global.decimals ?? 2} onChange={(e) => patchDesign({ global: { ...design.global, decimals: Number(e.target.value) } })} />
+                  <input type="number" value={design.global.decimals ?? 2} onChange={(e) => patchDesign({ global: { ...design.global, decimals: Number(e.target.value) } })} disabled={!canEdit} />
                 </div>
               </div>
               <div className="form-row">
                 <div className="form-group">
                   <label>Thousand separators</label>
-                  <input type="checkbox" checked={design.global.thousandSeparator !== false} onChange={(e) => patchDesign({ global: { ...design.global, thousandSeparator: e.target.checked } })} />
+                  <input type="checkbox" checked={design.global.thousandSeparator !== false} onChange={(e) => patchDesign({ global: { ...design.global, thousandSeparator: e.target.checked } })} disabled={!canEdit} />
                 </div>
                 <div className="form-group">
                   <label>Date format</label>
-                  <select value={design.global.dateFormat ?? 'dd/mm/yyyy'} onChange={(e) => patchDesign({ global: { ...design.global, dateFormat: e.target.value } })}>
+                  <select value={design.global.dateFormat ?? 'dd/mm/yyyy'} onChange={(e) => patchDesign({ global: { ...design.global, dateFormat: e.target.value } })} disabled={!canEdit}>
                     <option value="dd/mm/yyyy">dd/mm/yyyy</option>
                     <option value="MM/DD/YYYY">MM/DD/YYYY</option>
                     <option value="YYYY-MM-DD">YYYY-MM-DD</option>
@@ -1013,7 +1019,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
                 </div>
                 <div className="form-group">
                   <label>Urdu font</label>
-                  <input value={design.global.urduFontFamily ?? ''} onChange={(e) => patchDesign({ global: { ...design.global, urduFontFamily: e.target.value } })} />
+                  <input value={design.global.urduFontFamily ?? ''} onChange={(e) => patchDesign({ global: { ...design.global, urduFontFamily: e.target.value } })} disabled={!canEdit} />
                 </div>
               </div>
             </div>
@@ -1063,14 +1069,62 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
 
 function BlockProperties({
   block,
+  canEdit,
   onPatch,
   onStyle,
 }: {
   block: ReceiptBlock;
+  canEdit: boolean;
   onPatch: (p: Partial<ReceiptBlock>) => void;
   onStyle: (p: Partial<ReceiptBlock['style']>) => void;
 }) {
   const style = block.style || {};
+
+  // Local state for text editing to prevent re-render cascade on every keystroke
+  const [localText, setLocalText] = useState(block.text ?? '');
+  const [localLabel, setLocalLabel] = useState(block.label ?? '');
+  const [localValue, setLocalValue] = useState(block.value ?? '');
+  const [localVariant, setLocalVariant] = useState(block.variant ?? 'dashed');
+  const [localHeightMm, setLocalHeightMm] = useState(block.heightMm ?? 3);
+  const [localSrc, setLocalSrc] = useState(block.src ?? '');
+
+  // Debounced commit to main design
+  const commitRef = useRef<number | null>(null);
+  const commitLocal = useCallback(() => {
+    onPatch({
+      text: localText || undefined,
+      label: localLabel || undefined,
+      value: localValue || undefined,
+      variant: localVariant,
+      heightMm: localHeightMm,
+      src: localSrc || undefined,
+    });
+  }, [onPatch, localText, localLabel, localValue, localVariant, localHeightMm, localSrc]);
+
+  const debouncedCommit = useCallback(() => {
+    if (commitRef.current) clearTimeout(commitRef.current);
+    commitRef.current = window.setTimeout(() => {
+      commitLocal();
+    }, 300);
+  }, [commitLocal]);
+
+  // Sync local state when block prop changes (e.g., when selecting different block)
+  useEffect(() => {
+    setLocalText(block.text ?? '');
+    setLocalLabel(block.label ?? '');
+    setLocalValue(block.value ?? '');
+    setLocalVariant(block.variant ?? 'dashed');
+    setLocalHeightMm(block.heightMm ?? 3);
+    setLocalSrc(block.src ?? '');
+  }, [block.text, block.label, block.value, block.variant, block.heightMm, block.src]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (commitRef.current) clearTimeout(commitRef.current);
+    };
+  }, []);
+
   return (
     <div className="panel">
       <div className="panel-title">{BLOCK_LABELS[block.type]} — properties</div>
@@ -1078,7 +1132,7 @@ function BlockProperties({
       {['text', 'header_note', 'footer_note_1', 'footer_note_2', 'banner'].includes(block.type) && (
         <div className="form-group">
           <label>Text</label>
-          <textarea rows={2} value={block.text ?? ''} onChange={(e) => onPatch({ text: e.target.value })} />
+          <textarea rows={2} value={localText} onChange={(e) => { setLocalText(e.target.value); debouncedCommit(); }} disabled={!canEdit} />
           <div className="muted small">Tokens: {RECEIPT_TOKENS.map((t) => `{${t}}`).join(' ')}</div>
         </div>
       )}
@@ -1087,11 +1141,11 @@ function BlockProperties({
         <div className="form-row">
           <div className="form-group">
             <label>Label</label>
-            <input value={block.label ?? ''} onChange={(e) => onPatch({ label: e.target.value })} />
+            <input value={localLabel} onChange={(e) => { setLocalLabel(e.target.value); debouncedCommit(); }} disabled={!canEdit} />
           </div>
           <div className="form-group">
             <label>Value</label>
-            <input value={block.value ?? ''} onChange={(e) => onPatch({ value: e.target.value })} />
+            <input value={localValue} onChange={(e) => { setLocalValue(e.target.value); debouncedCommit(); }} disabled={!canEdit} />
           </div>
         </div>
       )}
@@ -1099,7 +1153,7 @@ function BlockProperties({
       {block.type === 'divider' && (
         <div className="form-group">
           <label>Style</label>
-          <select value={block.variant ?? 'dashed'} onChange={(e) => onPatch({ variant: e.target.value })}>
+          <select value={localVariant} onChange={(e) => { setLocalVariant(e.target.value); debouncedCommit(); }} disabled={!canEdit}>
             <option value="dashed">Dashed</option>
             <option value="solid">Solid</option>
             <option value="double">Double</option>
@@ -1111,21 +1165,21 @@ function BlockProperties({
       {block.type === 'spacer' && (
         <div className="form-group">
           <label>Height (mm)</label>
-          <input type="number" value={block.heightMm ?? 3} onChange={(e) => onPatch({ heightMm: Number(e.target.value) })} />
+          <input type="number" value={localHeightMm} onChange={(e) => { setLocalHeightMm(Number(e.target.value)); debouncedCommit(); }} disabled={!canEdit} />
         </div>
       )}
 
       {(block.type === 'image' || block.type === 'logo') && (
         <div className="form-group">
           <label>Image URL / data URL (blank = shop logo)</label>
-          <input value={block.src ?? ''} onChange={(e) => onPatch({ src: e.target.value })} placeholder="https://… or data:image/png;base64,…" />
+          <input value={localSrc} onChange={(e) => { setLocalSrc(e.target.value); debouncedCommit(); }} placeholder="https://… or data:image/png;base64,…" disabled={!canEdit} />
         </div>
       )}
 
       {block.type === 'barcode' && (
         <div className="form-group">
           <label>Barcode value (tokens allowed)</label>
-          <input value={block.value ?? ''} onChange={(e) => onPatch({ value: e.target.value })} placeholder="{invoice}" />
+          <input value={localValue} onChange={(e) => { setLocalValue(e.target.value); debouncedCommit(); }} placeholder="{invoice}" disabled={!canEdit} />
         </div>
       )}
 
@@ -1136,11 +1190,11 @@ function BlockProperties({
       <div className="form-row">
         <div className="form-group">
           <label>Font size (px)</label>
-          <input type="number" value={style.fontSizePx ?? STYLE_DEFAULTS.fontSizePx} onChange={(e) => onStyle({ fontSizePx: Number(e.target.value) })} />
+          <input type="number" value={style.fontSizePx ?? STYLE_DEFAULTS.fontSizePx} onChange={(e) => onStyle({ fontSizePx: Number(e.target.value) })} disabled={!canEdit} />
         </div>
         <div className="form-group">
           <label>Align</label>
-          <select value={style.align ?? ''} onChange={(e) => onStyle({ align: (e.target.value || undefined) as 'left' | 'center' | 'right' | undefined })}>
+          <select value={style.align ?? ''} onChange={(e) => onStyle({ align: (e.target.value || undefined) as 'left' | 'center' | 'right' | undefined })} disabled={!canEdit}>
             <option value="">Default</option>
             <option value="left">Left</option>
             <option value="center">Center</option>
@@ -1149,28 +1203,28 @@ function BlockProperties({
         </div>
         <div className="form-group">
           <label>Line height</label>
-          <input type="number" step="0.05" value={style.lineHeight ?? ''} onChange={(e) => onStyle({ lineHeight: e.target.value ? Number(e.target.value) : undefined })} />
+          <input type="number" step="0.05" value={style.lineHeight ?? ''} onChange={(e) => onStyle({ lineHeight: e.target.value ? Number(e.target.value) : undefined })} disabled={!canEdit} />
         </div>
       </div>
       <div className="row-btns" style={{ gap: 12, flexWrap: 'wrap' }}>
         <label className="muted small">
-          <input type="checkbox" checked={!!style.bold} onChange={(e) => onStyle({ bold: e.target.checked })} /> Bold
+          <input type="checkbox" checked={!!style.bold} onChange={(e) => onStyle({ bold: e.target.checked })} disabled={!canEdit} /> Bold
         </label>
         <label className="muted small">
-          <input type="checkbox" checked={!!style.italic} onChange={(e) => onStyle({ italic: e.target.checked })} /> Italic
+          <input type="checkbox" checked={!!style.italic} onChange={(e) => onStyle({ italic: e.target.checked })} disabled={!canEdit} /> Italic
         </label>
         <label className="muted small">
-          <input type="checkbox" checked={!!style.uppercase} onChange={(e) => onStyle({ uppercase: e.target.checked })} /> UPPERCASE
+          <input type="checkbox" checked={!!style.uppercase} onChange={(e) => onStyle({ uppercase: e.target.checked })} disabled={!canEdit} /> UPPERCASE
         </label>
       </div>
       <div className="form-row">
         <div className="form-group">
           <label>Margin top (mm)</label>
-          <input type="number" step="0.1" value={style.marginTopMm ?? ''} onChange={(e) => onStyle({ marginTopMm: e.target.value ? Number(e.target.value) : undefined })} />
+          <input type="number" step="0.1" value={style.marginTopMm ?? ''} onChange={(e) => onStyle({ marginTopMm: e.target.value ? Number(e.target.value) : undefined })} disabled={!canEdit} />
         </div>
         <div className="form-group">
           <label>Margin bottom (mm)</label>
-          <input type="number" step="0.1" value={style.marginBottomMm ?? ''} onChange={(e) => onStyle({ marginBottomMm: e.target.value ? Number(e.target.value) : undefined })} />
+          <input type="number" step="0.1" value={style.marginBottomMm ?? ''} onChange={(e) => onStyle({ marginBottomMm: e.target.value ? Number(e.target.value) : undefined })} disabled={!canEdit} />
         </div>
       </div>
       {block.style ? <div className="muted small">Inline CSS: {JSON.stringify(block.style)}</div> : null}

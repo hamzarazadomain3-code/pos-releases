@@ -335,7 +335,7 @@ export function listSales(
   sortBy?: 'date' | 'amount' | 'saleNo',
   sortOrder?: 'asc' | 'desc',
   onlyMySales?: boolean,
-  status?: 'completed' | 'voided' | 'held'
+  status?: 'completed' | 'voided' | 'held' | 'returned' | 'all'
 ): Sale[] {
   const db = getDb();
   let sql = `
@@ -362,9 +362,13 @@ export function listSales(
     if (status === 'voided') {
       sql += " AND s.status = 'voided'";
     }
-    // Return bills (status 'returned') are their own negative-sale records and
-    // never belong in the normal sales list — the Returns screen shows them.
-    sql += " AND s.status != 'returned'";
+    if (status === 'returned') {
+      sql += " AND s.status = 'returned'";
+    } else if (!status || status === 'completed' || status === 'all') {
+      // By default show completed sales; 'all' shows everything except held
+      // (held bills come from a separate table)
+      sql += " AND s.status NOT IN ('voided', 'returned', 'held')";
+    }
   }
   
   if (from) {

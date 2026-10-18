@@ -253,7 +253,7 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('sales:create', (_e, input) => createSale(input));
   ipcMain.handle('sales:get', (_e, id: number) => getSale(id));
-  ipcMain.handle('sales:list', (_e, from?: string, to?: string, includeVoided?: boolean, customerId?: number, userId?: number, paymentMode?: string, productId?: number, minAmount?: number, maxAmount?: number, saleNo?: string, sortBy?: 'date' | 'amount' | 'saleNo', sortOrder?: 'asc' | 'desc', onlyMySales?: boolean, status?: 'completed' | 'voided' | 'held') => listSales(from, to, includeVoided, customerId, userId, paymentMode, productId, minAmount, maxAmount, saleNo, sortBy, sortOrder, onlyMySales, status));
+  ipcMain.handle('sales:list', (_e, from?: string, to?: string, includeVoided?: boolean, customerId?: number, userId?: number, paymentMode?: string, productId?: number, minAmount?: number, maxAmount?: number, saleNo?: string, sortBy?: 'date' | 'amount' | 'saleNo', sortOrder?: 'asc' | 'desc', onlyMySales?: boolean, status?: 'completed' | 'voided' | 'held' | 'returned' | 'all') => listSales(from, to, includeVoided, customerId, userId, paymentMode, productId, minAmount, maxAmount, saleNo, sortBy, sortOrder, onlyMySales, status));
   ipcMain.handle('sales:void', (_e, id: number, reason: string) => voidSale(id, reason));
   ipcMain.handle('sales:nextInvoiceNo', () => nextInvoiceNo());
   ipcMain.handle('sales:hold', (_e, kind: string, label: string, data) => holdBill(kind as 'held' | 'quotation', label, data));

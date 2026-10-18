@@ -43,7 +43,7 @@ const bridge: PosBridge = {
   sales: {
     create: (input) => ipcRenderer.invoke('sales:create', input),
     get: (id: number) => ipcRenderer.invoke('sales:get', id),
-    list: (from?: string, to?: string, includeVoided?: boolean, customerId?: number, userId?: number, paymentMode?: string, productId?: number, minAmount?: number, maxAmount?: number, saleNo?: string, sortBy?: 'date' | 'amount' | 'saleNo', sortOrder?: 'asc' | 'desc', onlyMySales?: boolean, status?: 'completed' | 'voided' | 'held') => ipcRenderer.invoke('sales:list', from, to, includeVoided, customerId, userId, paymentMode, productId, minAmount, maxAmount, saleNo, sortBy, sortOrder, onlyMySales, status),
+    list: (from?: string, to?: string, includeVoided?: boolean, customerId?: number, userId?: number, paymentMode?: string, productId?: number, minAmount?: number, maxAmount?: number, saleNo?: string, sortBy?: 'date' | 'amount' | 'saleNo', sortOrder?: 'asc' | 'desc', onlyMySales?: boolean, status?: 'completed' | 'voided' | 'held' | 'returned' | 'all') => ipcRenderer.invoke('sales:list', from, to, includeVoided, customerId, userId, paymentMode, productId, minAmount, maxAmount, saleNo, sortBy, sortOrder, onlyMySales, status),
     void: (id: number, reason: string) => ipcRenderer.invoke('sales:void', id, reason),
     nextInvoiceNo: () => ipcRenderer.invoke('sales:nextInvoiceNo'),
     hold: (kind: 'held' | 'quotation', label: string, data: unknown) =>

@@ -1208,7 +1208,7 @@ export interface PosBridge {
   sales: {
     create: (input: SaleInput) => Promise<SaleCreateResult>;
     get: (id: number) => Promise<(Sale & { items: SaleItem[]; payments: Payment[] }) | null>;
-    list: (from?: string, to?: string, includeVoided?: boolean, customerId?: number, userId?: number, paymentMode?: string, productId?: number, minAmount?: number, maxAmount?: number, saleNo?: string, sortBy?: 'date' | 'amount' | 'saleNo', sortOrder?: 'asc' | 'desc', onlyMySales?: boolean, status?: 'completed' | 'voided' | 'held') => Promise<Sale[]>;
+    list: (from?: string, to?: string, includeVoided?: boolean, customerId?: number, userId?: number, paymentMode?: string, productId?: number, minAmount?: number, maxAmount?: number, saleNo?: string, sortBy?: 'date' | 'amount' | 'saleNo', sortOrder?: 'asc' | 'desc', onlyMySales?: boolean, status?: 'completed' | 'voided' | 'held' | 'returned' | 'all') => Promise<Sale[]>;
     void: (id: number, reason: string) => Promise<boolean>;
     nextInvoiceNo: () => Promise<string>;
     hold: (kind: 'held' | 'quotation', label: string, data: unknown) => Promise<HeldBill>;
