@@ -333,10 +333,11 @@ function buildItemsTable(ctx: BuildCtx): string {
     amt: 'AMOUNT',
   };
   const group = active.filter((c) => c !== 'name' && c !== 'no');
+  // Build colgroup with proper width attributes for table-layout: fixed
   const colgroup = active
     .map((c) => {
       const cfg = design.table.columns.find((x) => x.key === c);
-      const w = cfg?.width ? ` style="width:${esc(cfg.width)}"` : '';
+      const w = cfg?.width ? ` width="${esc(cfg.width.replace('%', ''))}%"` : '';
       return `<col class="c-${c}"${w}>`;
     })
     .join('');

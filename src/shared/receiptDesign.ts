@@ -107,6 +107,7 @@ export interface BlockStyle {
   lineHeight?: number;
   marginTopMm?: number;
   marginBottomMm?: number;
+  maxHeightMm?: number;
 }
 
 export interface ReceiptBlock {
@@ -126,6 +127,8 @@ export interface ReceiptBlock {
   /** `spacer`: height in mm. */
   heightMm?: number;
   style?: BlockStyle;
+  /** Per-branch overrides for address block. */
+  branchOverrides?: Record<string, string>;
 }
 
 export type TableColumnKey = 'no' | 'name' | 'unit' | 'qty' | 'rate' | 'disc' | 'tax' | 'amt';
@@ -393,7 +396,15 @@ function normalizeBlock(s: Record<string, unknown>): ReceiptBlock {
     if (rs.lineHeight !== undefined) st.lineHeight = asNum(rs.lineHeight, undefined);
     if (rs.marginTopMm !== undefined) st.marginTopMm = asNum(rs.marginTopMm, undefined);
     if (rs.marginBottomMm !== undefined) st.marginBottomMm = asNum(rs.marginBottomMm, undefined);
+    if (rs.maxHeightMm !== undefined) st.maxHeightMm = asNum(rs.maxHeightMm, undefined);
     b.style = st;
+  }
+  if (s.branchOverrides && typeof s.branchOverrides === 'object') {
+    const bo: Record<string, string> = {};
+    for (const [k, v] of Object.entries(s.branchOverrides as Record<string, unknown>)) {
+      if (typeof v === 'string') bo[k] = v;
+    }
+    if (Object.keys(bo).length > 0) b.branchOverrides = bo;
   }
   return b;
 }

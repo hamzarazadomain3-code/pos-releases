@@ -127,6 +127,7 @@ export default function Billing({ onNavigate, onLogout }: BillingProps) {
   const [historyFilter, setHistoryFilter] = useState<'completed' | 'voided' | 'held'>('completed');
   const [voidReason, setVoidReason] = useState('');
   const [voidTarget, setVoidTarget] = useState<Sale | null>(null);
+  const [ctrlSPressTime, setCtrlSPressTime] = useState<number>(0);
   const [promoMap, setPromoMap] = useState<Record<number, ResolvedPromotion>>({});
   const [historyFilters, setHistoryFilters] = useState<{
     from: string;
@@ -1162,14 +1163,28 @@ useEffect(() => {
 
       // 2.7) Ctrl+S — Save: one-click express cash sale (like Ctrl+Shift+S).
       // Opens payment modal only when Alt is held (Ctrl+Alt+S) or in quotation mode.
+      // 2.7) Ctrl+S — First press shows notice, double-press within 500ms completes bill
       if (e.ctrlKey && !e.altKey && keyFromEvent(e) === 's') {
         e.preventDefault();
         e.stopPropagation();
         if (busy) return;
         if (items.length === 0) { setNotice('Cart is empty — nothing to save'); return; }
         if (quotationMode) { completeQuotation(); return; }
-        // One-click cash sale: save + print + new bill
-        expressCheckout({ forcePrint: true, silent: true }).then((ok) => { if (ok) newBill(); });
+
+        const now = Date.now();
+        const DOUBLE_PRESS_WINDOW = 500; // ms
+
+        if (now - ctrlSPressTime <= DOUBLE_PRESS_WINDOW) {
+          // Double press detected — complete bill (save only, NO print)
+          setCtrlSPressTime(0); // reset
+          expressCheckout({ forcePrint: false, silent: true }).then((ok) => { if (ok) newBill(); });
+        } else {
+          // First press — show hint
+          setCtrlSPressTime(now);
+          setNotice('Press Ctrl+S again to complete bill (no print). Ctrl+Shift+S = save & print. Ctrl+Alt+S = payment options.');
+          // Clear notice after timeout
+          setTimeout(() => setNotice((n) => n === 'Press Ctrl+S again to complete bill (no print). Ctrl+Shift+S = save & print. Ctrl+Alt+S = payment options.' ? null : n), DOUBLE_PRESS_WINDOW + 200);
+        }
         return;
       }
       // 2.8) Ctrl+Alt+S — Open payment modal (for card/udhaar/split payments)
