@@ -20,18 +20,22 @@ import {
   BLOCK_LABELS,
   blockStyleCss,
   defaultReceiptDesign,
+  DEFAULT_META_LABELS,
+  DEFAULT_TABLE_COLUMN_LABELS,
   findTemplate,
   normalizeLibrary,
   normalizeReceiptDesign,
   RECEIPT_PAPERS,
   resolveLibraryDefault,
   templateDesign,
+  type DocumentDesign,
+  type DocumentLibrary,
   type GlobalOptions,
   type ReceiptBlock,
   type ReceiptDesign,
-  type ReceiptLibrary,
   type ReceiptPaper,
   type TableColumnKey,
+  type TemplateEntry,
 } from '../../shared/receiptDesign';
 
 export const RECEIPT_DESIGN_KEY = 'receipt_design_json';
@@ -53,7 +57,7 @@ export function isReceiptDesignEnabled(): boolean {
 }
 
 /** The whole template library. Absent ⇒ built-ins with no defaults set. */
-export function getReceiptLibrary(): ReceiptLibrary {
+export function getReceiptLibrary(): DocumentLibrary {
   const raw = getAdminSetting(RECEIPT_LIBRARY_KEY);
   if (!raw) return normalizeLibrary(null);
   try {
@@ -64,7 +68,7 @@ export function getReceiptLibrary(): ReceiptLibrary {
 }
 
 /** Persist the library (owner-gated via setAdminSetting). Normalises first. */
-export function saveReceiptLibrary(lib: unknown): ReceiptLibrary {
+export function saveReceiptLibrary(lib: unknown): DocumentLibrary {
   const clean = normalizeLibrary(lib);
   setAdminSetting(RECEIPT_LIBRARY_KEY, JSON.stringify(clean));
   return clean;
@@ -79,7 +83,7 @@ export function resolveAppliedDesign(paper: ReceiptPaper, branchId?: string | nu
   const lib = getReceiptLibrary();
   const id = resolveLibraryDefault(lib, paper, branchId);
   const t = findTemplate(lib, id);
-  if (t) return templateDesign(t, paper);
+  if (t) return templateDesign(t, paper) as ReceiptDesign;
   return getReceiptDesign();
 }
 
@@ -123,7 +127,7 @@ export function buildSampleSale(
 ): SampleSale {
   const items = [
     {
-      product_name: 'Al-Bagdad Special Bakery Rusk Family Pack (large loaf)',
+      product_name: 'Premium Bakery Rusk Family Pack (large loaf)',
       unit_name: 'Piece',
       qty: 2,
       unit_price: 250,
@@ -310,6 +314,16 @@ function tokenMap(ctx: BuildCtx): Record<string, string> {
   };
 }
 
+// Helper to get column label with fallback to defaults
+function getColLabel(design: ReceiptDesign, key: TableColumnKey): string {
+  return design.global.columnLabels?.[key] ?? DEFAULT_TABLE_COLUMN_LABELS[key];
+}
+
+// Helper to get meta label with fallback to defaults
+function getMetaLabel(design: ReceiptDesign, key: keyof typeof DEFAULT_META_LABELS): string {
+  return design.global.metaLabels?.[key] ?? DEFAULT_META_LABELS[key];
+}
+
 function visibleCols(ctx: BuildCtx): TableColumnKey[] {
   return ctx.design.table.columns.filter((c) => c.enabled).map((c) => c.key);
 }
@@ -323,14 +337,14 @@ function buildItemsTable(ctx: BuildCtx): string {
   // narrow roll cannot carry a second money column without clipping.
   const active = cols.filter((c) => c !== 'disc' || (anyDisc && !ctx.narrow));
   const head: Record<TableColumnKey, string> = {
-    no: '#',
-    name: ctx.narrow ? 'ITEM' : 'PARTICULARS',
-    unit: 'UNIT',
-    qty: 'QTY',
-    rate: 'RATE',
-    disc: 'DISC',
-    tax: 'TAX',
-    amt: 'AMOUNT',
+    no: getColLabel(design, 'no'),
+    name: ctx.narrow ? getColLabel(design, 'name') : getColLabel(design, 'name'),
+    unit: getColLabel(design, 'unit'),
+    qty: getColLabel(design, 'qty'),
+    rate: getColLabel(design, 'rate'),
+    disc: getColLabel(design, 'disc'),
+    tax: getColLabel(design, 'tax'),
+    amt: getColLabel(design, 'amt'),
   };
   const group = active.filter((c) => c !== 'name' && c !== 'no');
   // Build colgroup with proper width attributes for table-layout: fixed
@@ -386,32 +400,42 @@ function buildItemsTable(ctx: BuildCtx): string {
 
 function buildTotals(ctx: BuildCtx): string {
   const { sale, design } = ctx;
-  const rows: string[] = [`<tr><td>SUB TOTAL</td><td class="r">${ctx.money(sale.subtotal)}</td></tr>`];
+  const subtotalLabel = getMetaLabel(design, 'subtotal');
+  const discountLabel = getMetaLabel(design, 'discount');
+  const taxLabel = getMetaLabel(design, 'tax');
+  const serviceChargeLabel = getMetaLabel(design, 'serviceCharge');
+  const freightLabel = getMetaLabel(design, 'freight');
+  const netTotalLabel = getMetaLabel(design, 'netTotal');
+  const rows: string[] = [`<tr><td>${subtotalLabel}</td><td class="r">${ctx.money(sale.subtotal)}</td></tr>`];
   const disc = Number(sale.discount_amount || 0);
   if (design.table.columns.some((c) => c.key === 'disc' && c.enabled) && disc !== 0) {
     // A normal sale shows a leading "-"; a return (negative discount) carries its
     // own sign from the formatter.
-    rows.push(`<tr><td>DISCOUNT</td><td class="r">${disc > 0 ? '-' + ctx.money(disc) : ctx.money(disc)}</td></tr>`);
+    rows.push(`<tr><td>${discountLabel}</td><td class="r">${disc > 0 ? '-' + ctx.money(disc) : ctx.money(disc)}</td></tr>`);
   }
   if (ctx.s.show_tax_on_receipt !== 'false' && sale.tax_amount > 0) {
-    rows.push(`<tr><td>TAX</td><td class="r">${ctx.money(sale.tax_amount)}</td></tr>`);
+    rows.push(`<tr><td>${taxLabel}</td><td class="r">${ctx.money(sale.tax_amount)}</td></tr>`);
   }
-  if (sale.service_charge > 0) rows.push(`<tr><td>SERVICE CHARGE</td><td class="r">${ctx.money(sale.service_charge)}</td></tr>`);
-  if (sale.freight > 0) rows.push(`<tr><td>FREIGHT</td><td class="r">${ctx.money(sale.freight)}</td></tr>`);
-  rows.push(`<tr class="net"><td>NET TOTAL</td><td class="r${numCls(money2(ctx, sale.total_amount, true))}">${money2(ctx, sale.total_amount, true)}</td></tr>`);
+  if (sale.service_charge > 0) rows.push(`<tr><td>${serviceChargeLabel}</td><td class="r">${ctx.money(sale.service_charge)}</td></tr>`);
+  if (sale.freight > 0) rows.push(`<tr><td>${freightLabel}</td><td class="r">${ctx.money(sale.freight)}</td></tr>`);
+  rows.push(`<tr class="net"><td>${netTotalLabel}</td><td class="r${numCls(money2(ctx, sale.total_amount, true))}">${money2(ctx, sale.total_amount, true)}</td></tr>`);
   return `<table class="totals">${rows.join('')}</table>`;
 }
 
 function buildPayment(ctx: BuildCtx): string {
-  const { sale } = ctx;
+  const { sale, design } = ctx;
+  const paidLabel = getMetaLabel(design, 'paid');
+  const changeLabel = getMetaLabel(design, 'change');
+  const balanceLabel = getMetaLabel(design, 'balance');
+  const returnLabel = getMetaLabel(design, 'return');
   const paid = sale.paid;
   const change = Math.max(0, paid - sale.total_amount);
   const balance = Math.max(0, sale.total_amount - paid);
   const rows: string[] = [];
-  if (paid !== 0) rows.push(`<tr><td class="pm">PAID</td><td class="r">${ctx.money(paid)}</td></tr>`);
-  if (change > 0) rows.push(`<tr><td class="pm">CHANGE</td><td class="r">${ctx.money(change)}</td></tr>`);
-  if (balance > 0) rows.push(`<tr><td class="pm">UDHAAR/BALANCE</td><td class="r">${ctx.money(balance)}</td></tr>`);
-  if (sale.returned_amount > 0) rows.push(`<tr><td class="pm">RETURN</td><td class="r">${ctx.money(sale.returned_amount)}</td></tr>`);
+  if (paid !== 0) rows.push(`<tr><td class="pm">${getMetaLabel(design, 'paid')}</td><td class="r">${ctx.money(paid)}</td></tr>`);
+  if (change > 0) rows.push(`<tr><td class="pm">${getMetaLabel(design, 'change')}</td><td class="r">${ctx.money(change)}</td></tr>`);
+  if (balance > 0) rows.push(`<tr><td class="pm">${getMetaLabel(design, 'balance')}</td><td class="r">${ctx.money(balance)}</td></tr>`);
+  if (sale.returned_amount > 0) rows.push(`<tr><td class="pm">${getMetaLabel(design, 'return')}</td><td class="r">${ctx.money(sale.returned_amount)}</td></tr>`);
   if (ctx.s.show_payment_method !== 'false') {
     for (const p of sale.payments) {
       rows.push(`<tr><td class="pm">${esc(String(p.mode).toUpperCase())}</td><td class="r">${ctx.money(p.amount)}</td></tr>`);
@@ -455,9 +479,14 @@ function blockHtml(ctx: BuildCtx, blk: ReceiptBlock): string {
     }
     case 'meta': {
       const { date, time } = fmtDate(sale.created_at, design.global.dateFormat || 'dd/mm/yyyy');
+      const customerLabel = getMetaLabel(design, 'customerLabel');
+      const cashierLabel = getMetaLabel(design, 'cashierLabel');
+      const dateLabel = getMetaLabel(design, 'dateLabel');
+      const timeLabel = getMetaLabel(design, 'timeLabel');
+      const invoiceLabel = getMetaLabel(design, 'invoiceLabel');
       const left =
-        `<div class="mrow"><span class="mlbl">CUSTOMER</span> ${esc(sale.customer_name || 'Walk-in')}</div>` +
-        `<div class="mrow"><span class="mlbl">CASHIER</span> ${esc(sale.cashier)}</div>`;
+        `<div class="mrow"><span class="mlbl">${customerLabel}</span> ${esc(sale.customer_name || 'Walk-in')}</div>` +
+        `<div class="mrow"><span class="mlbl">${cashierLabel}</span> ${esc(sale.cashier)}</div>`;
       const right = `<div class="inv-no">${esc(sale.invoice_no)}</div><div class="mrow meta-dt">${esc(date)} ${esc(time)}</div>`;
       return `<table class="meta"><tr><td class="meta-left">${left}</td><td class="meta-right">${right}</td></tr></table>`;
     }
@@ -474,19 +503,19 @@ function blockHtml(ctx: BuildCtx, blk: ReceiptBlock): string {
       return text ? `<div class="foot-note">${esc(applyTokens(text, tokens)).replace(/\n/g, '<br />')}</div>` : '';
     }
     case 'footer_note_2': {
-      const text = blk.text || s.receipt_footer_text || 'Come again soon!';
+      const text = blk.text || '';
       return text ? `<div class="foot-msg">${esc(applyTokens(text, tokens))}</div>` : '';
     }
     case 'software_credit': {
-      const by = s.receipt_software_by || 'Rokar POS';
-      return s.receipt_show_software_credit === 'false'
+      const by = blk.text || s.receipt_software_by || '';
+      return s.receipt_show_software_credit === 'false' || !by
         ? ''
-        : `<div class="foot-sw">---- SOFTWARE BY ----<br />${esc(by)}</div>`;
+        : `<div class="foot-sw">${esc(applyTokens(by, tokens))}</div>`;
     }
     case 'return_banner':
       // Auto banner: mirrors the shipped layout — only a returned / negative sale.
       return sale.status === 'returned' || sale.total_amount < 0
-        ? `<div class="return-banner">RETURN / REFUND</div>`
+        ? `<div class="return-banner">${getMetaLabel(design, 'return')}</div>`
         : '';
     // Phase 5: Loyalty points block
     case 'loyalty': {
@@ -495,28 +524,26 @@ function blockHtml(ctx: BuildCtx, blk: ReceiptBlock): string {
       const pointsPerRupee = Number(s.points_per_rupee || 0);
       const points = Math.floor(sale.total_amount * pointsPerRupee);
       if (points === 0) return '';
-      const text = applyTokens(blk.text || 'Loyalty points earned: {loyalty_points}', tokens);
+      const text = applyTokens(blk.text || '', tokens);
       return `<div class="blk-loyalty">${esc(text)}</div>`;
     }
     // Phase 5: Savings block
     case 'savings': {
       const savings = (sale.discount_amount || 0) + (sale.items?.reduce((s, it) => s + (it.discount || 0), 0) || 0);
       if (savings <= 0) return '';
-      const text = applyTokens(blk.text || 'You saved {savings}', tokens);
+      const text = applyTokens(blk.text || '', tokens);
       return `<div class="blk-savings">${esc(text)}</div>`;
     }
     // Phase 5: Return policy block
     case 'return_policy': {
-      const text = applyTokens(blk.text || s.receipt_return_policy || '', tokens);
+      const text = applyTokens(blk.text || '', tokens);
       if (!text) return '';
       return `<div class="blk-return-policy">${esc(text).replace(/\n/g, '<br />')}</div>`;
     }
     // Phase 5: Thank you block (auto per language)
     case 'thank_you': {
-      const lang = s.receipt_language || 'en';
-      const defaultThanks = lang === 'ur' ? 'شکریہ' : 'Thank you for your visit!';
-      const text = applyTokens(blk.text || s.receipt_thank_you || defaultThanks, tokens);
-      return `<div class="blk-thank-you">${esc(text)}</div>`;
+      const text = applyTokens(blk.text || '', tokens);
+      return text ? `<div class="blk-thank-you">${esc(text)}</div>` : '';
     }
     // Phase 5: FBR e-Invoice QR
     case 'fbr_qr': {

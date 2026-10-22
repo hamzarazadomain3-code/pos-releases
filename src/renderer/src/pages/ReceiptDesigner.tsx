@@ -2,18 +2,22 @@ import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } fr
 import { Modal } from '../components/Modal';
 import {
   BLOCK_LABELS,
-  CUSTOM_BLOCK_TYPES,
+  CUSTOM_BLOCK_TYPES_FOR_DOCUMENT,
+  DEFAULT_PAPER_FOR_TYPE,
+  DEFAULT_TABLE_COLUMN_LABELS,
+  DOCUMENT_TYPE_LABELS,
+  DocumentType,
   RECEIPT_PAPERS,
   RECEIPT_TOKENS,
-  TABLE_COLUMN_LABELS,
   builtinTemplates,
   defaultReceiptDesign,
   findTemplate,
   normalizeLibrary,
   normalizeReceiptDesign,
   templateDesign,
+  type Block,
+  type BlockType,
   type ReceiptBlock,
-  type ReceiptBlockType,
   type ReceiptDesign,
   type ReceiptLibrary,
   type ReceiptPaper,
@@ -107,6 +111,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
   const [enabled, setEnabled] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
   const [paper, setPaper] = useState<ReceiptPaper>('thermal80');
+  const [documentType, setDocumentType] = useState<DocumentType>('receipt');
   const [sample, setSample] = useState<'sale' | 'return'>('sale');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -907,6 +912,29 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
               <div className="panel-title">Document Settings</div>
               <div className="form-row" style={{ gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                 <div className="form-group" style={{ flex: 1, minWidth: 180 }}>
+                  <label>Document Type</label>
+                  <select
+                    value={documentType}
+                    onChange={(e) => {
+                      const dt = e.target.value as DocumentType;
+                      setDocumentType(dt);
+                      // Update paper to default for this document type
+                      const defaultPaper = DEFAULT_PAPER_FOR_TYPE[dt];
+                      setPaper(defaultPaper);
+                      // Reset design to default for new document type
+                      const newDesign = defaultReceiptDesign(defaultPaper);
+                      commit(newDesign);
+                    }}
+                    disabled={!canEdit}
+                  >
+                    {(Object.keys(DOCUMENT_TYPE_LABELS) as DocumentType[]).map((dt) => (
+                      <option key={dt} value={dt}>
+                        {DOCUMENT_TYPE_LABELS[dt]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group" style={{ flex: 1, minWidth: 180 }}>
                   <label>Paper Size</label>
                   <select
                     value={paper}
@@ -941,11 +969,11 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
                 <div style={{ display: 'flex', gap: 8 }}>
                   <select
                     value={newBlockType}
-                    onChange={(e) => setNewBlockType(e.target.value as ReceiptBlockType)}
+                    onChange={(e) => setNewBlockType(e.target.value as BlockType)}
                     disabled={!canEdit}
                     style={{ minWidth: 200 }}
                   >
-                    {CUSTOM_BLOCK_TYPES.map((t) => (
+                    {CUSTOM_BLOCK_TYPES_FOR_DOCUMENT[documentType].map((t) => (
                       <option key={t} value={t}>
                         {BLOCK_LABELS[t]}
                       </option>
@@ -1070,7 +1098,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
                       }}
                       disabled={!canEdit}
                     />
-                    {TABLE_COLUMN_LABELS[c.key]}
+                    {DEFAULT_TABLE_COLUMN_LABELS[c.key]}
                   </label>
                 ))}
               </div>
@@ -1102,10 +1130,10 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
               <div className="form-row" style={{ gap: 12, flexWrap: 'wrap' }}>
                 {design.table.columns.map((c, i) => (
                   <div key={c.key} className="form-group" style={{ flex: 1, minWidth: 100, maxWidth: 150 }}>
-                    <label>{TABLE_COLUMN_LABELS[c.key]}</label>
+                    <label>{DEFAULT_TABLE_COLUMN_LABELS[c.key]}</label>
                     <input
                       style={{ width: '100%' }}
-                      placeholder={TABLE_COLUMN_LABELS[c.key]}
+                      placeholder={DEFAULT_TABLE_COLUMN_LABELS[c.key]}
                       value={c.width ?? ''}
                       onChange={(e) => {
                         const cols = design.table.columns.map((x, xi) => (xi === i ? { ...x, width: e.target.value } : x));

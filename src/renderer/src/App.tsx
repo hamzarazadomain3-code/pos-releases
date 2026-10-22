@@ -5,6 +5,7 @@ import { resetFormatCache } from './utils/formatters';
 import { initCurrency } from './utils/currency';
 import { initDateUtils, resetDateUtils } from './utils/dateUtils';
 import { KeyboardProvider } from './keyboard/KeyboardProvider';
+import FirstRunWizard from './components/FirstRunWizard';
 import rokarSidebarIcon from './assets/rokar-sidebar-icon.png';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Inventory = lazy(() => import('./pages/Inventory'));
@@ -526,6 +527,8 @@ export default function App() {
   const [recoveryMode, setRecoveryMode] = useState<'self' | 'support' | null>(null);
   const [recoveryPrefill, setRecoveryPrefill] = useState('');
   const [shortcutMap, setShortcutMap] = useState<Record<string, string>>({});
+  const [showFirstRunWizard, setShowFirstRunWizard] = useState(false);
+  const [firstRunChecked, setFirstRunChecked] = useState(false);
   const nav = user ? navFor(user.role) : [];
 
   // Load the admin shortcut bindings for the global keyboard layer.
@@ -563,7 +566,18 @@ export default function App() {
     const restore = async () => {
       try {
         const raw = localStorage.getItem(SESSION_KEY);
-        if (!raw) { setSessionRestoring(false); return; }
+        if (!raw) { 
+          setSessionRestoring(false); 
+          // Check if first run is needed
+          const firstRunDone = localStorage.getItem('first_run_complete');
+          if (!firstRunDone) {
+            const settings = await window.api.settings.getAll();
+            if (!settings?.shop_name) {
+              setShowFirstRunWizard(true);
+            }
+          }
+          return; 
+        }
         const saved = JSON.parse(raw) as { user: UserRow; savedAt: number };
         if (Date.now() - saved.savedAt > SESSION_MAX_AGE) {
           localStorage.removeItem(SESSION_KEY);
@@ -755,6 +769,20 @@ export default function App() {
   }
 
   if (!user) {
+    // Show first run wizard if needed
+    if (showFirstRunWizard) {
+      return (
+        <FirstRunWizard
+          onComplete={(shopProfile, templateId) => {
+            setShowFirstRunWizard(false);
+            localStorage.setItem('first_run_complete', 'true');
+            // The wizard will have saved the profile and template
+            // Refresh settings and continue
+            window.location.reload();
+          }}
+        />
+      );
+    }
     return (
       <div className="app-shell">
         <Suspense fallback={null}>

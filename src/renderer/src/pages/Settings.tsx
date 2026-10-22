@@ -40,6 +40,7 @@ export default function Settings() {
   const [printSettings, setPrintSettings] = useState<PrinterSettingsSnapshot | null>(null);
   const [printBusy, setPrintBusy] = useState(false);
   const [previewBusy, setPreviewBusy] = useState(false);
+  const [branches, setBranches] = useState<Array<{ id: number; name: string }>>([]);
 
   useEffect(() => {
     window.api.settings.getAll().then(setSettings).catch((e) => setNotice(e.message));
@@ -80,6 +81,7 @@ export default function Settings() {
     window.api.admin.settings.get('receipt_template').then((v) => {
       if (v) setSelectedTemplate(v);
     }).catch(() => undefined);
+    window.api.branches.list().then(setBranches).catch(() => setBranches([]));
     window.api.printing.getPrinters().then(setPrinters).catch(() => setPrinters([]));
     window.api.printing.getPrinterSettings().then(setPrintSettings).catch(() => undefined);
     // Poll the countdown rather than reading it once: the whole point of showing
@@ -177,6 +179,295 @@ export default function Settings() {
                   hint="Shows on the receipt, login screen and sidebar. Upload then click Save."
                 />
               </label>
+            <div className="modal-actions">
+              <button className="btn btn-primary" onClick={saveShop}>
+                {saved ? 'Saved!' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Shop Profile (Extended) ── */}
+        <div className="panel">
+          <div className="panel-title">Shop Profile</div>
+          <div className="settings-form">
+            <p className="muted small" style={{ marginBottom: 12 }}>
+              Extended shop profile for receipts, invoices, and reports. Fields marked with * are required.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                <label>Shop Name *</label>
+                <input
+                  value={settings.shop_name ?? ''}
+                  onChange={(e) => setSettings({ ...settings, shop_name: e.target.value })}
+                  placeholder="e.g. Ahmed General Store"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Shop Name (Urdu)</label>
+                <input
+                  value={settings.shop_name_urdu ?? ''}
+                  onChange={(e) => setSettings({ ...settings, shop_name_urdu: e.target.value })}
+                  placeholder="Urdu name (optional)"
+                  dir="rtl"
+                />
+              </div>
+
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                <label>Address</label>
+                <textarea
+                  value={settings.shop_address ?? ''}
+                  onChange={(e) => setSettings({ ...settings, shop_address: e.target.value })}
+                  placeholder="Street, City, Area"
+                  rows={3}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Phone</label>
+                <input
+                  value={settings.shop_phone ?? ''}
+                  onChange={(e) => setSettings({ ...settings, shop_phone: e.target.value })}
+                  placeholder="e.g. 0300-1234567"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>WhatsApp</label>
+                <input
+                  value={settings.shop_whatsapp ?? ''}
+                  onChange={(e) => setSettings({ ...settings, shop_whatsapp: e.target.value })}
+                  placeholder="e.g. 0300-1234567"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Email</label>
+                <input
+                  value={settings.shop_email ?? ''}
+                  onChange={(e) => setSettings({ ...settings, shop_email: e.target.value })}
+                  placeholder="e.g. shop@example.com"
+                  type="email"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Website</label>
+                <input
+                  value={settings.shop_website ?? ''}
+                  onChange={(e) => setSettings({ ...settings, shop_website: e.target.value })}
+                  placeholder="e.g. www.myshop.com"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>NTN</label>
+                <input
+                  value={settings.shop_ntn ?? ''}
+                  onChange={(e) => setSettings({ ...settings, shop_ntn: e.target.value })}
+                  placeholder="National Tax Number"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>STRN</label>
+                <input
+                  value={settings.shop_strn ?? ''}
+                  onChange={(e) => setSettings({ ...settings, shop_strn: e.target.value })}
+                  placeholder="Sales Tax Registration Number"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Currency</label>
+                <select
+                  value={settings.currency ?? 'Rs'}
+                  onChange={(e) => setSettings({ ...settings, currency: e.target.value })}
+                >
+                  <option value="Rs">Rs (Pakistani Rupee)</option>
+                  <option value="$">$ (US Dollar)</option>
+                  <option value="€">€ (Euro)</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Currency Position</label>
+                <select
+                  value={settings.currency_position ?? 'before'}
+                  onChange={(e) => setSettings({ ...settings, currency_position: e.target.value as 'before' | 'after' })}
+                >
+                  <option value="before">Before amount (Rs 100)</option>
+                  <option value="after">After amount (100 Rs)</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Date Format</label>
+                <select
+                  value={settings.date_format ?? 'dd/mm/yyyy'}
+                  onChange={(e) => setSettings({ ...settings, date_format: e.target.value })}
+                >
+                  <option value="dd/mm/yyyy">DD/MM/YYYY</option>
+                  <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                  <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Language</label>
+                <select
+                  value={settings.language ?? 'en'}
+                  onChange={(e) => setSettings({ ...settings, language: e.target.value as 'en' | 'ur' })}
+                >
+                  <option value="en">English</option>
+                  <option value="ur">اردو (Urdu)</option>
+                </select>
+              </div>
+
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                <label>Receipt Footer</label>
+                <textarea
+                  value={settings.receipt_footer ?? ''}
+                  onChange={(e) => setSettings({ ...settings, receipt_footer: e.target.value })}
+                  placeholder="e.g. Thank you for shopping with us!"
+                  rows={2}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                <label>Terms & Conditions</label>
+                <textarea
+                  value={settings.receipt_terms_text ?? ''}
+                  onChange={(e) => setSettings({ ...settings, receipt_terms_text: e.target.value })}
+                  placeholder="Terms & conditions (optional)"
+                  rows={2}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                <label>Return Policy</label>
+                <textarea
+                  value={settings.receipt_return_policy ?? ''}
+                  onChange={(e) => setSettings({ ...settings, receipt_return_policy: e.target.value })}
+                  placeholder="Return policy (optional)"
+                  rows={2}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                <label>Thank You Message</label>
+                <textarea
+                  value={settings.receipt_thank_you ?? ''}
+                  onChange={(e) => setSettings({ ...settings, receipt_thank_you: e.target.value })}
+                  placeholder="Thank you message (optional)"
+                  rows={2}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                <label>Software Credit</label>
+                <input
+                  value={settings.receipt_software_by ?? ''}
+                  onChange={(e) => setSettings({ ...settings, receipt_software_by: e.target.value })}
+                  placeholder="Software credit text (optional)"
+                />
+                <span className="muted small">Leave empty to hide the software credit line on receipts.</span>
+              </div>
+
+              <div className="form-group">
+                <label>Receipt Language</label>
+                <select
+                  value={settings.receipt_language ?? 'en'}
+                  onChange={(e) => setSettings({ ...settings, receipt_language: e.target.value })}
+                >
+                  <option value="en">English</option>
+                  <option value="ur">اردو (Urdu)</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={settings.receipt_show_items_summary === 'true'}
+                    onChange={(e) => setSettings({ ...settings, receipt_show_items_summary: e.target.checked ? 'true' : 'false' })}
+                  />
+                  <span>Show items summary (Items: N, Qty: X)</span>
+                </label>
+              </div>
+
+              <div className="form-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={settings.receipt_show_payment_method === 'true'}
+                    onChange={(e) => setSettings({ ...settings, receipt_show_payment_method: e.target.checked ? 'true' : 'false' })}
+                  />
+                  <span>Show payment method on receipt</span>
+                </label>
+              </div>
+
+              <div className="form-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={settings.receipt_show_tax_on_receipt === 'true'}
+                    onChange={(e) => setSettings({ ...settings, receipt_show_tax_on_receipt: e.target.checked ? 'true' : 'false' })}
+                  />
+                  <span>Show tax on receipt</span>
+                </label>
+              </div>
+
+              <div className="form-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={settings.receipt_show_software_credit === 'true'}
+                    onChange={(e) => setSettings({ ...settings, receipt_show_software_credit: e.target.checked ? 'true' : 'false' })}
+                  />
+                  <span>Show software credit on receipt</span>
+                </label>
+              </div>
+
+              <div className="form-group">
+                <label>Show payment method on receipt</label>
+                <select
+                  value={settings.receipt_show_payment_method ?? 'true'}
+                  onChange={(e) => setSettings({ ...settings, receipt_show_payment_method: e.target.value })}
+                >
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
+                </select>
+              </div>
+
+              {/* Branch Address Overrides */}
+              <div style={{ gridColumn: '1 / -1', marginTop: '8px', padding: '12px', background: '#f8f9fa', borderRadius: '6px' }}>
+                <h4 style={{ margin: '0 0 8px' }}>Branch Address Overrides</h4>
+                <p className="muted small" style={{ marginBottom: 8 }}>Set custom address per branch for receipts printed at that location.</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8 }}>
+                  {branches.length > 0 ? (
+                    branches.map((branch: any) => (
+                      <div key={branch.id} className="form-group">
+                        <label>{branch.name} Address Override</label>
+                        <input
+                          value={settings[`branch_${branch.id}_address`] ?? ''}
+                          onChange={(e) => setSettings({ ...settings, [`branch_${branch.id}_address`]: e.target.value })}
+                          placeholder={`Address override for ${branch.name}`}
+                        />
+                      </div>
+                    ))
+                  ) : (
+                    <p className="muted small">No branches configured. Add branches in the Branches page first.</p>
+                  )}
+                </div>
+              </div>
+            </div>
             <div className="modal-actions">
               <button className="btn btn-primary" onClick={saveShop}>
                 {saved ? 'Saved!' : 'Save'}
