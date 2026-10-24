@@ -793,11 +793,13 @@ export interface ReceiptTemplateEntry {
   updatedAt: number;
 }
 
-/** The whole template store: named templates + default-per-paper (+ per-branch). */
+/** The whole template store: named templates + default-per-document-type (+ per-branch). */
 export interface DocumentLibrary {
   schemaVersion: number;
   templates: TemplateEntry[];
-  /** Global default template id per paper size (absent ⇒ the Phase-2 applied design). */
+  /** Global default template id per document type (absent ⇒ the Phase-2 applied design). */
+  documentTypeDefaults: Partial<Record<DocumentType, string>>;
+  /** Legacy: Global default template id per paper size (absent ⇒ the Phase-2 applied design). */
   defaults: Partial<Record<DocumentPaper, string>>;
   /** Per-branch default overrides: branchId → paper → template id. */
   branchDefaults: Record<string, Partial<Record<DocumentPaper, string>>>;
@@ -916,6 +918,7 @@ export function defaultLibrary(): DocumentLibrary {
   return {
     schemaVersion: LIBRARY_SCHEMA_VERSION,
     templates: builtinTemplates(),
+    documentTypeDefaults: {},
     defaults: {},
     branchDefaults: {},
   };
@@ -946,12 +949,12 @@ export function findReceiptTemplate(lib: ReceiptLibrary, id: string | undefined 
 }
 
 /**
- * Resolve which template should drive printing for a paper (optionally for a
- * branch). Branch default → global default → undefined (caller falls back to the
- * Phase-2 applied design).
+ * Resolve which template should drive printing for a document type and paper.
+ * Priority: branch default (paper) → global default (paper) → global default (documentType) → undefined.
  */
 export function resolveLibraryDefault(
   lib: DocumentLibrary,
+  documentType: DocumentType,
   paper: DocumentPaper,
   branchId?: string | number | null
 ): string | undefined {
@@ -960,7 +963,10 @@ export function resolveLibraryDefault(
     const b = lib.branchDefaults?.[bid]?.[paper];
     if (b) return b;
   }
-  return lib.defaults?.[paper];
+  // Check paper-specific default first (legacy)
+  if (lib.defaults?.[paper]) return lib.defaults[paper];
+  // Fall back to document-type default
+  return lib.documentTypeDefaults?.[documentType];
 }
 
 /** @deprecated Use resolveLibraryDefault with DocumentLibrary instead */
@@ -1005,11 +1011,19 @@ export function normalizeLibrary(raw: unknown): DocumentLibrary {
 
   const allIds = new Set(lib.templates.map((t) => t.id));
   const papers = new Set<string>(DOCUMENT_PAPERS.map((p) => p.value));
+  const docTypes = new Set<string>(Object.keys(DOCUMENT_TYPE_LABELS));
 
   const defaults: DocumentLibrary['defaults'] = {};
   if (r.defaults && typeof r.defaults === 'object') {
     for (const [k, v] of Object.entries(r.defaults as Record<string, unknown>)) {
       if (papers.has(k) && typeof v === 'string' && allIds.has(v)) defaults[k as DocumentPaper] = v;
+    }
+  }
+
+  const documentTypeDefaults: DocumentLibrary['documentTypeDefaults'] = {};
+  if (r.documentTypeDefaults && typeof r.documentTypeDefaults === 'object') {
+    for (const [k, v] of Object.entries(r.documentTypeDefaults as Record<string, unknown>)) {
+      if (docTypes.has(k) && typeof v === 'string' && allIds.has(v)) documentTypeDefaults[k as DocumentType] = v;
     }
   }
 
@@ -1028,6 +1042,7 @@ export function normalizeLibrary(raw: unknown): DocumentLibrary {
   return {
     schemaVersion: LIBRARY_SCHEMA_VERSION,
     templates: lib.templates,
+    documentTypeDefaults,
     defaults,
     branchDefaults,
   };
@@ -1101,3 +1116,14 @@ export function templateReceiptDesign(t: ReceiptTemplateEntry, paper?: ReceiptPa
   if (paper) d.paper = paper;
   return d;
 }
+
+// ============================================================================
+// Re-export renderDocument from renderDocument.ts
+// ============================================================================
+
+export {
+  renderDocument,
+  type ShopProfile,
+  type SaleData,
+  type RenderContext,
+} from './renderDocument';

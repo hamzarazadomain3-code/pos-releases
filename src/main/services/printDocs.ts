@@ -27,13 +27,26 @@ import { getReceiptSettings } from './reports';
 import { getAllAdminSettings } from './admin';
 import { formatLocalString } from '../utils/timezone';
 import bwipjs from 'bwip-js';
+import {
+  renderDocument,
+  type SaleData,
+  type ShopProfile,
+  type DocumentDesign,
+  defaultDocumentDesign,
+  DEFAULT_META_LABELS,
+  DEFAULT_TABLE_COLUMN_LABELS,
+  type DocumentPaper,
+} from '../../shared/receiptDesign';
+import type { SaleItem, Payment } from '../../shared/types';
+
+type SaleWithItems = Awaited<ReturnType<typeof getSale>>;
 
 export function esc(s: string | null | undefined): string {
   return String(s ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/&/g, '&')
+    .replace(/</g, '<')
+    .replace(/>/g, '>')
+    .replace(/"/g, '"');
 }
 
 /**
@@ -99,6 +112,97 @@ export function fmtExpiryDate(expiry?: string | null): string {
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
+/** Convert print settings to ShopProfile for the new renderer. */
+function toShopProfile(s: Record<string, string>): ShopProfile {
+  return {
+    name: s.shop_name || '',
+    address: s.shop_address || '',
+    phone: s.shop_phone || '',
+    whatsapp: s.shop_whatsapp || '',
+    taxNo: s.tax_no || '',
+    ntn: s.shop_ntn || '',
+    strn: s.shop_strn || '',
+    logo: s.shop_logo || '',
+    logoGrayscale: s.receipt_logo_grayscale !== 'false',
+    logoMaxHeightPx: Number(s.receipt_logo_max_height_px || 64),
+    receiptHeaderLines: s.receipt_header_lines || '',
+    receiptTermsText: s.receipt_terms_text || '',
+    receiptSoftwareBy: s.receipt_software_by || '',
+    receiptShowSoftwareCredit: s.receipt_show_software_credit !== 'false',
+    receiptShowItemsSummary: s.receipt_show_items_summary !== 'false',
+    receiptShowPaymentMethod: s.show_payment_method !== 'false',
+    showTaxOnReceipt: s.show_tax_on_receipt !== 'false',
+    currency: s.currency || 'Rs',
+    loyaltyEnabled: s.loyalty_enabled === 'true',
+    pointsPerRupee: Number(s.points_per_rupee || 0),
+    fbrInvoiceUrl: s.fbr_invoice_url || '',
+  };
+}
+
+/** Convert DB sale to SaleData for the new renderer. */
+function toSaleData(sale: SaleWithItems | null): SaleData {
+  if (!sale) {
+    return {
+      invoice_no: '',
+      created_at: new Date().toISOString(),
+      customer_name: 'Walk-in Customer',
+      customer_phone: undefined,
+      cashier: '',
+      status: 'completed',
+      items: [],
+      subtotal: 0,
+      discount_amount: 0,
+      tax_amount: 0,
+      service_charge: 0,
+      freight: 0,
+      total_amount: 0,
+      paid: 0,
+      payments: [],
+      returned_amount: 0,
+      branch: '',
+    };
+  }
+  const items = (sale.items || []).map((it) => ({
+    product_name: it.product_name || `#${it.product_id || ''}`,
+    unit_name: it.unit_name || undefined,
+    qty: Number(it.qty || 0),
+    display_qty: it.display_qty ?? undefined,
+    unit_price: Number(it.unit_price || 0),
+    discount: Number(it.discount || 0),
+    tax_rate: it.tax_rate ?? undefined,
+    line_total: Number(it.line_total || 0),
+    promo_name: it.promo_name || undefined,
+  }));
+
+  const payments = (sale.payments || []).map((p) => ({
+    mode: String(p.mode || '').toUpperCase(),
+    amount: Number(p.amount || 0),
+    reference: p.reference ?? undefined,
+  }));
+
+  const paid = payments.reduce((sum, p) => sum + p.amount, 0);
+
+  return {
+    invoice_no: sale.invoice_no || '',
+    created_at: sale.created_at || new Date().toISOString(),
+    customer_name: sale.customer_name || 'Walk-in Customer',
+    customer_phone: sale.customer_phone || undefined,
+    cashier: '', // Will be filled by caller
+    status: sale.status || 'completed',
+    items,
+    subtotal: Number(sale.subtotal || 0),
+    discount_amount: Number(sale.discount_amount || 0),
+    tax_amount: Number(sale.tax_amount || 0),
+    service_charge: Number(sale.service_charge || 0),
+    freight: Number(sale.freight || 0),
+    total_amount: Number(sale.total_amount || 0),
+    paid,
+    payments,
+    returned_amount: Number(sale.returned_amount || 0),
+    branch: '',
+  };
+}
+
 /** Rasterise a barcode to an inline PNG data URL. Resolves '' on failure. */
 export function toDataUrl(options: { bcid: string; text: string; [k: string]: unknown }): Promise<string> {
   return new Promise((resolve) => {
@@ -134,235 +238,25 @@ export function symbologyFor(text: string): 'ean13' | 'code128' {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  CANONICAL A4 INVOICE
+//  CANONICAL A4 INVOICE (now uses shared renderer)
 // ═══════════════════════════════════════════════════════════════════
 
-const A4_CONTENT_MM = 190; // 210mm paper - 2 x 10mm margin
-const A4_PAD_MM = 10;
-
-/**
- * Invoice page geometry. A5 is laid out natively (its own mm widths, smaller
- * type, no discount column) rather than by scaling a 210mm page down, which
- * Chromium would clip at the page edge.
- */
-const INVOICE_GEOMETRY = {
-  a4: { widthMm: 210, heightMm: 297, padMm: 10, compact: false },
-  a5: { widthMm: 148, heightMm: 210, padMm: 7, compact: true },
-} as const;
-
-export type InvoicePaper = keyof typeof INVOICE_GEOMETRY;
-
-/** Shared document shell. Page rule is re-stamped by printService for the real paper. */
-export function htmlDocument(title: string, css: string, body: string): string {
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>${esc(title)}</title>
-<style>
-${css}
-</style>
-</head>
-<body>
-${body}
-</body>
-</html>`;
-}
-
-function invoiceCss(paper: InvoicePaper): string {
-  const g = INVOICE_GEOMETRY[paper];
-  return `
-@page { size: ${g.widthMm}mm ${g.heightMm}mm; margin: 0; }
-* { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; background: #fff; }
-body {
-  width: ${g.widthMm}mm; min-height: ${g.heightMm}mm; padding: ${g.padMm}mm;
-  font-family: 'Segoe UI', Arial, sans-serif; font-size: 9.5pt; color: #0f172a;
-  -webkit-print-color-adjust: exact; print-color-adjust: exact;
-}
-.doc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12mm; border-bottom: 2.5pt solid #4f46e5; padding-bottom: 6mm; }
-.doc-head .co img { max-height: 18mm; max-width: 55mm; display: block; margin-bottom: 2mm; }
-.doc-head .co h1 { margin: 0; font-size: 17pt; color: #4f46e5; letter-spacing: -0.2pt; }
-.doc-head .co p { margin: 1.2mm 0 0; font-size: 9pt; color: #64748b; line-height: 1.4; }
-.doc-head .meta { text-align: right; white-space: nowrap; }
-.doc-head .meta .title { font-size: 20pt; font-weight: 700; color: #4f46e5; letter-spacing: 1.5pt; margin: 0; }
-.doc-head .meta .no { font-size: 12pt; font-weight: 700; margin: 2mm 0 0; }
-.doc-head .meta .line { font-size: 9pt; color: #64748b; margin-top: 1mm; }
-.parties { display: flex; gap: 8mm; margin: 6mm 0; }
-.party { flex: 1; border: 0.6pt solid #e2e8f0; border-radius: 1.5mm; padding: 3.5mm 4mm; }
-.party h3 { margin: 0 0 2mm; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.8pt; color: #4f46e5; }
-.party .row { display: flex; justify-content: space-between; font-size: 9pt; padding: 0.7mm 0; }
-.party .row span:first-child { color: #64748b; }
-.party .big { font-size: 10.5pt; font-weight: 700; }
-table.items { width: 100%; border-collapse: collapse; }
-/* Repeat the column headings on every page and never split a line item across
-   a page break - a tall wrapped product name used to break mid-row. */
-table.items thead { display: table-header-group; }
-table.items tr { page-break-inside: avoid; break-inside: avoid; }
-table.items thead th {
-  text-align: left; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.4pt;
-  color: #475569; background: #f1f5f9; border-bottom: 1pt solid #cbd5e1;
-  padding: 2.4mm 2mm; white-space: nowrap;
-}
-table.items td { padding: 2.2mm 2mm; border-bottom: 0.5pt solid #e2e8f0; vertical-align: top; }
-table.items tr.promo td { border-bottom: 0.5pt solid #e2e8f0; padding-top: 0; font-size: 8pt; color: #16a34a; }
-td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; }
-td.name { font-weight: 600; }
-.summary-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10mm; margin-top: 6mm; }
-.terms { flex: 1; font-size: 8.5pt; color: #475569; line-height: 1.5; }
-.totals { width: 85mm; border-collapse: collapse; }
-.totals td { padding: 1.8mm 2mm; font-size: 9.5pt; }
-.totals td.r { text-align: right; font-variant-numeric: tabular-nums; }
-.totals tr.grand td { border-top: 1.5pt solid #4f46e5; font-size: 12.5pt; font-weight: 700; color: #4f46e5; padding-top: 2.5mm; }
-.totals tr.pay td { font-size: 8.5pt; color: #475569; }
-.signs { display: flex; justify-content: space-between; gap: 20mm; margin-top: 16mm; }
-.signs div { flex: 1; border-top: 0.6pt solid #94a3b8; padding-top: 2mm; font-size: 8.5pt; color: #475569; text-align: center; }
-.doc-foot { margin-top: 8mm; border-top: 0.5pt solid #e2e8f0; padding-top: 3mm; text-align: center; font-size: 8pt; color: #64748b; }
-${g.compact ? `
-/* A5: everything sized for a 148mm page instead of a clipped 210mm one. */
-body { font-size: 7.6pt; }
-.doc-head { gap: 6mm; padding-bottom: 3mm; }
-.doc-head .co img { max-height: 12mm; max-width: 34mm; }
-.doc-head .co h1 { font-size: 12pt; }
-.doc-head .co p { font-size: 7pt; }
-.doc-head .meta .title { font-size: 14pt; }
-.doc-head .meta .no { font-size: 9pt; }
-.doc-head .meta .line { font-size: 7pt; }
-.parties { gap: 4mm; margin: 3.5mm 0; }
-.party { padding: 2mm 2.5mm; }
-.party .row { font-size: 7.4pt; padding: 0.4mm 0; }
-.party .big { font-size: 8.5pt; }
-table.items thead th { font-size: 6.6pt; padding: 1.4mm 1mm; letter-spacing: 0.2pt; }
-table.items td { padding: 1.4mm 1mm; font-size: 7.4pt; }
-th.col-disc, td.col-disc { display: none; }
-.summary-row { gap: 4mm; margin-top: 3.5mm; }
-.terms { font-size: 6.8pt; line-height: 1.4; }
-.totals { width: 62mm; }
-.totals td { padding: 1.1mm 1.2mm; font-size: 7.6pt; }
-.totals tr.grand td { font-size: 10pt; padding-top: 1.6mm; }
-.totals tr.pay { font-size: 6.8pt; }
-.signs { gap: 8mm; margin-top: 9mm; }
-.signs div { font-size: 6.8pt; padding-top: 1.5mm; }
-.doc-foot { margin-top: 5mm; font-size: 6.8pt; }
-` : ''}
-`;
-}
-
-export function buildInvoiceHtml(saleId: number, paper: InvoicePaper = 'a4'): string {
+export function buildInvoiceHtml(saleId: number, paper: 'a4' | 'a5' = 'a4'): string {
   const sale = getSale(saleId);
   if (!sale) throw new Error('Sale not found');
-  const s = getPrintSettings();
-  const currency = s.currency || 'Rs';
-  const fmt = makeMoney(currency);
   const cashier = getUser(sale.user_id ?? 0);
-  const showCashier = s.show_cashier_name !== 'false';
 
-  const rows = sale.items
-    .map((it, i) => {
-      const unitName = it.unit_name;
-      const useUnit = !!unitName && it.display_qty != null;
-      const qtyLabel = useUnit ? `${it.display_qty} ${esc(unitName)}` : String(it.qty);
-      const priceLabel = useUnit && (it.display_qty ?? 0) > 0 ? fmt(it.line_total / (it.display_qty ?? 1)) : fmt(it.unit_price);
-      return `<tr>
-  <td class="r">${i + 1}</td>
-  <td class="name">${esc(it.product_name || `#${it.product_id}`)}</td>
-  <td class="r">${esc(qtyLabel)}</td>
-  <td class="r">${priceLabel}</td>
-  <td class="r col-disc">${it.discount ? fmt(it.discount) : ''}</td>
-  <td class="r">${it.tax_rate ? `${it.tax_rate}%` : ''}</td>
-  <td class="r">${fmt(it.line_total)}</td>
-</tr>${
-        it.promo_name
-          ? `<tr class="promo"><td></td><td colspan="6">Promotion applied: ${esc(it.promo_name)}</td></tr>`
-          : ''
-      }`;
-    })
-    .join('');
+  // Convert to new renderer types
+  const saleData = toSaleData(sale);
+  saleData.cashier = cashier?.username ?? '';
 
-  const paymentRows = sale.payments
-    .map(
-      (p) =>
-        `<tr class="pay"><td>Paid by ${esc(p.mode)}${p.reference ? ` (${esc(p.reference)})` : ''}</td><td class="r">${fmt(p.amount)}</td></tr>`
-    )
-    .join('');
+  const shop = toShopProfile(getPrintSettings());
 
-  // NOTE: this is the ONE canonical A4 document. "Preview Invoice", "Print
-  // Invoice" and the "A4 Invoice" receipt style all render this exact markup.
-  // It is synchronous (smsService.ts embeds it in an email body) so it contains
-  // no rasterised barcode — a barcode on a full-page invoice adds nothing and
-  // an earlier version of this file printed the printer's own name on the page.
-  const footer = s.receipt_footer_text || s.receipt_footer || '';
+  // Use default invoice design
+  const design = defaultDocumentDesign('invoice', paper === 'a5' ? 'a5' : 'a4');
 
-  const body = `<div class="doc-head">
-  <div class="co">
-    ${s.shop_logo ? `<img src="${esc(s.shop_logo)}" alt="" />` : ''}
-    <h1>${esc(s.shop_name)}</h1>
-    <p>${esc(s.shop_address) || ''}${s.shop_phone ? `<br />${esc(s.shop_phone)}` : ''}</p>
-  </div>
-  <div class="meta">
-    <p class="title">INVOICE</p>
-    <p class="no">${esc(sale.invoice_no)}</p>
-    <p class="line">${sale.created_at ? formatLocalString(sale.created_at) : ''}</p>
-    ${showCashier ? `<p class="line">Cashier: ${esc(cashier?.username ?? '—')}</p>` : ''}
-  </div>
-</div>
-
-<div class="parties">
-  <div class="party">
-    <h3>Bill To</h3>
-    <div class="big">${esc(sale.customer_name || 'Walk-in Customer')}</div>
-    ${sale.customer_phone ? `<div class="row"><span>Phone</span><span>${esc(sale.customer_phone)}</span></div>` : ''}
-    <div class="row"><span>Payment</span><span>${esc(sale.payments.map((p) => p.mode).join(', ') || '—')}</span></div>
-    <div class="row"><span>Status</span><span>${esc(sale.status || 'completed')}</span></div>
-  </div>
-  <div class="party">
-    <h3>Summary</h3>
-    <div class="row"><span>Line items</span><span>${sale.items.length}</span></div>
-    <div class="row"><span>Invoice date</span><span>${sale.created_at ? formatLocalString(sale.created_at) : ''}</span></div>
-    <div class="row"><span>Invoice no.</span><span>${esc(sale.invoice_no)}</span></div>
-  </div>
-</div>
-
-<table class="items">
-  <thead>
-    <tr>
-      <th class="r" style="width:8mm">#</th>
-      <th>Item</th>
-      <th class="r" style="width:22mm">Qty</th>
-      <th class="r" style="width:26mm">Rate</th>
-      <th class="r col-disc" style="width:22mm">Disc.</th>
-      <th class="r" style="width:16mm">Tax</th>
-      <th class="r" style="width:30mm">Amount</th>
-    </tr>
-  </thead>
-  <tbody>${rows}</tbody>
-</table>
-
-<div class="summary-row">
-  <div class="terms">
-    <b>Terms &amp; conditions</b><br />
-    Goods once sold are not returnable or exchangeable. Please check your items before leaving the counter.
-    Claims must be made within 7 days with this invoice. Thank you for your business.
-  </div>
-  <table class="totals">
-    <tr><td>Subtotal</td><td class="r">${fmt(sale.subtotal)}</td></tr>
-    ${sale.discount_amount > 0 ? `<tr><td>Discount</td><td class="r">-${fmt(sale.discount_amount)}</td></tr>` : ''}
-    ${sale.tax_amount > 0 ? `<tr><td>Tax</td><td class="r">${fmt(sale.tax_amount)}</td></tr>` : ''}
-    ${sale.service_charge && sale.service_charge > 0 ? `<tr><td>Service charge</td><td class="r">${fmt(sale.service_charge)}</td></tr>` : ''}
-    ${sale.freight && sale.freight > 0 ? `<tr><td>Freight / delivery</td><td class="r">${fmt(sale.freight)}</td></tr>` : ''}
-    <tr class="grand"><td>Total</td><td class="r">${fmt(sale.total_amount)}</td></tr>
-    ${paymentRows}
-  </table>
-</div>
-
-<div class="signs">
-  <div>Customer signature</div>
-  <div>Cashier signature</div>
-</div>
-
-<div class="doc-foot">${esc(footer)}</div>`;
-
-  return htmlDocument(`Invoice ${sale.invoice_no}`, invoiceCss(paper), body);
+  // Render using the new shared renderer
+  return renderDocument('invoice', saleData, design, shop, { paper: paper as DocumentPaper });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -421,4 +315,21 @@ h1 { font-size: 8pt; margin: 0 0 1.5mm; }
 <div class="printer">Printed on: ${esc(printerLabel)} &middot; ${todayLabel()}</div>`;
 
   return htmlDocument('Print calibration', css, body);
+}
+
+/** Shared document shell. Page rule is re-stamped by printService for the real paper. */
+export function htmlDocument(title: string, css: string, body: string): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>${esc(title)}</title>
+<style>
+${css}
+</style>
+</head>
+<body>
+${body}
+</body>
+</html>`;
 }

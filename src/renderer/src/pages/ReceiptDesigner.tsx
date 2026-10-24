@@ -10,18 +10,18 @@ import {
   RECEIPT_PAPERS,
   RECEIPT_TOKENS,
   builtinTemplates,
-  defaultReceiptDesign,
+  defaultDocumentDesign,
   findTemplate,
   normalizeLibrary,
-  normalizeReceiptDesign,
+  normalizeDocumentDesign,
   templateDesign,
   type Block,
   type BlockType,
   type ReceiptBlock,
-  type ReceiptDesign,
-  type ReceiptLibrary,
+  type DocumentDesign,
+  type DocumentLibrary,
   type ReceiptPaper,
-  type ReceiptTemplateEntry,
+  type TemplateEntry,
 } from '../../../shared/receiptDesign';
 
 /**
@@ -47,11 +47,11 @@ function draftKey(id: string): string {
   return DRAFT_PREFIX + id;
 }
 
-function loadDraft(id: string): ReceiptDesign | null {
+function loadDraft(id: string): DocumentDesign | null {
   try {
     const raw = localStorage.getItem(draftKey(id));
     if (!raw) return null;
-    return normalizeReceiptDesign(JSON.parse(raw));
+    return normalizeDocumentDesign(JSON.parse(raw));
   } catch {
     return null;
   }
@@ -70,7 +70,7 @@ function newCustomId(): string {
 }
 
 /** Merge an imported library into the current one (incoming customs + defaults). */
-function mergeLibraries(base: ReceiptLibrary, incoming: ReceiptLibrary): ReceiptLibrary {
+function mergeLibraries(base: DocumentLibrary, incoming: DocumentLibrary): DocumentLibrary {
   const templates = base.templates.slice();
   const taken = new Set(templates.map((t) => t.id));
   for (const t of incoming.templates) {
@@ -87,12 +87,12 @@ function mergeLibraries(base: ReceiptLibrary, incoming: ReceiptLibrary): Receipt
   }
   const valid = new Set(templates.map((t) => t.id));
   const remap = (id: string | undefined): string | undefined => (id && valid.has(id) ? id : undefined);
-  const defaults: ReceiptLibrary['defaults'] = { ...base.defaults };
+  const defaults: DocumentLibrary['defaults'] = { ...base.defaults };
   for (const [k, v] of Object.entries(incoming.defaults)) {
     const r = remap(v);
     if (r) defaults[k as ReceiptPaper] = r;
   }
-  const branchDefaults: ReceiptLibrary['branchDefaults'] = { ...base.branchDefaults };
+  const branchDefaults: DocumentLibrary['branchDefaults'] = { ...base.branchDefaults };
   for (const [branch, map] of Object.entries(incoming.branchDefaults)) {
     const merged: Partial<Record<ReceiptPaper, string>> = { ...(branchDefaults[branch] || {}) };
     for (const [k, v] of Object.entries(map)) {
@@ -104,10 +104,10 @@ function mergeLibraries(base: ReceiptLibrary, incoming: ReceiptLibrary): Receipt
   return { ...base, templates, defaults, branchDefaults };
 }
 
-export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
-  const [library, setLibrary] = useState<ReceiptLibrary>(() => normalizeLibrary(null));
+export default function DocumentDesigner({ onClose }: { onClose: () => void }) {
+  const [library, setLibrary] = useState<DocumentLibrary>(() => normalizeLibrary(null));
   const [activeId, setActiveId] = useState<string>('');
-  const [design, setDesign] = useState<ReceiptDesign>(() => defaultReceiptDesign('thermal80'));
+  const [design, setDesign] = useState<DocumentDesign>(() => defaultDocumentDesign('receipt', 'thermal80'));
   const [enabled, setEnabled] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
   const [paper, setPaper] = useState<ReceiptPaper>('thermal80');
@@ -120,7 +120,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
   const [dirty, setDirty] = useState(false);
   const [notice, setNotice] = useState('');
   const [previewHtml, setPreviewHtml] = useState('');
-  const [newBlockType, setNewBlockType] = useState<ReceiptBlockType>('text');
+  const [newBlockType, setNewBlockType] = useState<BlockType>('text');
   const [branches, setBranches] = useState<Array<{ id: number; name: string }>>([]);
   const [defaultScope, setDefaultScope] = useState<string>('');
   const [nameDialog, setNameDialog] = useState<{ mode: 'new' | 'rename'; value: string } | null>(null);
@@ -128,9 +128,9 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
   const [shopSettings, setShopSettings] = useState<{ name: string; address: string; phone: string; whatsapp: string; taxNo: string } | null>(null);
 
   const previewTimer = useRef<number | null>(null);
-  const designRef = useRef<ReceiptDesign>(design);
-  const pastRef = useRef<ReceiptDesign[]>([]);
-  const futureRef = useRef<ReceiptDesign[]>([]);
+  const designRef = useRef<DocumentDesign>(design);
+  const pastRef = useRef<DocumentDesign[]>([]);
+  const futureRef = useRef<DocumentDesign[]>([]);
   const [, forceHist] = useState(0);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -199,7 +199,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
   }, []);
 
   // ── history ──
-  const commit = useCallback((next: ReceiptDesign, record = true) => {
+  const commit = useCallback((next: DocumentDesign, record = true) => {
     if (record) {
       pastRef.current = [...pastRef.current, designRef.current].slice(-100);
       futureRef.current = [];
@@ -293,7 +293,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
 
   // ── design mutation helpers ──
   const patchDesign = useCallback(
-    (patch: Partial<ReceiptDesign>) => commit({ ...designRef.current, ...patch }),
+    (patch: Partial<DocumentDesign>) => commit({ ...designRef.current, ...patch }),
     [commit]
   );
 
@@ -377,7 +377,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
 
   // ── template library operations ──
   const persistLibrary = useCallback(
-    async (lib: ReceiptLibrary, msg?: string) => {
+    async (lib: DocumentLibrary, msg?: string) => {
       setSaving(true);
       setNotice('');
       try {
@@ -432,7 +432,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
     if (!t) return;
     const now = Date.now();
     const saved = { ...design, paper };
-    const nextLib: ReceiptLibrary = {
+    const nextLib: DocumentLibrary = {
       ...library,
       templates: library.templates.map((x) =>
         x.id === activeId ? { ...x, design: saved, updatedAt: now, createdAt: x.createdAt || now } : x
@@ -453,7 +453,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
   const doSaveAs = useCallback(
     async (name: string) => {
       const now = Date.now();
-      const entry: ReceiptTemplateEntry = {
+      const entry: TemplateEntry = {
         id: newCustomId(),
         name: name || 'Custom template',
         design: { ...design, paper },
@@ -479,7 +479,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
   const doRename = useCallback(
     async (name: string) => {
       if (!activeTemplate || !name.trim()) return;
-      const nextLib: ReceiptLibrary = {
+      const nextLib: DocumentLibrary = {
         ...library,
         templates: library.templates.map((x) =>
           x.id === activeId ? { ...x, name: name.trim(), updatedAt: Date.now() } : x
@@ -493,7 +493,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
   const doDuplicate = useCallback(async () => {
     if (!activeTemplate) return;
     const now = Date.now();
-    const entry: ReceiptTemplateEntry = {
+    const entry: TemplateEntry = {
       id: newCustomId(),
       name: `${activeTemplate.name} copy`,
       design: { ...design, paper },
@@ -515,9 +515,9 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
     if (!activeTemplate || activeTemplate.builtin) return;
     if (!window.confirm(`Delete the template “${activeTemplate.name}”? This cannot be undone.`)) return;
     const templates = library.templates.filter((t) => t.id !== activeId);
-    const defaults: ReceiptLibrary['defaults'] = { ...library.defaults };
+    const defaults: DocumentLibrary['defaults'] = { ...library.defaults };
     for (const [k, v] of Object.entries(defaults)) if (v === activeId) delete defaults[k as ReceiptPaper];
-    const branchDefaults: ReceiptLibrary['branchDefaults'] = { ...library.branchDefaults };
+    const branchDefaults: DocumentLibrary['branchDefaults'] = { ...library.branchDefaults };
     for (const [branch, map] of Object.entries(branchDefaults)) {
       const m = { ...map };
       for (const [k, v] of Object.entries(m)) if (v === activeId) delete m[k as ReceiptPaper];
@@ -538,25 +538,31 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
   const handleReset = useCallback(() => {
     if (!window.confirm('Reset this template to the built-in layout? Your edits will be discarded.')) return;
     const canonical = builtinTemplates().find((t) => t.id === activeId);
-    const base = canonical ? templateDesign(canonical) : defaultReceiptDesign(paper);
+    const base = canonical ? templateDesign(canonical) : defaultDocumentDesign(documentType, paper);
     commit(base);
     setPaper(base.paper);
     setSelectedId(null);
   }, [activeId, paper, commit]);
 
+  const [defaultForDocType, setDefaultForDocType] = useState<boolean>(false);
+
   const setDefault = useCallback(async () => {
     if (!activeTemplate) return;
-    const nextLib: ReceiptLibrary = { ...library };
+    const nextLib: DocumentLibrary = { ...library };
     if (defaultScope) {
       nextLib.branchDefaults = {
         ...library.branchDefaults,
         [defaultScope]: { ...(library.branchDefaults[defaultScope] || {}), [paper]: activeId },
       };
+    } else if (defaultForDocType) {
+      nextLib.documentTypeDefaults = { ...library.documentTypeDefaults, [documentType]: activeId };
     } else {
       nextLib.defaults = { ...library.defaults, [paper]: activeId };
     }
-    await persistLibrary(nextLib, `Default for ${paper} set to “${activeTemplate.name}”`);
-  }, [activeTemplate, library, defaultScope, paper, activeId, persistLibrary]);
+    await persistLibrary(nextLib, defaultForDocType
+      ? `Default for ${documentType} set to “${activeTemplate.name}”`
+      : `Default for ${paper} set to “${activeTemplate.name}”`);
+  }, [activeTemplate, library, defaultScope, defaultForDocType, documentType, paper, activeId, persistLibrary]);
 
   const handleExport = useCallback(() => {
     try {
@@ -580,7 +586,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
       try {
         const text = await file.text();
         const parsed = JSON.parse(text);
-        let incoming: ReceiptLibrary;
+        let incoming: DocumentLibrary;
         if (parsed && typeof parsed === 'object' && (parsed.templates || parsed.defaults || parsed.branchDefaults)) {
           incoming = normalizeLibrary(parsed);
         } else if (parsed && typeof parsed === 'object' && parsed.design && typeof parsed.design === 'object') {
@@ -647,6 +653,8 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
 
   const currentDefaultId = defaultScope
     ? library.branchDefaults[defaultScope]?.[paper]
+    : defaultForDocType
+    ? library.documentTypeDefaults?.[documentType]
     : library.defaults[paper];
   const currentDefaultName = findTemplate(library, currentDefaultId)?.name;
 
@@ -783,9 +791,9 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
             flexWrap: 'wrap',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 300 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 300, flexWrap: 'wrap' }}>
             <label className="muted small" style={{ whiteSpace: 'nowrap' }}>Default for</label>
-            <select value={defaultScope} onChange={(e) => setDefaultScope(e.target.value)} style={{ minWidth: 150 }} disabled={!canEdit}>
+            <select value={defaultScope} onChange={(e) => setDefaultScope(e.target.value)} style={{ minWidth: 150 }} disabled={!canEdit || defaultForDocType}>
               <option value="">All branches</option>
               {branches.map((b) => (
                 <option key={b.id} value={String(b.id)}>
@@ -793,11 +801,27 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
                 </option>
               ))}
             </select>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 8 }}>
+              <input
+                type="checkbox"
+                checked={defaultForDocType}
+                onChange={(e) => setDefaultForDocType(e.target.checked)}
+                disabled={!canEdit || !!defaultScope}
+                title="Set as default for this document type (e.g., all receipts) instead of this paper size"
+              />
+              <span className="muted small">Per document type ({DOCUMENT_TYPE_LABELS[documentType]})</span>
+            </label>
             <button className="btn btn-sm" disabled={!canEdit || !activeTemplate} onClick={setDefault}>
-              Set as default for {defaultScope ? 'this branch' : 'all branches'}
+              {defaultForDocType
+                ? `Set as default for ${DOCUMENT_TYPE_LABELS[documentType]}`
+                : defaultScope
+                ? 'Set as default for this branch'
+                : 'Set as default for all branches'}
             </button>
             <span className="muted small">
-              {currentDefaultName ? `Default for ${defaultScope || 'all branches'}: ${currentDefaultName}` : 'No default set (uses the applied design)'}
+              {currentDefaultName
+                ? `Default for ${defaultScope ? 'branch ' + defaultScope : defaultForDocType ? DOCUMENT_TYPE_LABELS[documentType] : 'all branches'}: ${currentDefaultName}`
+                : 'No default set (uses the applied design)'}
             </span>
           </div>
 
@@ -922,7 +946,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
                       const defaultPaper = DEFAULT_PAPER_FOR_TYPE[dt];
                       setPaper(defaultPaper);
                       // Reset design to default for new document type
-                      const newDesign = defaultReceiptDesign(defaultPaper);
+                      const newDesign = defaultDocumentDesign(dt, defaultPaper);
                       commit(newDesign);
                     }}
                     disabled={!canEdit}
@@ -1047,7 +1071,7 @@ export default function ReceiptDesigner({ onClose }: { onClose: () => void }) {
                             >
                               ↻
                             </button>{' '}
-                            {CUSTOM_BLOCK_TYPES.includes(b.type) ? (
+                            {CUSTOM_BLOCK_TYPES_FOR_DOCUMENT.receipt.includes(b.type) ? (
                               <button
                                 className="btn btn-sm"
                                 style={{ color: '#b91c1c' }}
@@ -1600,3 +1624,8 @@ function BlockProperties({
     </div>
   );
 }
+
+
+
+
+

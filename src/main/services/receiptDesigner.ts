@@ -28,8 +28,12 @@ import {
   RECEIPT_PAPERS,
   resolveLibraryDefault,
   templateDesign,
+  renderDocument,
+  type ShopProfile,
+  type SaleData,
   type DocumentDesign,
   type DocumentLibrary,
+  type DocumentType,
   type GlobalOptions,
   type ReceiptBlock,
   type ReceiptDesign,
@@ -79,9 +83,9 @@ export function saveReceiptLibrary(lib: unknown): DocumentLibrary {
  * global default, else the Phase-2 applied design (`receipt_design_json`). The
  * fallback keeps every install that never opened the designer byte-identical.
  */
-export function resolveAppliedDesign(paper: ReceiptPaper, branchId?: string | number | null): ReceiptDesign {
+export function resolveAppliedDesign(paper: ReceiptPaper, branchId?: string | number | null, documentType: DocumentType = 'receipt'): ReceiptDesign {
   const lib = getReceiptLibrary();
-  const id = resolveLibraryDefault(lib, paper, branchId);
+  const id = resolveLibraryDefault(lib, documentType, paper, branchId);
   const t = findTemplate(lib, id);
   if (t) return templateDesign(t, paper) as ReceiptDesign;
   return getReceiptDesign();
@@ -661,53 +665,64 @@ table.totals tr.net td.lg { font-size: ${sz(14)}px; }
 `;
 }
 
-function renderDocument(ctx: BuildCtx): string {
-  const body = ctx.design.sections
-    .filter((b) => b.enabled)
-    .map((blk) => {
-      const inner = blockHtml(ctx, blk);
-      if (!inner) return '';
-      const css = blockStyleCss(blk.style);
-      return `<div class="blk"${css ? ` style="${css}"` : ''}>${inner}</div>`;
-    })
-    .filter(Boolean)
-    .join('\n');
-  // Reprint stamp always sits at the very top, independent of the design's own
-  // sections (a reprint must be unmistakable even on a stripped-down design).
-  const stamp = ctx.duplicate ? '<div class="blk"><div class="duplicate-banner">DUPLICATE COPY</div></div>\n' : '';
-  return `<!doctype html>
-<html><head><meta charset="utf-8" /><title>Receipt</title><style>${buildCss(ctx)}</style></head>
-<body>${stamp}${body}</body></html>`;
+/** Convert print settings to ShopProfile for the new renderer. */
+function toShopProfile(s: Record<string, string>): ShopProfile {
+  return {
+    name: s.shop_name || '',
+    address: s.shop_address || '',
+    phone: s.shop_phone || '',
+    whatsapp: s.shop_whatsapp || '',
+    taxNo: s.tax_no || '',
+    ntn: s.shop_ntn || '',
+    strn: s.shop_strn || '',
+    logo: s.shop_logo || '',
+    logoGrayscale: s.receipt_logo_grayscale !== 'false',
+    logoMaxHeightPx: Number(s.receipt_logo_max_height_px || 64),
+    receiptHeaderLines: s.receipt_header_lines || '',
+    receiptTermsText: s.receipt_terms_text || '',
+    receiptSoftwareBy: s.receipt_software_by || '',
+    receiptShowSoftwareCredit: s.receipt_show_software_credit !== 'false',
+    receiptShowItemsSummary: s.receipt_show_items_summary !== 'false',
+    receiptShowPaymentMethod: s.show_payment_method !== 'false',
+    showTaxOnReceipt: s.show_tax_on_receipt !== 'false',
+    currency: s.currency || 'Rs',
+    loyaltyEnabled: s.loyalty_enabled === 'true',
+    pointsPerRupee: Number(s.points_per_rupee || 0),
+    fbrInvoiceUrl: s.fbr_invoice_url || '',
+  };
 }
 
-function makeCtx(
-  sale: SampleSale,
-  paper: ReceiptPaper,
-  design: ReceiptDesign,
-  assets: Record<string, string>,
-  duplicate = false
-): BuildCtx {
-  const s = getPrintSettings();
-  const currency = design.global.currencySymbol || s.currency || 'Rs';
-  const spec = RECEIPT_PAPERS.find((p) => p.value === paper) || RECEIPT_PAPERS[0];
-  const sheet = paper === 'a4' || paper === 'a5';
-  const margin = design.global.marginMm ?? (sheet ? 8 : 4);
-  const widthMm = design.global.paperWidthMm && !sheet ? design.global.paperWidthMm : spec.widthMm;
-  const heightMm = paper === 'a4' ? 297 : paper === 'a5' ? 210 : 0;
+/** Convert SampleSale to the new SaleData type. */
+function toSaleData(sale: SampleSale): SaleData {
   return {
-    sale,
-    s,
-    money: makePlainMoney(design.global),
-    currency,
-    paper,
-    narrow: paper === 'thermal58',
-    sheet,
-    design,
-    paperWidthMm: widthMm,
-    paperHeightMm: heightMm,
-    contentMm: sheet ? widthMm - 2 * margin : paper === 'thermal58' ? 48 : 72,
-    assets,
-    duplicate,
+    invoice_no: sale.invoice_no,
+    created_at: sale.created_at,
+    customer_name: sale.customer_name,
+    customer_id: sale.customer_id,
+    customer_balance: sale.customer_balance,
+    cashier: sale.cashier,
+    status: sale.status,
+    items: sale.items.map((it) => ({
+      product_name: it.product_name,
+      unit_name: it.unit_name,
+      qty: it.qty,
+      display_qty: it.display_qty,
+      unit_price: it.unit_price,
+      discount: it.discount,
+      tax_rate: it.tax_rate,
+      line_total: it.line_total,
+      promo_name: it.promo_name,
+    })),
+    subtotal: sale.subtotal,
+    discount_amount: sale.discount_amount,
+    tax_amount: sale.tax_amount,
+    service_charge: sale.service_charge,
+    freight: sale.freight,
+    total_amount: sale.total_amount,
+    paid: sale.paid,
+    payments: sale.payments,
+    returned_amount: sale.returned_amount,
+    branch: sale.branch,
   };
 }
 
@@ -738,14 +753,21 @@ export async function buildDesignedReceiptAsync(
       assets[blk.id] = '';
     }
   }
-  return renderDocument(makeCtx(sale, paper, design, assets, duplicate));
+  const shop = toShopProfile(getPrintSettings());
+  const saleData = toSaleData(sale);
+  // Cast ReceiptDesign to DocumentDesign with documentType
+  const docDesign = { ...design, documentType: 'receipt' as const } as DocumentDesign;
+  return renderDocument('receipt', saleData, docDesign, shop, { paper, assets, duplicate });
 }
 
 /** Synchronous render (no QR/barcode assets) — used by tests and callers that
  *  only need the layout. */
 export function buildDesignedReceipt(sale: SampleSale, paper: ReceiptPaper, designInput?: ReceiptDesign): string {
   const design = designInput ? normalizeReceiptDesign(designInput) : getReceiptDesign();
-  return renderDocument(makeCtx(sale, paper, design, {}));
+  const shop = toShopProfile(getPrintSettings());
+  const saleData = toSaleData(sale);
+  const docDesign = { ...design, documentType: 'receipt' as const } as DocumentDesign;
+  return renderDocument('receipt', saleData, docDesign, shop, { paper });
 }
 
 /** Map a real DB sale onto the SampleSale shape the renderer consumes. */
@@ -845,7 +867,7 @@ export async function renderAppliedReceipt(saleId: number, paper: ReceiptPaper, 
   const sale = getSale(saleId);
   if (!sale) return null;
   const branchId = (sale as { branch_id?: number | null }).branch_id ?? null;
-  const design = resolveAppliedDesign(paper, branchId);
+  const design = resolveAppliedDesign(paper, branchId, 'receipt' as DocumentType);
   const cashierName = getUser(sale.user_id ?? 0)?.username ?? '';
   return buildDesignedReceiptAsync(saleToSampleSale(sale, cashierName), paper, design, duplicate);
 }

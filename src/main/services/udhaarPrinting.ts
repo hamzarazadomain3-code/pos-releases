@@ -3,6 +3,13 @@ import { previewDocument, printDocument, printJobToPdf, type PrintJob, type Prin
 import { getUdhaarEntry, getUdhaarLedger, getUdhaarStatement, type UdhaarStatementRange } from './udhaar';
 import { formatLocalString } from '../utils/timezone';
 import type { Customer, UdhaarEntryDetail, UdhaarItemLine, UdhaarLedgerRow } from '../../shared/types';
+import {
+  renderDocument,
+  type SaleData,
+  type ShopProfile,
+  type DocumentDesign,
+  defaultDocumentDesign,
+} from '../../shared/receiptDesign';
 
 /**
  * Customer statement of account — the "Print Statement" button's document.
@@ -441,6 +448,76 @@ function dateOnly(ts: string | null | undefined): string | null {
   return String(ts).slice(0, 10);
 }
 
+/** Convert print settings to ShopProfile for the new renderer. */
+function toShopProfile(s: Record<string, string>): ShopProfile {
+  return {
+    name: s.shop_name || '',
+    address: s.shop_address || '',
+    phone: s.shop_phone || '',
+    whatsapp: s.shop_whatsapp || '',
+    taxNo: s.tax_no || '',
+    ntn: s.shop_ntn || '',
+    strn: s.shop_strn || '',
+    logo: s.shop_logo || '',
+    logoGrayscale: s.receipt_logo_grayscale !== 'false',
+    logoMaxHeightPx: Number(s.receipt_logo_max_height_px || 64),
+    receiptHeaderLines: s.receipt_header_lines || '',
+    receiptTermsText: s.receipt_terms_text || '',
+    receiptSoftwareBy: s.receipt_software_by || '',
+    receiptShowSoftwareCredit: s.receipt_show_software_credit !== 'false',
+    receiptShowItemsSummary: s.receipt_show_items_summary !== 'false',
+    receiptShowPaymentMethod: s.show_payment_method !== 'false',
+    showTaxOnReceipt: s.show_tax_on_receipt !== 'false',
+    currency: s.currency || 'Rs',
+    loyaltyEnabled: s.loyalty_enabled === 'true',
+    pointsPerRupee: Number(s.points_per_rupee || 0),
+    fbrInvoiceUrl: s.fbr_invoice_url || '',
+  };
+}
+
+/** Convert Udhaar entry to SaleData for the new renderer. */
+function toSaleData(entry: UdhaarEntryDetail): SaleData {
+  const items = (entry.items || []).map((it) => ({
+    product_name: it.name,
+    unit_name: it.unit || undefined,
+    qty: Number(it.qty || 0),
+    display_qty: it.qty || undefined,
+    unit_price: Number(it.rate || 0),
+    discount: Number(it.discount || 0),
+    tax_rate: undefined,
+    line_total: Number(it.line_total || 0),
+    promo_name: undefined,
+  }));
+
+  const sign = entry.direction === 'credit' ? -1 : 1;
+  const total = sign * Number(entry.total || 0);
+
+  return {
+    invoice_no: entry.reference || `UDH-${entry.transaction_id}`,
+    created_at: entry.created_at ?? new Date().toISOString(),
+    customer_name: entry.customer.name,
+    customer_phone: entry.customer.phone ?? undefined,
+    customer_id: entry.customer.id,
+    customer_balance: entry.customer.balance,
+    cashier: '',
+    status: 'completed',
+    items,
+    subtotal: total,
+    discount_amount: 0,
+    tax_amount: 0,
+    service_charge: 0,
+    freight: 0,
+    total_amount: total,
+    paid: total >= 0 ? total : 0,
+    payments: total >= 0 ? [{ mode: 'Udhaar', amount: total }] : [],
+    returned_amount: 0,
+    branch: '',
+    prev_balance: entry.customer.balance - total,
+    new_balance: entry.customer.balance,
+    loyalty_points: 0,
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════════
 //  ENTRY CREDIT SLIP (one manual 'Udhaar (items)' entry)
 // ═══════════════════════════════════════════════════════════════════
@@ -493,9 +570,11 @@ export function buildEntrySlipJob(transactionId: number, paper?: 'thermal80' | '
   const entry = getUdhaarEntry(transactionId);
   if (!entry) throw new Error('Entry not found');
   const roll: 'thermal80' | 'thermal58' = paper === 'thermal58' ? 'thermal58' : 'thermal80';
-  const shop = getPrintSettings();
-  const money = makeMoney(shop.currency || 'Rs');
-  const html = htmlDocument(`Udhaar slip — ${entry.customer.name}`, rollCss(roll), entrySlipBody(entry, shop, money));
+  const shop = toShopProfile(getPrintSettings());
+  const saleData = toSaleData(entry);
+  const design = defaultDocumentDesign('credit_slip', roll);
+
+  const html = renderDocument('credit_slip', saleData, design, shop, { paper: roll });
   return { html, paper: roll, printerKey: 'receipt', jobName: `Udhaar slip — ${entry.customer.name}` };
 }
 

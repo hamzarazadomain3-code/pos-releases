@@ -14,7 +14,7 @@ import { getSale, listSales } from './sales';
 import { getUser } from './auth';
 import { getPrintSettings } from './printDocs';
 import { buildDesignedReceiptAsync, buildSampleSale, resolveAppliedDesign } from './receiptDesigner';
-import { defaultReceiptDesign, ReceiptDesign, ReceiptPaper } from '../../shared/receiptDesign';
+import { defaultReceiptDesign, ReceiptDesign, ReceiptPaper, DocumentType } from '../../shared/receiptDesign';
 import { printDocument, PrintJob } from './printService';
 
 export type ReportKind = 'x' | 'z';
@@ -222,7 +222,7 @@ export async function printReport(kind: ReportKind, shiftId?: number): Promise<{
   try {
     const data = await collectReportData(kind, shiftId);
     const paper: ReceiptPaper = 'thermal80';
-    const design = resolveAppliedDesign(paper);
+    const design = resolveAppliedDesign(paper, undefined, 'shift_report' as DocumentType);
     const html = await buildReportHtml(data, design);
 
     const job: PrintJob = {
@@ -244,7 +244,7 @@ export async function previewReport(kind: ReportKind, shiftId?: number): Promise
   try {
     const data = await collectReportData(kind, shiftId);
     const paper: ReceiptPaper = 'thermal80';
-    const design = resolveAppliedDesign(paper);
+    const design = resolveAppliedDesign(paper, undefined, 'shift_report' as DocumentType);
     return await buildReportHtml(data, design);
   } catch (e) {
     return null;
