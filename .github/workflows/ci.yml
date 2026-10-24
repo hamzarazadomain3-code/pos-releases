@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main, develop]
 
+# Release artifacts (the installer) are produced by `npm run release` on a
+# developer machine -- electron-builder publishes and scripts/finalize-release.js
+# then mirrors the version-less RokarPOS-Setup.exe the website downloads from.
+# CI must not invent its own releases, so it only needs read access here.
+permissions:
+  contents: read
+
 env:
   NODE_VERSION: '24.x'
 
@@ -92,72 +99,69 @@ jobs:
           npm run test:licensing
           npm run test:keyboard
 
+  # NOTE: no `release` job here on purpose. Releases are cut with
+  # `npm run release`, where electron-builder publishes the installer and
+  # scripts/finalize-release.js creates the real tag (v<package version>),
+  # publishes the draft and mirrors RokarPOS-Setup.exe for the website.
+  # The previous job here tagged releases `v<github.run_number>` (so "v2",
+  # "v3", ... clashing with the 2.x scheme), never had dist_release/*.exe to
+  # attach, and failed with 403 because a read-only token cannot create
+  # releases. Keeping it only made every push red.
+
   deploy-cloudflare:
     name: Deploy to Cloudflare
     runs-on: windows-latest
     needs: test
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
+      # Wrangler cannot log in non-interactively without an API token, so a
+      # missing secret must SKIP the deploy instead of failing the run -- a red
+      # build that only says "set CLOUDFLARE_API_TOKEN" hides real regressions.
+      - name: Check Cloudflare credentials
+        id: cf
+        shell: pwsh
+        run: |
+          if ($env:CLOUDFLARE_API_TOKEN -and $env:CLOUDFLARE_ACCOUNT_ID) {
+            "available=true" >> $env:GITHUB_OUTPUT
+            Write-Output "Cloudflare credentials present -- deploying."
+          } else {
+            "available=false" >> $env:GITHUB_OUTPUT
+            Write-Output "::notice::Skipping Cloudflare deploy -- CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID secret not configured."
+          }
+
       - name: Checkout
+        if: steps.cf.outputs.available == 'true'
         uses: actions/checkout@v4
 
       - name: Setup Node.js
+        if: steps.cf.outputs.available == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
       - name: Install dependencies
+        if: steps.cf.outputs.available == 'true'
         run: npm ci
 
       - name: Build
+        if: steps.cf.outputs.available == 'true'
         run: npm run build
 
       - name: Build Cloudflare Worker
+        if: steps.cf.outputs.available == 'true'
         run: |
           cd cloud
           npm ci
           npm run build
 
       - name: Deploy to Cloudflare
+        if: steps.cf.outputs.available == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: cloud
-
-  release:
-    name: Create GitHub Release
-    runs-on: windows-latest
-    needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ github.run_number }}
-          name: Release v${{ github.run_number }}
-          generate_release_notes: true
-          files: |
-            dist_release/*.exe
-            dist_release/*.nupkg
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
