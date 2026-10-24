@@ -28,7 +28,7 @@
     "package": "npm run build && npm run prepare:puppeteer && electron-builder",
     "package:dir": "npm run build && npm run prepare:puppeteer && electron-builder --dir",
     "prepare:puppeteer": "node scripts/prepare-puppeteer.js",
-    "release": "npm run build && dotenv -e .env -- electron-builder --publish always && node scripts/finalize-release.js",
+    "release": "npm run build && dotenv -e .env -- electron-builder --publish always && dotenv -e .env -- node scripts/finalize-release.js",
     "postinstall": "electron-builder install-app-deps",
     "capture:screens": "npm run build && electron scripts/capture_screens.js",
     "seed:demo": "node scripts/seed_demo.js",
