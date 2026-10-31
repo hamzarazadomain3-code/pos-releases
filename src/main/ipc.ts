@@ -110,6 +110,7 @@ import {
   getTopProducts,
   listExpenses,
   listExpiringSoon,
+  listOversoldItems,
   profitLoss,
   salesReport,
   stockValuation,
@@ -232,7 +233,7 @@ import { expensesService } from './services/expenses';
 import { customReportsService } from './services/customReports';
 
 export function registerIpcHandlers(): void {
-  ipcMain.handle('inventory:list', (_e, search?: string, includeInactive?: boolean, categoryId?: number, stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock', supplierId?: number, expiryFrom?: string, expiryTo?: string) =>
+  ipcMain.handle('inventory:list', (_e, search?: string, includeInactive?: boolean, categoryId?: number, stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock', supplierId?: number, expiryFrom?: string, expiryTo?: string) =>
     listProducts(search, includeInactive, categoryId, stockStatus, supplierId, expiryFrom, expiryTo)
   );
   ipcMain.handle('inventory:get', (_e, id: number) => getProduct(id));
@@ -620,6 +621,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('reports:profitLoss', (_e, from?: string, to?: string) => profitLoss(from, to));
   ipcMain.handle('reports:bestSellers', (_e, from?: string, to?: string, limit?: number) => bestSellers(from, to, limit));
   ipcMain.handle('reports:stockValuation', () => stockValuation());
+  ipcMain.handle('reports:oversoldItems', () => listOversoldItems());
   ipcMain.handle('reports:expenses', (_e, from?: string, to?: string) => listExpenses(from, to));
   ipcMain.handle('reports:addExpense', (_e, input) => addExpense(input));
   ipcMain.handle('reports:deleteExpense', (_e, id: number) => deleteExpense(id));
@@ -734,7 +736,7 @@ export function registerIpcHandlers(): void {
     saveXlsx(BrowserWindow.getFocusedWindow(), defaultName, sheets)
   );
 
-  ipcMain.handle('excel:exportProducts', (_e, filters?: { search?: string; includeInactive?: boolean; categoryId?: number; stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock'; supplierId?: number; expiryFrom?: string; expiryTo?: string }) => exportProductsXlsx(BrowserWindow.getFocusedWindow(), filters?.search, filters?.includeInactive, filters?.categoryId, filters?.stockStatus, filters?.supplierId, filters?.expiryFrom, filters?.expiryTo));
+  ipcMain.handle('excel:exportProducts', (_e, filters?: { search?: string; includeInactive?: boolean; categoryId?: number; stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock'; supplierId?: number; expiryFrom?: string; expiryTo?: string }) => exportProductsXlsx(BrowserWindow.getFocusedWindow(), filters?.search, filters?.includeInactive, filters?.categoryId, filters?.stockStatus, filters?.supplierId, filters?.expiryFrom, filters?.expiryTo));
   ipcMain.handle('excel:exportSales', (_e, from?: string, to?: string) => exportSalesXlsx(BrowserWindow.getFocusedWindow(), from, to));
   ipcMain.handle('excel:exportCustomers', (_e, filters?: { status?: 'paid' | 'pending' | 'all'; from?: string; to?: string }) => exportCustomersXlsx(BrowserWindow.getFocusedWindow(), filters?.status, filters?.from, filters?.to));
   ipcMain.handle('excel:exportUdhaarStatement', (_e, customerId: number, from?: string, to?: string) => exportUdhaarStatementXlsx(BrowserWindow.getFocusedWindow(), customerId, from, to));

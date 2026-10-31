@@ -36,6 +36,7 @@ import type {
   ProductProfitRow,
   ProductPurchaseSummaryRow,
   DailySnapshotResult,
+  OversoldItemRow,
 } from '../../../shared/types';
 import { formatDateAdmin, toLocalDateString } from '../utils/dateUtils';
 import { formatMoney, getCurrencySymbol } from '../utils/currency';
@@ -83,12 +84,14 @@ export default function Reports() {
   const [expForm, setExpForm] = useState({ title: '', category: 'Other', amount: '', date: today(), notes: '' });
 
   // ── v1.8.0 state ──
-  const [invSubTab, setInvSubTab] = useState<'purchaseHistory' | 'daily' | 'weekly' | 'monthly' | 'supplierMetrics'>('daily');
+  const [invSubTab, setInvSubTab] = useState<'purchaseHistory' | 'daily' | 'weekly' | 'monthly' | 'supplierMetrics' | 'oversold'>('daily');
   const [dailyInv, setDailyInv] = useState<DailyInventoryRow[]>([]);
   const [weeklyInv, setWeeklyInv] = useState<WeeklyInventoryRow[]>([]);
   const [monthlyInv, setMonthlyInv] = useState<MonthlyInventoryRow[]>([]);
   const [purchaseHistory, setPurchaseHistory] = useState<InventoryReportRow[]>([]);
   const [supplierMetrics, setSupplierMetrics] = useState<SupplierMetricRow[]>([]);
+  // Phase 1: "Oversold items" report data
+  const [oversoldItems, setOversoldItems] = useState<OversoldItemRow[]>([]);
 
   const [profitSubTab, setProfitSubTab] = useState<'daily' | 'weekly' | 'monthly' | 'category' | 'breakEven' | 'lowProfit' | 'topProducts' | 'worstProducts'>('daily');
   const [profitData, setProfitData] = useState<ProductProfitRow[]>([]);
@@ -203,6 +206,8 @@ export default function Reports() {
         setPurchaseHistory(await window.api.inventoryReports.purchaseHistory(undefined, { start: from, end: to }));
       } else if (invSubTab === 'supplierMetrics') {
         setSupplierMetrics(await window.api.inventoryReports.supplierMetrics());
+      } else if (invSubTab === 'oversold') {
+        setOversoldItems(await window.api.reports.oversoldItems());
       }
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err));
@@ -659,6 +664,7 @@ export default function Reports() {
                 ['monthly', 'Monthly'],
                 ['purchaseHistory', 'Purchase History'],
                 ['supplierMetrics', 'Supplier Metrics'],
+                ['oversold', 'Oversold Items'],
               ] as [typeof invSubTab, string][]
             ).map(([k, label]) => (
               <button
@@ -917,6 +923,72 @@ export default function Reports() {
                     </tbody>
                   </table>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Phase 1: Oversold Items ── */}
+          {invSubTab === 'oversold' && (
+            <div>
+              <div className="panel">
+                <div className="panel-title">Oversold Items (Negative Stock)</div>
+                {oversoldItems.length === 0 ? (
+                  <div className="muted center pad">No oversold items — every product is at or above zero stock.</div>
+                ) : (
+                  <div className="table-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Product</th>
+                          <th>SKU</th>
+                          <th>Category</th>
+                          <th className="num">Stock (Negative)</th>
+                          <th className="num">Value at Cost</th>
+                          <th>Last Sale</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {oversoldItems.map((r) => (
+                          <tr key={r.product_id}>
+                            <td>{r.name}</td>
+                            <td>{r.sku || '—'}</td>
+                            <td>{r.category_name || '—'}</td>
+                            <td className="num" style={{ color: 'var(--danger)', fontWeight: 700 }}>
+                              {Number(r.stock_qty.toFixed(3))}
+                            </td>
+                            <td className="num" style={{ color: 'var(--danger)' }}>
+                              {fmt(r.stock_qty * (r.cost_price ?? 0))}
+                            </td>
+                            <td>
+                              {r.last_sale_date
+                                ? `${formatDateAdmin(r.last_sale_date)}${r.last_sale_invoice ? ` (${r.last_sale_invoice})` : ''}`
+                                : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {oversoldItems.length > 0 && (
+                  <ExportButtons
+                    reportType="oversold-items"
+                    data={oversoldItems}
+                    xlsx={{
+                      name: 'oversold-items',
+                      headers: ['Product', 'SKU', 'Category', 'Negative Qty', 'Value at Cost', 'Last Sale Date', 'Last Invoice'],
+                      rows: oversoldItems.map((r) => [
+                        r.name,
+                        r.sku || '',
+                        r.category_name || '',
+                        r.stock_qty,
+                        r.stock_qty * (r.cost_price ?? 0),
+                        r.last_sale_date || '',
+                        r.last_sale_invoice || '',
+                      ]),
+                    }}
+                  />
+                )}
               </div>
             </div>
           )}

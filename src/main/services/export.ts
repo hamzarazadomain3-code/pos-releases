@@ -72,7 +72,7 @@ export function exportProductsXlsx(
   search?: string,
   includeInactive = true,
   categoryId?: number,
-  stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock',
+  stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock',
   supplierId?: number,
   expiryFrom?: string,
   expiryTo?: string
@@ -97,7 +97,8 @@ export function exportProductsXlsx(
         p.low_stock_threshold,
         p.tax_rate,
         p.expiry_date ?? '',
-        p.active ? 'Active' : 'Inactive',
+        // Phase 1: flag oversold (negative-stock) rows in the export
+        p.stock_qty < 0 ? 'NEGATIVE STOCK' : p.active ? 'Active' : 'Inactive',
       ]),
     },
   ]);

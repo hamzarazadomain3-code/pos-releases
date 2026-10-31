@@ -10,6 +10,7 @@ const ALL_PERMISSIONS = [
   'process_returns', 'manage_promotions', 'manage_purchases', 'manage_udhaar',
   'manage_audits', 'access_admin_panel', 'manage_roles', 'view_activity_log',
   'backup_restore', 'manage_expenses', 'manage_categories', 'export_data',
+  'can_sell_negative_stock', 'can_import_purchase',
 ];
 
 const formatPerm = (p: string) => p.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());

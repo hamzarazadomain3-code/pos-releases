@@ -613,6 +613,8 @@ export interface DashboardData {
   today_bills: number;
   udhaar_due: number;
   low_stock: number;
+  /** Phase 1: count of products with stock below zero (oversold) */
+  negative_stock: number;
   today_expenses: number;
   top_products: { name: string; qty: number; revenue: number }[];
   recent_sales: { id: number; invoice_no: string; customer_name: string | null; total_amount: number; created_at?: string }[];
@@ -682,6 +684,24 @@ export interface StockValuation {
   retail_value: number;
   products: number;
   by_category: { name: string | null; cost: number; retail: number; products: number }[];
+  /** Phase 1: oversold (negative stock) summary — flagged in the report UI */
+  negative_items: number;
+  negative_qty: number;
+  negative_cost_value: number;
+}
+
+/** Phase 1: "Oversold items" report — products currently below zero stock. */
+export interface OversoldItemRow {
+  product_id: number;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  category_name: string | null;
+  stock_qty: number;
+  cost_price: number;
+  sale_price: number;
+  last_sale_date: string | null;
+  last_sale_invoice: string | null;
 }
 
 // ============ v1.6.0 Reports ============
@@ -1183,7 +1203,7 @@ export interface PosBridge {
     onStatus: (callback: (status: { state: string; detail?: string }) => void) => () => void;
   };
   inventory: {
-    list: (search?: string, includeInactive?: boolean, categoryId?: number, stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock', supplierId?: number, expiryFrom?: string, expiryTo?: string) => Promise<Product[]>;
+    list: (search?: string, includeInactive?: boolean, categoryId?: number, stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock', supplierId?: number, expiryFrom?: string, expiryTo?: string) => Promise<Product[]>;
     get: (id: number) => Promise<Product | null>;
     getByBarcode: (barcode: string) => Promise<Product | null>;
     create: (input: ProductInput) => Promise<Product>;
@@ -1309,6 +1329,7 @@ export interface PosBridge {
     profitLoss: (from?: string, to?: string) => Promise<ProfitLoss>;
     bestSellers: (from?: string, to?: string, limit?: number) => Promise<BestSellerRow[]>;
     stockValuation: () => Promise<StockValuation>;
+    oversoldItems: () => Promise<OversoldItemRow[]>;
     expenses: (from?: string, to?: string) => Promise<Expense[]>;
     addExpense: (input: { title: string; category: string; amount: number; expense_date?: string; notes?: string }) => Promise<Expense>;
     deleteExpense: (id: number) => Promise<boolean>;
@@ -1393,7 +1414,7 @@ export interface PosBridge {
     ) => Promise<boolean>;
   };
   excel: {
-    exportProducts: (filters?: { search?: string; includeInactive?: boolean; categoryId?: number; stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock'; supplierId?: number; expiryFrom?: string; expiryTo?: string }) => Promise<boolean>;
+    exportProducts: (filters?: { search?: string; includeInactive?: boolean; categoryId?: number; stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock'; supplierId?: number; expiryFrom?: string; expiryTo?: string }) => Promise<boolean>;
     exportSales: (from?: string, to?: string) => Promise<boolean>;
     exportCustomers: (filters?: { status?: 'paid' | 'pending' | 'all'; from?: string; to?: string }) => Promise<boolean>;
     exportUdhaarStatement: (customerId: number, from?: string, to?: string) => Promise<boolean>;

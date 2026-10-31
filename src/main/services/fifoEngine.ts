@@ -135,7 +135,21 @@ export function getFIFOCostForSaleItem(saleItemId: number): { totalCost: number;
       totalQty += r.allocated_qty;
       totalCost += r.allocated_qty * r.unit_cost;
     }
-    return { totalCost, avgCost: totalQty > 0 ? totalCost / totalQty : 0 };
+    if (totalQty > 0) return { totalCost, avgCost: totalCost / totalQty };
+    // Phase 1: negative-stock sale — no FIFO allocation rows exist. Fall back to
+    // the product's last purchase cost so profit is not overstated (no NaN).
+    const si = getDb().prepare(`SELECT product_id, qty FROM sale_items WHERE id = ?`).get(saleItemId) as
+      | { product_id: number; qty: number }
+      | undefined;
+    if (si) {
+      const p = getDb().prepare(`SELECT cost_price FROM products WHERE id = ?`).get(si.product_id) as
+        | { cost_price: number | null }
+        | undefined;
+      const unitCost = Number(p?.cost_price) || 0;
+      const qty = Number(si.qty) || 0;
+      return { totalCost: Math.round(unitCost * qty * 100) / 100, avgCost: unitCost };
+    }
+    return { totalCost: 0, avgCost: 0 };
   } catch { return { totalCost: 0, avgCost: 0 }; }
 }
 

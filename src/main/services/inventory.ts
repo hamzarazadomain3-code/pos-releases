@@ -31,7 +31,7 @@ export function listProducts(
   search?: string,
   includeInactive = false,
   categoryId?: number,
-  stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock',
+  stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock',
   supplierId?: number,
   expiryFrom?: string,
   expiryTo?: string
@@ -60,6 +60,9 @@ export function listProducts(
   if (stockStatus) {
     if (stockStatus === 'out_of_stock') {
       sql += ' AND p.stock_qty <= 0';
+    } else if (stockStatus === 'negative_stock') {
+      // Phase 1: products whose stock has gone below zero (oversold)
+      sql += ' AND p.stock_qty < 0';
     } else if (stockStatus === 'low_stock') {
       sql += ' AND p.low_stock_threshold > 0 AND p.stock_qty > 0 AND p.stock_qty <= p.low_stock_threshold';
     } else if (stockStatus === 'in_stock') {

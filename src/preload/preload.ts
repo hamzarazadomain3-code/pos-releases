@@ -22,7 +22,7 @@ const bridge: PosBridge = {
     },
   },
   inventory: {
-    list: (search?: string, includeInactive?: boolean, categoryId?: number, stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock', supplierId?: number, expiryFrom?: string, expiryTo?: string) =>
+    list: (search?: string, includeInactive?: boolean, categoryId?: number, stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock', supplierId?: number, expiryFrom?: string, expiryTo?: string) =>
       ipcRenderer.invoke('inventory:list', search, includeInactive, categoryId, stockStatus, supplierId, expiryFrom, expiryTo),
     get: (id: number) => ipcRenderer.invoke('inventory:get', id),
     getByBarcode: (barcode: string) => ipcRenderer.invoke('inventory:getByBarcode', barcode),
@@ -163,6 +163,7 @@ const bridge: PosBridge = {
     profitLoss: (from?: string, to?: string) => ipcRenderer.invoke('reports:profitLoss', from, to),
     bestSellers: (from?: string, to?: string, limit?: number) => ipcRenderer.invoke('reports:bestSellers', from, to, limit),
     stockValuation: () => ipcRenderer.invoke('reports:stockValuation'),
+    oversoldItems: () => ipcRenderer.invoke('reports:oversoldItems'),
     expenses: (from?: string, to?: string) => ipcRenderer.invoke('reports:expenses', from, to),
     addExpense: (input) => ipcRenderer.invoke('reports:addExpense', input),
     deleteExpense: (id: number) => ipcRenderer.invoke('reports:deleteExpense', id),
@@ -251,7 +252,7 @@ const bridge: PosBridge = {
       ipcRenderer.invoke('export:saveXlsx', defaultName, sheets),
   },
   excel: {
-    exportProducts: (filters?: { search?: string; includeInactive?: boolean; categoryId?: number; stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock'; supplierId?: number; expiryFrom?: string; expiryTo?: string }) => ipcRenderer.invoke('excel:exportProducts', filters),
+    exportProducts: (filters?: { search?: string; includeInactive?: boolean; categoryId?: number; stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock'; supplierId?: number; expiryFrom?: string; expiryTo?: string }) => ipcRenderer.invoke('excel:exportProducts', filters),
     exportSales: (from?: string, to?: string) => ipcRenderer.invoke('excel:exportSales', from, to),
     exportCustomers: (filters?: { status?: 'paid' | 'pending' | 'all'; from?: string; to?: string }) => ipcRenderer.invoke('excel:exportCustomers', filters),
     exportUdhaarStatement: (customerId: number, from?: string, to?: string) => ipcRenderer.invoke('excel:exportUdhaarStatement', customerId, from, to),

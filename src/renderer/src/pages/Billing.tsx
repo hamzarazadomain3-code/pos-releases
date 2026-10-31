@@ -174,6 +174,22 @@ export default function Billing({ onNavigate, onLogout }: BillingProps) {
   const [priceFloorPin, setPriceFloorPin] = useState('');
   const [managerUsers, setManagerUsers] = useState<UserRow[]>([]);
   const [priceFloorEnabled, setPriceFloorEnabled] = useState(true);
+  // Phase 1: 'yes' | 'warn' | 'no' — whether selling more than available stock is allowed.
+  // 'warn' shows an amber badge + one toast per bill but still saves; 'no' blocks the old way.
+  const [allowNegativeStock, setAllowNegativeStock] = useState<'yes' | 'warn' | 'no'>('warn');
+  const negStockWarnedRef = useRef(false);
+  // Phase 1: single non-blocking toast per bill when selling beyond available stock in 'warn' mode.
+  const warnNegativeStockOnce = useCallback(() => {
+    if (allowNegativeStock !== 'warn' || negStockWarnedRef.current) return;
+    const over = items.filter((i) => i.stock_qty != null && i.qty > (i.stock_qty as number));
+    if (over.length === 0) return;
+    negStockWarnedRef.current = true;
+    const first = over[0];
+    const projection = (first.stock_qty ?? 0) - first.qty;
+    setNotice(
+      `⚠ ${over.length > 1 ? `${over.length} items exceed stock` : first.name} — Stock: ${Number((first.stock_qty ?? 0).toFixed(3))} → ${Number(projection.toFixed(3))}. Sale will still be saved.`
+    );
+  }, [allowNegativeStock, items]);
   const [priceFloorUserId, setPriceFloorUserId] = useState<number | null>(null);
   const [priceEditEnabled, setPriceEditEnabled] = useState(true);
   const [priceEditUnlockOpen, setPriceEditUnlockOpen] = useState(false);
@@ -756,6 +772,7 @@ const newBill = useCallback(() => {
   setBillDiscount('');
   setSuccess(null);
   setQuotationMode(false);
+  negStockWarnedRef.current = false; // Phase 1: one negative-stock toast per bill
   switchPriceMode('retail');
   // Reset price edit state
   setPriceEditEnabled(userRole !== 'cashier');
@@ -862,7 +879,11 @@ useEffect(() => {
   useEffect(() => {
     // Load manager users and price floor setting
     window.api.users.list().then(setManagerUsers).catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
-    window.api.settings.getAll().then((s) => setPriceFloorEnabled(s['price_floor_enabled'] !== '0')).catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
+    window.api.settings.getAll().then((s) => {
+      setPriceFloorEnabled(s['price_floor_enabled'] !== '0');
+      const v = s['allow_negative_stock'];
+      setAllowNegativeStock(v === 'yes' || v === 'no' ? v : 'warn');
+    }).catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
   }, []);
 
   useEffect(() => {
@@ -920,6 +941,7 @@ useEffect(() => {
     }
     setExpressBusy(true);
     try {
+      warnNegativeStockOnce();
       const rows = [{ mode: 'Cash', amount: finalTotal }];
       const result = await window.api.sales.create({
         items: items.map((i) => {
@@ -958,7 +980,7 @@ useEffect(() => {
     } finally {
       setExpressBusy(false);
     }
-  }, [items, finalTotal, customerId, billDiscount, discountType, priceFloorOverride, priceMode, serviceCharge, serviceChargeType, freightAmt, autoPrintReceipt, expressBusy, priceFloorEnabled, receiptTemplate]);
+  }, [items, finalTotal, customerId, billDiscount, discountType, priceFloorOverride, priceMode, serviceCharge, serviceChargeType, freightAmt, autoPrintReceipt, expressBusy, priceFloorEnabled, receiptTemplate, warnNegativeStockOnce]);
 
   // ── Repeat Last Sale (F7) ──
   const repeatLastSale = useCallback(() => {
@@ -1551,6 +1573,7 @@ function openPay() {
   async function completeSale() {
     setBusy(true);
     try {
+      warnNegativeStockOnce();
       const rows = payRows
         .map((r) => ({ mode: r.mode, amount: Number(r.amount) || 0 }))
         .filter((r) => r.amount > 0);
@@ -1973,7 +1996,13 @@ return (
                       {r.sale_price}
                       {r.wholesale_price != null ? ` • W ${r.wholesale_price}` : ''}
                       {r.shelf_location ? ` • ${r.shelf_location}` : ''}
-                      {r.stock_qty > 0 ? ` • ${Number(r.stock_qty.toFixed(3))} in stock` : ' • out'}
+                      <span style={r.stock_qty < 0 ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>
+                        {r.stock_qty > 0
+                          ? ` • ${Number(r.stock_qty.toFixed(3))} in stock`
+                          : r.stock_qty < 0
+                            ? ` • ${Number(r.stock_qty.toFixed(3))} in stock`
+                            : ' • out'}
+                      </span>
                     </span>
                   </button>
                 ))
@@ -2157,8 +2186,13 @@ return (
                     )}
                     <span
                       className={`browse-item-stock${isLowStock ? ' low-stock' : ''}${p.stock_qty <= 0 ? ' out-of-stock' : ''}`}
+                      style={p.stock_qty < 0 ? { color: 'var(--danger)', fontWeight: 700 } : undefined}
                     >
-                      {p.stock_qty > 0 ? `${formatStockQty(p.stock_qty)} in stock` : 'Out of stock'}
+                      {p.stock_qty > 0
+                        ? `${formatStockQty(p.stock_qty)} in stock`
+                        : p.stock_qty < 0
+                          ? `${formatStockQty(p.stock_qty)} in stock` // negative: shown red with minus sign
+                          : 'Out of stock'}
                     </span>
                     {isSelected && <span className="browse-item-qty-badge">× {pendingQty}</span>}
                   </div>
@@ -2430,9 +2464,15 @@ const handleUnitChange = (newLevel: number) => {
                       {it.tax_rate > 0 ? ` (tax ${it.tax_rate}%)` : ''}
                     </div>
                     {promo && <div className="small text-ok">Promo: {promo.promo_name}</div>}
-                    {it.stock_qty != null && ((isScaleItem && (it.scale_weight_kg ?? 0) > it.stock_qty) || (!isScaleItem && it.qty > it.stock_qty)) && (
+                    {allowNegativeStock !== 'yes' && it.stock_qty != null && ((isScaleItem && (it.scale_weight_kg ?? 0) > it.stock_qty) || (!isScaleItem && it.qty > it.stock_qty)) && (
                       <div className="small text-warn" style={{ background: '#fef3c7', padding: '2px 6px', borderRadius: 4, marginTop: 2, fontWeight: 600 }}>
-                        ⚠ Stock kam hai — sirf {isScaleItem ? Number(it.stock_qty.toFixed(3)) : availableLabel} {isScaleItem ? 'kg' : `${selectedUnit?.name || 'pcs'}`} available
+                        {(() => {
+                          const projection = it.stock_qty - (isScaleItem ? (it.scale_weight_kg ?? 0) : it.qty);
+                          if (allowNegativeStock === 'warn' && projection < 0) {
+                            return `⚠ Stock: ${Number(it.stock_qty.toFixed(3))} → ${Number(projection.toFixed(3))}`;
+                          }
+                          return `⚠ Stock kam hai — sirf ${isScaleItem ? Number(it.stock_qty.toFixed(3)) : availableLabel} ${isScaleItem ? 'kg' : `${selectedUnit?.name || 'pcs'}`} available`;
+                        })()}
                       </div>
                     )}
                     {it.stock_qty != null && it.stock_qty > 0 && !isScaleItem && it.qty > 0 && it.qty <= it.stock_qty && it.stock_qty <= 5 && (
@@ -2440,7 +2480,7 @@ const handleUnitChange = (newLevel: number) => {
                         Low stock: {availableLabel} left
                       </div>
                     )}
-                    {it.stock_qty != null && it.stock_qty <= 0 && (
+                    {allowNegativeStock === 'no' && it.stock_qty != null && it.stock_qty <= 0 && (
                       <div className="small" style={{ color: 'var(--danger)', marginTop: 2, fontWeight: 600 }}>
                         ✕ Out of stock!
                       </div>

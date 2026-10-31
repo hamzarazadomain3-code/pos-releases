@@ -2,7 +2,7 @@ import { getDb } from '../db';
 import { getProduct, recordMovement, getProductBatches, deductStockFIFO, recordFIFOAllocations, roundStock } from './inventory';
 import { getSetting } from './settings';
 import { logActivity } from './activity';
-import { getSessionUserId } from './auth';
+import { can, getSessionUserId } from './auth';
 import * as licensing from './licensing';
 import { currentShift } from './shifts';
 import { resolvePromotions } from './promotions';
@@ -131,16 +131,20 @@ export function createSale(input: SaleInput): SaleCreateResult {
 
 
   const allowNegativeStock = getSetting("allow_negative_stock") ?? "warn";
+  // Phase 1: `can_sell_negative_stock` permission (roles UI). Owner/manager rank may
+  // always override a "No" policy; cashiers keep the old hard block unless the
+  // policy itself allows overselling.
+  const mayOverrideNegativeBlock = can('manager');
   for (const l of lines) {
     const p = getProduct(l.product_id);
     if (!p) throw new Error(`Product ${l.product_id} not found`);
     const requestedQty = roundStock(l.qty);
     const available = p.stock_qty;
     if (available < requestedQty) {
-      if (allowNegativeStock === "no") {
+      if (allowNegativeStock === "no" && !mayOverrideNegativeBlock) {
         throw new Error(`Insufficient stock: ${p.name} (${available} available)`);
       }
-      if (allowNegativeStock === "warn") {
+      if (allowNegativeStock === "warn" || (allowNegativeStock === "no" && mayOverrideNegativeBlock)) {
         console.log(`[Stock Warning] Sale would make ${p.name} negative: ${available} - ${requestedQty} = ${available - requestedQty}`);
       }
     }
@@ -168,8 +172,9 @@ export function createSale(input: SaleInput): SaleCreateResult {
   try {
     // FIFO batch deduction (mutates batches + product stock, rolled back on error)
     const batchAllocations: Map<number, { batchId: number; qty: number }[]> = new Map();
+    const effectiveAllowNegative = allowNegativeStock !== 'no' || mayOverrideNegativeBlock;
     for (const l of lines) {
-      const allocation = deductStockFIFO(l.product_id, roundStock(l.qty), allowNegativeStock !== 'no');
+      const allocation = deductStockFIFO(l.product_id, roundStock(l.qty), effectiveAllowNegative);
       batchAllocations.set(l.product_id, allocation);
     }
     const invoiceNo = nextInvoiceNo();
@@ -210,20 +215,32 @@ export function createSale(input: SaleInput): SaleCreateResult {
       const boxQty = (l as any).box_qty ?? null;
       const unitName = (l as any).unit_name ?? null;
       const displayQty = (l as any).display_qty ?? null;
-      
-      if (allocation.length === 1) {
-        // Single batch - simple case
+
+      // Phase 1: insert one sale_items row per batch allocation, plus an extra
+      // NULL-batch row for any shortfall (stock went negative). This keeps the
+      // line total honest when stock was partially available.
+      const allocTotal = allocation.reduce((s, a) => s + a.qty, 0);
+      const shortfall = roundStock(l.qty - allocTotal);
+      const parts: { qty: number; batchId: number | null }[] = allocation.map((a) => ({ qty: a.qty, batchId: a.batchId as number }));
+      if (shortfall > 0) parts.push({ qty: shortfall, batchId: null });
+      if (parts.length === 0) parts.push({ qty: l.qty, batchId: null });
+
+      const lineQtySafe = l.qty > 0 ? l.qty : 1; // guard division below (no NaN)
+
+      if (parts.length === 1) {
+        // Single row - simple case (covers both full-batch and pure negative sale)
+        const part = parts[0];
         const res = insItem.run(
           saleId,
           l.product_id,
-          l.qty,
+          part.qty,
           l.price,
           l.line_discount,
           l.tax_rate,
           l.line_total,
           promo?.promo_id ?? null,
           promo?.promo_name ?? null,
-          allocation[0].batchId,
+          part.batchId,
           boxQty,
           unitName,
           displayQty
@@ -231,31 +248,31 @@ export function createSale(input: SaleInput): SaleCreateResult {
         const saleItemId = Number(res.lastInsertRowid);
         if (!saleItemIds.has(l.product_id)) saleItemIds.set(l.product_id, []);
         saleItemIds.get(l.product_id)!.push(saleItemId);
-        recordMovement(l.product_id, -l.qty, 'Sale', 'sale', saleId, allocation[0].batchId);
+        recordMovement(l.product_id, -part.qty, 'Sale', 'sale', saleId, part.batchId);
       } else {
-        // Multiple batches - need to split sale_items rows per batch
-        for (const alloc of allocation) {
-          const allocQty = alloc.qty;
-          const allocLineTotal = (l.price * allocQty) + ((l.price * allocQty - l.line_discount * (allocQty / l.qty)) * l.tax_rate / 100);
+        // Multiple rows - need to split sale_items rows per batch (and shortfall)
+        for (const part of parts) {
+          const allocQty = part.qty;
+          const allocLineTotal = (l.price * allocQty) + ((l.price * allocQty - l.line_discount * (allocQty / lineQtySafe)) * l.tax_rate / 100);
           const res = insItem.run(
             saleId,
             l.product_id,
             allocQty,
             l.price,
-            l.line_discount * (allocQty / l.qty),
+            l.line_discount * (allocQty / lineQtySafe),
             l.tax_rate,
             allocLineTotal,
             promo?.promo_id ?? null,
             promo?.promo_name ?? null,
-            alloc.batchId,
+            part.batchId,
             boxQty,
             unitName,
-            displayQty != null ? (allocQty / l.qty) * displayQty : null
+            displayQty != null ? (allocQty / lineQtySafe) * displayQty : null
           );
           const saleItemId = Number(res.lastInsertRowid);
           if (!saleItemIds.has(l.product_id)) saleItemIds.set(l.product_id, []);
           saleItemIds.get(l.product_id)!.push(saleItemId);
-          recordMovement(l.product_id, -allocQty, 'Sale', 'sale', saleId, alloc.batchId);
+          recordMovement(l.product_id, -allocQty, 'Sale', 'sale', saleId, part.batchId);
         }
       }
     }
@@ -266,6 +283,24 @@ export function createSale(input: SaleInput): SaleCreateResult {
       if (allocation.length > 0) {
         for (let i = 0; i < saleItemIdsList.length && i < allocation.length; i++) {
           recordFIFOAllocations(saleItemIdsList[i], productId, [allocation[i]]);
+        }
+      }
+    }
+
+    // Phase 1: audit-log every product this sale pushed below zero (once per product)
+    {
+      const seenNegative = new Set<number>();
+      for (const l of lines) {
+        if (seenNegative.has(l.product_id)) continue;
+        seenNegative.add(l.product_id);
+        const after = getProduct(l.product_id);
+        if (after && roundStock(after.stock_qty) < 0) {
+          logActivity(
+            'stock_negative',
+            'product',
+            l.product_id,
+            `Sale ${invoiceNo} pushed "${after.name}" stock to ${roundStock(after.stock_qty)}`
+          );
         }
       }
     }

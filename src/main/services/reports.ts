@@ -28,6 +28,8 @@ export interface DashboardData {
   today_bills: number;
   udhaar_due: number;
   low_stock: number;
+  /** Phase 1: count of products with stock below zero (oversold) */
+  negative_stock: number;
   today_expenses: number;
   top_products: { name: string; qty: number; revenue: number }[];
   recent_sales: { id: number; invoice_no: string; customer_name: string | null; total_amount: number; created_at?: string }[];
@@ -65,6 +67,24 @@ export interface StockValuation {
   retail_value: number;
   products: number;
   by_category: { name: string | null; cost: number; retail: number; products: number }[];
+  /** Phase 1: oversold (negative stock) summary */
+  negative_items: number;
+  negative_qty: number;
+  negative_cost_value: number;
+}
+
+/** Phase 1: "Oversold items" report row — product, negative qty, last sale. */
+export interface OversoldItemRow {
+  product_id: number;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  category_name: string | null;
+  stock_qty: number;
+  cost_price: number;
+  sale_price: number;
+  last_sale_date: string | null;
+  last_sale_invoice: string | null;
 }
 
 export interface Expense {
@@ -119,6 +139,10 @@ export function dashboard(): DashboardData {
   const low = one<{ c: number }>(
     `SELECT COUNT(*) AS c FROM products WHERE active=1 AND low_stock_threshold > 0 AND stock_qty <= low_stock_threshold`
   );
+  // Phase 1: oversold products count (stock below zero regardless of threshold)
+  const negative = one<{ c: number }>(
+    `SELECT COUNT(*) AS c FROM products WHERE active=1 AND stock_qty < 0`
+  );
   const expensesToday = one<{ total: number }>(
     `SELECT COALESCE(SUM(amount),0) AS total FROM expenses WHERE expense_date = date('now','localtime')`
   );
@@ -146,6 +170,7 @@ export function dashboard(): DashboardData {
     today_bills: today.count,
     udhaar_due: udhaar.due,
     low_stock: low.c,
+    negative_stock: Number(negative?.c) || 0,
     today_expenses: expensesToday.total,
     top_products: topProducts,
     recent_sales: recentSales,
@@ -234,7 +259,50 @@ export function stockValuation(): StockValuation {
      FROM products p LEFT JOIN categories c ON c.id = p.category_id
      WHERE p.active=1 GROUP BY p.category_id ORDER BY cost DESC`
   );
-  return { cost_value: totals.cost, retail_value: totals.retail, products: totals.products, by_category: byCategory };
+  // Phase 1: oversold products — negative qty valued at last purchase (cost) price
+  const negative = one<{ items: number; qty: number; cost: number }>(
+    `SELECT COUNT(*) AS items,
+            COALESCE(SUM(stock_qty),0) AS qty,
+            COALESCE(SUM(stock_qty*COALESCE(cost_price,0)),0) AS cost
+     FROM products WHERE active=1 AND stock_qty < 0`
+  );
+  return {
+    cost_value: totals.cost,
+    retail_value: totals.retail,
+    products: totals.products,
+    by_category: byCategory,
+    negative_items: Number(negative?.items) || 0,
+    negative_qty: Number(negative?.qty) || 0,
+    negative_cost_value: Number(negative?.cost) || 0,
+  };
+}
+
+/**
+ * Phase 1: "Oversold items" report — every product currently below zero stock,
+ * with its negative qty and the date/invoice of the most recent sale.
+ */
+export function listOversoldItems(): OversoldItemRow[] {
+  return all<OversoldItemRow>(
+    `SELECT p.id AS product_id,
+            p.name,
+            p.sku,
+            p.barcode,
+            c.name AS category_name,
+            p.stock_qty,
+            COALESCE(p.cost_price,0) AS cost_price,
+            p.sale_price,
+            (SELECT MAX(s.created_at) FROM sale_items si
+               JOIN sales s ON s.id = si.sale_id
+              WHERE si.product_id = p.id AND s.status = 'completed') AS last_sale_date,
+            (SELECT s.invoice_no FROM sale_items si
+               JOIN sales s ON s.id = si.sale_id
+              WHERE si.product_id = p.id AND s.status = 'completed'
+              ORDER BY s.id DESC LIMIT 1) AS last_sale_invoice
+       FROM products p
+       LEFT JOIN categories c ON c.id = p.category_id
+      WHERE p.active = 1 AND p.stock_qty < 0
+      ORDER BY p.stock_qty ASC, p.name`
+  );
 }
 
 export function listExpenses(from?: string, to?: string): Expense[] {

@@ -121,7 +121,7 @@ export default function Inventory() {
   const [scanHighlight, setScanHighlight] = useState<number | null>(null);
   const scanTimerRef = useRef<number | null>(null);
   const [categoryId, setCategoryId] = useState<number | ''>('');
-  const [stockStatus, setStockStatus] = useState<'in_stock' | 'low_stock' | 'out_of_stock' | ''>('');
+  const [stockStatus, setStockStatus] = useState<'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock' | ''>('');
   const [supplierId, setSupplierId] = useState<number | ''>('');
   const [expiryFrom, setExpiryFrom] = useState('');
   const [expiryTo, setExpiryTo] = useState('');
@@ -553,6 +553,7 @@ export default function Inventory() {
     { value: 'in_stock', label: 'In Stock' },
     { value: 'low_stock', label: 'Low Stock' },
     { value: 'out_of_stock', label: 'Out of Stock' },
+    { value: 'negative_stock', label: 'Negative Stock' },
   ];
   const supplierOptions = suppliers.map(s => ({ value: s.id, label: s.name }));
 
@@ -791,8 +792,8 @@ export default function Inventory() {
                   <td>{p.sale_price.toLocaleString()}</td>
                   <td>{p.wholesale_price != null ? p.wholesale_price.toLocaleString() : 'â€”'}</td>
                   <td>{p.shelf_location ?? 'â€”'}</td>
-                  <td className={`num ${low(p) ? 'text-warn' : ''}`}>
-                    {Number(p.stock_qty.toFixed(3))} {p.low_stock_threshold > 0 && low(p) ? '(low)' : ''}
+                  <td className={`num ${p.stock_qty < 0 ? 'text-danger' : low(p) ? 'text-warn' : ''}`} style={p.stock_qty < 0 ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>
+                    {Number(p.stock_qty.toFixed(3))} {p.low_stock_threshold > 0 && low(p) ? '(low)' : ''}{p.stock_qty < 0 ? ' (oversold)' : ''}
                   </td>
                   <td>
                     {p.expiry_date ? (
