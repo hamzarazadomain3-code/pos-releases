@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+﻿import { randomBytes } from 'node:crypto';
 import { getDb } from '../db';
 import { logActivity } from './activity';
 import type { Category, Product, ProductInput, StockMovement, Unit } from '../../shared/types';
@@ -409,7 +409,7 @@ export function createBatch(
   return Number(info.lastInsertRowid);
 }
 
-export function deductStockFIFO(productId: number, qty: number): { batchId: number; qty: number }[] {
+export function deductStockFIFO(productId: number, qty: number, allowNegative = false): { batchId: number; qty: number }[] {
   const db = getDb();
   const batches = getProductBatches(productId);
   const allocation: { batchId: number; qty: number }[] = [];
@@ -427,7 +427,7 @@ export function deductStockFIFO(productId: number, qty: number): { batchId: numb
     remaining = roundStock(remaining - take);
   }
 
-  if (remaining > 0) {
+  if (remaining > 0 && !allowNegative) {
     throw new Error(`Insufficient stock in batches for product ${productId}`);
   }
 
@@ -551,3 +551,4 @@ export function ensureGramUnit(productId: number): void {
      VALUES (?, ?, 'Gram', 0.001, NULL, NULL, 0)`
   ).run(productId, maxLevel.m + 1);
 }
+

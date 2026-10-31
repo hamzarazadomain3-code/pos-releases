@@ -169,7 +169,7 @@ export function createSale(input: SaleInput): SaleCreateResult {
     // FIFO batch deduction (mutates batches + product stock, rolled back on error)
     const batchAllocations: Map<number, { batchId: number; qty: number }[]> = new Map();
     for (const l of lines) {
-      const allocation = deductStockFIFO(l.product_id, roundStock(l.qty));
+      const allocation = deductStockFIFO(l.product_id, roundStock(l.qty), allowNegativeStock !== 'no');
       batchAllocations.set(l.product_id, allocation);
     }
     const invoiceNo = nextInvoiceNo();
