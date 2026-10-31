@@ -187,8 +187,61 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* ── Shop Profile (Extended) ── */}
+        {/* Shop Profile (Extended) */}
+
+        {/* -- Billing Settings -- */}
         <div className="panel">
+          <div className="panel-title">Billing</div>
+          <div className="settings-form">
+            <p className="muted small" style={{ marginBottom: 12 }}>
+              Configure how the till handles out-of-stock products and price floors.
+            </p>
+            <label className="field">
+              <span>Allow selling when out of stock</span>
+              <select
+                value={settings.allow_negative_stock ?? "warn"}
+                onChange={(e) => setSettings({ ...settings, allow_negative_stock: e.target.value })}
+              >
+                <option value="yes">Yes -- allow without warning</option>
+                <option value="warn">Warn then allow (default)</option>
+                <option value="no">No -- block the sale</option>
+              </select>
+              <span className="muted small">
+                Yes = silently allow negative stock. Warn = show amber badge + toast but let the bill save. No = current blocking behaviour.
+              </span>
+            </label>
+            <label className="field">
+              <span>Max negative qty per product (0 = unlimited)</span>
+              <KeyboardInput
+                type="text"
+                decimals
+                value={settings.max_negative_qty ?? "0"}
+                onChange={(e) => setSettings({ ...settings, max_negative_qty: e.target.value })}
+              />
+              <span className="muted small">When negative stock is allowed, cap how far below zero a product can go. 0 = no limit.</span>
+            </label>
+            <label className="field">
+              <span>Price floor protection</span>
+              <select
+                value={settings.price_floor_enabled ?? "true"}
+                onChange={(e) => setSettings({ ...settings, price_floor_enabled: e.target.value })}
+              >
+                <option value="true">Enabled -- block selling below cost</option>
+                <option value="false">Disabled -- allow selling below cost</option>
+              </select>
+              <span className="muted small">If enabled, the till warns when an item's price is below its cost price. Owner/Manager can override with PIN.</span>
+            </label>
+            <div className="modal-actions">
+              <button className="btn btn-primary" onClick={saveShop}>
+                {saved ? 'Saved!' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Shop Profile (Extended) */}
+
+<div className="panel">
           <div className="panel-title">Shop Profile</div>
           <div className="settings-form">
             <p className="muted small" style={{ marginBottom: 12 }}>
