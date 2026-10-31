@@ -268,12 +268,25 @@ const bridge: PosBridge = {
     listOrders: (status?: string, from?: string, to?: string, supplierId?: number) => ipcRenderer.invoke('purchases:orders', status, from, to, supplierId),
     getOrder: (id: number) => ipcRenderer.invoke('purchases:getOrder', id),
     createOrder: (supplierId: number, items) => ipcRenderer.invoke('purchases:createOrder', supplierId, items),
-    receiveOrder: (id: number) => ipcRenderer.invoke('purchases:receiveOrder', id),
+    receiveOrder: (id: number, lines?: { product_id: number; qty: number }[]) =>
+      ipcRenderer.invoke('purchases:receiveOrder', id, lines),
     cancelOrder: (id: number) => ipcRenderer.invoke('purchases:cancelOrder', id),
     ledger: (supplierId: number) => ipcRenderer.invoke('purchases:ledger', supplierId),
     paySupplier: (supplierId: number, amount: number, mode: string, note?: string) =>
       ipcRenderer.invoke('purchases:paySupplier', supplierId, amount, mode, note),
     priceHistory: (productId: number) => ipcRenderer.invoke('purchases:priceHistory', productId),
+    // Phase 3 — import (Excel / CSV)
+    importPickFile: () => ipcRenderer.invoke('purchases:importPickFile'),
+    importParse: (filePath: string) => ipcRenderer.invoke('purchases:importParse', filePath),
+    importTemplate: () => ipcRenderer.invoke('purchases:importTemplate'),
+    importConfirm: (payload) => ipcRenderer.invoke('purchases:importConfirm', payload),
+    importUndo: (importId?: number) => ipcRenderer.invoke('purchases:importUndo', importId),
+    importLast: () => ipcRenderer.invoke('purchases:importLast'),
+    importLog: (limit?: number) => ipcRenderer.invoke('purchases:importLog', limit),
+    printOrder: (id: number) => ipcRenderer.invoke('purchases:printOrder', id),
+    previewOrder: (id: number) => ipcRenderer.invoke('purchases:previewOrder', id),
+    shareOrder: (id: number) => ipcRenderer.invoke('purchases:shareOrder', id),
+    saveOrderText: (id: number) => ipcRenderer.invoke('purchases:saveOrderText', id),
   },
   returns: {
     create: (input) => ipcRenderer.invoke('returns:create', input),

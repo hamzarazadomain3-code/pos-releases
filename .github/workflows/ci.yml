@@ -98,6 +98,9 @@ jobs:
           npm run test:imageupload
           npm run test:licensing
           npm run test:keyboard
+          npm run test:negstock
+          npm run test:address
+          npm run test:purchaseimport
 
   # NOTE: no `release` job here on purpose. Releases are cut with
   # `npm run release`, where electron-builder publishes the installer and

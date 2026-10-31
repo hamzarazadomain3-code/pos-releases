@@ -18,6 +18,7 @@
     "test:return": "npm run build:main && electron scripts/test_return_bill.js",
     "test:negstock": "npm run build:main && electron scripts/test_negative_stock.js",
     "test:address": "npm run build:main && electron scripts/test_receipt_address.js",
+    "test:purchaseimport": "npm run build:main && electron scripts/test_purchase_import.js",
     "test:recovery": "npm run build:main && electron scripts/test_recovery.js",
     "test:recovery:ui": "npm run build && electron scripts/test_recovery_ui.js",
     "test:holdresume": "npm run build:main && node scripts/test_hold_resume.js",

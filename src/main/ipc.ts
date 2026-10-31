@@ -164,6 +164,19 @@ import {
   supplierLedger,
 } from './services/purchases';
 import {
+  buildPurchaseOrderHtml,
+  importPurchaseOrders,
+  lastUndoableImport,
+  listPurchaseImports,
+  parsePurchaseFile,
+  pickPurchaseImportFile,
+  previewPurchaseOrder,
+  printPurchaseOrder,
+  savePurchaseImportTemplate,
+  savePurchaseOrderText,
+  undoPurchaseImport,
+} from './services/purchaseImport';
+import {
   createReturn,
   createReturnBill,
   createCashRefund,
@@ -752,13 +765,28 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('purchases:orders', (_e, status?: string) => listPurchaseOrders(status));
   ipcMain.handle('purchases:getOrder', (_e, id: number) => getPurchaseOrder(id));
   ipcMain.handle('purchases:createOrder', (_e, supplierId: number, items) => createPurchaseOrder(supplierId, items));
-  ipcMain.handle('purchases:receiveOrder', (_e, id: number) => receivePurchaseOrder(id));
+  ipcMain.handle('purchases:receiveOrder', (_e, id: number, lines?: { product_id: number; qty: number }[]) =>
+    receivePurchaseOrder(id, lines)
+  );
   ipcMain.handle('purchases:cancelOrder', (_e, id: number) => cancelPurchaseOrder(id));
   ipcMain.handle('purchases:ledger', (_e, supplierId: number) => supplierLedger(supplierId));
   ipcMain.handle('purchases:paySupplier', (_e, supplierId: number, amount: number, mode: string, note?: string) =>
     paySupplier(supplierId, amount, mode, note)
   );
   ipcMain.handle('purchases:priceHistory', (_e, productId: number) => purchasePriceHistory(productId));
+
+  // ── Phase 3: purchase import (Excel / CSV) ──
+  ipcMain.handle('purchases:importPickFile', () => pickPurchaseImportFile(BrowserWindow.getFocusedWindow()));
+  ipcMain.handle('purchases:importParse', (_e, filePath: string) => parsePurchaseFile(filePath));
+  ipcMain.handle('purchases:importTemplate', () => savePurchaseImportTemplate(BrowserWindow.getFocusedWindow()));
+  ipcMain.handle('purchases:importConfirm', (_e, payload) => importPurchaseOrders(payload));
+  ipcMain.handle('purchases:importUndo', (_e, importId?: number) => undoPurchaseImport(importId));
+  ipcMain.handle('purchases:importLast', () => lastUndoableImport());
+  ipcMain.handle('purchases:importLog', (_e, limit?: number) => listPurchaseImports(limit));
+  ipcMain.handle('purchases:printOrder', (_e, id: number) => printPurchaseOrder(id));
+  ipcMain.handle('purchases:previewOrder', (_e, id: number) => previewPurchaseOrder(id));
+  ipcMain.handle('purchases:shareOrder', (_e, id: number) => buildPurchaseOrderHtml(id));
+  ipcMain.handle('purchases:saveOrderText', (_e, id: number) => savePurchaseOrderText(id));
 
   ipcMain.handle('returns:create', (_e, input) => createReturn(input));
   ipcMain.handle('returns:createBill', (_e, input) => createReturnBill(input));

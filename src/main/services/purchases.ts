@@ -7,6 +7,21 @@ export interface PurchaseLineInput {
   product_id: number;
   qty: number;
   unit_cost: number;
+  /** Phase 3 (import): optional per-line extras, all additive. */
+  batch_no?: string | null;
+  expiry_date?: string | null;
+  discount_pct?: number;
+  tax_pct?: number;
+  sale_price?: number | null;
+  wholesale_price?: number | null;
+}
+
+export interface PurchaseOrderOptions {
+  /** 'purchase_order' (stock later, via receive) or 'purchase_invoice' (stock now). */
+  document_type?: 'purchase_order' | 'purchase_invoice';
+  reference_no?: string | null;
+  invoice_date?: string | null;
+  import_id?: number | null;
 }
 
 export function listSuppliers(): Supplier[] {
@@ -25,38 +40,102 @@ export function createSupplier(name: string, phone?: string, address?: string): 
   return db.prepare('SELECT * FROM suppliers WHERE id = ?').get(Number(info.lastInsertRowid)) as unknown as Supplier;
 }
 
-export function createPurchaseOrder(supplierId: number, items: PurchaseLineInput[]): PurchaseOrder {
+/** Money-safe add: never NaN, rounded to 2 dp. */
+function round2(n: number): number {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/** Line total including the import's discount/tax percentages (no NaN). */
+export function purchaseLineTotal(it: PurchaseLineInput): number {
+  const qty = Number(it.qty) || 0;
+  const cost = Number(it.unit_cost) || 0;
+  const gross = qty * cost;
+  const afterDisc = gross - gross * ((Number(it.discount_pct) || 0) / 100);
+  const withTax = afterDisc + afterDisc * ((Number(it.tax_pct) || 0) / 100);
+  return round2(withTax);
+}
+
+/**
+ * Insert the purchase document + items + supplier ledger row.
+ * The CALLER owns the transaction (imports wrap several writes in ONE tx).
+ */
+export function insertPurchaseOrderCore(
+  supplierId: number,
+  items: PurchaseLineInput[],
+  opts: PurchaseOrderOptions = {}
+): { id: number; total: number } {
   const db = getDb();
   if (!items.length) throw new Error('Purchase order has no items');
   for (const it of items) {
-    if (it.qty <= 0) throw new Error('Quantity must be positive');
+    if (!(Number(it.qty) > 0)) throw new Error('Quantity must be positive');
     if (!getProduct(it.product_id)) throw new Error(`Product ${it.product_id} not found`);
   }
-  const total = items.reduce((s, i) => s + i.qty * i.unit_cost, 0);
+  const docType = opts.document_type === 'purchase_invoice' ? 'purchase_invoice' : 'purchase_order';
+  // Line totals honour discount % / tax % when present (import); plain orders
+  // have neither and keep the historical qty * unit_cost total.
+  const total = round2(items.reduce((s, i) => s + purchaseLineTotal(i), 0));
 
+  const info = db
+    .prepare(
+      `INSERT INTO purchase_orders (supplier_id, status, total_amount, reference_no, document_type, import_id, invoice_date)
+       VALUES (?, 'pending', ?, ?, ?, ?, ?)`
+    )
+    .run(
+      supplierId,
+      total,
+      opts.reference_no ?? null,
+      docType,
+      opts.import_id ?? null,
+      opts.invoice_date ?? null
+    );
+  const poId = Number(info.lastInsertRowid);
+  const insItem = db.prepare(
+    `INSERT INTO purchase_items
+       (purchase_order_id, product_id, qty, unit_cost, batch_no, expiry_date, discount_pct, tax_pct, received_qty, sale_price, wholesale_price)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+  );
+  for (const it of items) {
+    insItem.run(
+      poId,
+      it.product_id,
+      round2(Number(it.qty) || 0),
+      round2(Number(it.unit_cost) || 0),
+      it.batch_no ?? null,
+      it.expiry_date ?? null,
+      Number(it.discount_pct) || 0,
+      Number(it.tax_pct) || 0,
+      it.sale_price ?? null,
+      it.wholesale_price ?? null
+    );
+  }
+  db.prepare('UPDATE suppliers SET balance = balance + ? WHERE id = ?').run(total, supplierId);
+  db.prepare(
+    'INSERT INTO supplier_transactions (supplier_id, purchase_order_id, amount, type) VALUES (?, ?, ?, ?)'
+  ).run(supplierId, poId, total, docType === 'purchase_invoice' ? 'purchase_invoice' : 'purchase');
+  return { id: poId, total };
+}
+
+export function createPurchaseOrder(
+  supplierId: number,
+  items: PurchaseLineInput[],
+  opts: PurchaseOrderOptions = {}
+): PurchaseOrder {
+  const db = getDb();
   db.exec('BEGIN');
   try {
-    const info = db
-      .prepare("INSERT INTO purchase_orders (supplier_id, status, total_amount) VALUES (?, 'pending', ?)")
-      .run(supplierId, total);
-    const poId = Number(info.lastInsertRowid);
-    const insItem = db.prepare(
-      'INSERT INTO purchase_items (purchase_order_id, product_id, qty, unit_cost) VALUES (?, ?, ?, ?)'
-    );
-    for (const it of items) {
-      insItem.run(poId, it.product_id, it.qty, it.unit_cost);
-    }
-    db.prepare('UPDATE suppliers SET balance = balance + ? WHERE id = ?').run(total, supplierId);
-    db.prepare(
-      'INSERT INTO supplier_transactions (supplier_id, purchase_order_id, amount, type) VALUES (?, ?, ?, ?)'
-    ).run(supplierId, poId, total, 'purchase');
+    const { id: poId, total } = insertPurchaseOrderCore(supplierId, items, opts);
     db.exec('COMMIT');
-    logActivity('purchase_created', 'purchase_order', poId, `supplier=${supplierId} | total=${total}`);
+    const docType = opts.document_type === 'purchase_invoice' ? 'purchase_invoice' : 'purchase_order';
+    logActivity('purchase_created', 'purchase_order', poId, `supplier=${supplierId} | total=${total} | type=${docType}`);
     const po = getPurchaseOrder(poId);
     if (!po) throw new Error('Failed to load purchase order');
     return po;
   } catch (e) {
-    db.exec('ROLLBACK');
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      /* already rolled back */
+    }
     throw e;
   }
 }
@@ -114,20 +193,48 @@ export function listPurchaseOrders(
   return db.prepare(sql).all(...params) as unknown as PurchaseOrder[];
 }
 
-export function receivePurchaseOrder(id: number): PurchaseOrder {
+/**
+ * Receive a purchase order into stock.
+ *
+ * Phase 3: supports PARTIAL receive — pass `lines` ([{ product_id, qty }]) to
+ * receive only some of what is outstanding; omit it to receive everything
+ * remaining (the historical behaviour). The order stays `pending` until every
+ * line is fully received, becomes `partial` while some remain, then `received`.
+ * Stock-in only covers the received quantity, and the cost price update uses
+ * the received cost.
+ */
+export function receivePurchaseOrder(id: number, lines?: { product_id: number; qty: number }[]): PurchaseOrder {
   const db = getDb();
   const po = getPurchaseOrder(id);
   if (!po) throw new Error('Purchase order not found');
-  if (po.status !== 'pending') throw new Error(`Order already ${po.status}`);
+  if (po.status !== 'pending' && po.status !== 'partial') throw new Error(`Order already ${po.status}`);
 
+  // Work out how much to receive per line (default: everything outstanding).
+  const wanted = new Map<number, number>();
+  for (const l of lines ?? []) {
+    const qty = Number(l.qty) || 0;
+    if (qty > 0) wanted.set(l.product_id, (wanted.get(l.product_id) ?? 0) + qty);
+  }
+  const plan: { item: PurchaseItem & { received_qty?: number | null }; qty: number }[] = [];
+  for (const it of po.items) {
+    const already = Number(it.received_qty) || 0;
+    const outstanding = round2(Number(it.qty) - already);
+    if (outstanding <= 0) continue;
+    const want = lines ? wanted.get(it.product_id) ?? 0 : outstanding;
+    const qty = round2(Math.min(want, outstanding));
+    if (qty > 0) plan.push({ item: it, qty });
+  }
+  if (!plan.length) throw new Error('Nothing to receive');
+
+  const nowIso = new Date().toISOString();
   db.exec('BEGIN');
   try {
-    for (const it of po.items) {
-      // Create a new batch for this received stock
-      const batchNumber = `PO-${id}-${it.product_id}-${Date.now()}`;
-      createBatch(it.product_id, batchNumber, it.qty, it.unit_cost, null);
-      
-      // Update product cost price
+    for (const p of plan) {
+      const it = p.item;
+      const batchNumber = it.batch_no || `PO-${id}-${it.product_id}-${Date.now()}`;
+      createBatch(it.product_id, batchNumber, p.qty, it.unit_cost, it.expiry_date ?? null);
+
+      // Update product cost price + price history for the received cost
       db.prepare('UPDATE products SET cost_price = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
         it.unit_cost,
         it.product_id
@@ -137,11 +244,24 @@ export function receivePurchaseOrder(id: number): PurchaseOrder {
       ).run(it.product_id, it.unit_cost, id);
       // Stock-in: batch already holds the qty, so recordMovement must NOT be given a batchId
       // (it would add the qty to the batch a second time). It updates product stock + movement log.
-      recordMovement(it.product_id, it.qty, 'Purchase stock-in', 'purchase', id);
+      recordMovement(it.product_id, p.qty, 'Purchase stock-in', 'purchase', id);
+      db.prepare('UPDATE purchase_items SET received_qty = COALESCE(received_qty, 0) + ? WHERE id = ?').run(
+        p.qty,
+        it.id
+      );
     }
-    db.prepare("UPDATE purchase_orders SET status = 'received' WHERE id = ?").run(id);
+    const rows = db
+      .prepare('SELECT qty, COALESCE(received_qty, 0) AS received_qty FROM purchase_items WHERE purchase_order_id = ?')
+      .all(id) as { qty: number; received_qty: number }[];
+    const fullyReceived = rows.every((r) => Number(r.received_qty) >= Number(r.qty) - 1e-9);
+    db.prepare('UPDATE purchase_orders SET status = ? WHERE id = ?').run(fullyReceived ? 'received' : 'partial', id);
     db.exec('COMMIT');
-    logActivity('purchase_received', 'purchase_order', id, `stock-in applied, ${po.items.length} items`);
+    logActivity(
+      'purchase_received',
+      'purchase_order',
+      id,
+      `stock-in applied, ${plan.length} line(s), status=${fullyReceived ? 'received' : 'partial'}, at=${nowIso}`
+    );
     const updated = getPurchaseOrder(id);
     if (!updated) throw new Error('Failed to reload order');
     return updated;

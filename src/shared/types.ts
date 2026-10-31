@@ -919,6 +919,11 @@ export interface PurchaseOrder {
   total_amount: number;
   created_at?: string;
   supplier_name?: string | null;
+  /** Phase 3 */
+  reference_no?: string | null;
+  document_type?: 'purchase_order' | 'purchase_invoice' | string;
+  import_id?: number | null;
+  invoice_date?: string | null;
 }
 
 export interface PurchaseItem {
@@ -928,12 +933,106 @@ export interface PurchaseItem {
   qty: number;
   unit_cost: number;
   product_name?: string | null;
+  /** Phase 3 */
+  batch_no?: string | null;
+  expiry_date?: string | null;
+  discount_pct?: number | null;
+  tax_pct?: number | null;
+  received_qty?: number | null;
+  sale_price?: number | null;
+  wholesale_price?: number | null;
 }
 
 export interface PurchaseLineInput {
   product_id: number;
   qty: number;
   unit_cost: number;
+  batch_no?: string | null;
+  expiry_date?: string | null;
+  discount_pct?: number;
+  tax_pct?: number;
+  sale_price?: number | null;
+  wholesale_price?: number | null;
+}
+
+// ============ Phase 3: Purchase import (Excel / CSV) ============
+
+export interface PurchaseImportRow {
+  /** 1-based file line number (header included), for the preview + error report. */
+  row: number;
+  /** header -> cell text, exactly as parsed. */
+  values: Record<string, string>;
+}
+
+export interface PurchaseImportParseResult {
+  file_name: string;
+  sheet: string;
+  header_row: number;
+  headers: string[];
+  rows: PurchaseImportRow[];
+}
+
+export interface PurchaseImportOptions {
+  /** Write the file's cost rate onto the product's cost price (default true). */
+  updateCostPrice?: boolean;
+  /** Write sale / wholesale price columns onto the product (default false). */
+  updateSalePrice?: boolean;
+  /** Skip writes when the value already matches (default false). */
+  updateOnlyIfChanged?: boolean;
+  /** Merge rows that resolve to the same product (default true). */
+  mergeDuplicates?: boolean;
+}
+
+export interface PurchaseImportConfirmRow {
+  row: number;
+  product_id?: number | null;
+  /** Create this product when product_id is absent. */
+  create_new?: { name: string; barcode?: string; sku?: string } | null;
+  qty: string | number;
+  unit_cost: string | number;
+  sale_price?: string | number | null;
+  wholesale_price?: string | number | null;
+  discount_pct?: string | number | null;
+  tax_pct?: string | number | null;
+  batch_no?: string | null;
+  expiry_date?: string | null;
+  notes?: string | null;
+}
+
+export interface PurchaseImportPayload {
+  supplier_id: number;
+  document_type: 'purchase_order' | 'purchase_invoice';
+  reference_no?: string | null;
+  invoice_date?: string | null;
+  file_name?: string | null;
+  options?: PurchaseImportOptions;
+  rows: PurchaseImportConfirmRow[];
+}
+
+export interface PurchaseImportSummary {
+  import_id: number | null;
+  purchase_order_id: number | null;
+  imported: number;
+  created: number;
+  skipped: number;
+  failed: number;
+  errors: { row: number; message: string }[];
+  created_product_ids: number[];
+}
+
+export interface PurchaseImportLogRow {
+  id: number;
+  supplier_id: number | null;
+  supplier_name?: string | null;
+  document_type: string;
+  reference_no: string | null;
+  file_name: string | null;
+  row_count: number;
+  imported_count: number;
+  created_count: number;
+  skipped_count: number;
+  failed_count: number;
+  created_at: string;
 }
 
 export interface PurchasePriceRow {
@@ -1429,11 +1528,23 @@ export interface PosBridge {
     listOrders: (status?: string, from?: string, to?: string, supplierId?: number) => Promise<PurchaseOrder[]>;
     getOrder: (id: number) => Promise<(PurchaseOrder & { items: PurchaseItem[] }) | null>;
     createOrder: (supplierId: number, items: PurchaseLineInput[]) => Promise<PurchaseOrder>;
-    receiveOrder: (id: number) => Promise<PurchaseOrder>;
+    receiveOrder: (id: number, lines?: { product_id: number; qty: number }[]) => Promise<PurchaseOrder>;
     cancelOrder: (id: number) => Promise<boolean>;
     ledger: (supplierId: number) => Promise<SupplierTransaction[]>;
     paySupplier: (supplierId: number, amount: number, mode: string, note?: string) => Promise<Supplier>;
     priceHistory: (productId: number) => Promise<PurchasePriceRow[]>;
+    // Phase 3 — import (Excel / CSV)
+    importPickFile: () => Promise<string | null>;
+    importParse: (filePath: string) => Promise<PurchaseImportParseResult>;
+    importTemplate: () => Promise<boolean>;
+    importConfirm: (payload: PurchaseImportPayload) => Promise<PurchaseImportSummary>;
+    importUndo: (importId?: number) => Promise<{ ok: boolean; message: string }>;
+    importLast: () => Promise<{ id: number; created_at: string; supplier_id: number | null; imported_count: number } | null>;
+    importLog: (limit?: number) => Promise<PurchaseImportLogRow[]>;
+    printOrder: (id: number) => Promise<{ ok: boolean; message: string }>;
+    previewOrder: (id: number) => Promise<{ ok: boolean; message: string }>;
+    shareOrder: (id: number) => Promise<string>;
+    saveOrderText: (id: number) => Promise<boolean>;
   };
   returns: {
     create: (

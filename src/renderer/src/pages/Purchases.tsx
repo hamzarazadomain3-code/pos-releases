@@ -8,6 +8,7 @@ import { KeyboardInput } from '../components/KeyboardInput';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useLineItemKeyboard } from '../hooks/useLineItemKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
+import PurchaseImportWizard from '../components/PurchaseImportWizard';
 
 type Tab = 'suppliers' | 'orders';
 
@@ -35,6 +36,12 @@ export default function Purchases() {
   const [poSupplier, setPoSupplier] = useState('');
   const [lines, setLines] = useState<{ product_id: number; qty: string; unit_cost: string }[]>([]);
   const [poView, setPoView] = useState<{ order: PurchaseOrder; items: PurchaseItem[] } | null>(null);
+
+  // ── Phase 3: import wizard, partial receive, undo ──
+  const [importOpen, setImportOpen] = useState(false);
+  const [importDragOver, setImportDragOver] = useState(false);
+  const [receiveQty, setReceiveQty] = useState<Record<number, string>>({});
+  const [undoInfo, setUndoInfo] = useState<{ id: number; imported_count: number } | null>(null);
 
   // ── PO product search: staged Enter (1x select, 2x qty, 3x add) + barcode scan ──
   const [poSearch, setPoSearch] = useState('');
@@ -156,10 +163,47 @@ export default function Purchases() {
     if (full) setPoView({ order: full, items: full.items });
   };
 
-  const receivePo = async (id: number) => {
-    await window.api.purchases.receiveOrder(id);
-    setPoView(null);
-    await load();
+  const receivePo = async (id: number, linesToReceive?: { product_id: number; qty: number }[]) => {
+    try {
+      await window.api.purchases.receiveOrder(id, linesToReceive);
+      setPoView(null);
+      setReceiveQty({});
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  /** Receive only the quantities typed in the PO view (partial receive). */
+  const receivePartial = async () => {
+    if (!poView) return;
+    const lines = poView.items
+      .map((i) => ({ product_id: i.product_id, qty: Number(receiveQty[i.product_id]) || 0 }))
+      .filter((l) => l.qty > 0);
+    if (!lines.length) return setErr('Type how much of each line arrived before receiving.');
+    await receivePo(poView.order.id, lines);
+  };
+
+  const refreshUndo = useCallback(() => {
+    window.api.purchases
+      .importLast()
+      .then((r) => setUndoInfo(r ? { id: r.id, imported_count: r.imported_count } : null))
+      .catch(() => setUndoInfo(null));
+  }, []);
+
+  useEffect(() => {
+    refreshUndo();
+  }, [refreshUndo]);
+
+  const undoLastImport = async () => {
+    try {
+      const r = await window.api.purchases.importUndo();
+      setErr(`✓ ${r.message}`);
+      refreshUndo();
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const cancelPo = async (id: number) => {
@@ -357,11 +401,41 @@ export default function Purchases() {
               <button className="btn btn-sm" onClick={() => window.api.excel.exportPurchaseOrders({ status: status || undefined, from: from || undefined, to: to || undefined, supplierId: supplierId || undefined }).catch((e) => setErr(String(e)))}>
                 Export Excel
               </button>
+              {undoInfo && (
+                <button className="btn btn-sm" onClick={undoLastImport} title={`Undo import #${undoInfo.id} (${undoInfo.imported_count} lines)`}>
+                  Undo last import
+                </button>
+              )}
+              <button className="btn btn-sm" onClick={() => setImportOpen(true)}>
+                Import from file
+              </button>
               <button className="btn btn-primary" onClick={() => { resetStagedSearch(); setPoModal(true); }}>
                 New Purchase Order
               </button>
             </FilterRow>
           </FilterBar>
+          <div
+            onDragOver={(e) => { e.preventDefault(); setImportDragOver(true); }}
+            onDragLeave={() => setImportDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setImportDragOver(false);
+              const f = e.dataTransfer.files?.[0] as (File & { path?: string }) | undefined;
+              if (f?.path) {
+                window.api.purchases
+                  .importParse(f.path)
+                  .then(() => setImportOpen(true))
+                  .catch((err) => setErr(String(err)));
+              }
+            }}
+            style={
+              importDragOver
+                ? { border: '2px dashed var(--primary)', borderRadius: 8, padding: 6, marginBottom: 8, background: 'rgba(59,130,246,0.05)' }
+                : undefined
+            }
+          >
+            {importDragOver && <div className="muted small">Drop the Excel / CSV file to start the import…</div>}
+          </div>
           <div {...orderList.getContainerProps()}>
           <table className="tbl">
             <thead>
@@ -675,43 +749,87 @@ export default function Purchases() {
             <p className="muted small">
               {formatDateTimeAdmin(poView.order.created_at ?? '')} | {statusLabel(poView.order.status)}
             </p>
+            {poView.order.reference_no && (
+              <p className="muted small">Reference: {poView.order.reference_no} {poView.order.document_type === 'purchase_invoice' ? '· Purchase Invoice' : ''}</p>
+            )}
             <table className="tbl">
               <thead>
                 <tr>
                   <th>Product</th>
                   <th>Qty</th>
+                  <th>Received</th>
                   <th>Unit Cost</th>
                   <th>Line Total</th>
+                  {(poView.order.status === 'pending' || poView.order.status === 'partial') && <th style={{ width: 110 }}>Receive Now</th>}
                 </tr>
               </thead>
               <tbody>
-                {poView.items.map((i) => (
-                  <tr key={i.id}>
-                    <td>{i.product_name ?? `#${i.product_id}`}</td>
-                    <td>{i.qty}</td>
-                    <td>{i.unit_cost.toFixed(2)}</td>
-                    <td>{(i.qty * i.unit_cost).toFixed(2)}</td>
-                  </tr>
-                ))}
+                {poView.items.map((i) => {
+                  const received = Number(i.received_qty) || 0;
+                  const remaining = Math.max(0, Number(i.qty) - received);
+                  return (
+                    <tr key={i.id}>
+                      <td>{i.product_name ?? `#${i.product_id}`}</td>
+                      <td>{i.qty}{i.tax_pct ? ` (+${i.tax_pct}% tax)` : ''}</td>
+                      <td>{received}{remaining > 0 ? ` · ${remaining} left` : ''}</td>
+                      <td>{i.unit_cost.toFixed(2)}</td>
+                      <td>{(i.qty * i.unit_cost).toFixed(2)}</td>
+                      {(poView.order.status === 'pending' || poView.order.status === 'partial') && (
+                        <td>
+                          <input
+                            className="inp"
+                            style={{ width: 90 }}
+                            placeholder={String(remaining)}
+                            value={receiveQty[i.product_id] ?? ''}
+                            disabled={remaining <= 0}
+                            onChange={(e) => setReceiveQty((prev) => ({ ...prev, [i.product_id]: e.target.value }))}
+                          />
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             <div className="total-bar">
               Total: <strong>{poView.order.total_amount.toFixed(2)}</strong>
             </div>
-            {poView.order.status === 'pending' && (
-              <div className="row-btns">
-                <button className="btn btn-primary" onClick={() => receivePo(poView.order.id)}>
-                  Receive Stock
+            <div className="row-btns" style={{ flexWrap: 'wrap' }}>
+              <button className="btn btn-sm" onClick={() => window.api.purchases.previewOrder(poView.order.id).catch((e) => setErr(String(e)))}>
+                Preview / Print
+              </button>
+              <button className="btn btn-sm" onClick={() => window.api.purchases.saveOrderText(poView.order.id).catch((e) => setErr(String(e)))}>
+                Save as text
+              </button>
+            </div>
+            {(poView.order.status === 'pending' || poView.order.status === 'partial') && (
+              <div className="row-btns" style={{ flexWrap: 'wrap' }}>
+                <button className="btn btn-primary" onClick={receivePartial}>
+                  Receive typed quantities
                 </button>
-                <button className="btn" onClick={() => cancelPo(poView.order.id)}>
-                  Cancel Order
+                <button className="btn" onClick={() => receivePo(poView.order.id)}>
+                  Receive all remaining
                 </button>
+                {poView.order.status === 'pending' && (
+                  <button className="btn" onClick={() => cancelPo(poView.order.id)}>
+                    Cancel Order
+                  </button>
+                )}
               </div>
             )}
             <button className="btn" onClick={() => setPoView(null)}>
               Close
             </button>
         </Modal>
+      )}
+
+      {importOpen && (
+        <PurchaseImportWizard
+          suppliers={suppliers}
+          products={products}
+          onClose={() => setImportOpen(false)}
+          onDone={() => { void load(); refreshUndo(); }}
+        />
       )}
 
       {ledger && (
