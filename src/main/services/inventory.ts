@@ -298,9 +298,7 @@ export function adjustStock(
 ): Product {
   const existing = getProduct(productId);
   if (!existing) throw new Error('Product not found');
-  if (existing.stock_qty + changeQty < 0) {
-    throw new Error('Insufficient stock: adjustment would make stock negative');
-  }
+  // Allow negative stock - check is done at the billing level via settings
   const db = getDb();
   if (changeQty > 0) {
     const latest = db
