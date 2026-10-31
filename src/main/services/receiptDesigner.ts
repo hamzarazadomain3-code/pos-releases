@@ -84,11 +84,21 @@ export function saveReceiptLibrary(lib: unknown): DocumentLibrary {
  * fallback keeps every install that never opened the designer byte-identical.
  */
 export function resolveAppliedDesign(paper: ReceiptPaper, branchId?: string | number | null, documentType: DocumentType = 'receipt'): ReceiptDesign {
-  const lib = getReceiptLibrary();
-  const id = resolveLibraryDefault(lib, documentType, paper, branchId);
-  const t = findTemplate(lib, id);
-  if (t) return templateDesign(t, paper) as ReceiptDesign;
-  return getReceiptDesign();
+  const enabled = isReceiptDesignEnabled();
+  // A template the owner explicitly made active wins — but only while the
+  // design system is on (the enable flag is the owner's switch; migration 063
+  // turns it on together with setting "My receipt" as the active template).
+  if (enabled) {
+    const lib = getReceiptLibrary();
+    const id = resolveLibraryDefault(lib, documentType, paper, branchId);
+    const t = findTemplate(lib, id);
+    if (t) return templateDesign(t, paper) as ReceiptDesign;
+    return getReceiptDesign();
+  }
+  // Design system off: the ONE renderer still renders, using the built-in
+  // default design (paper-aware). All user-editable text resolves live from the
+  // Shop Profile, so nothing is hardcoded and no value is lost.
+  return defaultReceiptDesign(paper);
 }
 
 /** Sample sale used by the designer preview, covering the VERIFY scenario. */
@@ -448,19 +458,36 @@ function buildPayment(ctx: BuildCtx): string {
   return rows.length ? `<table class="pay">${rows.join('')}</table>` : '';
 }
 
+/**
+ * Legacy per-block renderer. DEAD CODE: the live renderer is
+ * `shared/renderDocument.ts` (renderDocument). Kept only until the file is
+ * pruned; every case below now follows the STRICT resolution order so the
+ * reported root cause ("reads settings directly + `||` re-defaults an
+ * intentional empty string") cannot reappear here:
+ *   template block override (key exists, even "") -> branch override -> Shop
+ *   Profile -> empty (print nothing). Never `||` for user-editable text.
+ */
 function blockHtml(ctx: BuildCtx, blk: ReceiptBlock): string {
   const { sale, s, design } = ctx;
   const tokens = tokenMap(ctx);
+  const hasOwn = (k: 'text') => Object.prototype.hasOwnProperty.call(blk, k) && blk[k] !== undefined;
   switch (blk.type) {
     case 'logo': {
-      const src = blk.src || s.shop_logo;
+      const src = hasOwn('text') ? blk.text : s.shop_logo;
       return src ? `<img class="logo" src="${esc(src)}" alt="" onerror="this.style.display='none'" />` : '';
     }
-    case 'shop_name':
-      return `<h1 class="shop-name">${esc(s.shop_name)}</h1>`;
-    case 'address':
-      return s.shop_address ? `<div class="shop-line">${esc(s.shop_address)}</div>` : '';
+    case 'shop_name': {
+      const name = hasOwn('text') ? blk.text : s.shop_name;
+      return name ? `<h1 class="shop-name">${esc(name)}</h1>` : '';
+    }
+    case 'address': {
+      const addr = hasOwn('text') ? blk.text : s.shop_address;
+      return addr ? `<div class="shop-line">${esc(addr)}</div>` : '';
+    }
     case 'phone_whatsapp': {
+      if (hasOwn('text')) {
+        return blk.text ? `<div class="shop-line">${esc(blk.text)}</div>` : '';
+      }
       const parts = [s.shop_phone, s.shop_whatsapp ? `WhatsApp: ${s.shop_whatsapp}` : ''].filter(
         (x) => x && String(x).trim()
       );
@@ -503,15 +530,17 @@ function blockHtml(ctx: BuildCtx, blk: ReceiptBlock): string {
     case 'qr':
       return ctx.assets[blk.id] ? `<img class="blk-image" src="${ctx.assets[blk.id]}" alt="" />` : '';
     case 'footer_note_1': {
-      const text = blk.text || s.receipt_terms_text || '';
+      // Strict: block override (even "") -> Shop Profile terms -> empty. No "||".
+      const text = hasOwn('text') ? blk.text : s.receipt_terms_text;
       return text ? `<div class="foot-note">${esc(applyTokens(text, tokens)).replace(/\n/g, '<br />')}</div>` : '';
     }
     case 'footer_note_2': {
-      const text = blk.text || '';
+      // Strict: block override (even "") -> footer message setting -> empty.
+      const text = hasOwn('text') ? blk.text : s.receipt_footer_text;
       return text ? `<div class="foot-msg">${esc(applyTokens(text, tokens))}</div>` : '';
     }
     case 'software_credit': {
-      const by = blk.text || s.receipt_software_by || '';
+      const by = hasOwn('text') ? blk.text : s.receipt_software_by;
       return s.receipt_show_software_credit === 'false' || !by
         ? ''
         : `<div class="foot-sw">${esc(applyTokens(by, tokens))}</div>`;
@@ -680,6 +709,7 @@ function toShopProfile(s: Record<string, string>): ShopProfile {
     logoMaxHeightPx: Number(s.receipt_logo_max_height_px || 64),
     receiptHeaderLines: s.receipt_header_lines || '',
     receiptTermsText: s.receipt_terms_text || '',
+    receiptFooterText: s.receipt_footer_text || '',
     receiptSoftwareBy: s.receipt_software_by || '',
     receiptShowSoftwareCredit: s.receipt_show_software_credit !== 'false',
     receiptShowItemsSummary: s.receipt_show_items_summary !== 'false',
@@ -731,7 +761,8 @@ export async function buildDesignedReceiptAsync(
   sale: SampleSale,
   paper: ReceiptPaper,
   designInput?: ReceiptDesign,
-  duplicate = false
+  duplicate = false,
+  branchId?: string | number | null
 ): Promise<string> {
   const design = designInput ? normalizeReceiptDesign(designInput) : getReceiptDesign();
   const assets: Record<string, string> = {};
@@ -757,17 +788,24 @@ export async function buildDesignedReceiptAsync(
   const saleData = toSaleData(sale);
   // Cast ReceiptDesign to DocumentDesign with documentType
   const docDesign = { ...design, documentType: 'receipt' as const } as DocumentDesign;
-  return renderDocument('receipt', saleData, docDesign, shop, { paper, assets, duplicate });
+  // branchId lets per-block branch overrides (e.g. the address block) resolve.
+  return renderDocument('receipt', saleData, docDesign, shop, { paper, assets, duplicate, branchId });
 }
 
 /** Synchronous render (no QR/barcode assets) — used by tests and callers that
  *  only need the layout. */
-export function buildDesignedReceipt(sale: SampleSale, paper: ReceiptPaper, designInput?: ReceiptDesign): string {
+export function buildDesignedReceipt(
+  sale: SampleSale,
+  paper: ReceiptPaper,
+  designInput?: ReceiptDesign,
+  duplicate = false,
+  branchId?: string | number | null
+): string {
   const design = designInput ? normalizeReceiptDesign(designInput) : getReceiptDesign();
   const shop = toShopProfile(getPrintSettings());
   const saleData = toSaleData(sale);
   const docDesign = { ...design, documentType: 'receipt' as const } as DocumentDesign;
-  return renderDocument('receipt', saleData, docDesign, shop, { paper });
+  return renderDocument('receipt', saleData, docDesign, shop, { paper, duplicate, branchId });
 }
 
 /** Map a real DB sale onto the SampleSale shape the renderer consumes. */
@@ -869,7 +907,7 @@ export async function renderAppliedReceipt(saleId: number, paper: ReceiptPaper, 
   const branchId = (sale as { branch_id?: number | null }).branch_id ?? null;
   const design = resolveAppliedDesign(paper, branchId, 'receipt' as DocumentType);
   const cashierName = getUser(sale.user_id ?? 0)?.username ?? '';
-  return buildDesignedReceiptAsync(saleToSampleSale(sale, cashierName), paper, design, duplicate);
+  return buildDesignedReceiptAsync(saleToSampleSale(sale, cashierName), paper, design, duplicate, branchId);
 }
 
 export { BLOCK_LABELS };

@@ -24,6 +24,8 @@ import { formatReceiptDateTime } from '../utils/timezone';
 import type { Sale, SaleItem, Payment } from '../../shared/types';
 import { esc, getPrintSettings, makeMoney, buildInvoiceHtml, htmlDocument } from './printDocs';
 import { PAPER_SPECS, getConfiguredPaper, type PaperKind } from './printService';
+import { buildDesignedReceipt, resolveAppliedDesign, saleToSampleSale } from './receiptDesigner';
+import type { ReceiptPaper } from '../../shared/receiptDesign';
 
 export type ReceiptTemplate = 'thermal' | 'standard' | 'a4';
 
@@ -109,7 +111,7 @@ interface TemplateOpts {
   logoMaxHeightPx: number;
   /** Greyscale + high contrast so the logo survives a 1-bit thermal head. */
   logoGrayscale: boolean;
-  /** Show the "---- SOFTWARE BY ----" block at all. */
+  /** Show the software-credit line (the owner's configured tradename) at all. */
   showSoftwareCredit: boolean;
   /** Show the "Items: N, Qty: N" line under the items table. */
   showItemsSummary: boolean;
@@ -144,8 +146,9 @@ function resolveOpts(): TemplateOpts {
     showSerial: s.receipt_show_serial_number !== 'false',
     headerLines: parseHeaderLines(s.receipt_header_lines || ''),
     termsText: s.receipt_terms_text || (legacyFooter && !s.receipt_footer_text ? legacyFooter : ''),
-    footerMessage: s.receipt_footer_text || 'Come again soon!',
-    softwareBy: s.receipt_software_by || 'Rokar POS',
+    // No hardcoded shop content: an unset footer / software name prints NOTHING.
+    footerMessage: s.receipt_footer_text || '',
+    softwareBy: s.receipt_software_by || '',
     logoMaxHeightPx: Math.max(16, Number(s.receipt_logo_max_height_px) || 64),
     logoGrayscale: s.receipt_logo_grayscale !== 'false',
     showSoftwareCredit: s.receipt_show_software_credit !== 'false',
@@ -163,18 +166,27 @@ export function buildReceiptHtml(
   if (!sale) throw new Error('Sale not found');
   const s = getPrintSettings();
   const tmpl: ReceiptTemplate = template || ((s.receipt_template as ReceiptTemplate) || 'standard');
-  const currency = s.currency || 'Rs';
-  const fmt = makeMoney(currency);
-  const cashier = getUser(sale.user_id ?? 0);
-  const opts = resolveOpts();
-  // Reprint stamp — see TemplateOpts.duplicate. Default off ⇒ byte-identical.
-  opts.duplicate = extra?.duplicate === true;
 
   // The "a4" receipt template IS the canonical invoice — one builder, no copy.
   if (tmpl === 'a4') {
     return buildInvoiceHtml(saleId, getConfiguredPaper('invoice') === 'a5' ? 'a5' : 'a4');
   }
-  return buildRoll(sale, s, fmt, cashier, opts, tmpl === 'thermal' ? 'thermal58' : 'thermal80');
+
+  // ONE RENDERER (Phase 2): thermal receipts render through
+  // shared/renderDocument via the designer's sync builder — the exact code path
+  // the live preview and the async print job use — so the printed roll can
+  // never drift from the designer and no shop content is ever hardcoded here.
+  const paper: ReceiptPaper = tmpl === 'thermal' ? 'thermal58' : 'thermal80';
+  const branchId = (sale as { branch_id?: number | null }).branch_id ?? null;
+  const design = resolveAppliedDesign(paper, branchId, 'receipt');
+  const cashier = getUser(sale.user_id ?? 0);
+  return buildDesignedReceipt(
+    saleToSampleSale(sale, cashier?.username ?? ''),
+    paper,
+    design,
+    extra?.duplicate === true,
+    branchId
+  );
 }
 
 /**
@@ -231,8 +243,8 @@ function columnSet(
  *      right-aligned values on both rolls. Side-by-side columns measured past
  *      the printable width on 80mm, so they stack; NET TOTAL is one line,
  *      nowrap, 17px/900 with a solid top border.
- *   5. Footer: terms text, the footer message ("Come again soon!"), then
- *      "---- SOFTWARE BY ----" / tradename.
+ *   5. Footer: terms text, the configured footer message (nothing when unset),
+ *      then the configured software tradename (nothing when unset).
  *
  * Geometry: the body is exactly the PRINTABLE width (`spec.contentMm`) with
  * 4mm side padding, centred on the paper. No rotation anywhere.
@@ -507,8 +519,8 @@ ${totwrap}
 <div class="line"></div>
 <div class="foot">
   ${termsHtml}
-  <div class="msg">${esc(opts.footerMessage)}</div>
-  ${opts.showSoftwareCredit && opts.softwareBy ? `<div class="sw">---- SOFTWARE BY ----<br />${esc(opts.softwareBy)}</div>` : ''}
+  ${opts.footerMessage ? `<div class="msg">${esc(opts.footerMessage)}</div>` : ''}
+  ${opts.showSoftwareCredit && opts.softwareBy ? `<div class="sw">${esc(opts.softwareBy)}</div>` : ''}
 </div>`;
 
   return htmlDocument(`Receipt ${sale.invoice_no}`, css, body);

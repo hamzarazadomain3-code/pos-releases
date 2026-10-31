@@ -307,9 +307,10 @@ exports.up = function (db) {
     ['wholesale_margin_percent', '15'],
     ['minimum_profit_margin', '5'],
     ['markup_percent', '25'],
-    // Receipt
-    ['receipt_header_text', 'Thank you for shopping with us!'],
-    ['receipt_footer_text', 'Come again soon!'],
+    // Receipt — Phase 2: empty by default (no hardcoded shop content for NEW
+    // installs; the owner sets their own message or it simply does not print).
+    ['receipt_header_text', ''],
+    ['receipt_footer_text', ''],
     ['show_tax_on_receipt', 'true'],
     ['show_discount_breakdown', 'true'],
     ['show_payment_method', 'true'],

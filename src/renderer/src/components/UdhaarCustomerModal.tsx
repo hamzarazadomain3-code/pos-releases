@@ -83,7 +83,7 @@ function phoneError(v: string): string | null {
   const s = v.trim();
   if (!s) return null;
   const d = pkDigits(s);
-  if (!/^03\d{9}$/.test(d)) return 'Phone should be 11 digits starting 03 (e.g. 03001234567).';
+  if (!/^03\d{9}$/.test(d)) return 'Phone should be 11 digits starting 03 (e.g. 03XXXXXXXXX).';
   return null;
 }
 
@@ -436,7 +436,7 @@ export function UdhaarCustomerModal({ customer, onClose, onSaved, onOpenExisting
         <div className="form-grid">
           <label className="field">
             <span>Phone *</span>
-            <input value={form.phone} onChange={(e) => setPhone(e.target.value)} placeholder="03001234567" inputMode="tel" autoFocus={!editing} />
+            <input value={form.phone} onChange={(e) => setPhone(e.target.value)} placeholder="03XXXXXXXXX" inputMode="tel" autoFocus={!editing} />
           </label>
           <label className="field">
             <span>Alternate phone</span>
@@ -447,7 +447,7 @@ export function UdhaarCustomerModal({ customer, onClose, onSaved, onOpenExisting
             <input
               value={sameWhatsapp ? form.phone : form.whatsapp}
               onChange={(e) => set('whatsapp', e.target.value)}
-              placeholder="03001234567"
+              placeholder="03XXXXXXXXX"
               inputMode="tel"
               disabled={sameWhatsapp}
             />

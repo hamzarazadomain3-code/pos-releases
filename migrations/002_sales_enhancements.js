@@ -25,7 +25,9 @@ exports.up = async (db) => {
   insertSetting.run('shop_name', 'My Shop');
   insertSetting.run('shop_address', '');
   insertSetting.run('shop_phone', '');
-  insertSetting.run('receipt_footer', 'Thank you! Visit again');
+  // Phase 2: no hardcoded shop content in defaults for NEW installs — the owner
+  // types their own footer (or it simply doesn't print).
+  insertSetting.run('receipt_footer', '');
   insertSetting.run('currency', 'Rs');
 
   const hash = scryptSync('admin123', 'pos-salt', 64).toString('hex');

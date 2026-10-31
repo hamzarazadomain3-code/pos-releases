@@ -1152,7 +1152,7 @@ export default function Settings() {
           </div>
         )}
         <label className="field">
-          <span>Test phone number (e.g. 03001234567)</span>
+          <span>Test phone number (e.g. 03XXXXXXXXX)</span>
           <input value={waTestPhone} onChange={(e) => setWaTestPhone(e.target.value)} placeholder="03xxxxxxxxx" />
         </label>
         <label className="field">

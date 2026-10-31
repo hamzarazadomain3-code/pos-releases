@@ -26,16 +26,15 @@ exports.up = function (db) {
     );
   `);
 
+  // Phase 2: NEW installs start with NO shop identity here — the Shop Profile
+  // (settings table) is the single source for name / address / phone, and it
+  // starts empty. Existing installs keep their receipt_settings rows untouched.
+  // (Keeping empty rows here would SHADOW the Shop Profile in getPrintSettings,
+  // so the keys are not seeded at all.)
   const defaults = [
-    ['shop_name', 'Al Baghdad Sweets & Bakers'],
-    ['shop_phone', '03001234567'],
-    ['shop_address', 'Faqirwali, Haroonabad, Chishtian, Dharanwala'],
-    ['shop_website', 'www.albagdad.com'],
-    ['facebook_page', 'https://facebook.com/albaghdadsweets'],
     ['show_logo', '1'],
     ['paper_width', '80'],
     ['tax_id', ''],
-    ['custom_footer', 'Shukrya! Aap ka Pasandeedah Dukan'],
   ];
   const ins = db.prepare('INSERT OR IGNORE INTO receipt_settings (key, value) VALUES (?, ?)');
   for (const [k, v] of defaults) ins.run(k, v);

@@ -86,9 +86,9 @@ async function run() {
     const text = norm(await printService.readJobText(job(html, 'thermal80')));
     checkTrue('items header present', /PARTICULARS/.test(text), text.slice(0, 80));
     checkTrue('has QTY / RATE / AMOUNT', /QTY/.test(text) && /RATE/.test(text) && /AMOUNT/.test(text));
-    checkTrue('items header has a DISC column', />DISC</.test(html));
+    checkTrue('items header has a DISC column', />disc</i.test(html));
     checkTrue('line discount amount shown', /Biscuits/.test(text));
-    checkTrue('long item name present (wraps, not dropped)', /Al-Bagdad Special Bakery Rusk/.test(text));
+    checkTrue('long item name present (wraps, not dropped)', /Premium Bakery Rusk/.test(text));
     checkTrue('unit under name (Kilogram)', /Kilogram/.test(text));
     checkTrue('items summary line', /Items: 3, Qty:/.test(text));
     checkTrue(
@@ -100,7 +100,22 @@ async function run() {
     const net = text.indexOf('NET TOTAL');
     const paid = text.indexOf('PAID');
     checkTrue('totals order SUB < NET < PAID', sub >= 0 && net > sub && paid > net, `sub=${sub} net=${net} paid=${paid}`);
-    checkTrue('software credit present by default', /SOFTWARE BY/.test(text));
+    // Phase 2: no hardcoded software name — the credit only prints once the
+    // owner sets one (checked here by configuring it on the fly).
+    checkTrue('software credit hidden when nothing configured', !/SOFTWARE BY/.test(text));
+    {
+      const { getDb } = require('../dist/main/db.js');
+      getDb()
+        .prepare('INSERT OR REPLACE INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)')
+        .run('receipt_software_by', 'Test Software Co');
+      const withCredit = norm(
+        await printService.readJobText(
+          job(designer.buildDesignedReceipt(sample, 'thermal80', designedDefault), 'thermal80')
+        )
+      );
+      checkTrue('software credit prints the configured name', /Test Software Co/.test(withCredit));
+      getDb().prepare("DELETE FROM admin_settings WHERE key = 'receipt_software_by'").run();
+    }
     const audit = await printService.auditJobLayout(job(html, 'thermal80'));
     checkTrue('no element escapes the 80mm printable width', audit.offenders.length === 0,
       audit.offenders.map((o) => `${o.tag}.${o.cls} "${o.text}" +${o.overflowRight}px`).join(', '));
@@ -218,14 +233,14 @@ async function run() {
     const ret = builtins.find((t) => t.id === 'builtin-return-refund').design;
     const retSale = designer.buildSampleSale(undefined, 'return');
     const retHtml = designer.buildDesignedReceipt(retSale, 'thermal80', ret);
-    checkTrue('return built-in shows the RETURN / REFUND banner', /RETURN \/ REFUND/.test(retHtml));
+    checkTrue('return built-in shows the return banner', /class="return-banner"/.test(retHtml));
     const retText = norm(await printService.readJobText(job(retHtml, 'thermal80')));
     checkTrue('return NET TOTAL is negative', /NET TOTAL\s+Rs\s+-/.test(retText), (retText.match(/NET TOTAL[^A-Za-z]*/) || [''])[0]);
     const normalHtml = designer.buildDesignedReceipt(sample, 'thermal80', ret);
-    checkTrue('return banner hidden on a normal sale', !/RETURN \/ REFUND/.test(normalHtml));
+    checkTrue('return banner hidden on a normal sale', !/class="return-banner"/.test(normalHtml));
     checkTrue(
       'default design shows the return banner on a negative sale',
-      /RETURN \/ REFUND/.test(designer.buildDesignedReceipt(retSale, 'thermal80', designedDefault))
+      /class="return-banner"/.test(designer.buildDesignedReceipt(retSale, 'thermal80', designedDefault))
     );
     const retAudit = await printService.auditJobLayout(job(retHtml, 'thermal80'));
     checkTrue('return receipt fits the 80mm printable width', retAudit.offenders.length === 0,
@@ -278,9 +293,10 @@ async function run() {
     checkTrue('default to a valid custom kept', junk.defaults.thermal58 === 'custom-b');
     checkTrue('unknown paper key dropped', !('bogus' in junk.defaults));
 
-    checkTrue('resolveLibraryDefault: branch beats global', shared.resolveLibraryDefault(round, 'thermal58', '7') === 'custom-a');
-    checkTrue('resolveLibraryDefault: global used with no branch', shared.resolveLibraryDefault(round, 'thermal80') === 'custom-a');
-    checkTrue('resolveLibraryDefault: undefined when nothing set', shared.resolveLibraryDefault(round, 'a4') === undefined);
+    // Signature is (lib, documentType, paper, branchId).
+    checkTrue('resolveLibraryDefault: branch beats global', shared.resolveLibraryDefault(round, 'receipt', 'thermal58', '7') === 'custom-a');
+    checkTrue('resolveLibraryDefault: global used with no branch', shared.resolveLibraryDefault(round, 'receipt', 'thermal80') === 'custom-a');
+    checkTrue('resolveLibraryDefault: undefined when nothing set', shared.resolveLibraryDefault(round, 'invoice', 'a4') === undefined);
 
     // Export/import round-trip is loss-free.
     const exported = JSON.stringify(round);

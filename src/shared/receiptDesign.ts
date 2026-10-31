@@ -454,15 +454,20 @@ export function defaultSections(documentType: DocumentType = 'receipt'): Block[]
 
   const sections: Block[] = [];
 
-  // Add standard sections in order, only if allowed for this document type
+  // Add standard sections in order, only if allowed for this document type.
+  // Deduped: `qr` / `return_banner` used to appear twice, which rendered two
+  // QR placeholders and (on a return) two banners from one logical block.
   const standardOrder: BlockType[] = [
     'logo', 'shop_name', 'address', 'phone_whatsapp', 'tax_no', 'header_note',
     'return_banner', 'meta', 'items_table', 'totals', 'payment', 'qr',
-    'footer_note_1', 'footer_note_2', 'software_credit', 'qr', 'fbr_qr',
-    'loyalty', 'savings', 'return_policy', 'thank_you', 'return_banner',
+    'footer_note_1', 'footer_note_2', 'software_credit', 'fbr_qr',
+    'loyalty', 'savings', 'return_policy', 'thank_you',
   ];
 
+  const seenTypes = new Set<BlockType>();
   for (const type of standardOrder) {
+    if (seenTypes.has(type)) continue;
+    seenTypes.add(type);
     if (allowedTypes.includes(type)) {
       sections.push(built(type));
       if (type === 'header_note' || type === 'meta' || type === 'items_table' ||
@@ -622,7 +627,14 @@ export function normalizeReceiptDesign(raw: unknown): ReceiptDesign {
 
 /** Normalize a DocumentDesign (new) */
 export function normalizeDocumentDesign(raw: unknown, documentType: DocumentType = 'receipt'): DocumentDesign {
-  const base = defaultDocumentDesign(documentType);
+  // The paper is parsed FIRST so the base picks up the paper-specific defaults
+  // (width + the receipt name column label), not just the document type ones.
+  const rawPaper = (raw as Partial<DocumentDesign> | null | undefined)?.paper;
+  const initialPaper: DocumentPaper =
+    rawPaper && DOCUMENT_PAPERS.some((p) => p.value === rawPaper)
+      ? rawPaper
+      : (DEFAULT_PAPER_FOR_TYPE[documentType] || 'thermal80');
+  const base = defaultDocumentDesign(documentType, initialPaper);
   if (!raw || typeof raw !== 'object') return base;
   const r = raw as Partial<DocumentDesign>;
 

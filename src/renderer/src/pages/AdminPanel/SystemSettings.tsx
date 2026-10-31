@@ -36,7 +36,7 @@ const SECTIONS: Section[] = [
       { key: 'receipt_terms_text', label: 'Receipt Terms Text', type: 'textarea', hint: 'Multi-line terms at the bottom of the receipt' },
       { key: 'receipt_software_by', label: 'Software By Name', type: 'text', hint: 'Tradename under "-- SOFTWARE BY --"' },
       { key: 'receipt_show_serial_number', label: 'Show Item Numbers (#)', type: 'toggle', hint: 'Show the "#" column in the items table' },
-      { key: 'receipt_footer_text', label: 'Receipt Footer Message', type: 'text', hint: 'Bottom message, e.g. "Come again soon!"' },
+      { key: 'receipt_footer_text', label: 'Receipt Footer Message', type: 'text', hint: 'Bottom message on the receipt (empty = nothing printed)' },
       // Phase 5
       { key: 'receipt_return_policy', label: 'Return Policy Text', type: 'textarea', hint: 'Return/refund policy printed on receipt' },
       { key: 'receipt_thank_you', label: 'Thank You Text', type: 'text', hint: 'Override the auto thank you message (per language)' },

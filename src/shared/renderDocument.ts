@@ -49,6 +49,8 @@ export interface ShopProfile {
   logoMaxHeightPx: number;
   receiptHeaderLines: string;
   receiptTermsText: string;
+  /** Footer message line (receipt_footer_text). Empty prints nothing. */
+  receiptFooterText: string;
   receiptSoftwareBy: string;
   receiptShowSoftwareCredit: boolean;
   receiptShowItemsSummary: boolean;
@@ -274,10 +276,10 @@ function fmtDate(iso: string, format: string): { date: string; time: string } {
 
 function esc(s: string | null | undefined): string {
   return String(s ?? '')
-    .replace(/&/g, '&')
-    .replace(/</g, '<')
-    .replace(/>/g, '>')
-    .replace(/"/g, '"');
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 // ============================================================================
@@ -300,18 +302,21 @@ function renderAddress(ctx: RenderContext, blk: Block): string {
 }
 
 function renderPhoneWhatsApp(ctx: RenderContext, blk: Block): string {
-  const phone = resolveBlockText(ctx, blk, 'phone');
-  const whatsapp = resolveBlockText(ctx, blk, 'whatsapp');
-
-  // If both phone and whatsapp are explicitly set on block, combine them
-  const hasPhoneOverride = Object.prototype.hasOwnProperty.call(blk, 'text') && blk.text !== undefined && blk.text.includes('phone');
-  const hasWaOverride = Object.prototype.hasOwnProperty.call(blk, 'text') && blk.text !== undefined && blk.text.includes('whatsapp');
-
-  // Actually, phone_whatsapp block can have both - check individual parts
-  // For now, use the resolved values
+  // A block-level text override replaces the whole line (one phone line, not a
+  // duplicated "phone · WhatsApp: phone" pair). Empty string = print nothing.
+  const hasOverride = Object.prototype.hasOwnProperty.call(blk, 'text') && blk.text !== undefined;
+  if (hasOverride) {
+    const t = applyTokens(blk.text ?? '', ctx.tokens);
+    return t ? `<div class="shop-line">${esc(t)}</div>` : '';
+  }
+  // Branch override wins over Shop Profile, same order as resolveBlockText.
+  if (ctx.branchId && blk.branchOverrides && Object.prototype.hasOwnProperty.call(blk.branchOverrides, String(ctx.branchId))) {
+    const t = applyTokens(blk.branchOverrides[String(ctx.branchId)] ?? '', ctx.tokens);
+    return t ? `<div class="shop-line">${esc(t)}</div>` : '';
+  }
   const parts: string[] = [];
-  if (phone) parts.push(phone);
-  if (whatsapp) parts.push(`WhatsApp: ${whatsapp}`);
+  if (ctx.shop.phone) parts.push(ctx.shop.phone);
+  if (ctx.shop.whatsapp) parts.push(`WhatsApp: ${ctx.shop.whatsapp}`);
   return parts.length ? `<div class="shop-line">${parts.map((p) => esc(p)).join(' &middot; ')}</div>` : '';
 }
 
@@ -474,7 +479,8 @@ function renderFooterNote1(ctx: RenderContext, blk: Block): string {
 }
 
 function renderFooterNote2(ctx: RenderContext, blk: Block): string {
-  const text = resolveBlockText(ctx, blk, 'receiptSoftwareBy'); // fallback to software by
+  // Footer message (receipt_footer_text). Empty = print nothing, no default.
+  const text = resolveBlockText(ctx, blk, 'receiptFooterText');
   if (!text) return '';
   return `<div class="foot-msg">${esc(text)}</div>`;
 }
@@ -805,9 +811,14 @@ export function renderDocument(
     balance: design.global.metaLabels?.balance ?? DEFAULT_META_LABELS.balance,
     return: design.global.metaLabels?.return ?? DEFAULT_META_LABELS.return,
   };
+  // Roll documents keep the shipped name-column wording: "PARTICULARS" on 80mm
+  // and "ITEM" on the narrow 58mm roll. Resolved HERE (one place) so a template
+  // that explicitly sets its own label always wins.
+  const isRollDoc = docType === 'receipt' || docType === 'return' || docType === 'credit_slip';
+  const defaultNameLabel = isRollDoc ? (narrow ? 'ITEM' : 'PARTICULARS') : DEFAULT_TABLE_COLUMN_LABELS.name;
   const columnLabels: Record<string, string> = {
     no: design.global.columnLabels?.no ?? DEFAULT_TABLE_COLUMN_LABELS.no,
-    name: design.global.columnLabels?.name ?? DEFAULT_TABLE_COLUMN_LABELS.name,
+    name: design.global.columnLabels?.name ?? defaultNameLabel,
     unit: design.global.columnLabels?.unit ?? DEFAULT_TABLE_COLUMN_LABELS.unit,
     qty: design.global.columnLabels?.qty ?? DEFAULT_TABLE_COLUMN_LABELS.qty,
     rate: design.global.columnLabels?.rate ?? DEFAULT_TABLE_COLUMN_LABELS.rate,
@@ -835,11 +846,13 @@ export function renderDocument(
     dateFormat,
     metaLabels,
     columnLabels,
-    tokens: buildTokens({} as RenderContext), // Will be rebuilt below
+    // Placeholder: token values need the full context (the previous version
+    // called buildTokens({}) here, which crashed on every render).
+    tokens: {},
     urduFontFamily: design.global.urduFontFamily || '',
   };
 
-  // Rebuild tokens with proper context
+  // Now that the context exists, build the token map from it.
   ctx.tokens = buildTokens(ctx);
 
   const body = ctx.design.sections

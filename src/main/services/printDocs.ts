@@ -43,10 +43,10 @@ type SaleWithItems = Awaited<ReturnType<typeof getSale>>;
 
 export function esc(s: string | null | undefined): string {
   return String(s ?? '')
-    .replace(/&/g, '&')
-    .replace(/</g, '<')
-    .replace(/>/g, '>')
-    .replace(/"/g, '"');
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 /**
@@ -127,6 +127,7 @@ function toShopProfile(s: Record<string, string>): ShopProfile {
     logoMaxHeightPx: Number(s.receipt_logo_max_height_px || 64),
     receiptHeaderLines: s.receipt_header_lines || '',
     receiptTermsText: s.receipt_terms_text || '',
+    receiptFooterText: s.receipt_footer_text || '',
     receiptSoftwareBy: s.receipt_software_by || '',
     receiptShowSoftwareCredit: s.receipt_show_software_credit !== 'false',
     receiptShowItemsSummary: s.receipt_show_items_summary !== 'false',

@@ -1094,6 +1094,7 @@ export default function DocumentDesigner({ onClose }: { onClose: () => void }) {
                                   onPatch={(p) => updateBlock(selected.id, p)}
                                   onStyle={(p) => updateStyle(selected.id, p)}
                                   shopSettings={shopSettings}
+                                  branches={branches}
                                   onClose={() => setExpandedId(null)}
                                 />
                               </div>
@@ -1291,6 +1292,7 @@ function BlockProperties({
   onPatch,
   onStyle,
   shopSettings,
+  branches,
   onClose,
 }: {
   block: ReceiptBlock;
@@ -1298,12 +1300,18 @@ function BlockProperties({
   onPatch: (p: Partial<ReceiptBlock>) => void;
   onStyle: (p: Partial<ReceiptBlock['style']>) => void;
   shopSettings: { name: string; address: string; phone: string; whatsapp: string; taxNo: string } | null;
+  branches?: Array<{ id: number; name: string }>;
   onClose: () => void;
 }) {
   const style = block.style || {};
 
   // Local state for text editing to prevent re-render cascade on every keystroke
   const [localText, setLocalText] = useState(block.text ?? '');
+  // Strict resolution needs to distinguish "no override" from "explicitly empty"
+  // (empty = print nothing instead of falling back to the Shop Profile value).
+  const [textSet, setTextSet] = useState<boolean>(
+    Object.prototype.hasOwnProperty.call(block, 'text') && block.text !== undefined
+  );
   const [localLabel, setLocalLabel] = useState(block.label ?? '');
   const [localValue, setLocalValue] = useState(block.value ?? '');
   const [localVariant, setLocalVariant] = useState(block.variant ?? 'dashed');
@@ -1315,7 +1323,7 @@ function BlockProperties({
   const commitRef = useRef<number | null>(null);
   const commitLocal = useCallback(() => {
     onPatch({
-      text: localText || undefined,
+      text: textSet ? localText : undefined,
       label: localLabel || undefined,
       value: localValue || undefined,
       variant: localVariant,
@@ -1323,7 +1331,7 @@ function BlockProperties({
       src: localSrc || undefined,
       branchOverrides: Object.keys(branchOverrides).length > 0 ? branchOverrides : undefined,
     });
-  }, [onPatch, localText, localLabel, localValue, localVariant, localHeightMm, localSrc, branchOverrides]);
+  }, [onPatch, textSet, localText, localLabel, localValue, localVariant, localHeightMm, localSrc, branchOverrides]);
 
   const debouncedCommit = useCallback(() => {
     if (commitRef.current) clearTimeout(commitRef.current);
@@ -1335,6 +1343,7 @@ function BlockProperties({
   // Sync local state when block prop changes (e.g., when selecting different block)
   useEffect(() => {
     setLocalText(block.text ?? '');
+    setTextSet(Object.prototype.hasOwnProperty.call(block, 'text') && block.text !== undefined);
     setLocalLabel(block.label ?? '');
     setLocalValue(block.value ?? '');
     setLocalVariant(block.variant ?? 'dashed');
@@ -1353,18 +1362,19 @@ function BlockProperties({
   // Token insertion helper
   const insertToken = (token: string) => {
     setLocalText((prev) => prev + `{${token}}`);
+    setTextSet(true);
     debouncedCommit();
   };
 
-  // Reset to settings value
-  const resetToSettings = (field: 'name' | 'address' | 'phone' | 'whatsapp' | 'taxNo') => {
-    if (!shopSettings) return;
-    const value = shopSettings[field] || '';
-    if (field === 'name') setLocalText(value);
-    else if (field === 'address') setLocalText(value);
-    else if (field === 'phone') setLocalText(value);
-    else if (field === 'whatsapp') setLocalText(value);
-    else if (field === 'taxNo') setLocalText(value);
+  /**
+   * Reset the block override entirely so the renderer falls through to the
+   * Shop Profile value (resolution order: template → branch → Shop Profile).
+   * This is the "Use Shop Profile value" link — it removes the override, it
+   * does NOT freeze the current settings text into the template.
+   */
+  const resetToSettings = (_field: 'name' | 'address' | 'phone' | 'whatsapp' | 'taxNo') => {
+    setLocalText('');
+    setTextSet(false);
     debouncedCommit();
   };
 
@@ -1387,11 +1397,11 @@ function BlockProperties({
       {block.type === 'shop_name' && (
         <div className="form-group">
           <label>Text</label>
-          <textarea rows={2} value={localText} onChange={(e) => { setLocalText(e.target.value); debouncedCommit(); }} disabled={!canEdit} />
+          <textarea rows={2} value={localText} onChange={(e) => { setLocalText(e.target.value); setTextSet(true); debouncedCommit(); }} disabled={!canEdit} />
           <div className="row-btns" style={{ marginTop: 4 }}>
             {shopSettings && (
               <button className="btn btn-sm" onClick={() => resetToSettings('name')} disabled={!canEdit}>
-                Use Settings Value
+                Use Shop Profile value
               </button>
             )}
             <div className="muted small">Tokens: {RECEIPT_TOKENS.map((t) => `{${t}}`).join(' ')}</div>
@@ -1402,48 +1412,53 @@ function BlockProperties({
       {block.type === 'address' && (
         <div className="form-group">
           <label>Address (Multi-line)</label>
-          <textarea rows={4} value={localText} onChange={(e) => { setLocalText(e.target.value); debouncedCommit(); }} disabled={!canEdit} placeholder="Enter address lines, one per line" />
+          <textarea rows={4} value={localText} onChange={(e) => { setLocalText(e.target.value); setTextSet(true); debouncedCommit(); }} disabled={!canEdit} placeholder="Enter address lines, one per line" />
           <div className="row-btns" style={{ marginTop: 4, flexWrap: 'wrap', gap: 4 }}>
             {shopSettings && (
-              <button className="btn btn-sm" onClick={() => resetToSettings('address')} disabled={!canEdit}>
-                Use Settings Value
+              <button className="btn btn-sm" onClick={() => resetToSettings('address')} disabled={!canEdit} title="Remove the template override so the Shop Profile address prints">
+                Use Shop Profile value
               </button>
             )}
-            <button className="btn btn-sm" onClick={() => { setLocalText(''); debouncedCommit(); }} disabled={!canEdit}>
-              Clear
+            <button className="btn btn-sm" onClick={() => { setLocalText(''); setTextSet(true); debouncedCommit(); }} disabled={!canEdit} title="Print nothing for this block">
+              Clear (print nothing)
             </button>
             <div className="muted small">Tokens: {RECEIPT_TOKENS.map((t) => `{${t}}`).join(' ')}</div>
           </div>
-          {/* Branch override addresses */}
+          {/* Branch override addresses — driven by the owner's real branch list
+              (Branches page). No preset branch names anywhere. */}
           {canEdit && (
             <div style={{ marginTop: 12, padding: 8, background: '#f8f9fa', borderRadius: 4 }}>
               <div className="muted small" style={{ marginBottom: 8, fontWeight: 600 }}>Branch Address Overrides</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {[
-                  { id: 'Faqirwali', name: 'Faqirwali' },
-                  { id: 'Haroonabad', name: 'Haroonabad' },
-                  { id: 'Chishtian', name: 'Chishtian' },
-                  { id: 'Dharanwala', name: 'Dharanwala' },
-                ].map((branch) => (
-                  <div key={branch.id} style={{ flex: 1, minWidth: 180 }}>
-                    <label style={{ display: 'block', marginBottom: 4 }}>
-                      <span className="muted small">{branch.name}</span>
-                      <input
-                        type="text"
-                        value={branchOverrides[branch.id] || ''}
-                        onChange={(e) => {
-                          const next = { ...branchOverrides };
-                          if (e.target.value.trim()) next[branch.id] = e.target.value.trim();
-                          else delete next[branch.id];
-                          setBranchOverrides(next);
-                        }}
-                        placeholder="Override address for this branch"
-                        style={{ width: '100%', marginTop: 2 }}
-                      />
-                    </label>
-                  </div>
-                ))}
-              </div>
+              {(branches || []).length === 0 ? (
+                <div className="muted small">
+                  No branches yet — add them on the Branches page to give each shop its own address here.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {(branches || []).map((branch) => {
+                    const key = String(branch.id);
+                    return (
+                      <div key={key} style={{ flex: 1, minWidth: 180 }}>
+                        <label style={{ display: 'block', marginBottom: 4 }}>
+                          <span className="muted small">{branch.name}</span>
+                          <input
+                            type="text"
+                            value={branchOverrides[key] ?? ''}
+                            onChange={(e) => {
+                              const next = { ...branchOverrides };
+                              if (e.target.value.trim()) next[key] = e.target.value;
+                              else delete next[key];
+                              setBranchOverrides(next);
+                            }}
+                            placeholder="Override address for this branch"
+                            style={{ width: '100%', marginTop: 2 }}
+                          />
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1452,15 +1467,12 @@ function BlockProperties({
       {['phone_whatsapp', 'phone', 'whatsapp'].includes(block.type) && (
         <div className="form-group">
           <label>Text</label>
-          <textarea rows={2} value={localText} onChange={(e) => { setLocalText(e.target.value); debouncedCommit(); }} disabled={!canEdit} />
+          <textarea rows={2} value={localText} onChange={(e) => { setLocalText(e.target.value); setTextSet(true); debouncedCommit(); }} disabled={!canEdit} />
           <div className="row-btns" style={{ marginTop: 4 }}>
             {shopSettings && (
               <>
-                <button className="btn btn-sm" onClick={() => resetToSettings('phone')} disabled={!canEdit}>
-                  Use Settings Phone
-                </button>
-                <button className="btn btn-sm" onClick={() => resetToSettings('whatsapp')} disabled={!canEdit}>
-                  Use Settings WhatsApp
+                <button className="btn btn-sm" onClick={() => resetToSettings('phone')} disabled={!canEdit} title="Remove the override so the Shop Profile phone / WhatsApp line prints">
+                  Use Shop Profile value
                 </button>
               </>
             )}
