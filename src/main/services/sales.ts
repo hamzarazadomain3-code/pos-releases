@@ -129,13 +129,28 @@ export function createSale(input: SaleInput): SaleCreateResult {
 
   if (lines.length === 0) throw new Error('Bill has no items');
 
-  // Pre-validate stock (no mutation) before opening the transaction
+
+  const allowNegativeStock = getSetting("allow_negative_stock") ?? "warn";
   for (const l of lines) {
     const p = getProduct(l.product_id);
     if (!p) throw new Error(`Product ${l.product_id} not found`);
-    if (p.stock_qty < roundStock(l.qty)) throw new Error(`Insufficient stock: ${p.name} (${p.stock_qty} available)`);
+    const requestedQty = roundStock(l.qty);
+    const available = p.stock_qty;
+    if (available < requestedQty) {
+      if (allowNegativeStock === "no") {
+        throw new Error(`Insufficient stock: ${p.name} (${available} available)`);
+      }
+      if (allowNegativeStock === "warn") {
+        console.log(`[Stock Warning] Sale would make ${p.name} negative: ${available} - ${requestedQty} = ${available - requestedQty}`);
+      }
+    }
+    const maxNegative = parseFloat(getSetting("max_negative_qty") ?? "0") || 0;
+    if (maxNegative > 0 && available - requestedQty < -maxNegative) {
+      throw new Error(`Cannot sell ${p.name}: would exceed max negative qty of ${maxNegative} (would be ${available - requestedQty})`);
+    }
   }
 
+  // Pre-validate stock (no mutation) before opening the transaction
   const payments = input.payments.filter((p) => p.amount > 0);
   const paid = payments.reduce((s, p) => s + p.amount, 0);
   const balance = Math.max(0, finalTotal - paid);
