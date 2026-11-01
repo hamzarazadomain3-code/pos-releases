@@ -39,6 +39,7 @@ export default function Purchases() {
 
   // ── Phase 3: import wizard, partial receive, undo ──
   const [importOpen, setImportOpen] = useState(false);
+  const [importFilePath, setImportFilePath] = useState<string | null>(null);
   const [importDragOver, setImportDragOver] = useState(false);
   const [receiveQty, setReceiveQty] = useState<Record<number, string>>({});
   const [undoInfo, setUndoInfo] = useState<{ id: number; imported_count: number } | null>(null);
@@ -406,7 +407,7 @@ export default function Purchases() {
                   Undo last import
                 </button>
               )}
-              <button className="btn btn-sm" onClick={() => setImportOpen(true)}>
+              <button className="btn btn-sm" onClick={() => { setImportFilePath(null); setImportOpen(true); }}>
                 Import from file
               </button>
               <button className="btn btn-primary" onClick={() => { resetStagedSearch(); setPoModal(true); }}>
@@ -422,10 +423,11 @@ export default function Purchases() {
               setImportDragOver(false);
               const f = e.dataTransfer.files?.[0] as (File & { path?: string }) | undefined;
               if (f?.path) {
-                window.api.purchases
-                  .importParse(f.path)
-                  .then(() => setImportOpen(true))
-                  .catch((err) => setErr(String(err)));
+                // The wizard parses it on mount and jumps to the column mapping.
+                setImportFilePath(f.path);
+                setImportOpen(true);
+              } else {
+                setErr('Could not read the dropped file path.');
               }
             }}
             style={
@@ -827,7 +829,8 @@ export default function Purchases() {
         <PurchaseImportWizard
           suppliers={suppliers}
           products={products}
-          onClose={() => setImportOpen(false)}
+          initialFilePath={importFilePath}
+          onClose={() => { setImportOpen(false); setImportFilePath(null); }}
           onDone={() => { void load(); refreshUndo(); }}
         />
       )}
