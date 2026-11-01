@@ -289,6 +289,24 @@ To enable automatic deploys on every push to `main`, add at
 
 Then re-run the workflow. No code change is required.
 
+### Local auto-deploy on push — ✅ INSTALLED (no secrets needed)
+
+Because the CI job needs repo secrets, this clone now deploys the Worker itself
+whenever something is pushed to `main`.
+
+| Item | Value |
+|------|-------|
+| Hook | `.git/hooks/pre-push` (source kept in `scripts/git-hooks/pre-push`) |
+| Runner | `scripts/deploy-cloud.ps1` — runs `npm run deploy` in `cloud/` |
+| Behaviour | detached (push never blocks/fails), mutex-guarded (no two deploys at once) |
+| Log | `.git/deploy-cloud.log` |
+| Disable once | `git push --no-verify` |
+| Disable permanently | delete `.git/hooks/pre-push` |
+| Verified | two clean runs: `ed3cbb92-e0b6-4efc-9cd4-94dff100b6bb`, `7d5d9fa6-f66e-433c-8e2e-ad0109db3dd9` |
+
+If the Wrangler OAuth session ever expires the hook writes `DEPLOY FAILED` plus
+the fix (`npx.cmd wrangler login`) into the log instead of failing silently.
+
 ### Desktop installer / GitHub release — ✅ DEPLOYED (v2.22.0)
 
 | Item | Value |

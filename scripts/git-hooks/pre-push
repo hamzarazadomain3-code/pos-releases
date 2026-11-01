@@ -1,0 +1,43 @@
+#!/bin/sh
+# Auto-deploy the Cloudflare Worker (live web app) after a push to main.
+#
+# Install (once per clone):
+#   cp scripts/git-hooks/pre-push .git/hooks/pre-push
+#   chmod +x .git/hooks/pre-push        # git-bash; on Windows this is optional
+#
+# The deploy runs DETACHED: `git push` returns immediately and is never failed
+# or delayed by a build problem. Progress and errors are appended to
+# .git/deploy-cloud.log.
+#
+# This exists because the CI "Deploy to Cloudflare" job needs
+# CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID repo secrets, while the dev
+# machine already has a valid Wrangler OAuth session.
+#
+# Disable temporarily:  git push --no-verify
+# Disable for good:     delete .git/hooks/pre-push
+
+repo=$(git rev-parse --show-toplevel)
+deploy=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  # Only a real (non-delete) push to main.
+  if [ "$remote_ref" = "refs/heads/main" ] && [ "$local_sha" != "0000000000000000000000000000000000000000" ]; then
+    deploy=1
+  fi
+done
+
+if [ "$deploy" = "1" ]; then
+  # pwd -W gives the Windows path (E:/...) so PowerShell gets a path it can use
+  # even though the repo path contains spaces.
+  repo_win=$(cd "$repo" && pwd -W 2>/dev/null)
+  [ -z "$repo_win" ] && repo_win=$repo
+
+  echo "[pre-push] main push -> Cloudflare Worker deploy starting in background"
+  echo "[pre-push] log: .git/deploy-cloud.log"
+
+  # One -ArgumentList string, not an array: Start-Process joins array items with
+  # spaces WITHOUT quoting, which splits "billing softwere" into two args.
+  powershell.exe -NoProfile -Command "Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File \"$repo_win/scripts/deploy-cloud.ps1\"' -WindowStyle Hidden" >/dev/null 2>&1
+fi
+
+exit 0
