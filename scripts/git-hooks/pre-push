@@ -35,9 +35,10 @@ if [ "$deploy" = "1" ]; then
   echo "[pre-push] main push -> Cloudflare Worker deploy starting in background"
   echo "[pre-push] log: .git/deploy-cloud.log"
 
-  # One -ArgumentList string, not an array: Start-Process joins array items with
-  # spaces WITHOUT quoting, which splits "billing softwere" into two args.
-  powershell.exe -NoProfile -Command "Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File \"$repo_win/scripts/deploy-cloud.ps1\"' -WindowStyle Hidden" >/dev/null 2>&1
+  # `start` (cmd builtin) gives the child its OWN console, so it survives the
+  # hook process and the git push that spawned it. Start-Process from a hook did
+  # not: the deploy was killed a few seconds after the push returned.
+  cmd.exe //c start "" //min powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$repo_win/scripts/deploy-cloud.ps1" >/dev/null 2>&1
 fi
 
 exit 0
