@@ -2,8 +2,8 @@
 
 **Build date**: 2026-11-01  
 **Branch**: `main`  
-**Head commit**: `c2e0a1f` (phase 3 drag-drop)  
-**Version**: unchanged at 2.21.0 (no bump, no release)
+**Head commit**: `2dc9fef` (2.22.0 release bump)  
+**Version**: **2.22.0** — released 2026-11-01 (bump authorised after the initial build; see Deployment)
 
 ---
 
@@ -225,7 +225,7 @@ package.json (added npm scripts)
 | Undo import | ✅ |
 | `npm run typecheck` | ✅ |
 | `npm run build` | ✅ |
-| No GitHub release, no version bump | ✅ |
+| No GitHub release, no version bump during phases 1-3 (2.22.0 cut later on explicit request) | ✅ |
 
 ---
 
@@ -245,7 +245,7 @@ package.json (added npm scripts)
 
 ## Final Notes
 
-- No version bump, no release, no auto-update files touched.
+- Phases 1-3 shipped without a release; the 2.22.0 release + version bump were done afterwards on explicit request (see Deployment).
 - All migrations additive with safe defaults; no user data deleted.
 - Every numeric path guarded with `safeNumber` / `round2` / `roundStock`; no NaN in DB.
 - Single-renderer rule enforced: `receiptTemplates.ts`, `printDocs.ts`, `receiptDesigner.ts`, `udhaarPrinting.ts` all call `renderDocument()` for their output.
@@ -289,12 +289,39 @@ To enable automatic deploys on every push to `main`, add at
 
 Then re-run the workflow. No code change is required.
 
+### Desktop installer / GitHub release — ✅ DEPLOYED (v2.22.0)
+
+| Item | Value |
+|------|-------|
+| Release | https://github.com/hamzarazadomain3-code/pos-releases/releases/tag/v2.22.0 |
+| Version | 2.21.0 → **2.22.0** (minor: new features), tag `v2.22.0` created by `finalize-release.js` |
+| Method | `npm run release` (build → electron-builder NSIS + portable → GitHub publish → finalize) |
+| Assets | `RokarPOS-Setup-2.22.0.exe` (114.8 MB), `RokarPOS-Portable-2.22.0.exe` (114.5 MB), `.blockmap`, `latest.yml`, and the version-less mirror `RokarPOS-Setup.exe` |
+| Auto-update feed | `latest.yml` at the release reports `version: 2.22.0` → installed 2.21.x clients will update to 2.22.0 on next check |
+| Stable download | `…/releases/latest/download/RokarPOS-Setup.exe` → HTTP 200, 114.8 MB (verified) |
+
+Notes:
+- The build ran with `TEMP`/`TMP` redirected to `E:\antigravty\tmp` because the system drive had < 1 GB free.
+- `GH_TOKEN` for the publish step came from the existing `gh` CLI session (`gh auth token`, `repo` scope); the token in `.env` was not used.
+- `warningsAsErrors: false`, no code signing (`signAndEditExecutable: false`) — installer is unsigned, as in every previous release.
+
+### Marketing site (Vercel) — ✅ DEPLOYED
+
+| Item | Value |
+|------|-------|
+| Repo | `hamzarazadomain3-code/rokar-pos-site` (commit `91f09bf`) |
+| Domain | https://rokarpos.co.uk (Vercel, `Server: Vercel`, `X-Vercel-Cache: HIT`) |
+| Change | `src/content.json`: `site.latestVersion` → `2.22.0`, new 2.22.0 changelog entry (negative stock, Oversold Items report, Excel/CSV purchase import + undo, partial receive, single renderer address fix) |
+| Deploy | Vercel GitHub integration builds on push to `main` — no release-triggered workflow exists in that repo |
+| Pre-push check | `node build/verify-content.mjs` → `CONTENT SHAPE OK` (9 changelog entries) |
+
+Note: `rokarpos.com` does not resolve in DNS; only `rokarpos.co.uk` serves the site.
+
 ### Not deployed (intentionally)
 
 | Item | Reason |
 |------|--------|
-| Desktop installer / GitHub release | Out of scope per instructions: no release, no version bump, no auto-update files touched. Version stays 2.21.0. |
-| Marketing site (Vercel) | Its deploy is triggered by a GitHub release, which was explicitly forbidden. |
+| Cloudflare CI auto-deploy | Still requires the two repo secrets listed above; the Worker itself is live (deployed manually). |
 
 ### Security note
 
