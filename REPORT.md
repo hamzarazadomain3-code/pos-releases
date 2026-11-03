@@ -606,4 +606,36 @@ On first launch after the update, migration 065 deletes the stale
 address/phone (`HAROONABAD` / `03706863313`). Edit them in
 **Settings → Shop Profile**, then reprint.
 
+---
+
+## Phase 6 — Receipt Polish Build — Phases 1–6 (feature/receipt-polish)
+
+Commit: `13f2d7f` on `feature/receipt-polish`. Build-only run: NO version bump, NO GitHub release, NO latest.yml, NO push.
+
+### Phase 1 — Safe migrations (auto-backup) ✅
+- `src/main/db.ts`: safety copy before pending migrations run; restore on throw; error dialog via `main.ts`.
+- Migration `066_legacy_receipt_keys_to_settings.js`: adopt remaining legacy keys.
+- Test `scripts/test_migration_backup.js`: 11/11 PASS.
+
+### Phase 2 — Receipt items table + meta layout ✅
+- `src/shared/renderDocument.ts`: shared `defaultColumnWidths()` with 80mm spread (#6%, Item34%, Qty12%, Rate20%, Amount28%); qty forced; meta labels + one-line date/time.
+- Test `scripts/test_table_overflow.js`: 5/5 PASS.
+
+### Phase 3 — Designer editing completeness ✅
+- DRAFT marker in preview/test print, field captions panel with Urdu preset, logo upload + grayscale/threshold, 8 built-in templates.
+
+### Phase 4 — Urdu, QR, extras ✅
+- QR/barcode/FBR-QR resolve tokens, skipped when empty; new Pharmacy/Medical and Garment templates.
+
+### Phase 5 — Print behaviour ✅ verified (no change needed beyond dart).
+
+### Phase 6 — Automated tests ✅
+- migration-backup 11/11, table-overflow 5/5, address 42/42, negstock 27/27, purchase-import 34/34, receipt 68/68, receipt-designer 73/73.
+- `npm run typecheck` ✅, `npm run build` ✅.
+
+### ⚠️ Rebuild or reinstall required
+Migrations `065` and `066` run on first launch of the rebuilt app. The installed 2.22.0 build does not contain these changes.
+
+### Token reminder
+Rotate GitHub PAT / Vercel / Cloudflare tokens pasted in chat earlier.
 
