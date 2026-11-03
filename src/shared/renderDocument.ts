@@ -123,6 +123,9 @@ export interface RenderContext {
   columnLabels: Record<string, string>;
   tokens: Record<string, string>;
   urduFontFamily: string;
+  /** Optional URL to an embedded Urdu font (woff2/ttf). When set, an @font-face
+   *  rule emitting this URL is prepended to the document CSS. */
+  urduFontUrl?: string;
 }
 
 // ============================================================================
@@ -771,6 +774,7 @@ function buildCss(ctx: RenderContext): string {
     : `width: ${ctx.contentMm}mm; margin: 0 auto; padding: 1mm ${margin}mm 1.5mm;`;
 
   return `
+${ctx.urduFontUrl ? `@font-face { font-family: 'Noto Nastaliq Urdu'; src: url('${ctx.urduFontUrl}') format('truetype'); font-weight: 100 900; font-style: normal; font-display: block; }` : ''}
 ${pageRule}
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { background: #fff; }
@@ -889,6 +893,9 @@ export function renderDocument(
     duplicate?: boolean;
     /** Template id, only used by the dev-only provenance footer. */
     templateId?: string;
+    /** Optional URL to an embedded Urdu font; when supplied an @font-face rule is
+     *  prepended to the document's CSS so Urdu joins offline. */
+    urduFontUrl?: string;
   } = {}
 ): string {
   const paper = options.paper || (design.paper as DocumentPaper);
@@ -958,8 +965,8 @@ export function renderDocument(
     // called buildTokens({}) here, which crashed on every render).
     tokens: {},
     urduFontFamily: design.global.urduFontFamily || '',
+    urduFontUrl: options.urduFontUrl,
   };
-
   // Now that the context exists, build the token map from it.
   ctx.tokens = buildTokens(ctx);
 

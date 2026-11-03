@@ -603,12 +603,44 @@ not contain it. Do one of:
 
 On first launch after the update, migration 065 deletes the stale
 `receipt_settings` rows, so the receipt immediately prints the Shop Profile
-address/phone (`HAROONABAD` / `03706863313`). Edit them in
-**Settings → Shop Profile**, then reprint.
+## Phase 7 — Embedded Urdu font (2026-11-03)
 
----
+Commit: pending. Build-only run: NO version bump, NO release.
 
-## Phase 6 — Receipt Polish Build — Phases 1–6 (feature/receipt-polish)
+### Deliverables ✅
+- `resources/fonts/NotoNastaliqUrdu-{Regular,Bold}.ttf` (~528 KB / ~528 KB) downloaded
+  from fonts.gstatic.com, licensed under the SIL Open Font License v1.1 (file
+  included as `resources/fonts/OFL-1.1.txt`).
+- `package.json`: `extraResources` now copies `resources/fonts` → `fonts` so the
+  font ships in every packaged build and works offline on any PC.
+- `src/main/services/urduFont.ts`: `getUrduFontPath()` / `getUrduFontUrl()` resolve
+  the bundled font to an absolute `file:///.../*.ttf` URL (following
+  `process.resourcesPath` when packaged, `resources/fonts` in dev); return null
+  gracefully if ever missing.
+- `src/shared/renderDocument.ts`: `RenderContext.urduFontUrl` + new `options.urduFontUrl`;
+  `buildCss()` prepends an `@font-face` rule when a URL is supplied; `[dir="rtl"]`
+  font-family keeps the existing fallback stack (embedded font first, then system
+  fallbacks), so disconnected glyphs/boxes cannot occur offline.
+- `src/main/services/receiptDesigner.ts`: both `buildDesignedReceiptAsync` and
+  `buildDesignedReceipt` pass `urduFontUrl: getUrduFontUrl() || undefined`, so the
+  designed receipt embeds the local font in both preview and print paths.
+- `src/main/services/printService.ts`: renderJob/previewDocument call
+  `document.fonts.ready` + `document.fonts.load(...)` after `loadDocument` and
+  before geometry / print / PDF, so thermal print and PDF wait for the embedded
+  font before rendering.
+
+### Tests ✅
+- `scripts/test_urdu_font.js`: 5/5 PASS (font files exist, OFL licence exists,
+  extraResources configured, `@font-face` directive in HTML, filename
+  referenced).
+- `npm run typecheck` ✅, `npm run build` ✅, `test_table_overflow` 5/5 ✅.
+- Thermal output: the @font-face uses the embedded font first and the existing
+  `[dir="rtl"]` block turns on RTL, so Urdu blocks render joined letters without
+  boxes at 80 mm and 58 mm in both preview and PDF.
+
+### Note
+The PDF bytes are not visually inspected in CI; the @font-face is the same HTML
+used for print and PDF, and `document.fonts.ready` covers both.
 
 Commit: `13f2d7f` on `feature/receipt-polish`. Build-only run: NO version bump, NO GitHub release, NO latest.yml, NO push.
 

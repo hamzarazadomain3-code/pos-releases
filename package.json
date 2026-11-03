@@ -101,6 +101,10 @@
       {
         "from": "build/icon.ico",
         "to": "icon.ico"
+      },
+      {
+        "from": "resources/fonts",
+        "to": "fonts"
       }
     ],
     "win": {

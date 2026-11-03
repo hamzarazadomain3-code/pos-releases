@@ -826,6 +826,14 @@ async function renderJob<T>(
     try {
       return await withPrintWindow(previewWidthPx(job), 600, async (win) => {
         await loadDocument(win, job, seedHeight);
+        try {
+          await win.webContents.executeJavaScript(
+            `(async () => { try { await document.fonts.ready; await document.fonts.load('1em "Noto Nastaliq Urdu"'); } catch (e) {} return true; })()`,
+            true
+          );
+        } catch {
+          /* fonts.ready not supported or timed out — layout proceeds on fallback */
+        }
         const geo = known ?? (await resolveGeometry(win, job));
         await stampPageSize(win, job, geo.heightMm);
         return fn(win, geo);
@@ -1251,6 +1259,14 @@ export async function previewDocument(job: PrintJob, opts: PreviewOptions): Prom
   try {
     const known = geometryFromSpec(job);
     await loadDocument(win, job, known ? known.heightMm : MIN_ROLL_HEIGHT_MM);
+    try {
+      await win.webContents.executeJavaScript(
+        `(async () => { try { await document.fonts.ready; await document.fonts.load('1em "Noto Nastaliq Urdu"'); } catch (e) {} return true; })()`,
+        true
+      );
+    } catch {
+      /* ignore — layout proceeds on fallback */
+    }
     const geo = known ?? (await resolveGeometry(win, job));
     await stampPageSize(win, job, geo.heightMm);
 

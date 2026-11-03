@@ -12,6 +12,7 @@
  * the shipped section order, so the first apply is a no-op visually.
  */
 import { getAdminSetting, setAdminSetting } from './admin';
+import { getUrduFontUrl } from './urduFont';
 import { getPrintSettings, toDataUrl, toShopProfile } from './printDocs';
 import { getSale } from './sales';
 import { getUser } from './auth';
@@ -797,12 +798,13 @@ export async function buildDesignedReceiptAsync(
     }
   }
   // branchId lets per-block branch overrides (e.g. the address block) resolve.
-  return renderDocument('receipt', saleData, { ...design, documentType: 'receipt' as const } as DocumentDesign, shop, {
+  return renderDocument('receipt', saleData, { ...design, documentType: 'receipt' as const } as DocumentDesign, toShopProfile(getPrintSettings()), {
     paper,
     assets,
     duplicate,
     branchId,
     templateId: activeTemplateId(paper, branchId),
+    urduFontUrl: getUrduFontUrl() || undefined,
   });
 }
 
@@ -831,6 +833,7 @@ export function buildDesignedReceipt(
     duplicate,
     branchId,
     templateId: activeTemplateId(paper, branchId),
+    urduFontUrl: getUrduFontUrl() || undefined,
   });
 }
 

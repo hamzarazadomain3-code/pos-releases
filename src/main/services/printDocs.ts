@@ -37,6 +37,8 @@ import {
   DEFAULT_TABLE_COLUMN_LABELS,
   type DocumentPaper,
 } from '../../shared/receiptDesign';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { SaleItem, Payment } from '../../shared/types';
 
 type SaleWithItems = Awaited<ReturnType<typeof getSale>>;
