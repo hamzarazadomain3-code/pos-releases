@@ -215,10 +215,19 @@ async function run() {
   {
     const builtins = shared.builtinTemplates();
     const ids = builtins.map((t) => t.id);
-    checkTrue('six built-in templates', builtins.length === 6, ids.join(', '));
+    checkTrue('eight built-in templates', builtins.length === 8, ids.join(', '));
     checkTrue(
       'expected built-in ids present',
-      ['builtin-compact-80', 'builtin-detailed-80', 'builtin-mini-58', 'builtin-a4-invoice', 'builtin-bakery', 'builtin-return-refund'].every((id) => ids.includes(id))
+      [
+        'builtin-compact-80',
+        'builtin-detailed-80',
+        'builtin-mini-58',
+        'builtin-a4-invoice',
+        'builtin-bakery',
+        'builtin-pharmacy',
+        'builtin-garment',
+        'builtin-return-refund',
+      ].every((id) => ids.includes(id))
     );
     checkTrue('built-ins are flagged builtin', builtins.every((t) => t.builtin === true));
     checkTrue('default library sets NO defaults (opt-in)', Object.keys(shared.defaultLibrary().defaults).length === 0);
@@ -277,7 +286,7 @@ async function run() {
 
     const round = shared.normalizeLibrary(JSON.parse(JSON.stringify(lib)));
     checkTrue('custom template survives normalisation', !!round.templates.find((t) => t.id === 'custom-a'));
-    checkTrue('built-ins still present after normalisation', round.templates.filter((t) => t.builtin).length === 6);
+    checkTrue('built-ins still present after normalisation', round.templates.filter((t) => t.builtin).length === 8);
     checkTrue('global default kept', round.defaults.thermal80 === 'custom-a');
     checkTrue('branch default kept', round.branchDefaults['7']?.thermal58 === 'custom-a');
 

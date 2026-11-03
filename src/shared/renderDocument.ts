@@ -289,7 +289,12 @@ function esc(s: string | null | undefined): string {
 function renderLogo(ctx: RenderContext, blk: Block): string {
   const src = blk.src || ctx.shop.logo;
   if (!src) return '';
-  return `<img class="logo" src="${esc(src)}" alt="" onerror="this.style.display='none'" />`;
+  const st = blk.style || {};
+  const threshold = Number.isFinite(st.threshold) ? Math.max(0, Math.min(100, Number(st.threshold))) : 50;
+  const filter = st.grayscale
+    ? ` style="filter: grayscale(100%) contrast(${100 + threshold}%); image-rendering: pixelated;"`
+    : '';
+  return `<img class="logo" src="${esc(src)}" alt=""${filter} onerror="this.style.display='none'" />`;
 }
 
 function renderShopName(ctx: RenderContext): string {
@@ -346,13 +351,64 @@ function renderHeaderNote(ctx: RenderContext, blk: Block): string {
 }
 
 function renderMeta(ctx: RenderContext): string {
-  const { sale, design, metaLabels } = ctx;
+  const { sale, metaLabels } = ctx;
   const { date, time } = fmtDate(sale.created_at, ctx.dateFormat);
   const left =
     `<div class="mrow"><span class="mlbl">${metaLabels.customerLabel}</span> ${esc(sale.customer_name || 'Walk-in')}</div>` +
     `<div class="mrow"><span class="mlbl">${metaLabels.cashierLabel}</span> ${esc(sale.cashier)}</div>`;
-  const right = `<div class="inv-no">${esc(sale.invoice_no)}</div><div class="mrow meta-dt">${esc(date)} ${esc(time)}</div>`;
+  // Invoice + date/time stay on the right; date and time share ONE line in the
+  // Settings date format (never wrap: a wrapped timestamp makes the 58mm roll
+  // grow a second line and mis-align with the invoice number).
+  const right =
+    `<div class="mrow inv-no"><span class="mlbl">${metaLabels.invoiceLabel}</span> ${esc(sale.invoice_no)}</div>` +
+    `<div class="mrow meta-dt"><span class="mlbl">${metaLabels.dateLabel}</span> ${esc(date)} ${esc(time)}</div>`;
   return `<table class="meta"><tr><td class="meta-left">${left}</td><td class="meta-right">${right}</td></tr></table>`;
+}
+
+/**
+ * Shared column widths for the items table.
+ *
+ * 80mm (no discount):  # 6%  Item 34%  Qty 12%  Rate 20%  Amount 28%
+ * 58mm:                # 8%  Item 40%  Qty 14%  Rate 19%  Amount 19%
+ *
+ * Optional columns (unit/tax/disc) take width from the item name, never from
+ * the money columns, so a 1,234,567.00 amount can never overlap the rate. When
+ * an existing template stores an explicit width it still wins (see
+ * `renderItemsTable`), and malformed widths are ignored instead of producing
+ * `NaN%`.
+ */
+function defaultColumnWidths(active: TableColumnKey[], narrow: boolean): Record<TableColumnKey, number> {
+  const raw: Record<string, number> = narrow
+    ? { no: 8, qty: 14, rate: 19, amt: 19, unit: 8, tax: 8, disc: 8 }
+    : { no: 6, qty: 12, rate: 20, amt: 28, unit: 10, tax: 8, disc: 8 };
+
+  const fixed = active.filter((k) => k !== 'name');
+  const out = { no: 0, name: 0, unit: 0, qty: 0, rate: 0, disc: 0, tax: 0, amt: 0 } as Record<TableColumnKey, number>;
+
+  let sum = 0;
+  for (const k of fixed) {
+    out[k] = raw[k] ?? 8;
+    sum += out[k];
+  }
+
+  // Keep at least 16% for the item name; shrink the numeric columns evenly if
+  // a template enables every optional column at once.
+  const maxFixed = 84;
+  if (sum > maxFixed) {
+    const scale = maxFixed / sum;
+    sum = 0;
+    for (const k of fixed) {
+      out[k] = Math.max(4, Math.round(out[k] * scale));
+      sum += out[k];
+    }
+  }
+
+  out.name = Math.max(12, 100 - sum);
+
+  // Absorb integer-rounding drift in the name column so the row is exactly 100%.
+  const drift = 100 - (sum + out.name);
+  if (drift !== 0) out.name = Math.max(8, out.name + drift);
+  return out;
 }
 
 function renderItemsTable(ctx: RenderContext): string {
@@ -362,6 +418,13 @@ function renderItemsTable(ctx: RenderContext): string {
 
   const anyDisc = sale.items.some((it) => it.discount > 0);
   const active = cols.filter((c) => c !== 'disc' || (anyDisc && !ctx.narrow));
+
+  // Qty is part of the printed contract (the customer must always see how much
+  // was bought) even if an old template saved it disabled.
+  if (!active.includes('qty')) {
+    const at = active.indexOf('name');
+    active.splice(at >= 0 ? at + 1 : active.length, 0, 'qty');
+  }
 
   const head: Record<TableColumnKey, string> = {
     no: ctx.columnLabels.no || DEFAULT_TABLE_COLUMN_LABELS.no,
@@ -378,11 +441,13 @@ function renderItemsTable(ctx: RenderContext): string {
   // The 'no' column is separate, so group = active excluding 'name'
   const group = active.filter((c) => c !== 'name');
 
+  const fallbackWidths = defaultColumnWidths(active, ctx.narrow);
   const colgroup = active
     .map((c) => {
       const cfg = design.table.columns.find((x) => x.key === c);
-      const w = cfg?.width ? ` width="${esc(cfg.width.replace('%', ''))}%"` : '';
-      return `<col class="c-${c}"${w}>`;
+      const explicit = cfg?.width ? Number(String(cfg.width).replace('%', '')) : NaN;
+      const width = Number.isFinite(explicit) && explicit > 0 ? explicit : fallbackWidths[c];
+      return `<col class="c-${c}" width="${width}%">`;
     })
     .join('');
 

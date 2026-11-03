@@ -533,9 +533,9 @@ export function registerIpcHandlers(): void {
   });
 
   // Phase 4 — print the sample sale with the on-screen (possibly unsaved) design.
-  ipcMain.handle('receipt:design:test', async (_e, design: ReceiptDesign, paper: ReceiptPaper, copies?: number) => {
+  ipcMain.handle('receipt:design:test', async (_e, design: ReceiptDesign, paper: ReceiptPaper, copies?: number, draft?: boolean) => {
     try {
-      return await printDesignSample(design, paper, copies);
+      return await printDesignSample(design, paper, copies, draft === true);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }

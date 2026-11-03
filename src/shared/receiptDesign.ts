@@ -282,6 +282,10 @@ export interface BlockStyle {
   marginTopMm?: number;
   marginBottomMm?: number;
   maxHeightMm?: number;
+  /** Logo/image: convert to grayscale for a thermal head. */
+  grayscale?: boolean;
+  /** Logo/image: 0–100 threshold approximation (higher = more contrast). */
+  threshold?: number;
 }
 
 /** Generic block interface used by DocumentDesign */
@@ -469,7 +473,12 @@ export function defaultSections(documentType: DocumentType = 'receipt'): Block[]
     if (seenTypes.has(type)) continue;
     seenTypes.add(type);
     if (allowedTypes.includes(type)) {
-      sections.push(built(type));
+      const block = built(type);
+      // Legacy/default payload: the invoice number. The designer can replace
+      // this with a WhatsApp / location / website URL, or clear it to hide the
+      // block (an empty QR/barcode prints nothing, never a broken image).
+      if (type === 'qr' || type === 'barcode') block.value = '{invoice}';
+      sections.push(block);
       if (type === 'header_note' || type === 'meta' || type === 'items_table' ||
           type === 'totals' || type === 'payment' || type === 'footer_note_1' || type === 'footer_note_2') {
         sections.push(dividerIn());
@@ -910,12 +919,40 @@ export function builtinTemplates(): TemplateEntry[] {
     d.sections.unshift({ id: 'bi-return-banner', type: 'return_banner', enabled: true });
   });
 
+  const pharmacy = tuneDesign(defaultDocumentDesign('receipt', 'thermal80'), (d) => {
+    setSectionEnabled(d, 'tax_no', true);
+    setColumnEnabled(d, 'tax', true);
+    const idx = d.sections.findIndex((b) => b.type === 'items_table');
+    d.sections.splice(idx < 0 ? d.sections.length : idx, 0, {
+      id: 'bi-pharmacy-note',
+      type: 'text',
+      enabled: true,
+      text: 'Dosage: as directed by the physician',
+      style: { align: 'center', bold: true },
+    });
+    setSectionEnabled(d, 'return_policy', true);
+  });
+
+  const garment = tuneDesign(defaultDocumentDesign('receipt', 'thermal80'), (d) => {
+    setColumnEnabled(d, 'unit', true);
+    const idx = d.sections.findIndex((b) => b.type === 'totals');
+    d.sections.splice(idx < 0 ? d.sections.length : idx + 1, 0, {
+      id: 'bi-garment-note',
+      type: 'text',
+      enabled: true,
+      text: 'Exchange within 7 days with receipt. Tags must be intact.',
+      style: { align: 'center', bold: true },
+    });
+  });
+
   return [
-    mk('builtin-compact-80', 'Compact 80mm', compact),
-    mk('builtin-detailed-80', 'Detailed 80mm (tax)', detailed),
+    mk('builtin-compact-80', 'Minimal 80mm', compact),
+    mk('builtin-detailed-80', 'Detailed 80mm with tax', detailed),
     mk('builtin-mini-58', '58mm Mini', mini),
     mk('builtin-a4-invoice', 'A4 Invoice', a4),
-    mk('builtin-bakery', 'Bakery (best-before)', bakery),
+    mk('builtin-bakery', 'Bakery / Grocery', bakery),
+    mk('builtin-pharmacy', 'Pharmacy / Medical', pharmacy),
+    mk('builtin-garment', 'Garment', garment),
     mk('builtin-return-refund', 'Return / Refund', ret),
   ];
 }

@@ -4,6 +4,7 @@ import {
   BLOCK_LABELS,
   CUSTOM_BLOCK_TYPES_FOR_DOCUMENT,
   DEFAULT_PAPER_FOR_TYPE,
+  DEFAULT_META_LABELS,
   DEFAULT_TABLE_COLUMN_LABELS,
   DOCUMENT_TYPE_LABELS,
   DocumentType,
@@ -42,6 +43,87 @@ import {
 const ACTIVE_KEY = 'receipt_designer_active';
 const DRAFT_PREFIX = 'receipt_designer_draft:';
 const STYLE_DEFAULTS = { fontSizePx: 13 };
+
+const COLUMN_LABEL_KEYS = ['no', 'name', 'unit', 'qty', 'rate', 'disc', 'tax', 'amt'] as const;
+const META_LABEL_KEYS = [
+  'customerLabel',
+  'cashierLabel',
+  'invoiceLabel',
+  'dateLabel',
+  'subtotal',
+  'discount',
+  'tax',
+  'netTotal',
+  'paid',
+  'change',
+  'balance',
+] as const;
+
+/** Ready-made Urdu captions. The owner can still edit every field after this. */
+const URDU_COLUMN_LABELS: Partial<Record<(typeof COLUMN_LABEL_KEYS)[number], string>> = {
+  no: 'نمبر',
+  name: 'آئٹم',
+  unit: 'یونٹ',
+  qty: 'مقدار',
+  rate: 'ریٹ',
+  disc: 'رعایت',
+  tax: 'ٹیکس',
+  amt: 'رقم',
+};
+const URDU_META_LABELS: Partial<Record<(typeof META_LABEL_KEYS)[number], string>> = {
+  customerLabel: 'گاہک',
+  cashierLabel: 'کیشیئر',
+  invoiceLabel: 'بل نمبر',
+  dateLabel: 'تاریخ',
+  subtotal: 'کل رقم',
+  discount: 'رعایت',
+  tax: 'ٹیکس',
+  netTotal: 'خالص رقم',
+  paid: 'ادا شدہ',
+  change: 'واپسی',
+  balance: 'بقایا',
+};
+
+/** DRAFT marker for the live preview only — never part of a saved template. */
+function withDraftBanner(html: string): string {
+  const banner =
+    '<div style="border:1px dashed #b45309;color:#b45309;font:700 11px Arial,sans-serif;' +
+    'text-align:center;padding:1mm;margin:0 0 1mm;letter-spacing:0.5px">DRAFT — UNSAVED LAYOUT</div>';
+  return html.includes('<body>') ? html.replace('<body>', `<body>${banner}`) : banner + html;
+}
+
+/**
+ * Read a logo/image from the PC and shrink it to at most 600px on its longest
+ * side before storing it in the template. Keeps the settings JSON small and
+ * gives thermal printers a predictable bitmap. PNG output preserves
+ * transparency; an SVG is rasterised by the browser through the same path.
+ */
+async function readResizedImage(file: File, maxPx = 600): Promise<string> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Could not read the image file'));
+    reader.readAsDataURL(file);
+  });
+
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error('Unsupported image file (use PNG, JPG, SVG or WebP)'));
+    el.src = dataUrl;
+  });
+
+  const scale = Math.min(1, maxPx / Math.max(img.width || 1, img.height || 1));
+  const width = Math.max(1, Math.round((img.width || 1) * scale));
+  const height = Math.max(1, Math.round((img.height || 1) * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return dataUrl;
+  ctx.drawImage(img, 0, 0, width, height);
+  return canvas.toDataURL('image/png');
+}
 
 function draftKey(id: string): string {
   return DRAFT_PREFIX + id;
@@ -279,7 +361,7 @@ export default function DocumentDesigner({ onClose }: { onClose: () => void }) {
     previewTimer.current = window.setTimeout(async () => {
       try {
         const html = await window.api.receipt.previewDesign({ ...design, paper }, paper, sample);
-        setPreviewHtml(html);
+        setPreviewHtml(dirty && canEdit ? withDraftBanner(html) : html);
       } catch (e) {
         setPreviewHtml(
           `<pre style="color:#b91c1c;font:12px monospace">${e instanceof Error ? e.message : String(e)}</pre>`
@@ -289,7 +371,7 @@ export default function DocumentDesigner({ onClose }: { onClose: () => void }) {
     return () => {
       if (previewTimer.current) window.clearTimeout(previewTimer.current);
     };
-  }, [design, paper, sample, loading]);
+  }, [design, paper, sample, loading, dirty, canEdit]);
 
   // ── design mutation helpers ──
   const patchDesign = useCallback(
@@ -739,7 +821,7 @@ export default function DocumentDesigner({ onClose }: { onClose: () => void }) {
                 setTestBusy(true);
                 setNotice('');
                 try {
-                  const r = await window.api.receipt.testDesign(design, paper, 1);
+                  const r = await window.api.receipt.testDesign(design, paper, 1, dirty);
                   setNotice(r?.message || (r?.ok ? 'Test print sent.' : 'Test print failed.'));
                 } catch (e) {
                   setNotice(e instanceof Error ? e.message : String(e));
@@ -1225,6 +1307,76 @@ export default function DocumentDesigner({ onClose }: { onClose: () => void }) {
               </div>
             </div>
 
+            {/* Field captions (per template) */}
+            <div className="panel" style={{ marginTop: 12 }}>
+              <div className="panel-title">Field captions (this template)</div>
+              <div className="muted small" style={{ marginBottom: 8 }}>
+                Leave a field blank to use the shipped English label. Urdu captions render right-to-left on the receipt.
+              </div>
+              <div className="row-btns" style={{ marginBottom: 8, flexWrap: 'wrap' }}>
+                <button
+                  className="btn btn-sm"
+                  disabled={!canEdit}
+                  onClick={() =>
+                    patchDesign({
+                      global: {
+                        ...design.global,
+                        columnLabels: { ...(design.global.columnLabels || {}), ...URDU_COLUMN_LABELS },
+                        metaLabels: { ...(design.global.metaLabels || {}), ...URDU_META_LABELS },
+                      },
+                    })
+                  }
+                >
+                  Use Urdu captions
+                </button>
+                <button
+                  className="btn btn-sm"
+                  disabled={!canEdit}
+                  onClick={() => patchDesign({ global: { ...design.global, columnLabels: {}, metaLabels: {} } })}
+                >
+                  Reset to English
+                </button>
+              </div>
+              <div className="form-row" style={{ gap: 12, flexWrap: 'wrap' }}>
+                {COLUMN_LABEL_KEYS.map((k) => (
+                  <div key={k} className="form-group" style={{ flex: '1 1 45%', minWidth: 140 }}>
+                    <label>{DEFAULT_TABLE_COLUMN_LABELS[k]}</label>
+                    <input
+                      value={design.global.columnLabels?.[k] ?? ''}
+                      placeholder={DEFAULT_TABLE_COLUMN_LABELS[k]}
+                      onChange={(e) =>
+                        patchDesign({
+                          global: {
+                            ...design.global,
+                            columnLabels: { ...(design.global.columnLabels || {}), [k]: e.target.value },
+                          },
+                        })
+                      }
+                      disabled={!canEdit}
+                    />
+                  </div>
+                ))}
+                {META_LABEL_KEYS.map((k) => (
+                  <div key={k} className="form-group" style={{ flex: '1 1 45%', minWidth: 140 }}>
+                    <label>{DEFAULT_META_LABELS[k]}</label>
+                    <input
+                      value={design.global.metaLabels?.[k] ?? ''}
+                      placeholder={DEFAULT_META_LABELS[k]}
+                      onChange={(e) =>
+                        patchDesign({
+                          global: {
+                            ...design.global,
+                            metaLabels: { ...(design.global.metaLabels || {}), [k]: e.target.value },
+                          },
+                        })
+                      }
+                      disabled={!canEdit}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* Save Button at bottom of editor */}
             <div className="row-btns" style={{ justifyContent: 'flex-end', marginTop: 12, paddingTop: 12, borderTop: '1px solid #e9ecef' }}>
               {dirty && <span className="muted small" style={{ marginRight: 'auto', color: '#b45309', fontWeight: 500 }}>● Unsaved changes</span>}
@@ -1391,6 +1543,49 @@ function BlockProperties({
           <label>Max Height (mm)</label>
           <input type="number" value={style.maxHeightMm ?? 12} onChange={(e) => onStyle({ maxHeightMm: Number(e.target.value) })} disabled={!canEdit} />
           <div className="muted small">Maximum logo height on receipt</div>
+          <div className="row-btns" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+            <label className="btn btn-sm" style={{ cursor: canEdit ? 'pointer' : 'default' }}>
+              Upload from PC
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                style={{ display: 'none' }}
+                disabled={!canEdit}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!file) return;
+                  try {
+                    const src = await readResizedImage(file, 600);
+                    onPatch({ src });
+                  } catch (err) {
+                    window.alert(err instanceof Error ? err.message : String(err));
+                  }
+                }}
+              />
+            </label>
+            <button className="btn btn-sm" onClick={() => onPatch({ src: undefined })} disabled={!canEdit} title="Fall back to the Shop Profile logo">
+              Use Shop Profile logo
+            </button>
+          </div>
+          <div className="muted small">PNG, JPG, SVG or WebP — resized to max 600px.</div>
+          <div className="row-btns" style={{ gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
+            <label className="muted small">
+              <input type="checkbox" checked={!!style.grayscale} onChange={(e) => onStyle({ grayscale: e.target.checked })} disabled={!canEdit} /> Grayscale for thermal
+            </label>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label>Thermal threshold</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={style.threshold ?? 50}
+                onChange={(e) => onStyle({ threshold: Number(e.target.value) })}
+                disabled={!canEdit}
+              />
+            </div>
+          </div>
+          {block.src ? <img src={block.src} alt="logo preview" style={{ maxWidth: 120, maxHeight: 60, marginTop: 6 }} /> : null}
         </div>
       )}
 

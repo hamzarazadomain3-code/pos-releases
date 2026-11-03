@@ -148,8 +148,8 @@ const bridge: PosBridge = {
       ipcRenderer.invoke('receipt:design:preview', design, paper, sample),
     getLibrary: () => ipcRenderer.invoke('receipt:library:get'),
     setLibrary: (library: unknown) => ipcRenderer.invoke('receipt:library:set', library),
-    testDesign: (design: unknown, paper: string, copies?: number) =>
-      ipcRenderer.invoke('receipt:design:test', design, paper, copies),
+    testDesign: (design: unknown, paper: string, copies?: number, draft?: boolean) =>
+      ipcRenderer.invoke('receipt:design:test', design, paper, copies, draft),
   },
   licensing: {
     activate: (key: string) => ipcRenderer.invoke('licensing:activate', key),

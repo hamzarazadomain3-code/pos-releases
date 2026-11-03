@@ -736,31 +736,68 @@ export async function buildDesignedReceiptAsync(
   branchId?: string | number | null
 ): Promise<string> {
   const design = designInput ? normalizeReceiptDesign(designInput) : getReceiptDesign();
+  const shop = toShopProfile(getPrintSettings());
+  const saleData = toSaleData(sale);
+
+  // Token map for QR / barcode payloads. A QR may be a WhatsApp link, a map
+  // link, the shop website or the invoice URL, so the block's own `value` is
+  // authoritative; an empty value means "skip this block" (no broken image).
+  // `undefined` is the legacy default (migration-safe): print the invoice no.
+  const d = new Date(sale.created_at);
+  const validDate = !isNaN(d.getTime());
+  const dd = validDate ? String(d.getDate()).padStart(2, '0') : '';
+  const mm = validDate ? String(d.getMonth() + 1).padStart(2, '0') : '';
+  const yyyy = validDate ? String(d.getFullYear()) : '';
+  const hh = validDate ? String(d.getHours() % 12 || 12) : '';
+  const min = validDate ? String(d.getMinutes()).padStart(2, '0') : '';
+  const ampm = validDate && d.getHours() >= 12 ? 'PM' : 'AM';
+  const money = (n: number) => `${shop.currency || 'Rs'} ${Number(n || 0).toFixed(2)}`;
+  const tokens: Record<string, string> = {
+    shop: shop.name,
+    address: shop.address,
+    phone: shop.phone,
+    whatsapp: shop.whatsapp,
+    customer: saleData.customer_name || '',
+    cashier: saleData.cashier || '',
+    invoice: saleData.invoice_no,
+    date: validDate ? `${dd}/${mm}/${yyyy}` : '',
+    time: validDate ? `${hh}:${min} ${ampm}` : '',
+    total: money(saleData.total_amount),
+    paid: money(saleData.paid),
+    balance: money(Math.max(0, saleData.total_amount - saleData.paid)),
+    branch: saleData.branch || '',
+  };
+
   const assets: Record<string, string> = {};
   for (const blk of design.sections) {
     if (!blk.enabled) continue;
     try {
-      if (blk.type === 'qr') {
-        assets[blk.id] = await toDataUrl({ bcid: 'qrcode', text: sale.invoice_no, scale: 3, parsefnc: false });
-      } else if (blk.type === 'barcode') {
-        assets[blk.id] = await toDataUrl({
-          bcid: 'code128',
-          text: blk.value || sale.invoice_no,
-          height: 10,
-          includetext: true,
-          scale: 2,
-        });
+      if (blk.type === 'qr' || blk.type === 'barcode' || blk.type === 'fbr_qr') {
+        const fallback =
+          blk.type === 'fbr_qr' ? shop.fbrInvoiceUrl || '{invoice}' : '{invoice}';
+        const raw = blk.value === undefined ? fallback : blk.value;
+        const text = applyTokens(raw, tokens).trim();
+        if (!text) continue; // explicit empty → skip the block entirely
+        if (blk.type === 'qr') {
+          assets[blk.id] = await toDataUrl({ bcid: 'qrcode', text, scale: 3, parsefnc: false });
+        } else if (blk.type === 'barcode') {
+          assets[blk.id] = await toDataUrl({
+            bcid: 'code128',
+            text,
+            height: 10,
+            includetext: true,
+            scale: 2,
+          });
+        } else {
+          assets[blk.id] = await toDataUrl({ bcid: 'qrcode', text, scale: 3, parsefnc: false });
+        }
       }
     } catch {
       assets[blk.id] = '';
     }
   }
-  const shop = toShopProfile(getPrintSettings());
-  const saleData = toSaleData(sale);
-  // Cast ReceiptDesign to DocumentDesign with documentType
-  const docDesign = { ...design, documentType: 'receipt' as const } as DocumentDesign;
   // branchId lets per-block branch overrides (e.g. the address block) resolve.
-  return renderDocument('receipt', saleData, docDesign, shop, {
+  return renderDocument('receipt', saleData, { ...design, documentType: 'receipt' as const } as DocumentDesign, shop, {
     paper,
     assets,
     duplicate,

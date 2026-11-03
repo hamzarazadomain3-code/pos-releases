@@ -1683,7 +1683,7 @@ export interface PosBridge {
     previewDesign: (design: ReceiptDesign, paper: string, sample?: string) => Promise<string>;
     getLibrary: () => Promise<ReceiptLibrary>;
     setLibrary: (library: ReceiptLibrary) => Promise<{ ok: boolean; message: string }>;
-    testDesign: (design: ReceiptDesign, paper: string, copies?: number) => Promise<PrintResult>;
+    testDesign: (design: ReceiptDesign, paper: string, copies?: number, draft?: boolean) => Promise<PrintResult>;
   };
   quotations: {
     list: (filters?: { status?: string; customer_id?: number; from_date?: string; to_date?: string; search?: string }) => Promise<QuotationRow[]>;

@@ -236,11 +236,13 @@ export async function reprintLastReceipt(): Promise<PrintResult> {
 export async function printDesignSample(
   designInput: unknown,
   paper: ReceiptPaper = 'thermal80',
-  copies = 1
+  copies = 1,
+  draft = false
 ): Promise<PrintResult> {
   const design = normalizeReceiptDesign(designInput);
   const sample = buildSampleSale(getPrintSettings(), 'sale');
-  const html = await buildDesignedReceiptAsync(sample, paper, design);
+  let html = await buildDesignedReceiptAsync(sample, paper, design);
+  if (draft) html = withDraftBanner(html);
   const job: PrintJob = {
     html,
     paper,
@@ -249,6 +251,18 @@ export async function printDesignSample(
   };
   if (Number.isFinite(copies) && copies > 1) job.copies = Math.min(10, Math.floor(copies));
   return printDocument(job);
+}
+
+/**
+ * Mark an unsaved designer layout in preview / test print only. The banner is
+ * injected after `<body>` so it can never reach a real customer receipt (real
+ * prints never pass `draft`).
+ */
+export function withDraftBanner(html: string): string {
+  const banner =
+    '<div style="border:1px dashed #b45309;color:#b45309;font:700 11px Arial,sans-serif;' +
+    'text-align:center;padding:1mm;margin:0 0 1mm;letter-spacing:0.5px">DRAFT — UNSAVED LAYOUT</div>';
+  return html.includes('<body>') ? html.replace('<body>', `<body>${banner}`) : banner + html;
 }
 
 // ═══════════════════════════════════════════════════════════════════
