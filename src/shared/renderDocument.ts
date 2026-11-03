@@ -298,7 +298,16 @@ function renderShopName(ctx: RenderContext): string {
 
 function renderAddress(ctx: RenderContext, blk: Block): string {
   const text = resolveBlockText(ctx, blk, 'address');
-  return text ? `<div class="shop-line">${esc(text)}</div>` : '';
+  if (!text) return '';
+  // A Shop Profile address is a multi-line textarea. Each non-empty line is its
+  // own centred line; blank lines are dropped so an empty value can never leave
+  // a gap behind.
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => `<div class="shop-line">${esc(line)}</div>`)
+    .join('');
 }
 
 function renderPhoneWhatsApp(ctx: RenderContext, blk: Block): string {
@@ -757,8 +766,40 @@ table.totals tr.net td.lg { font-size: ${sz(14)}px; }
 .blk-thank-you { font-size: ${sz(14)}px; font-weight: 800; text-align: center; margin: 1mm 0; padding: 1mm 0; border-top: 0.4mm solid #000; }
 .blk-image { max-width: 100%; max-height: 30mm; display: block; margin: 0 auto; object-fit: contain; }
 .spacer { display: block; }
+.render-debug { margin-top: 2mm; padding-top: 0.6mm; border-top: 0.2mm dashed #888; font-size: 7px; line-height: 1.2; text-align: center; color: #555; word-break: break-all; }
 [dir="rtl"] { font-family: ${esc(ctx.urduFontFamily || '')}, Arial, sans-serif; direction: rtl; }
 `;
+}
+
+/**
+ * Dev-only provenance line. Enabled with `POS_DEBUG_RENDER=1`; never rendered
+ * in a normal run, so it cannot reach a customer's receipt. Shows which
+ * renderer produced the document, the template/paper and where the address came
+ * from (template override → branch override → Shop Profile → empty).
+ */
+function renderDebugFooter(ctx: RenderContext, templateId: string): string {
+  if (process.env.POS_DEBUG_RENDER !== '1') return '';
+
+  const addressBlock = ctx.design.sections.find((b) => b.type === 'address' && b.enabled);
+  let source = ctx.shop.address !== '' ? 'profile' : 'empty';
+  if (addressBlock) {
+    if (Object.prototype.hasOwnProperty.call(addressBlock, 'text') && addressBlock.text !== undefined) {
+      source = addressBlock.text === '' ? 'template(empty)' : 'template';
+    } else if (
+      ctx.branchId &&
+      addressBlock.branchOverrides &&
+      Object.prototype.hasOwnProperty.call(addressBlock.branchOverrides, String(ctx.branchId))
+    ) {
+      source = addressBlock.branchOverrides[String(ctx.branchId)] === '' ? 'branch(empty)' : 'branch';
+    }
+  }
+
+  return (
+    `<div class="render-debug">` +
+    `renderer=renderDocument doc=${esc(ctx.documentType)} paper=${esc(String(ctx.paper))} ` +
+    `template=${esc(templateId)} address=${esc(source)}` +
+    `</div>`
+  );
 }
 
 /**
@@ -781,6 +822,8 @@ export function renderDocument(
     branchId?: string | number | null;
     assets?: Record<string, string>;
     duplicate?: boolean;
+    /** Template id, only used by the dev-only provenance footer. */
+    templateId?: string;
   } = {}
 ): string {
   const paper = options.paper || (design.paper as DocumentPaper);
@@ -863,10 +906,11 @@ export function renderDocument(
 
   // Reprint stamp always sits at the very top
   const stamp = ctx.duplicate ? '<div class="blk"><div class="duplicate-banner">DUPLICATE COPY</div></div>\n' : '';
+  const debug = renderDebugFooter(ctx, options.templateId || 'built-in');
 
   return `<!doctype html>
 <html><head><meta charset="utf-8" /><title>${docType}</title><style>${buildCss(ctx)}</style></head>
-<body>${stamp}${body}</body></html>`;
+<body>${stamp}${body}${debug}</body></html>`;
 }
 
 /** Money formatter without currency symbol (for table cells) */

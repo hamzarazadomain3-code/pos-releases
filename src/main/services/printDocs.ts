@@ -50,12 +50,17 @@ export function esc(s: string | null | undefined): string {
 }
 
 /**
- * Merge order: shop settings -> legacy receipt settings -> admin panel settings.
- * Admin wins because that is the panel the user actually configures.
+ * Merge order: legacy receipt settings -> Shop Profile (`settings`) -> admin
+ * panel settings. The Shop Profile MUST win over the legacy table: the owner
+ * edits `settings` (Settings → Shop Profile / Shop Information), while
+ * `receipt_settings` is a pre-2026-08 store that only still supplies keys the
+ * profile does not have (paper width, Facebook page, tax id). Spreading the
+ * legacy map last was the bug that made a stale address/phone impossible to
+ * change: it silently overrode every value the owner saved.
  */
 export function getPrintSettings(): Record<string, string> {
   try {
-    const base = { ...getAllSettings(), ...getReceiptSettings() };
+    const base = { ...getReceiptSettings(), ...getAllSettings() };
     const admin = getAllAdminSettings();
     if (admin.receipt_width) base.receipt_width = admin.receipt_width;
     if (admin.receipt_font_size) base.receipt_font_size = admin.receipt_font_size;
@@ -112,8 +117,45 @@ export function fmtExpiryDate(expiry?: string | null): string {
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
-/** Convert print settings to ShopProfile for the new renderer. */
-function toShopProfile(s: Record<string, string>): ShopProfile {
+/**
+ * `receipt_header_lines` is stored as a JSON array (one header line per row,
+ * migration 050) but the renderer consumes plain newline-separated text. A
+ * raw `[]` used to print as a literal "[]" line, so it is normalised here.
+ */
+export function headerLinesText(raw: string | null | undefined): string {
+  const value = String(raw ?? '').trim();
+  if (!value) return '';
+  if (value.startsWith('[')) {
+    try {
+      const arr = JSON.parse(value);
+      if (Array.isArray(arr)) {
+        return arr
+          .map((line) => String(line).trim())
+          .filter(Boolean)
+          .join('\n');
+      }
+    } catch {
+      /* not JSON — fall through to plain text */
+    }
+  }
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
+ * The ONE Shop Profile → renderer adapter. Every document path (receipt,
+ * invoice, credit slip, purchase order) imports this, so a field can never be
+ * mapped differently in one printer than another.
+ *
+ * Empty string is a real value here: the renderer skips the block instead of
+ * printing a default. `receipt_footer_text` (admin panel) wins when the key
+ * exists; otherwise the Shop Profile "Receipt Footer" field is used.
+ */
+export function toShopProfile(s: Record<string, string>): ShopProfile {
+  const hasFooterText = Object.prototype.hasOwnProperty.call(s, 'receipt_footer_text');
   return {
     name: s.shop_name || '',
     address: s.shop_address || '',
@@ -125,9 +167,9 @@ function toShopProfile(s: Record<string, string>): ShopProfile {
     logo: s.shop_logo || '',
     logoGrayscale: s.receipt_logo_grayscale !== 'false',
     logoMaxHeightPx: Number(s.receipt_logo_max_height_px || 64),
-    receiptHeaderLines: s.receipt_header_lines || '',
+    receiptHeaderLines: headerLinesText(s.receipt_header_lines),
     receiptTermsText: s.receipt_terms_text || '',
-    receiptFooterText: s.receipt_footer_text || '',
+    receiptFooterText: hasFooterText ? (s.receipt_footer_text ?? '') : (s.receipt_footer ?? ''),
     receiptSoftwareBy: s.receipt_software_by || '',
     receiptShowSoftwareCredit: s.receipt_show_software_credit !== 'false',
     receiptShowItemsSummary: s.receipt_show_items_summary !== 'false',

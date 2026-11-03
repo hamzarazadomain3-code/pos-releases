@@ -125,6 +125,121 @@ async function run() {
   check('old names still absent', OLD_NAMES.every((n) => !emptyReceipt.includes(n)));
   setSetting('shop_address', NEW_ADDRESS);
 
+  // ── 5b. Empty phone prints NOTHING ─────────────────────────────────────────
+  console.log('\n=== Empty phone ===');
+  setSetting('shop_phone', '');
+  setSetting('shop_whatsapp', '');
+  const noPhone = printing.buildReceiptHtml(saleId, 'standard');
+  check('no phone text when the Shop Profile phone is empty', !noPhone.includes('TESTPHONE-555'));
+  check('no phone line is rendered', !/<div class="shop-line">\s*<\/div>/.test(noPhone));
+  setSetting('shop_phone', 'TESTPHONE-555');
+  setSetting('shop_whatsapp', 'TESTWA-777');
+
+  // ── 5c. Multi-line address keeps one printed line per input line ───────────
+  console.log('\n=== Multi-line address ===');
+  setSetting('shop_address', 'LINE ONE\nLINE TWO\n\nLINE THREE');
+  const multi = printing.buildReceiptHtml(saleId, 'standard');
+  check('every non-empty address line prints', ['LINE ONE', 'LINE TWO', 'LINE THREE'].every((l) => multi.includes(l)));
+  check('blank address lines are dropped', !/<div class="shop-line">\s*<\/div>/.test(multi));
+  setSetting('shop_address', NEW_ADDRESS);
+
+  // ── 5d. Legacy `receipt_settings` can no longer override the profile ───────
+  // This is the exact regression: the pre-2026-08 table used to be spread LAST
+  // in getPrintSettings(), so a stale row beat every Shop Profile edit.
+  console.log('\n=== Legacy receipt_settings precedence ===');
+  {
+    const LEGACY_ADDRESS = 'LEGACY STALE ADDRESS 1999';
+    const LEGACY_PHONE = 'LEGACY-STALE-PHONE';
+    db.prepare('INSERT OR REPLACE INTO receipt_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(
+      'shop_address',
+      LEGACY_ADDRESS
+    );
+    db.prepare('INSERT OR REPLACE INTO receipt_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(
+      'shop_phone',
+      LEGACY_PHONE
+    );
+
+    const merged = printing.buildReceiptHtml(saleId, 'standard');
+    check('Shop Profile address beats the legacy row', merged.includes(NEW_ADDRESS) && !merged.includes(LEGACY_ADDRESS));
+    check('Shop Profile phone beats the legacy row', merged.includes('TESTPHONE-555') && !merged.includes(LEGACY_PHONE));
+
+    const waLegacy = printing.buildReceiptText(saleId);
+    check('WhatsApp text also uses the Shop Profile', waLegacy.includes(NEW_ADDRESS) && !waLegacy.includes(LEGACY_ADDRESS));
+
+    // Migration 065 must adopt nothing (the profile already owns both keys) and
+    // delete the shadowing rows so they can never come back as defaults.
+    const migration = require('../migrations/065_retire_legacy_receipt_settings.js');
+    migration.up(db);
+    const legacyRows = db
+      .prepare("SELECT key FROM receipt_settings WHERE key IN ('shop_name','shop_address','shop_phone','shop_whatsapp','custom_footer')")
+      .all();
+    check('migration 065 removes the shadowing legacy rows', legacyRows.length === 0, `${legacyRows.length} left`);
+
+    const profileAddress = db.prepare("SELECT value FROM settings WHERE key = 'shop_address'").get();
+    check('migration 065 never overwrites the Shop Profile', profileAddress && profileAddress.value === NEW_ADDRESS);
+
+    // Idempotent: a second run is a no-op.
+    migration.up(db);
+    const afterSecond = db.prepare("SELECT value FROM settings WHERE key = 'shop_address'").get();
+    check('migration 065 is idempotent', afterSecond && afterSecond.value === NEW_ADDRESS);
+  }
+
+  // ── 5e. `receipt_header_lines` = "[]" must not print a literal "[]" ────────
+  console.log('\n=== Header lines normalisation ===');
+  {
+    db.prepare(
+      "INSERT OR REPLACE INTO admin_settings (key, value, updated_at) VALUES ('receipt_header_lines', '[]', CURRENT_TIMESTAMP)"
+    ).run();
+    const html = printing.buildReceiptHtml(saleId, 'standard');
+    check('JSON "[]" does not print as a literal line', !html.includes('[]'));
+  }
+
+  // ── 5f. Shop Profile "Receipt Footer" reaches the receipt ──────────────────
+  console.log('\n=== Footer resolution ===');
+  {
+    setSetting('receipt_footer', 'FOOTER-FROM-PROFILE');
+    const html = printing.buildReceiptHtml(saleId, 'standard');
+    check('profile receipt footer prints', html.includes('FOOTER-FROM-PROFILE'));
+
+    setSetting('receipt_footer', '');
+    const cleared = printing.buildReceiptHtml(saleId, 'standard');
+    check('cleared footer prints nothing (no default)', !cleared.includes('FOOTER-FROM-PROFILE'));
+    setSetting('receipt_footer', 'Thank you! Visit again');
+  }
+
+  // ── 5g. Dev provenance footer is opt-in only ───────────────────────────────
+  console.log('\n=== Debug footer ===');
+  {
+    const without = printing.buildReceiptHtml(saleId, 'standard');
+    check('debug footer is off by default', !without.includes('renderer=renderDocument'));
+
+    process.env.POS_DEBUG_RENDER = '1';
+    const withDebug = printing.buildReceiptHtml(saleId, 'standard');
+    delete process.env.POS_DEBUG_RENDER;
+    check('POS_DEBUG_RENDER=1 adds the provenance line', withDebug.includes('renderer=renderDocument'));
+    check('debug line names the address source', withDebug.includes('address=profile'));
+  }
+
+  // ── 5h. A cleared profile survives a restart (migrations re-run) ───────────
+  console.log('\n=== Restart keeps empty values ===');
+  {
+    setSetting('shop_address', '');
+    setSetting('shop_phone', '');
+    const migration = require('../migrations/065_retire_legacy_receipt_settings.js');
+    migration.up(db); // what a restart does for an already-applied migration
+    const addressRow = db.prepare("SELECT value FROM settings WHERE key = 'shop_address'").get();
+    const phoneRow = db.prepare("SELECT value FROM settings WHERE key = 'shop_phone'").get();
+    check('cleared address is still "" after the migration re-runs', addressRow && addressRow.value === '');
+    check('cleared phone is still "" after the migration re-runs', phoneRow && phoneRow.value === '');
+
+    const afterRestart = printing.buildReceiptHtml(saleId, 'standard');
+    check('no address line after the restart', !afterRestart.includes(NEW_ADDRESS));
+    check('no empty line left behind after the restart', !/<div class="shop-line">\s*<\/div>/.test(afterRestart));
+
+    setSetting('shop_address', NEW_ADDRESS);
+    setSetting('shop_phone', 'TESTPHONE-555');
+  }
+
   // ── 6. Strict resolution: template override wins; empty override prints nothing
   console.log('\n=== Template override order ===');
   {

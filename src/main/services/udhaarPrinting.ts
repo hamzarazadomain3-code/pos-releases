@@ -1,4 +1,4 @@
-import { esc, getPrintSettings, htmlDocument, makeMoney } from './printDocs';
+import { esc, getPrintSettings, htmlDocument, makeMoney, toShopProfile } from './printDocs';
 import { previewDocument, printDocument, printJobToPdf, type PrintJob, type PrintResult } from './printService';
 import { getUdhaarEntry, getUdhaarLedger, getUdhaarStatement, type UdhaarStatementRange } from './udhaar';
 import { formatLocalString } from '../utils/timezone';
@@ -6,7 +6,6 @@ import type { Customer, UdhaarEntryDetail, UdhaarItemLine, UdhaarLedgerRow } fro
 import {
   renderDocument,
   type SaleData,
-  type ShopProfile,
   type DocumentDesign,
   defaultDocumentDesign,
 } from '../../shared/receiptDesign';
@@ -446,34 +445,6 @@ export function statementText(customerId: number, from?: string, to?: string): s
 function dateOnly(ts: string | null | undefined): string | null {
   if (!ts) return null;
   return String(ts).slice(0, 10);
-}
-
-/** Convert print settings to ShopProfile for the new renderer. */
-function toShopProfile(s: Record<string, string>): ShopProfile {
-  return {
-    name: s.shop_name || '',
-    address: s.shop_address || '',
-    phone: s.shop_phone || '',
-    whatsapp: s.shop_whatsapp || '',
-    taxNo: s.tax_no || '',
-    ntn: s.shop_ntn || '',
-    strn: s.shop_strn || '',
-    logo: s.shop_logo || '',
-    logoGrayscale: s.receipt_logo_grayscale !== 'false',
-    logoMaxHeightPx: Number(s.receipt_logo_max_height_px || 64),
-    receiptHeaderLines: s.receipt_header_lines || '',
-    receiptTermsText: s.receipt_terms_text || '',
-    receiptFooterText: s.receipt_footer_text || '',
-    receiptSoftwareBy: s.receipt_software_by || '',
-    receiptShowSoftwareCredit: s.receipt_show_software_credit !== 'false',
-    receiptShowItemsSummary: s.receipt_show_items_summary !== 'false',
-    receiptShowPaymentMethod: s.show_payment_method !== 'false',
-    showTaxOnReceipt: s.show_tax_on_receipt !== 'false',
-    currency: s.currency || 'Rs',
-    loyaltyEnabled: s.loyalty_enabled === 'true',
-    pointsPerRupee: Number(s.points_per_rupee || 0),
-    fbrInvoiceUrl: s.fbr_invoice_url || '',
-  };
 }
 
 /** Convert Udhaar entry to SaleData for the new renderer. */

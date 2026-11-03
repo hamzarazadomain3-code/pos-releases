@@ -12,7 +12,7 @@
  * the shipped section order, so the first apply is a no-op visually.
  */
 import { getAdminSetting, setAdminSetting } from './admin';
-import { getPrintSettings, toDataUrl } from './printDocs';
+import { getPrintSettings, toDataUrl, toShopProfile } from './printDocs';
 import { getSale } from './sales';
 import { getUser } from './auth';
 import {
@@ -29,7 +29,6 @@ import {
   resolveLibraryDefault,
   templateDesign,
   renderDocument,
-  type ShopProfile,
   type SaleData,
   type DocumentDesign,
   type DocumentLibrary,
@@ -694,34 +693,6 @@ table.totals tr.net td.lg { font-size: ${sz(14)}px; }
 `;
 }
 
-/** Convert print settings to ShopProfile for the new renderer. */
-function toShopProfile(s: Record<string, string>): ShopProfile {
-  return {
-    name: s.shop_name || '',
-    address: s.shop_address || '',
-    phone: s.shop_phone || '',
-    whatsapp: s.shop_whatsapp || '',
-    taxNo: s.tax_no || '',
-    ntn: s.shop_ntn || '',
-    strn: s.shop_strn || '',
-    logo: s.shop_logo || '',
-    logoGrayscale: s.receipt_logo_grayscale !== 'false',
-    logoMaxHeightPx: Number(s.receipt_logo_max_height_px || 64),
-    receiptHeaderLines: s.receipt_header_lines || '',
-    receiptTermsText: s.receipt_terms_text || '',
-    receiptFooterText: s.receipt_footer_text || '',
-    receiptSoftwareBy: s.receipt_software_by || '',
-    receiptShowSoftwareCredit: s.receipt_show_software_credit !== 'false',
-    receiptShowItemsSummary: s.receipt_show_items_summary !== 'false',
-    receiptShowPaymentMethod: s.show_payment_method !== 'false',
-    showTaxOnReceipt: s.show_tax_on_receipt !== 'false',
-    currency: s.currency || 'Rs',
-    loyaltyEnabled: s.loyalty_enabled === 'true',
-    pointsPerRupee: Number(s.points_per_rupee || 0),
-    fbrInvoiceUrl: s.fbr_invoice_url || '',
-  };
-}
-
 /** Convert SampleSale to the new SaleData type. */
 function toSaleData(sale: SampleSale): SaleData {
   return {
@@ -789,7 +760,20 @@ export async function buildDesignedReceiptAsync(
   // Cast ReceiptDesign to DocumentDesign with documentType
   const docDesign = { ...design, documentType: 'receipt' as const } as DocumentDesign;
   // branchId lets per-block branch overrides (e.g. the address block) resolve.
-  return renderDocument('receipt', saleData, docDesign, shop, { paper, assets, duplicate, branchId });
+  return renderDocument('receipt', saleData, docDesign, shop, {
+    paper,
+    assets,
+    duplicate,
+    branchId,
+    templateId: activeTemplateId(paper, branchId),
+  });
+}
+
+/** Id of the template that drives printing for `paper` (dev footer only). */
+function activeTemplateId(paper: ReceiptPaper, branchId?: string | number | null): string {
+  if (!isReceiptDesignEnabled()) return 'built-in';
+  const lib = getReceiptLibrary();
+  return resolveLibraryDefault(lib, 'receipt', paper, branchId) || 'built-in';
 }
 
 /** Synchronous render (no QR/barcode assets) — used by tests and callers that
@@ -805,7 +789,12 @@ export function buildDesignedReceipt(
   const shop = toShopProfile(getPrintSettings());
   const saleData = toSaleData(sale);
   const docDesign = { ...design, documentType: 'receipt' as const } as DocumentDesign;
-  return renderDocument('receipt', saleData, docDesign, shop, { paper, duplicate, branchId });
+  return renderDocument('receipt', saleData, docDesign, shop, {
+    paper,
+    duplicate,
+    branchId,
+    templateId: activeTemplateId(paper, branchId),
+  });
 }
 
 /** Map a real DB sale onto the SampleSale shape the renderer consumes. */

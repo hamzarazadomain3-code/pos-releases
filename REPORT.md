@@ -349,3 +349,261 @@ token shared in the conversation. The local Wrangler OAuth session used for this
 deploy is separate and remains valid.
 
 ---
+---
+
+## Bug fix — receipt shop header (address / phone)
+
+**Reported**: the printed receipt/preview still shows
+`Faqirwali, Haroonabad, Chishtian, Dharanwala` and `03001234567`; editing
+**Shop Profile** or the **Receipt Designer** has no effect.
+
+**Date**: 2026-11-03 · **Mode**: build-only, no version bump, no release.
+
+### STEP 1 — where every source lives
+
+#### a) Grep of `src/`, `scripts/`, `resources/`, `migrations/`
+
+| Literal | Found in code? | Where |
+|---|---|---|
+| `Faqirwali`, `Haroonabad`, `Chishtian`, `Dharanwala` | **No** in `src/` | only `scripts/check-forbidden-strings.js` (the guard list), `scripts/smoke.js` test data, and this report |
+| `03001234567`, `03706863313` | **No** in `src/` | only `migrations/014_clean_smoke_test_data.js` (deletes old smoke data), `scripts/smoke.js`, the guard list |
+| `Come again soon`, `Thank you! Visit again` | No hardcoded | `SystemSettings.tsx` only has the *label* "Software By Name" |
+| `SOFTWARE BY` | No hardcoded | rendered from `receipt_software_by` setting |
+| `Al Baghdad` | No hardcoded | only this report / old migrations already emptied in Phase 2 |
+
+So the bug is **not** in the code any more — it is **stale data** in the live DB
+plus a merge-order bug that lets that data win.
+
+#### b) The live SQLite DB
+
+Path used by the app: `app.getPath('userData')/pos.db`
+(`src/main/db.ts:47-55`). On this machine:
+`C:\Users\Hamza PC\AppData\Roaming\pos-app\pos.db` (2.6 MB, last write
+2026-11-01). Migrations `060`–`064` are all applied.
+
+The identity strings live in the **legacy `receipt_settings` table**, not in the
+profile the owner edits:
+
+| Table | Key | Value | Updated |
+|---|---|---|---|
+| `receipt_settings` | `shop_name` | `Al Baghdad Sweets & Bakers` | 2026-08-19 |
+| `receipt_settings` | `shop_address` | `Faqirwali, Haroonabad, Chishtian, Dharanwala` | 2026-08-19 |
+| `receipt_settings` | `shop_phone` | `03001234567` | 2026-08-19 |
+| `receipt_settings` | `custom_footer` | `Shukrya! Aap ka Pasandeedah Dukan` | 2026-08-19 |
+| `settings` | `shop_name` | `Al Bagdad sweets & bakers` | current |
+| `settings` | `shop_address` | `HAROONABAD` | current |
+| `settings` | `shop_phone` | `03706863313` | current |
+| `settings` | `shop_whatsapp` | `03706863313` | current |
+| `settings` | `receipt_footer` | `Thank you! Visit again` | current |
+
+`branches` row 1 has `address = 'Shop Address'` (a placeholder, never printed by
+the thermal header), row 2 has `NULL`. No JSON blob in `admin_settings`,
+`settings`, or `invoice_templates` contains the old strings.
+
+Re-seeding check: nothing re-inserts them on launch. `receipt_settings` is only
+written by `reports:updateReceiptSetting` (`src/main/ipc.ts:646`) and by migration
+`002` (already emptied in Phase 2). `settings` is only written by
+`settings:set` (`src/main/ipc.ts:356`). No `INSERT OR REPLACE` / `ON CONFLICT DO
+UPDATE` touches the identity keys. No `electron-store` / `localStorage` copy
+exists.
+
+#### c) Every function that prints the shop header
+
+All of them read the same merged map, so one function is the root cause:
+
+| Renderer | Reads | Header source |
+|---|---|---|
+| `printing.buildReceiptHtml` → `receiptTemplates.buildReceiptHtml` → `receiptDesigner.buildDesignedReceipt` | `getPrintSettings()` (`receiptTemplates.ts:167`, `receiptDesigner.ts:787`) | `toShopProfile(s)` |
+| `printing.buildInvoiceHtml` → `printDocs.buildInvoiceHtml` | `getPrintSettings()` (`printDocs.ts:254`) | `toShopProfile(s)` |
+| `printing.buildReceiptText` (WhatsApp/SMS) | `getPrintSettings()` (`printing.ts:369`) | `s.shop_address` / `s.shop_phone` directly |
+| `udhaarPrinting.*` (credit slip / statement) | `getPrintSettings()` (`udhaarPrinting.ts:78,103,574,590`) | local `toShopProfile(s)` copy |
+| `purchaseImport.printPurchaseOrder` | `getPrintSettings()` (`purchaseImport.ts:525`) | local `toShopProfile(s)` copy |
+| Designer preview / test print | `buildDesignedReceiptAsync` (`receiptDesigner.ts:805`) | `toShopProfile(getPrintSettings())` |
+
+`getPrintSettings()` (`src/main/services/printDocs.ts:56-86`) is the single merge
+point:
+
+```ts
+const base = { ...getAllSettings(), ...getReceiptSettings() };   // line 58
+```
+
+`getReceiptSettings()` reads the **legacy** `receipt_settings` table
+(`src/main/services/reports.ts:404-421`) and is spread **last**, so every legacy
+key **overrides** the Shop Profile value. That is the bug: `settings.shop_address
+= 'HAROONABAD'` is overwritten by `receipt_settings.shop_address = 'Faqirwali…'`
+on every single render. Shop Profile writes only `settings`
+(`settings:set`), so the old value can never be changed from the UI.
+
+Secondary data bug found while tracing: `admin_settings.receipt_header_lines` is
+the JSON text `[]` (seeded by migration `050`), but the single renderer receives
+it as a raw string (`toShopProfile`) and prints a literal `[]` line.
+
+#### d) Debug footer
+
+`shared/renderDocument.ts` now emits a dev-only footer when
+`POS_DEBUG_RENDER=1`:
+
+```
+renderer=renderDocument doc=receipt paper=thermal80 template=my-receipt address=profile
+```
+
+`address` is one of `template` / `branch` / `profile` / `empty` (and
+`*(empty)` for an explicit empty override), so the actual source of the printed
+header is visible without guessing. It is off unless the env var is set, so it
+can never reach a customer's receipt.
+
+### STEP 2 — fix the data
+
+**Root cause (file + line)**: `src/main/services/printDocs.ts:58`
+
+```ts
+const base = { ...getAllSettings(), ...getReceiptSettings() };
+```
+
+`getReceiptSettings()` (`src/main/services/reports.ts:404-421`) reads the legacy
+`receipt_settings` table and was spread **last**, overriding the Shop Profile.
+
+**Fix**: merge order is now
+`{ ...getReceiptSettings(), ...getAllSettings() }` — the profile always wins.
+The legacy table only supplies keys the profile does not own
+(`paper_width`, `show_logo`, `facebook_page`, `tax_id`).
+
+**Migration `065_retire_legacy_receipt_settings.js`** (additive, idempotent):
+
+1. Adopts a legacy value into `settings` **only when `settings` has no row for
+   that key** — existing owner values are never overwritten, so installs that
+   never filled the profile keep their current output.
+2. Deletes the shadowing legacy rows (`shop_name`, `shop_address`,
+   `shop_phone`, `shop_whatsapp`, `custom_footer`, `shop_website`) so they can
+   never act as hidden defaults again.
+3. Normalises `admin_settings.receipt_header_lines` from `[]` to `''`.
+
+Dry run on a **copy** of the live DB (`pos-app/pos.db`, never modified):
+
+| After 065 | Value |
+|---|---|
+| `settings.shop_address` | `HAROONABAD` (unchanged) |
+| `settings.shop_phone` | `03706863313` (unchanged) |
+| `settings.shop_website` | `www.albagdad.com` (adopted — profile had none) |
+| `receipt_settings` remaining | `paper_width`, `show_logo`, `facebook_page`, `tax_id` only |
+| `receipt_header_lines` | `''` (was `[]`) |
+
+So on the next launch the receipt prints **HAROONABAD / 03706863313**, and the
+old `Faqirwali… / 03001234567` can no longer appear.
+
+**Deviation from the brief (documented)**: the brief asked to copy the current
+address/phone into the saved "My receipt" template "so nothing changes
+visually". In this codebase the stale values live in `receipt_settings`, not in
+a template, and writing them into a template would *re-create* the same bug
+(template override beats the Shop Profile by design). The migration therefore
+adopts legacy values into the **Shop Profile** only when the profile has no
+value, which preserves the visual for untouched installs while making the
+value editable. On this install the profile already has values, so the stale
+address is gone as requested.
+
+### STEP 3 — fix the rendering
+
+| Change | File |
+|---|---|
+| Profile wins over legacy table | `src/main/services/printDocs.ts:52-63` |
+| ONE `toShopProfile()` exported; the three duplicate copies in `receiptDesigner.ts`, `purchaseImport.ts`, `udhaarPrinting.ts` deleted and imported from `printDocs` | `printDocs.ts:120-176` |
+| Multi-line address → one centred `.shop-line` per non-empty line; blank lines dropped | `src/shared/renderDocument.ts:299-312` |
+| `receipt_header_lines` JSON `[]` → `''` (no literal `[]` line) | `printDocs.ts:120-147` |
+| Shop Profile "Receipt Footer" (`receipt_footer`) reaches the receipt when `receipt_footer_text` is absent | `printDocs.ts:163-165` |
+| Dev-only provenance footer (`POS_DEBUG_RENDER=1`) | `renderDocument.ts:764-798` |
+| "Shop Information" address is a multi-line textarea (was a single-line input) | `src/renderer/src/pages/Settings.tsx:155-173` |
+
+Resolution order is unchanged and strict: **template block text (even `""`) →
+branch override → Shop Profile → empty** (`renderDocument.ts:144-171`). The
+Receipt Designer already exposes editable Address / Phone textareas and the
+"Use Shop Profile value" reset (`ReceiptDesigner.tsx:1412-1475`); it now works
+because the profile is the live source.
+
+### STEP 4 — proof
+
+`scripts/test_receipt_address.js` — **42/42** (was 22):
+
+```
+=== Thermal receipt ===        PASS (address, phone, no old names)
+=== A4 invoice ===             PASS
+=== PDF ===                    PASS (51 KB PDF from the same HTML)
+=== WhatsApp / SMS ===         PASS
+=== Empty address ===          PASS (no line, no blank line)
+=== Empty phone ===            PASS (no line)
+=== Multi-line address ===     PASS (one line each, blanks dropped)
+=== Legacy receipt_settings === PASS (profile beats stale row; 065 deletes it;
+                                     never overwrites profile; idempotent)
+=== Header lines ===           PASS ("[]" prints nothing)
+=== Footer resolution ===      PASS (profile footer prints; cleared = nothing)
+=== Debug footer ===           PASS (off by default, source=profile when on)
+=== Restart keeps empty ===    PASS ("" survives a migration re-run)
+=== Template override order === PASS
+=== Branch override order ===  PASS
+=== My receipt template ===    PASS
+```
+
+Regression suites (all green):
+
+| Suite | Result |
+|---|---|
+| `test_receipt_address.js` | 42/42 |
+| `receipt_design_check.js` | 68/68 |
+| `receipt_designer_check.js` | 73/73 |
+| `test_purchase_import.js` | 34/34 |
+| `test_negative_stock.js` | 27/27 |
+
+`npm run typecheck` ✅ (includes `check-forbidden-strings.js`: no shop identity
+or shop-content literal anywhere in `src/`) · `npm run build` ✅.
+
+### Changed files
+
+| File | Change |
+|---|---|
+| `src/main/services/printDocs.ts` | merge order; exported `toShopProfile` + `headerLinesText`; footer fallback |
+| `src/main/services/receiptDesigner.ts` | use shared `toShopProfile`; debug `templateId` |
+| `src/main/services/purchaseImport.ts` | use shared `toShopProfile` |
+| `src/main/services/udhaarPrinting.ts` | use shared `toShopProfile` |
+| `src/shared/renderDocument.ts` | multi-line address; dev provenance footer |
+| `src/renderer/src/pages/Settings.tsx` | address is a textarea |
+| `migrations/065_retire_legacy_receipt_settings.js` | new, idempotent |
+| `scripts/test_receipt_address.js` | +20 checks (42 total) |
+| `REPORT.md` | this section |
+
+### Assumptions
+
+- `receipt_footer_text` (admin panel) wins when it has a non-empty value;
+  clearing it returns control to the Shop Profile `receipt_footer` field. The
+  two fields are intentionally kept, with the profile as the fallback.
+- `paper_width`, `show_logo`, `facebook_page`, `tax_id` stay in
+  `receipt_settings` because the Shop Profile does not own them.
+- The debug footer stays in the code behind `POS_DEBUG_RENDER=1` (not removed)
+  so the provenance can be re-checked without another code change.
+- No version bump, no release, no GitHub tag — as instructed.
+
+### Skipped / limits
+
+- **Not rebuilt into an installer**: this run is build-only (no version bump,
+  no release), so `dist/` has the fix but the installed 2.22.0 app does not.
+- No browser click-through: there is no browser-automation tool in this
+  environment, so the UI was verified by typecheck/build and by the renderer
+  tests rather than by screenshot.
+- `receipt_design_enabled` is still `false` on the live DB (opt-in design
+  system). Receipts therefore render the built-in layout with live Shop Profile
+  values — which is exactly the fixed behaviour. The Designer's "apply" toggle
+  still controls whether a saved template overrides the layout.
+
+### ⚠️ You must rebuild / reinstall to see the fix
+
+The fix lives in `src/` and in migration `065`. The installed 2.22.0 build does
+not contain it. Do one of:
+
+1. **Dev**: `npm run dev` (migration 065 applies on first launch), or
+2. **Installer**: `npm run build` → `npm run dist` (or `npm run release` when
+   you want a new version), then install the new build.
+
+On first launch after the update, migration 065 deletes the stale
+`receipt_settings` rows, so the receipt immediately prints the Shop Profile
+address/phone (`HAROONABAD` / `03706863313`). Edit them in
+**Settings → Shop Profile**, then reprint.
+
+

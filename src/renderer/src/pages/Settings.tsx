@@ -152,10 +152,20 @@ export default function Settings() {
               ).map(([key, label]) => (
                 <label className="field" key={key}>
                   <span>{label}</span>
-                  <input
-                    value={settings[key] ?? ''}
-                    onChange={(e) => setSettings({ ...settings, [key]: e.target.value })}
-                  />
+                  {key === 'shop_address' ? (
+                    <textarea
+                      value={settings[key] ?? ''}
+                      onChange={(e) => setSettings({ ...settings, [key]: e.target.value })}
+                      placeholder={'Street, City, Area\nOne line per printed line'}
+                      rows={3}
+                      style={{ width: '100%' }}
+                    />
+                  ) : (
+                    <input
+                      value={settings[key] ?? ''}
+                      onChange={(e) => setSettings({ ...settings, [key]: e.target.value })}
+                    />
+                  )}
                 </label>
               ))}
               <label className="field">

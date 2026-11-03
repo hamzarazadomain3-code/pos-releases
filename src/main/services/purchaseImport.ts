@@ -24,14 +24,13 @@ import { getProduct, createProduct, roundStock, recordMovement } from './invento
 import { getPurchaseOrder, insertPurchaseOrderCore, type PurchaseLineInput } from './purchases';
 import { logActivity } from './activity';
 import { can, getSessionUserId } from './auth';
-import { getPrintSettings } from './printDocs';
+import { getPrintSettings, toShopProfile } from './printDocs';
 import { printDocument, previewDocument } from './printService';
 import {
   defaultDocumentDesign,
   renderDocument,
   type DocumentDesign,
   type DocumentPaper,
-  type ShopProfile,
   type SaleData,
 } from '../../shared/receiptDesign';
 import type {
@@ -456,33 +455,6 @@ export function listPurchaseImports(limit = 20): PurchaseImportLogRow[] {
 // ============================================================================
 // Print / export / share a purchase order — through the ONE renderer
 // ============================================================================
-
-function toShopProfile(s: Record<string, string>): ShopProfile {
-  return {
-    name: s.shop_name || '',
-    address: s.shop_address || '',
-    phone: s.shop_phone || '',
-    whatsapp: s.shop_whatsapp || '',
-    taxNo: s.tax_no || '',
-    ntn: s.shop_ntn || '',
-    strn: s.shop_strn || '',
-    logo: s.shop_logo || '',
-    logoGrayscale: s.receipt_logo_grayscale !== 'false',
-    logoMaxHeightPx: Number(s.receipt_logo_max_height_px || 64),
-    receiptHeaderLines: s.receipt_header_lines || '',
-    receiptTermsText: s.receipt_terms_text || '',
-    receiptFooterText: s.receipt_footer_text || '',
-    receiptSoftwareBy: s.receipt_software_by || '',
-    receiptShowSoftwareCredit: s.receipt_show_software_credit !== 'false',
-    receiptShowItemsSummary: s.receipt_show_items_summary !== 'false',
-    receiptShowPaymentMethod: s.show_payment_method !== 'false',
-    showTaxOnReceipt: s.show_tax_on_receipt !== 'false',
-    currency: s.currency || 'Rs',
-    loyaltyEnabled: s.loyalty_enabled === 'true',
-    pointsPerRupee: Number(s.points_per_rupee || 0),
-    fbrInvoiceUrl: s.fbr_invoice_url || '',
-  };
-}
 
 /** A purchase order as a document for the shared renderer. */
 function purchaseOrderToSaleData(id: number): SaleData {
