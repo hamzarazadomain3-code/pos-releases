@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import type { DailyStats, HourlyTrendRow, TopProductRow } from '../../../shared/types';
+import type { DailyStats, DailyTrendRowSimple, HourlyTrendRow, TopProductRow } from '../../../shared/types';
 import {
   sumCashCollected,
   sumPayables,
@@ -177,7 +177,7 @@ const KPI_SHADOWS = {
 };
 
 export default function Dashboard() {
-  const [salesData, setSalesData] = useState<HourlyTrendRow[]>([]);
+  const [salesData, setSalesData] = useState<(HourlyTrendRow | DailyTrendRowSimple)[]>([]);
   const [topProducts, setTopProducts] = useState<TopProductRow[]>([]);
   const [dailyStats, setDailyStats] = useState<DailyStats>({
     total_sales: 0,
@@ -187,7 +187,6 @@ export default function Dashboard() {
   const [lowStockCount, setLowStockCount] = useState(0);
   const [outOfStockCount, setOutOfStockCount] = useState(0);
   const [todayExpenses, setTodayExpenses] = useState(0);
-  const [udhaarDue, setUdhaarDue] = useState(0);
   const [negativeStockCount, setNegativeStockCount] = useState(0);
   const [expiringCount, setExpiringCount] = useState(0);
   const [totalProducts, setTotalProducts] = useState(0);
@@ -214,10 +213,13 @@ export default function Dashboard() {
       } else if (selectedPeriod === 'month') {
         from = toLocalDateString(new Date(now.getFullYear(), now.getMonth(), 1));
       }
-      const [trend, top, allTimeStats, lowStock, inventory, parties, periodReturns, cashSales, suppliers, expiring, salesAnalysis, expenseSummary] = await Promise.all([
-        window.api.reports.getDailySalesTrend(from, to),
+      // Use hourly trend for Today, daily trend for Week/Month
+      const trendPromise = selectedPeriod === 'today'
+        ? window.api.reports.getDailySalesTrend(from, to)
+        : window.api.reports.getDailySalesTrendDaily(from, to);
+      const [trendRaw, top, lowStock, inventory, parties, periodReturns, cashSales, suppliers, expiring, salesAnalysis, expenseSummary] = await Promise.all([
+        trendPromise,
         window.api.reports.getTopProducts(5, from, to),
-        window.api.reports.getDailyStats(from, to),
         window.api.inventory.lowStock().catch(() => []),
         window.api.inventory.list().catch(() => []),
         window.api.customers.list().catch(() => []),
@@ -229,6 +231,7 @@ export default function Dashboard() {
         window.api.expenses.summary(from, to).catch(() => ({ total: 0 })),
       ]);
 
+      const trend = trendRaw as (HourlyTrendRow | DailyTrendRowSimple)[];
       setSalesData(trend);
       setTopProducts(top);
       setDailyStats({
@@ -453,13 +456,13 @@ export default function Dashboard() {
       </div>
 
       <div className="panel">
-        <div className="panel-title">Hourly Sales Trend (Today)</div>
+        <div className="panel-title">{period === 'today' ? 'Hourly Sales Trend' : 'Daily Sales Trend'} ({periodLabel})</div>
         {salesData.length > 0 && salesData.some((r) => r.amount > 0) ? (
           <div style={{ width: '100%', height: 300 }}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={salesData}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="hour" interval={2} />
+                <XAxis dataKey={period === 'today' ? 'hour' : 'date'} interval={period === 'today' ? 2 : undefined} />
                 <YAxis />
                 <Tooltip />
                 <Legend />
@@ -468,12 +471,12 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </div>
         ) : (
-          <p className="muted">{loaded ? 'No sales recorded today yet.' : 'Loading…'}</p>
+          <p className="muted">{loaded ? 'No sales recorded ' + periodLabel.toLowerCase() + ' yet.' : 'Loading…'}</p>
         )}
       </div>
 
       <div className="panel">
-        <div className="panel-title">Top 5 Products (Today)</div>
+        <div className="panel-title">Top 5 Products ({periodLabel})</div>
         {topProducts.length > 0 ? (
           <>
             <div style={{ width: '100%', height: 300 }}>

@@ -726,6 +726,11 @@ export interface DailyTrendRow {
   bills: number;
   total: number;
 }
+
+export interface DailyTrendRowSimple {
+  date: string;
+  amount: number;
+}
 export interface SalesAnalysisResult {
   summary: SalesAnalysisSummary;
   paymentBreakdown: PaymentBreakdownRow[];
@@ -1435,6 +1440,7 @@ export interface PosBridge {
     addExpense: (input: { title: string; category: string; amount: number; expense_date?: string; notes?: string }) => Promise<Expense>;
     deleteExpense: (id: number) => Promise<boolean>;
     getDailySalesTrend: (from?: string, to?: string) => Promise<HourlyTrendRow[]>;
+    getDailySalesTrendDaily: (from?: string, to?: string) => Promise<DailyTrendRow[]>;
     getTopProducts: (limit?: number, from?: string, to?: string) => Promise<TopProductRow[]>;
     getDailyStats: (from?: string, to?: string) => Promise<DailyStats>;
     getReceiptSettings: () => Promise<ReceiptSettings>;

@@ -107,6 +107,7 @@ import {
   getCustomerAnalysis,
   getDailyClosing,
   getDailySalesTrend,
+  getDailySalesTrendDaily,
   getDailyStats,
   getFinancialReport,
   getInventoryAnalysis,
@@ -652,6 +653,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('reports:deleteExpense', (_e, id: number) => deleteExpense(id));
 
   ipcMain.handle('reports:getDailySalesTrend', (_e, from?: string, to?: string) => getDailySalesTrend(from, to));
+  ipcMain.handle('reports:getDailySalesTrendDaily', (_e, from?: string, to?: string) => getDailySalesTrendDaily(from, to));
   ipcMain.handle('reports:getTopProducts', (_e, limit?: number, from?: string, to?: string) => getTopProducts(limit ?? 5, from, to));
   ipcMain.handle('reports:getDailyStats', (_e, from?: string, to?: string) => getDailyStats(from, to));
   ipcMain.handle('reports:getReceiptSettings', () => getReceiptSettings());

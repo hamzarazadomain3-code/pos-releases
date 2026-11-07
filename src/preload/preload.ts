@@ -168,6 +168,7 @@ const bridge: PosBridge = {
     addExpense: (input) => ipcRenderer.invoke('reports:addExpense', input),
     deleteExpense: (id: number) => ipcRenderer.invoke('reports:deleteExpense', id),
     getDailySalesTrend: (from?: string, to?: string) => ipcRenderer.invoke('reports:getDailySalesTrend', from, to),
+    getDailySalesTrendDaily: (from?: string, to?: string) => ipcRenderer.invoke('reports:getDailySalesTrendDaily', from, to),
     getTopProducts: (limit?: number, from?: string, to?: string) => ipcRenderer.invoke('reports:getTopProducts', limit, from, to),
     getDailyStats: (from?: string, to?: string) => ipcRenderer.invoke('reports:getDailyStats', from, to),
     getReceiptSettings: () => ipcRenderer.invoke('reports:getReceiptSettings'),

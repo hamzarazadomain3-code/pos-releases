@@ -1,7 +1,7 @@
 import { getDb } from '../db';
 import { getAllSettings } from './settings';
 import { BrowserWindow, dialog } from 'electron';
-import { todayLocal, formatLocalString, daysAgo } from '../utils/timezone';
+import { todayLocal, formatLocalString, daysAgo, toLocalDateString } from '../utils/timezone';
 import { createWriteStream } from 'fs';
 import type {
   SalesAnalysisResult,
@@ -11,6 +11,7 @@ import type {
   FinancialReportResult,
   TaxReportResult,
   DailyClosingResult,
+DailyTrendRowSimple,
 } from '../../shared/types';
 import type PDFDocument from 'pdfkit';
 
@@ -370,6 +371,39 @@ export function getDailySalesTrend(from?: string, to?: string): HourlyTrendRow[]
   const allHours = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}:00`);
   const map = new Map(rows.map((r) => [r.hour, r.amount]));
   return allHours.map((hour) => ({ hour, amount: map.get(hour) ?? 0 }));
+}
+
+export interface DailyTrendRow {
+  date: string;
+  amount: number;
+}
+
+export function getDailySalesTrendDaily(from?: string, to?: string): DailyTrendRowSimple[] {
+  const db = getDb();
+  const f = from || todayLocal();
+  const t = to || todayLocal();
+  const rows = db
+    .prepare(
+      `SELECT date(created_at) AS date,
+              COALESCE(SUM(total_amount - COALESCE(returned_amount,0)),0) AS amount
+       FROM sales
+       WHERE status='completed' AND date(created_at) BETWEEN date(?) AND date(?)
+       GROUP BY date(created_at)
+       ORDER BY date`
+    )
+    .all(f, t) as unknown as DailyTrendRow[];
+  // Fill in missing dates with 0
+  const start = new Date(f);
+  const end = new Date(t);
+  const map = new Map(rows.map((r) => [r.date, r.amount]));
+  const result: DailyTrendRow[] = [];
+  const current = new Date(start);
+  while (current <= end) {
+    const dateStr = toLocalDateString(current);
+    result.push({ date: dateStr, amount: map.get(dateStr) ?? 0 });
+    current.setDate(current.getDate() + 1);
+  }
+  return result;
 }
 
 export function getTopProducts(limit = 5, from?: string, to?: string): TopProductRow[] {

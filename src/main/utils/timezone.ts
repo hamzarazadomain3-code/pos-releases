@@ -5,6 +5,11 @@ export function todayLocal(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: PAKISTAN_TZ }); // en-CA gives YYYY-MM-DD
 }
 
+/** Convert a Date to local YYYY-MM-DD string (Pakistan time). */
+export function toLocalDateString(d: Date): string {
+  return d.toLocaleDateString('en-CA', { timeZone: PAKISTAN_TZ }); // en-CA gives YYYY-MM-DD
+}
+
 /** Format a Date or ISO string for Pakistan timezone. */
 export function formatLocalString(d: Date | string): string {
   const date = typeof d === 'string' ? new Date(d) : d;
