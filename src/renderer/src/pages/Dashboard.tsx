@@ -22,6 +22,7 @@ import {
   sumSaleReturns,
 } from '../../../shared/dashboardMath';
 import { formatMoney, getCurrencySymbol } from '../utils/currency';
+import { toLocalDateString } from '../utils/dateUtils';
 
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1'];
 
@@ -201,24 +202,40 @@ export default function Dashboard() {
   const periodLabel = period === 'today' ? 'Today' : period === 'week' ? 'This Week' : 'This Month';
   const [loaded, setLoaded] = useState(false);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (selectedPeriod = period) => {
     try {
-      const [trend, top, stats, lowStock, inventory, parties, returns, cashSales, suppliers, expiring] = await Promise.all([
+      const now = new Date();
+      const to = toLocalDateString(now);
+      let from = to;
+      if (selectedPeriod === 'week') {
+        const d = new Date(now);
+        d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+        from = toLocalDateString(d);
+      } else if (selectedPeriod === 'month') {
+        from = toLocalDateString(new Date(now.getFullYear(), now.getMonth(), 1));
+      }
+      const [trend, top, allTimeStats, lowStock, inventory, parties, periodReturns, cashSales, suppliers, expiring, salesAnalysis, expenseSummary] = await Promise.all([
         window.api.reports.getDailySalesTrend(),
         window.api.reports.getTopProducts(5),
         window.api.reports.getDailyStats(),
         window.api.inventory.lowStock().catch(() => []),
         window.api.inventory.list().catch(() => []),
         window.api.customers.list().catch(() => []),
-        window.api.sales.list(undefined, undefined, true).catch(() => []),
-        window.api.sales.list(undefined, undefined, false, undefined, undefined, 'Cash').catch(() => []),
+        window.api.sales.list(from, to, true).catch(() => []),
+        window.api.sales.list(from, to, false, undefined, undefined, 'Cash').catch(() => []),
         window.api.purchases.suppliers().catch(() => []),
         window.api.reports.expiringSoon(30).catch(() => []),
+        window.api.reports.getSalesAnalysis(from, to).catch(() => ({ summary: { total_sales: 0, bill_count: 0, avg_bill: 0 } })),
+        window.api.expenses.summary(from, to).catch(() => ({ total: 0 })),
       ]);
 
       setSalesData(trend);
       setTopProducts(top);
-      setDailyStats(stats);
+      setDailyStats({
+        total_sales: salesAnalysis?.summary?.total_sales ?? 0,
+        bill_count: salesAnalysis?.summary?.bill_count ?? 0,
+        avg_bill: salesAnalysis?.summary?.avg_bill ?? 0,
+      });
       setLowStockCount(lowStock.length);
       setOutOfStockCount(inventory.filter((p: any) => p.stock_qty <= 0).length);
       setNegativeStockCount(inventory.filter((p: any) => p.stock_qty < 0).length);
@@ -226,44 +243,35 @@ export default function Dashboard() {
       setTotalParties(parties.filter((p: any) => p.active !== 0).length);
       setExpiringCount(expiring.length);
 
-      // A "return" is its own negative sale (status = 'returned'). Summing every
-      // sale row here made "Sale Return" equal a slice of revenue, not refunds.
-      const returnTotal = sumSaleReturns(returns);
+      // A "return" is its own negative sale (status = 'returned'). Filter the returned rows in the chosen period.
+      const returnTotal = sumSaleReturns(periodReturns.filter((s: any) => s.status === 'returned'));
       setSaleReturnAmount(returnTotal);
 
-      // Cash actually collected today (payments table rows are cash sales).
+      // Cash actually collected in the selected period.
       const paymentInTotal = sumCashCollected(cashSales);
       setPaymentInAmount(paymentInTotal);
 
       // Receivable = customers owe the shop. Payable = shop owes suppliers.
-      // These were both computed from the SAME customers array before, so the two
-      // cards always showed an identical number.
       const receivableTotal = sumReceivables(parties);
       setReceivableBalance(receivableTotal);
 
       const payableTotal = sumPayables(suppliers);
       setPayableBalance(payableTotal);
 
-      const dashData = await (window.api as any).reports.dashboard?.().catch(() => null);
-      if (dashData) {
-        setTodayExpenses(dashData.today_expenses || 0);
-        setUdhaarDue(dashData.udhaar_due || 0);
-        // Cash paid out today is tracked as expenses; supplier payments are
-        // separate and not part of the dashboard KPI.
-        setPaymentOutAmount(dashData.today_expenses || 0);
-      }
+      setTodayExpenses(expenseSummary?.total ?? 0);
+      setPaymentOutAmount(expenseSummary?.total ?? 0);
 
       setLoaded(true);
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
     }
-  }, []);
+  }, [period]);
 
   useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, 60000);
+    loadData(period);
+    const interval = setInterval(() => loadData(period), 60000);
     return () => clearInterval(interval);
-  }, [loadData]);
+  }, [period, loadData]);
 
   const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
@@ -295,7 +303,7 @@ export default function Dashboard() {
       <div className="page-header">
         <h1>Dashboard</h1>
         <div className="toolbar">
-          <button className="btn btn-sm" onClick={loadData}>
+          <button className="btn btn-sm" onClick={() => loadData(period)}>
             Refresh
           </button>
         </div>
@@ -397,14 +405,14 @@ export default function Dashboard() {
           shadow={KPI_SHADOWS.paymentOut}
         />
         <KpiCard
-          label="Total Payable (Suppliers)"
+          label="Total Payable (All Time)"
           value={formatMoney(payableBalance)}
           icon={CardIcons.payable}
           gradient={KPI_GRADIENTS.payable}
           shadow={KPI_SHADOWS.payable}
         />
         <KpiCard
-          label="Total Receivable (Udhaar)"
+          label="Total Receivable (All Time)"
           value={formatMoney(receivableBalance)}
           icon={CardIcons.receivable}
           gradient={KPI_GRADIENTS.receivable}

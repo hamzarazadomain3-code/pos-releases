@@ -7,6 +7,7 @@ import { useBarcodeScan } from '../hooks/useBarcodeScan';
 import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
 import { ImageField } from '../components/ImageField';
+import { DateInput } from '../components/DateInput';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
@@ -1033,10 +1034,9 @@ export default function Inventory() {
               </label>
               <label className="field">
                 <span>Expiry Date</span>
-                <input
-                  type="date"
+                <DateInput
                   value={form.expiry_date}
-                  onChange={(e) => setForm({ ...form, expiry_date: e.target.value })}
+                  onChange={(v) => setForm({ ...form, expiry_date: v })}
                 />
               </label>
               <label className="field">
@@ -1050,10 +1050,9 @@ export default function Inventory() {
               </label>
               <label className="field">
                 <span>Mfg Date</span>
-                <input
-                  type="date"
+                <DateInput
                   value={form.mfg_date}
-                  onChange={(e) => setForm({ ...form, mfg_date: e.target.value })}
+                  onChange={(v) => setForm({ ...form, mfg_date: v })}
                 />
               </label>
               <label className="field">

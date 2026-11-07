@@ -457,13 +457,21 @@ export function getSalesAnalysis(from?: string, to?: string): SalesAnalysisResul
     f, t
   );
   const grand = paymentBreakdownRaw.reduce((a, r) => a + r.total, 0);
-  const scale = (grand > 0 && summary.total_sales > 0) ? summary.total_sales / grand : 1;
+  const adjustment = summary.total_sales - grand;
   const paymentBreakdown = paymentBreakdownRaw.map((r) => ({
     mode: r.mode,
     bill_count: 0,
-    total: r.total * scale,
+    total: r.total,
     percentage: pct(r.total, grand),
   }));
+  if (Math.abs(adjustment) > 0.005) {
+    paymentBreakdown.push({
+      mode: 'Change / adjustments',
+      bill_count: 0,
+      total: adjustment,
+      percentage: pct(Math.abs(adjustment), Math.abs(summary.total_sales) || 1),
+    });
+  }
   const dailyTrend = all<{ date: string; bills: number; total: number }>(
     `SELECT date(created_at) AS date, COUNT(*) AS bills,
             COALESCE(SUM(total_amount - COALESCE(returned_amount,0)),0) AS total

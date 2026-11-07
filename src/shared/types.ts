@@ -1104,7 +1104,7 @@ export interface CashRefundRow {
 export interface AuditRow {
   id: number;
   user_id: number;
-  status: 'in_progress' | 'completed';
+  status: 'in_progress' | 'completed' | 'cancelled';
   total_items: number;
   total_variance: number;
   notes: string | null;

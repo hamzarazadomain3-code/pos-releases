@@ -197,9 +197,29 @@ export function formatInputDate(iso: any): string {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = String(d.getFullYear());
   const __df = (window as any).__dateFormat || 'DD/MM/YYYY';
-  switch (__df) {
+  switch (_dateFormat) {
     case 'MM/DD/YYYY': return `${mm}/${dd}/${yyyy}`;
     case 'YYYY-MM-DD': return `${yyyy}-${mm}-${dd}`;
     default: return `${dd}/${mm}/${yyyy}`;
   }
+}
+
+export function parseInputDate(text: any): string | null {
+  const value = String(text ?? '').trim();
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const m = value.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/);
+  if (m) {
+    const [_, a, b, yyyy] = m;
+    let dd = a, mm = b;
+    switch (_dateFormat) {
+      case 'MM/DD/YYYY': dd = b; mm = a; break;
+      case 'YYYY-MM-DD': return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+      default: break;
+    }
+    return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+  }
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }

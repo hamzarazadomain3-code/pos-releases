@@ -12,6 +12,7 @@ import { initUpdater, checkForUpdates } from './updater';
 import { initWhatsAppGateway, shutdownWhatsAppGateway } from './whatsapp-gateway';
 import { getInventoryReports } from './services/inventoryReports';
 import { getAlertService } from './services/alertService';
+import { expirePromotions } from './services/promotions';
 import { ensureOtpTable } from './services/twoFactorAuth';
 import { todayLocal } from './utils/timezone';
 
@@ -312,6 +313,7 @@ function scheduleHourlyAlerts(): void {
 
 function runAlertCheck(): void {
   try {
+    try { expirePromotions(); } catch { /* ignore */ }
     const adminSettings = getAllAdminSettings();
     const lowStockEnabled = adminSettings.low_stock_alert_enabled;
     if (lowStockEnabled === 'false' || lowStockEnabled === '0') return;

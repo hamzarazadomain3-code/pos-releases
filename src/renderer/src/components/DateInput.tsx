@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { formatInputDate } from '../utils/dateUtils';
+import { formatInputDate, parseInputDate } from '../utils/dateUtils';
 
 interface DateInputProps {
   value: string;
@@ -14,21 +14,28 @@ export function DateInput({ value, onChange, className = 'inp', placeholder }: D
     setText(formatInputDate(value));
   }, [value]);
 
+  const commit = (next: string) => {
+    const iso = parseInputDate(next);
+    if (iso) {
+      onChange(iso);
+    } else if (next.trim() === '') {
+      onChange('');
+    } else {
+      // Invalid input: revert to the last committed value.
+      setText(formatInputDate(value));
+    }
+  };
+
   return (
     <input
       className={className}
       type="text"
-      placeholder={placeholder || formatInputDate('2000-01-01').replace(/[0-9]/g, '#')}
+      placeholder={placeholder || formatInputDate('2000-01-01')}
       value={text}
-      onChange={(e) => {
-        const v = e.target.value;
-        setText(v);
-        // Let the parent own parsing in places where ISO is needed:
-        // try ISO first, otherwise keep whatever was typed.
-        onChange(v);
-      }}
-      onBlur={() => {
-        setText(formatInputDate(value));
+      onChange={(e) => setText(e.target.value)}
+      onBlur={(e) => commit(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit(e.currentTarget.value);
       }}
     />
   );

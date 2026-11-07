@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Category, Product, PromotionInput, PromotionRow } from '../../../shared/types';
 import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
+import { DateInput } from '../components/DateInput';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
@@ -384,11 +385,11 @@ export default function Promotions() {
             <div className="form-grid" style={{ marginTop: 10 }}>
               <label className="field">
                 <span>Start date (optional)</span>
-                <input type="date" value={form.start_date ?? ''} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
+                <DateInput value={form.start_date ?? ''} onChange={(v) => setForm({ ...form, start_date: v })} />
               </label>
               <label className="field">
                 <span>End date (optional)</span>
-                <input type="date" value={form.end_date ?? ''} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
+                <DateInput value={form.end_date ?? ''} onChange={(v) => setForm({ ...form, end_date: v })} />
               </label>
             </div>
             {form.type === 'bogo' && (

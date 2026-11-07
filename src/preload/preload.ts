@@ -301,7 +301,7 @@ const bridge: PosBridge = {
   audits: {
     create: () => ipcRenderer.invoke('audits:create'),
     list: () => ipcRenderer.invoke('audits:list'),
-    listPaginated: (page?: number, pageSize?: number, from?: string, to?: string, userId?: number, status?: 'in_progress' | 'completed') =>
+    listPaginated: (page?: number, pageSize?: number, from?: string, to?: string, userId?: number, status?: 'in_progress' | 'completed' | 'cancelled') =>
       ipcRenderer.invoke('audits:listPaginated', page, pageSize, from, to, userId, status),
     get: (id: number) => ipcRenderer.invoke('audits:get', id),
     saveCounts: (auditId: number, counts) => ipcRenderer.invoke('audits:saveCounts', auditId, counts),

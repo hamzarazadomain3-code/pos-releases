@@ -72,7 +72,7 @@ export function listAuditsPaginated(
   from?: string,
   to?: string,
   userId?: number,
-  status?: 'in_progress' | 'completed'
+  status?: 'in_progress' | 'completed' | 'cancelled'
 ): { rows: AuditRow[]; total: number } {
   requireAuditAccess();
   const db = getDb();
@@ -154,8 +154,7 @@ export function cancelAudit(auditId: number): boolean {
   if (audit.status !== 'in_progress') throw new Error('Only an in-progress audit can be cancelled');
   db.exec('BEGIN');
   try {
-    db.prepare('DELETE FROM audit_items WHERE audit_id = ?').run(auditId);
-    db.prepare('DELETE FROM audits WHERE id = ?').run(auditId);
+    db.prepare("UPDATE audits SET status = 'cancelled' WHERE id = ?").run(auditId);
     db.exec('COMMIT');
     logActivity('audit_cancelled', 'audit', auditId, 'cancelled without stock adjustment');
     return true;

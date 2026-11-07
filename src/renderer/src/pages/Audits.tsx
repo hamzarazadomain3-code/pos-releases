@@ -291,6 +291,7 @@ export default function Audits() {
                 <option value="">All Status</option>
                 <option value="completed">Completed</option>
                 <option value="in_progress">In Progress</option>
+                <option value="cancelled">Cancelled</option>
               </select>
             </FilterRow>
             <FilterRow style={{ justifyContent: 'flex-end' }}>

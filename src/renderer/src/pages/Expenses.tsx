@@ -5,6 +5,7 @@ import { toLocalDateString, formatDateAdmin } from '../utils/dateUtils';
 import { formatMoney, getCurrencySymbol } from '../utils/currency';
 import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
+import { DateInput } from '../components/DateInput';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
@@ -235,7 +236,7 @@ export default function Expenses() {
               </div>
               <div className="form-group">
                 <label>Date</label>
-                <input type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} />
+                <DateInput value={formDate} onChange={(v) => setFormDate(v)} />
               </div>
             </div>
             <div className="form-group">
