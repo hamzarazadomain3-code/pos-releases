@@ -334,7 +334,7 @@ export class AlertService {
     `).get(today) as { bill_count: number; total_sales: number; completed_sales: number };
 
     const topProducts = this.db.prepare(`
-      SELECT p.name, SUM(si.quantity) as qty
+      SELECT p.name, SUM(si.qty) as qty
       FROM sale_items si
       JOIN products p ON si.product_id = p.id
       JOIN sales s ON si.sale_id = s.id
