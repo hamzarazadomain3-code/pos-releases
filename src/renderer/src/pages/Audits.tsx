@@ -31,7 +31,7 @@ export default function Audits() {
   const [historyFrom, setHistoryFrom] = useState('');
   const [historyTo, setHistoryTo] = useState('');
   const [historyUserId, setHistoryUserId] = useState<number | ''>('');
-  const [historyStatus, setHistoryStatus] = useState<'in_progress' | 'completed' | ''>('');
+  const [historyStatus, setHistoryStatus] = useState<'in_progress' | 'completed' | 'cancelled' | ''>('');
 
   const load = useCallback(async () => {
     try {
@@ -141,7 +141,8 @@ export default function Audits() {
       setMsg('');
       await load();
     } catch (e) {
-      setErr(String(e));
+      const msg = String(e);
+      setErr(msg.includes('audits:complete') ? 'Could not complete audit. Make sure all counted items are valid.' : msg);
     }
   };
 
@@ -243,6 +244,12 @@ export default function Audits() {
       {err && (
         <div className="notice error">
           {err} <button className="btn btn-sm" onClick={() => setErr('')}>OK</button>
+        </div>
+      )}
+      {active.length > 0 && tab === 'active' && !current && (
+        <div className="notice warning" style={{ marginBottom: 12 }}>
+          <strong>⚠ {active.length} audit{active.length > 1 ? 's are' : ' is'} in progress.</strong> 
+          Complete or cancel them before starting a new one.
         </div>
       )}
       {msg && (

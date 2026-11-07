@@ -1581,7 +1581,7 @@ export interface PosBridge {
   audits: {
     create: () => Promise<AuditRow & { items: AuditItemRow[] }>;
     list: () => Promise<AuditRow[]>;
-    listPaginated: (page?: number, pageSize?: number, from?: string, to?: string, userId?: number, status?: 'in_progress' | 'completed') => Promise<{ rows: AuditRow[]; total: number }>;
+    listPaginated: (page?: number, pageSize?: number, from?: string, to?: string, userId?: number, status?: 'in_progress' | 'completed' | 'cancelled') => Promise<{ rows: AuditRow[]; total: number }>;
     get: (id: number) => Promise<(AuditRow & { items: AuditItemRow[] }) | null>;
     saveCounts: (auditId: number, counts: AuditCountInput[]) => Promise<boolean>;
     cancel: (auditId: number) => Promise<boolean>;
