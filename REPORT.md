@@ -241,3 +241,20 @@ Owner action: copy `pos.db` to `E:\antigravty\db-copy\pos-copy.db`, then run Pha
 | Electron heavy suites (`test:print`, `test:receipt`, `test:receiptdesigner`, `test:return`, `test:keyboard`, `test:recovery:ui`, `smoke:web`) | NOT RUNNABLE in this non-interactive environment |
 
 New bridge tests pass in `test:audit`; `is_test` and alert dedup runtime paths are covered by service changes and inventory report tests; idle timeout and UTF-8 BOM remain runtime/static changes. Desktop rebuild/reinstall and web redeploy are **owner actions**, not performed here.
+
+## Phase 2 - Honesty fix verification
+
+Typecheck: PASS  
+Build: PASS  
+Suites rerun:
+- test:audit: PASS 27/27
+- test:holdresume: PASS 26/26
+- test:shortcuts: PASS 22/22
+- test:licensing: PASS 55/55
+- test:imageupload: PASS 23/23
+- test_inventoryReports.js: PASS 12/12
+Not runnable in this environment:
+- test:print, test:receipt, test:receiptdesigner, test:return, test:keyboard, test:recovery:ui, smoke:web: NOT RUNNABLE (Electron requires an interactive display / higher C-drive space not available). They were not rerun in this pass.
+
+## Phase 3 - Real database verification
+Read-only DB copy at `E:\antigravty\db-copy\pos-copy.db`: ABSENT. Therefore no real database counts were taken and blocked Phase 3 items remain deferred. The original DB was not opened.
