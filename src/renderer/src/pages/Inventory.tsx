@@ -48,6 +48,7 @@ interface FormState {
   expiry_date: string;
   net_weight: string;
   is_loose: boolean;
+  is_test: boolean;
   mfg_date: string;
   batch_no: string;
   image: string;
@@ -70,6 +71,7 @@ const EMPTY_FORM: FormState = {
   expiry_date: '',
   net_weight: '',
   is_loose: false,
+  is_test: false,
   mfg_date: '',
   batch_no: '',
   image: '',
@@ -237,6 +239,7 @@ export default function Inventory() {
       expiry_date: p.expiry_date ?? '',
       net_weight: p.net_weight ?? '',
       is_loose: !!p.is_loose,
+      is_test: p.is_test === 1,
       mfg_date: p.mfg_date ?? '',
       batch_no: p.batch_no ?? '',
       image: p.image ?? '',
@@ -313,6 +316,7 @@ export default function Inventory() {
         expiry_date: form.expiry_date || null,
         net_weight: form.net_weight.trim() || null,
         is_loose: form.is_loose ? 1 : 0,
+        is_test: form.is_test ? 1 : 0,
         mfg_date: form.mfg_date || null,
         batch_no: form.batch_no.trim() || null,
         image: form.image || null,
@@ -556,6 +560,7 @@ export default function Inventory() {
     { value: 'out_of_stock', label: 'Out of Stock' },
     { value: 'negative_stock', label: 'Negative Stock' },
     { value: 'below_cost', label: 'Below Cost' },
+    { value: 'test', label: 'Test products' },
   ];
   const supplierOptions = suppliers.map(s => ({ value: s.id, label: s.name }));
 
@@ -1071,6 +1076,14 @@ export default function Inventory() {
                   onChange={(e) => setForm({ ...form, is_loose: e.target.checked })}
                 />
                 <span>Loose product (sold by weight — labels print a <b>±</b> approximate marker)</span>
+              </label>
+              <label className="field span-2" style={{ flexDirection: 'row', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="checkbox"
+                  checked={form.is_test}
+                  onChange={(e) => setForm({ ...form, is_test: e.target.checked })}
+                />
+                <span>Mark as test product</span>
               </label>
               <div className="field span-2">
                 <span>Product Image</span>

@@ -31,7 +31,7 @@ export function listProducts(
   search?: string,
   includeInactive = false,
   categoryId?: number,
-  stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock' | 'below_cost',
+  stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock' | 'below_cost' | 'test',
   supplierId?: number,
   expiryFrom?: string,
   expiryTo?: string
@@ -43,7 +43,6 @@ export function listProducts(
     LEFT JOIN categories c ON c.id = p.category_id
     LEFT JOIN units u ON u.id = p.unit_id
     WHERE 1=1
-    AND COALESCE(p.is_test, 0) = 0
   `;
   const params: (string | number | null)[] = [];
   if (!includeInactive) {
@@ -66,6 +65,8 @@ export function listProducts(
       sql += ' AND p.stock_qty < 0';
     } else if (stockStatus === 'below_cost') {
       sql += ' AND COALESCE(p.cost_price, 0) > 0 AND p.sale_price < p.cost_price';
+    } else if (stockStatus === 'test') {
+      sql += ' AND COALESCE(p.is_test, 0) = 1';
     } else if (stockStatus === 'low_stock') {
       sql += ' AND p.low_stock_threshold > 0 AND p.stock_qty > 0 AND p.stock_qty <= p.low_stock_threshold';
     } else if (stockStatus === 'in_stock') {
@@ -87,6 +88,9 @@ export function listProducts(
   if (expiryTo) {
     sql += ' AND p.expiry_date IS NOT NULL AND date(p.expiry_date) <= date(?)';
     params.push(expiryTo);
+  }
+  if (stockStatus !== 'test') {
+    sql += ' AND COALESCE(p.is_test, 0) = 0';
   }
   sql += ' ORDER BY p.name COLLATE NOCASE';
   const products = db.prepare(sql).all(...params) as unknown as Product[];
@@ -156,8 +160,8 @@ export function createProduct(input: ProductInput): Product {
     .prepare(
       `INSERT INTO products
         (sku, barcode, name, category_id, unit_id, cost_price, sale_price, wholesale_price, shelf_location,
-         stock_qty, low_stock_threshold, tax_rate, expiry_date, image, net_weight, is_loose, mfg_date, batch_no, active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
+         stock_qty, low_stock_threshold, tax_rate, expiry_date, image, net_weight, is_loose, mfg_date, batch_no, active, is_test)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
     )
     .run(
       sku,
@@ -176,7 +180,8 @@ export function createProduct(input: ProductInput): Product {
       input.net_weight ?? null,
       input.is_loose ? 1 : 0,
       input.mfg_date ?? null,
-      input.batch_no ?? null
+      input.batch_no ?? null,
+      input.is_test ? 1 : 0
     );
 
   const id = Number(info.lastInsertRowid);
@@ -228,7 +233,7 @@ export function updateProduct(id: number, input: ProductInput): Product {
        sku = ?, barcode = ?, name = ?, category_id = ?, unit_id = ?,
        cost_price = ?, sale_price = ?, wholesale_price = ?, shelf_location = ?,
        low_stock_threshold = ?, tax_rate = ?, expiry_date = ?, image = ?,
-       net_weight = ?, is_loose = ?, mfg_date = ?, batch_no = ?,
+       net_weight = ?, is_loose = ?, is_test = ?, mfg_date = ?, batch_no = ?,
        updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`
   ).run(
@@ -247,6 +252,7 @@ export function updateProduct(id: number, input: ProductInput): Product {
     input.image !== undefined ? input.image : existing.image ?? null,
     input.net_weight !== undefined ? input.net_weight : existing.net_weight ?? null,
     input.is_loose !== undefined ? (input.is_loose ? 1 : 0) : existing.is_loose ?? 0,
+    input.is_test !== undefined ? (input.is_test ? 1 : 0) : existing.is_test ?? 0,
     input.mfg_date !== undefined ? input.mfg_date : existing.mfg_date ?? null,
     input.batch_no !== undefined ? input.batch_no : existing.batch_no ?? null,
     id

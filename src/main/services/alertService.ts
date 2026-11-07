@@ -34,22 +34,48 @@ export class AlertService {
     productId?: number,
     supplierId?: number
   ): void {
-    // Dedup: skip if same alert type + product (or supplier) exists today and is unresolved
-    const dedup = this.db.prepare(`
-      SELECT 1 FROM alert_log
-      WHERE alert_type = ? AND is_read = 0
-        AND DATE(created_at) = DATE('now', 'localtime')
-        AND (product_id = COALESCE(?, product_id) OR product_id IS NULL)
-        AND (supplier_id = COALESCE(?, supplier_id) OR supplier_id IS NULL)
+    const existing = this.db.prepare(`
+      SELECT id, message, is_read FROM alert_log
+      WHERE alert_type = ?
+        AND resolved_at IS NULL
+        AND product_id IS ?
+        AND supplier_id IS ?
       LIMIT 1
-    `).get(alertType, productId ?? null, supplierId ?? null) as { '1': number } | undefined;
+    `).get(alertType, productId ?? null, supplierId ?? null) as
+      | { id: number; message: string; is_read: number }
+      | undefined;
 
-    if (dedup) return;
+    if (existing) {
+      if (existing.message !== message) {
+        this.db.prepare(`
+          UPDATE alert_log
+          SET message = ?, severity = ?, is_read = 0, created_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(message, severity, existing.id);
+      }
+      return;
+    }
 
     this.db.prepare(`
       INSERT INTO alert_log (alert_type, product_id, supplier_id, message, severity, is_read, created_at)
       VALUES (?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
     `).run(alertType, productId ?? null, supplierId ?? null, message, severity);
+  }
+
+  private autoResolve(alertType: string, activeProductIds: Set<number>): void {
+    const active = [...activeProductIds].filter(Number.isFinite);
+    const sql =
+      active.length > 0
+        ? `UPDATE alert_log
+          SET resolved_at = CURRENT_TIMESTAMP, is_read = 1, action_taken = 'Auto-resolved: condition cleared or acknowledged'
+          WHERE alert_type = ? AND resolved_at IS NULL
+            AND product_id IS NOT NULL AND product_id NOT IN (${active.map(() => '?').join(',')})`
+        : `UPDATE alert_log
+          SET resolved_at = CURRENT_TIMESTAMP, is_read = 1, action_taken = 'Auto-resolved: condition cleared or acknowledged'
+          WHERE alert_type = ? AND resolved_at IS NULL
+            AND product_id IS NOT NULL`;
+    this.db.prepare(active.length > 0 ? sql : sql).run(...active.length > 0 ? [alertType, ...active] : [alertType]);
+    // unscoped alert types (none per product) remain manual.
   }
 
   // ── 1. CHECK ALL AND CREATE ALERTS ──
@@ -82,10 +108,12 @@ export class AlertService {
       min_stock_level: number | null; low_stock_threshold: number | null;
     }>;
 
+    const active = new Set<number>();
     let count = 0;
     for (const r of rows) {
       const level = r.min_stock_level ?? r.low_stock_threshold ?? 0;
       if (r.stock_qty <= level) {
+        active.add(r.id);
         const severity = r.stock_qty === 0 ? 'critical' : 'warning';
         const msg = r.stock_qty === 0
           ? `${r.name} is out of stock! Immediate reorder needed.`
@@ -94,6 +122,7 @@ export class AlertService {
         count++;
       }
     }
+    this.autoResolve('low_stock', active);
     return count;
   }
 
@@ -125,12 +154,15 @@ export class AlertService {
     }>;
 
     let count = 0;
+    const active = new Set<number>();
     for (const r of rows) {
       const severity = r.days_to_expiry <= 7 ? 'critical' : 'warning';
       const msg = `${r.product_name} (Batch: ${r.batch_number || 'N/A'}) expires in ${r.days_to_expiry} day(s) on ${r.expiry_date}.`;
+      active.add(r.product_id);
       this.createAlert('expiry', msg, severity, r.product_id);
       count++;
     }
+    this.autoResolve('expiry', active);
     return count;
   }
 
@@ -155,11 +187,14 @@ export class AlertService {
     }>;
 
     let count = 0;
+    const active = new Set<number>();
     for (const r of rows) {
       const msg = `${r.name} has low profit margin (${r.margin_pct}%). Cost: ${r.cost_price}, Price: ${r.sale_price}.`;
+      active.add(r.id);
       this.createAlert('low_profit', msg, 'warning', r.id);
       count++;
     }
+    this.autoResolve('low_profit', active);
     return count;
   }
 
@@ -187,14 +222,17 @@ export class AlertService {
     }>;
 
     let count = 0;
+    const active = new Set<number>();
     for (const r of rows) {
       if (r.days_no_sale && r.days_no_sale >= days) {
+        active.add(r.id);
         const severity = r.days_no_sale >= 90 ? 'warning' : 'info';
         const msg = `${r.name} hasn't sold in ${r.days_no_sale} day(s) (last sale: ${r.last_sale_date || 'Never'}). Stock: ${r.stock_qty}.`;
         this.createAlert('slow_mover', msg, severity, r.id);
         count++;
       }
     }
+    this.autoResolve('slow_mover', active);
     return count;
   }
 

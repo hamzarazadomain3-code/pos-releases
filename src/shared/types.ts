@@ -78,6 +78,7 @@ export interface ProductInput {
   image?: string | null;
   net_weight?: string | null;
   is_loose?: number | boolean | null;
+  is_test?: number | boolean | null;
   mfg_date?: string | null;
   batch_no?: string | null;
   units?: {
