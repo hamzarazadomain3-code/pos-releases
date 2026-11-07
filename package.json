@@ -26,6 +26,7 @@
     "test:audit": "npm run build:main && node scripts/test_audit_fixes.js",
     "test:imageupload": "npm run build:main && node scripts/test_image_upload.js",
     "test:dateparse": "npm run build:main && node scripts/test_dateParse.cjs",
+    "test:paymentreconciliation": "npm run build:main && node scripts/test_paymentReconciliation.cjs",
     "gen:key": "node scripts/gen-support-key.js",
     "build:main": "npm run gen:key && tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
