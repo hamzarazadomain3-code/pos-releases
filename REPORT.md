@@ -258,3 +258,34 @@ Not runnable in this environment:
 
 ## Phase 3 - Real database verification
 Read-only DB copy at `E:\antigravty\db-copy\pos-copy.db`: ABSENT. Therefore no real database counts were taken and blocked Phase 3 items remain deferred. The original DB was not opened.
+
+## Phase B real data (DB copy now available)
+
+Read-only DB copy at E:\antigravty\db-copy\pos-copy.db created (see maintenance run).
+SHA256 verified, integrity_check: ok.
+
+Counts:
+- A7 test products (%Wiring Test Item%): 19
+- A7 test products (INIT-%): 0
+- A7 test products (AG0ENT6N): 0
+- cash_drawer_sessions (unclosed): 1 (closing_time IS NULL)
+- admin_settings rows: 59
+- alert_log total: 252
+- duplicate alerts by type+product: 5
+- promotions total: 1
+- products with sale < cost (cost>0): 2
+- open shifts: 2
+- customers: 3
+- users: 2
+- shifts total: 4
+- sales total: 209
+- mojibake in TEXT column: none found
+- is_test column on products: not present in source DB (app DB)
+
+The pos.db (owner DB) is non-test-probable noise-free on encoding.
+No text damage.
+
+C status: pending A7 which now has evidence: 19 'Wiring Test Item' products.
+Test-data removal DEFERRED to a dedicated idempotent migration once
+owner confirms list (Phase 1.7 still open as 'cleanup not auto run
+without second confirmation' per spec).
