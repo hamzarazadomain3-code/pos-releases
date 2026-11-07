@@ -43,6 +43,14 @@ export function openDrawer(shiftId: number, openingCash: number): CashDrawerSess
     throw new Error('Cash drawer is already open for this shift');
   }
 
+  // The shift owns the opening amount. If an older shift was opened before
+  // drawers were auto-created, adopt the cash counted here so both records
+  // report the same expected balance.
+  db.prepare('UPDATE shifts SET start_cash = ? WHERE id = ? AND closed_at IS NULL').run(
+    openingCash,
+    shiftId
+  );
+
   const info = db
     .prepare('INSERT INTO cash_drawer_sessions (shift_id, opening_cash, opened_by) VALUES (?, ?, ?)')
     .run(shiftId, openingCash, uid);

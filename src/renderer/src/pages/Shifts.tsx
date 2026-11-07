@@ -176,8 +176,12 @@ export default function Shifts() {
               />
             </label>
             <label className="field">
-              <span>Notes (optional)</span>
-              <input value={forceNotes} onChange={(e) => setForceNotes(e.target.value)} placeholder="e.g. cashier left without closing" />
+              <span>Reason (required)</span>
+              <input
+                value={forceNotes}
+                onChange={(e) => setForceNotes(e.target.value)}
+                placeholder="e.g. cashier left without closing — required for the audit trail"
+              />
             </label>
             <div className="modal-actions">
               <button className="btn" onClick={() => setForceTarget(null)}>

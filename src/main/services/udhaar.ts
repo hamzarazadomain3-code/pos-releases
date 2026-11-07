@@ -2,6 +2,8 @@ import { getDb } from '../db';
 import { logActivity } from './activity';
 import { checkCredit } from './creditLimits';
 import { adjustStock, createProduct } from './inventory';
+import { getSetting } from './settings';
+import { resolveCreditDays, DEFAULT_CREDIT_DAYS } from '../../shared/creditDays';
 import type {
   Customer,
   UdhaarAccountSummary,
@@ -17,6 +19,13 @@ import type {
   UdhaarLedger,
   UdhaarLedgerRow,
 } from '../../shared/types';
+
+/** Shop-wide fallback when a customer has no credit period of their own. */
+function shopDefaultCreditDays(): number {
+  const raw = getSetting('default_credit_days');
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : DEFAULT_CREDIT_DAYS;
+}
 
 /**
  * Udhaar / Khata, item-aware.
@@ -193,7 +202,7 @@ export function getUdhaarLedger(customerId: number): UdhaarLedger {
     | undefined;
   if (!customer) throw new Error('Customer not found');
 
-  const creditDays = Math.max(0, Math.floor(toNumber(customer.credit_days)));
+  const creditDays = resolveCreditDays(customer.credit_days, shopDefaultCreditDays());
   const today = todayIso();
 
   const txs = db
@@ -414,7 +423,7 @@ export function getUdhaarAging(): UdhaarAging {
     // Only a customer with a credit period can be "overdue" — matching the
     // ledger, where `overdue` requires credit_days > 0. With no credit period
     // every unpaid charge is simply "current".
-    const creditDays = Math.max(0, Math.floor(toNumber(c.credit_days)));
+    const creditDays = resolveCreditDays(c.credit_days, shopDefaultCreditDays());
 
     for (const r of ledger.rows) {
       if (r.direction !== 'debit' || r.remaining <= EPSILON) continue;

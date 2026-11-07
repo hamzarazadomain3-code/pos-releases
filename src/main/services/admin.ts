@@ -4,6 +4,7 @@ import { logActivity } from './activity';
 import { scryptSync } from 'node:crypto';
 import fs from 'node:fs';
 import { getDbPath } from '../db';
+import { getAllSettings, setSetting } from './settings';
 import { DEFAULT_SHORTCUTS } from '../../shared/shortcuts';
 
 // ═══════════════════════════════════════════
@@ -198,11 +199,49 @@ export interface AdminSettingsMap {
   [key: string]: string;
 }
 
+/**
+ * Keys that the Shop Profile (`settings`) owns. Admin-panel screens still show
+ * and edit them under their historical names, but the value the whole app reads
+ * is the one in `settings`, so editing either screen now agrees.
+ *
+ * Before this bridge, `Settings → Shop Information` wrote `settings.currency`
+ * while receipts and the currency formatter read `admin_settings.currency_symbol`
+ * — changing the symbol there did nothing. `receipt_footer` had the same split,
+ * and the admin panel's `allow_negative_stock` toggle was never read by sales.ts.
+ */
+const SETTINGS_OWNED_BY_PROFILE: Record<string, string> = {
+  currency_symbol: 'currency',
+  receipt_footer_text: 'receipt_footer',
+};
+
+function applyProfileOverrides(map: AdminSettingsMap): void {
+  const profile = getAllSettings();
+  if (profile.currency !== undefined) map.currency_symbol = profile.currency;
+  if (profile.receipt_footer !== undefined) map.receipt_footer_text = profile.receipt_footer;
+  if (profile.allow_negative_stock !== undefined) {
+    map.allow_negative_stock = profile.allow_negative_stock === 'yes' ? 'true' : 'false';
+  }
+  if (profile.default_credit_days !== undefined) {
+    map.payment_due_days = profile.default_credit_days;
+  }
+}
+
+/** Mirror an admin-panel write into the canonical Shop Profile key. */
+function mirrorAdminWrite(key: string, value: string): void {
+  const target = SETTINGS_OWNED_BY_PROFILE[key];
+  if (target) setSetting(target, value);
+  if (key === 'allow_negative_stock') {
+    setSetting('allow_negative_stock', value === 'true' || value === '1' ? 'yes' : 'no');
+  }
+  if (key === 'payment_due_days') setSetting('default_credit_days', value);
+}
+
 export function getAllAdminSettings(): AdminSettingsMap {
   const db = getDb();
   const rows = db.prepare('SELECT key, value FROM admin_settings').all() as unknown as { key: string; value: string }[];
   const map: AdminSettingsMap = {};
   for (const r of rows) map[r.key] = r.value;
+  applyProfileOverrides(map);
   return map;
 }
 
@@ -216,6 +255,7 @@ export function setAdminSetting(key: string, value: string): void {
   if (!can('owner')) throw new Error('Only the owner can change admin settings');
   const db = getDb();
   db.prepare('INSERT OR REPLACE INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(key, value);
+  mirrorAdminWrite(key, value);
 }
 
 export function setAdminSettingsBatch(settings: Record<string, string>): void {
@@ -224,6 +264,7 @@ export function setAdminSettingsBatch(settings: Record<string, string>): void {
   const stmt = db.prepare('INSERT OR REPLACE INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)');
   for (const [k, v] of Object.entries(settings)) {
     stmt.run(k, v);
+    mirrorAdminWrite(k, v);
   }
 }
 

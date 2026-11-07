@@ -86,7 +86,7 @@ export class ProfitabilityService {
           ELSE ROUND((SUM(si.line_total) - SUM(si.qty * COALESCE(p.cost_price, 0))) / SUM(si.line_total) * 100, 2)
         END AS profit_margin_pct,
         ROUND(COALESCE(AVG(p.cost_price), 0), 2) AS avg_cost,
-        ROUND(COALESCE(AVG(si.price), 0), 2) AS avg_selling_price
+        ROUND(COALESCE(AVG(si.unit_price), 0), 2) AS avg_selling_price
       FROM sale_items si
       JOIN sales s ON si.sale_id = s.id
       JOIN products p ON si.product_id = p.id
@@ -213,7 +213,7 @@ export class ProfitabilityService {
           ELSE ROUND((SUM(si.line_total) - SUM(si.qty * COALESCE(p.cost_price, 0))) / SUM(si.line_total) * 100, 2)
         END AS profit_margin_pct,
         ROUND(COALESCE(AVG(p.cost_price), 0), 2) AS avg_cost,
-        ROUND(COALESCE(AVG(si.price), 0), 2) AS avg_selling_price,
+        ROUND(COALESCE(AVG(si.unit_price), 0), 2) AS avg_selling_price,
         MIN(s.created_at) AS period_start,
         MAX(s.created_at) AS period_end
       FROM sale_items si

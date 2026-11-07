@@ -23,6 +23,7 @@
     "test:recovery:ui": "npm run build && electron scripts/test_recovery_ui.js",
     "test:holdresume": "npm run build:main && node scripts/test_hold_resume.js",
     "test:shortcuts": "npm run build:main && node scripts/test_shortcuts.js",
+    "test:audit": "npm run build:main && node scripts/test_audit_fixes.js",
     "test:imageupload": "npm run build:main && node scripts/test_image_upload.js",
     "gen:key": "node scripts/gen-support-key.js",
     "build:main": "npm run gen:key && tsc -p tsconfig.main.json",

@@ -2018,9 +2018,33 @@ return (
             </option>
           ))}
         </select>
-        <span className={`shift-pill ${shift ? 'ok' : 'warn'}`}>
+        <span
+          className={`shift-pill ${
+            shift
+              ? Date.now() - new Date(shift.opened_at).getTime() > 24 * 60 * 60 * 1000
+                ? 'warn'
+                : 'ok'
+              : 'warn'
+          }`}
+          title={
+            shift && Date.now() - new Date(shift.opened_at).getTime() > 24 * 60 * 60 * 1000
+              ? 'This shift has been open for more than 24 hours — close and reconcile it'
+              : undefined
+          }
+        >
           {shift
-            ? <>Shift · {formatTimeAdmin(shift.opened_at)} · {shift.start_cash.toFixed(2)}</>
+            ? (() => {
+                const hours = Math.max(
+                  0,
+                  Math.floor((Date.now() - new Date(shift.opened_at).getTime()) / 3_600_000)
+                );
+                return (
+                  <>
+                    Shift · {formatTimeAdmin(shift.opened_at)} · {shift.start_cash.toFixed(2)}
+                    {hours > 24 ? ` · ${hours}h open — reconcile` : ''}
+                  </>
+                );
+              })()
             : 'No shift'}
         </span>
         {shift ? (

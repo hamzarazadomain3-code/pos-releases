@@ -13,7 +13,7 @@ interface Props {
 export default function CashDrawer({ shift, onClose }: Props) {
   const [session, setSession] = useState<CashDrawerSession | null>(null);
   const [breakdown, setBreakdown] = useState<CashDrawerBreakdown | null>(null);
-  const [openingCash, setOpeningCash] = useState('5000');
+  const [openingCash, setOpeningCash] = useState(String(shift.start_cash ?? 0));
   const [closingCash, setClosingCash] = useState('');
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
@@ -182,11 +182,11 @@ export default function CashDrawer({ shift, onClose }: Props) {
                 <div className="section-title">Session Info</div>
                 <div className="cash-drawer-grid">
                   <div className="cash-drawer-stat">
-                    <span className="stat-label">Total Sales Today</span>
+                    <span className="stat-label">Total Received (This Session)</span>
                     <span className="stat-value">{formatMoney(totalReceived)}</span>
                   </div>
                   <div className="cash-drawer-stat">
-                    <span className="stat-label">Total Bills</span>
+                    <span className="stat-label">Bills (This Session)</span>
                     <span className="stat-value">{breakdown.total_bills}</span>
                   </div>
                   <div className="cash-drawer-stat">

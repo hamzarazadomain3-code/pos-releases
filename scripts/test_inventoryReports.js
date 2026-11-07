@@ -86,8 +86,9 @@ async function main() {
   const po1 = db.prepare('INSERT INTO purchase_orders (supplier_id, status, total_amount, delivery_date) VALUES (?, ?, ?, ?)')
     .run(1, 'received', 250, '2026-08-15');
   const po1Id = Number(po1.lastInsertRowid);
+  const expirySoon = new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10);
   db.prepare('INSERT INTO purchase_items (purchase_order_id, product_id, qty, unit_cost, total_cost, quantity_received, expiry_date, batch_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(po1Id, 1, 50, 5, 250, 50, '2026-09-15', 'BATCH001');
+    .run(po1Id, 1, 50, 5, 250, 50, expirySoon, 'BATCH001');
 
   // Sale for profitability
   const sale1 = db.prepare('INSERT INTO sales (invoice_no, total_amount, status, created_at) VALUES (?, ?, ?, ?)')

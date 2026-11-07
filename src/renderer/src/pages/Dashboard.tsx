@@ -195,7 +195,7 @@ export default function Dashboard() {
 
   const loadData = useCallback(async () => {
     try {
-      const [trend, top, stats, lowStock, inventory, parties, returns, payments, payables, receivables, expiring] = await Promise.all([
+      const [trend, top, stats, lowStock, inventory, parties, returns, cashSales, suppliers, expiring] = await Promise.all([
         window.api.reports.getDailySalesTrend(),
         window.api.reports.getTopProducts(5),
         window.api.reports.getDailyStats(),
@@ -204,8 +204,7 @@ export default function Dashboard() {
         window.api.customers.list().catch(() => []),
         window.api.sales.list(undefined, undefined, true).catch(() => []),
         window.api.sales.list(undefined, undefined, false, undefined, undefined, 'Cash').catch(() => []),
-        window.api.sales.list(undefined, undefined, false, undefined, undefined, 'Card').catch(() => []),
-        window.api.customers.ledger(0).catch(() => []),
+        window.api.purchases.suppliers().catch(() => []),
         window.api.reports.expiringSoon(30).catch(() => []),
       ]);
 
@@ -219,25 +218,39 @@ export default function Dashboard() {
       setTotalParties(parties.filter((p: any) => p.active !== 0).length);
       setExpiringCount(expiring.length);
 
-      const returnTotal = returns.reduce((sum: number, r: any) => sum + (r.total_amount || 0), 0);
+      // A "return" is its own negative sale (status = 'returned'). Summing every
+      // sale row here made "Sale Return" equal a slice of revenue, not refunds.
+      const returnTotal = returns
+        .filter((r: any) => r.status === 'returned' || Number(r.total_amount) < 0)
+        .reduce((sum: number, r: any) => sum + Math.abs(Number(r.total_amount) || 0), 0);
       setSaleReturnAmount(returnTotal);
 
-      const paymentInTotal = payments.reduce((sum: number, p: any) => sum + (p.total_amount || 0), 0);
+      // Cash actually collected today (payments table rows are cash sales).
+      const paymentInTotal = cashSales.reduce((sum: number, p: any) => sum + (Number(p.total_amount) || 0), 0);
       setPaymentInAmount(paymentInTotal);
 
-      const paymentOutTotal = 0; // Would need expense data
-      setPaymentOutAmount(paymentOutTotal);
+      // Receivable = customers owe the shop. Payable = shop owes suppliers.
+      // These were both computed from the SAME customers array before, so the two
+      // cards always showed an identical number.
+      const receivableTotal = parties.reduce(
+        (sum: number, c: any) => sum + Math.max(0, Number(c.balance) || 0),
+        0
+      );
+      setReceivableBalance(receivableTotal);
 
-      const payableTotal = parties.reduce((sum: number, c: any) => sum + (c.balance || 0), 0);
-      setPayableBalance(payableTotal > 0 ? payableTotal : 0);
-
-      const receivableTotal = parties.reduce((sum: number, c: any) => sum + (c.balance || 0), 0);
-      setReceivableBalance(receivableTotal > 0 ? receivableTotal : 0);
+      const payableTotal = suppliers.reduce(
+        (sum: number, s: any) => sum + Math.max(0, Number(s.balance) || 0),
+        0
+      );
+      setPayableBalance(payableTotal);
 
       const dashData = await (window.api as any).reports.dashboard?.().catch(() => null);
       if (dashData) {
         setTodayExpenses(dashData.today_expenses || 0);
         setUdhaarDue(dashData.udhaar_due || 0);
+        // Cash paid out today is tracked as expenses; supplier payments are
+        // separate and not part of the dashboard KPI.
+        setPaymentOutAmount(dashData.today_expenses || 0);
       }
 
       setLoaded(true);
@@ -304,21 +317,21 @@ export default function Dashboard() {
           shadow={KPI_SHADOWS.sales}
         />
         <KpiCard
-          label="Total Sale"
+          label="Total Sale (Today)"
           value={formatMoney(dailyStats.total_sales)}
           icon={CardIcons.sales}
           gradient={KPI_GRADIENTS.totalSale}
           shadow={KPI_SHADOWS.totalSale}
         />
         <KpiCard
-          label="Total Orders"
+          label="Today's Orders"
           value={dailyStats.bill_count}
           icon={CardIcons.bills}
           gradient={KPI_GRADIENTS.bills}
           shadow={KPI_SHADOWS.bills}
         />
         <KpiCard
-          label="Avg Bill Value"
+          label="Today's Avg Bill"
           value={formatMoney(dailyStats.avg_bill)}
           icon={CardIcons.avg}
           gradient={KPI_GRADIENTS.avg}
@@ -361,28 +374,28 @@ export default function Dashboard() {
       {/* Row 3: Payment & Balance Metrics */}
       <div className="billten-kpi-grid-row3">
         <KpiCard
-          label="Payment In"
+          label="Cash In (Today)"
           value={formatMoney(paymentInAmount)}
           icon={CardIcons.paymentIn}
           gradient={KPI_GRADIENTS.paymentIn}
           shadow={KPI_SHADOWS.paymentIn}
         />
         <KpiCard
-          label="Payment Out"
+          label="Cash Out (Today)"
           value={formatMoney(paymentOutAmount)}
           icon={CardIcons.paymentOut}
           gradient={KPI_GRADIENTS.paymentOut}
           shadow={KPI_SHADOWS.paymentOut}
         />
         <KpiCard
-          label="Total Payable"
+          label="Total Payable (Suppliers)"
           value={formatMoney(payableBalance)}
           icon={CardIcons.payable}
           gradient={KPI_GRADIENTS.payable}
           shadow={KPI_SHADOWS.payable}
         />
         <KpiCard
-          label="Total Receivable"
+          label="Total Receivable (Udhaar)"
           value={formatMoney(receivableBalance)}
           icon={CardIcons.receivable}
           gradient={KPI_GRADIENTS.receivable}
@@ -393,7 +406,7 @@ export default function Dashboard() {
       {/* Row 4: Expense & Stock Alerts */}
       <div className="billten-kpi-grid-row4">
         <KpiCard
-          label="Total Expense"
+          label="Today's Expense"
           value={formatMoney(todayExpenses)}
           icon={CardIcons.expense}
           gradient={KPI_GRADIENTS.expense}

@@ -1,5 +1,12 @@
 import { ipcMain, BrowserWindow, dialog } from 'electron';
 import {
+  SECRET_MASK,
+  SECRET_ADMIN_KEYS,
+  SECRET_SETTING_KEYS,
+  isMaskedSecret,
+  maskSecrets,
+} from './utils/secrets';
+import {
   adjustStock,
   createCategory,
   createProduct,
@@ -352,9 +359,12 @@ export function registerIpcHandlers(): void {
     return sendWhatsAppReceipt(target, entrySlipText(transactionId));
   });
 
-  ipcMain.handle('settings:getAll', () => getAllSettings());
+  ipcMain.handle('settings:getAll', () => maskSecrets(getAllSettings(), SECRET_SETTING_KEYS));
   ipcMain.handle('settings:set', (_e, key: string, value: string) => {
     if (!can('owner')) throw new Error('Only the owner can change settings');
+    // A masked value means "the renderer never saw the real secret" — keep the
+    // stored one instead of overwriting it with the placeholder.
+    if (isMaskedSecret(value)) return;
     return setSetting(key, value);
   });
   ipcMain.handle('settings:chooseCloudFolder', async () => {
@@ -878,18 +888,26 @@ export function registerIpcHandlers(): void {
   });
 
   // ── Admin: Settings ──
-  ipcMain.handle('admin:settings:getAll', () => getAllAdminSettings());
+  ipcMain.handle('admin:settings:getAll', () =>
+    maskSecrets(getAllAdminSettings(), SECRET_ADMIN_KEYS)
+  );
   ipcMain.handle('admin:settings:get', (_e, key: string) => {
     const all = getAllAdminSettings();
-    return all[key] ?? null;
+    const value = all[key] ?? null;
+    if (value && SECRET_ADMIN_KEYS.has(key)) return SECRET_MASK;
+    return value;
   });
   ipcMain.handle('admin:settings:set', (_e, key: string, value: string) => {
-    setAdminSetting(key, value);
+    if (!isMaskedSecret(value)) setAdminSetting(key, value);
     BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('admin:settings:changed'));
     return true;
   });
   ipcMain.handle('admin:settings:setBatch', (_e, settings: Record<string, string>) => {
-    setAdminSettingsBatch(settings);
+    const real: Record<string, string> = {};
+    for (const [key, value] of Object.entries(settings)) {
+      if (!isMaskedSecret(value)) real[key] = value;
+    }
+    if (Object.keys(real).length) setAdminSettingsBatch(real);
     BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('admin:settings:changed'));
     return true;
   });

@@ -318,7 +318,7 @@ export class InventoryReportsService {
         ), 0) AS total_sold,
         COUNT(DISTINCT po.supplier_id) AS supplier_count,
         COALESCE(AVG(pi.unit_cost), 0) AS avg_cost,
-        COALESCE(AVG(si.price), 0) AS avg_selling_price,
+        COALESCE(AVG(si.unit_price), 0) AS avg_selling_price,
         MAX(p.stock_qty) AS current_stock,
         pu.name AS unit_name
       FROM products p

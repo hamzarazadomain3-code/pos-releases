@@ -537,7 +537,7 @@ export function UdhaarCustomerModal({ customer, onClose, onSaved, onOpenExisting
           </label>
           <label className="field">
             <span>Credit days</span>
-            <KeyboardInput value={form.credit_days} onChange={(e) => set('credit_days', e.target.value)} placeholder="0 = never overdue" />
+            <KeyboardInput value={form.credit_days} onChange={(e) => set('credit_days', e.target.value)} placeholder="0 = shop default" />
           </label>
           <label className="field">
             <span>When over limit</span>
