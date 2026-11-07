@@ -132,6 +132,13 @@ app.whenReady().then(async () => {
     registerPrintProtocol();
       registerIpcHandlers();
       licensing.registerIpc();
+    // Expire promotions at app start (idempotent, safe to run multiple times)
+    try {
+      const expired = expirePromotions();
+      if (expired > 0) log(`Startup: expired ${expired} promotion(s)`);
+    } catch (e) {
+      logError('startup expirePromotions', e);
+    }
   } catch (err) {
     logError('startup (db/ipc)', err);
     dialog.showErrorBox('Rokar POS — Startup Error', String(err));
@@ -313,7 +320,12 @@ function scheduleHourlyAlerts(): void {
 
 function runAlertCheck(): void {
   try {
-    try { expirePromotions(); } catch { /* ignore */ }
+    try {
+      const expired = expirePromotions();
+      if (expired > 0) log(`Alert check: expired ${expired} promotion(s)`);
+    } catch (e) {
+      logError('expirePromotions', e);
+    }
     const adminSettings = getAllAdminSettings();
     const lowStockEnabled = adminSettings.low_stock_alert_enabled;
     if (lowStockEnabled === 'false' || lowStockEnabled === '0') return;
@@ -342,6 +354,15 @@ function scheduleTimeBasedTriggers(): void {
   if (adminSettings.daily_report_time_enabled !== 'false' && adminSettings.daily_report_time_enabled !== '0') {
     scheduleDailyAt(reportH || 22, reportM || 0, runDailyReport);
   }
+  // Daily promotion expiry check at midnight
+  scheduleDailyAt(0, 5, () => {
+    try {
+      const expired = expirePromotions();
+      if (expired > 0) log(`Daily promotion expiry: expired ${expired} promotion(s)`);
+    } catch (e) {
+      logError('daily expirePromotions', e);
+    }
+  });
   // Automatic backup scheduling
   if (adminSettings.auto_backup_enabled !== 'false' && adminSettings.auto_backup_enabled !== '0') {
     const backupTime = adminSettings.backup_time || '02:00';
