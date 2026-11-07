@@ -254,12 +254,14 @@ function BranchSelector() {
 function LoginScreen({
   onLogin,
   logo,
+  shopName,
   onForgotPassword,
   onSupportRecovery,
   initialUsername = '',
 }: {
   onLogin: (user: UserRow, rememberMe: boolean) => void;
   logo?: string | null;
+  shopName?: string | null;
   onForgotPassword: () => void;
   onSupportRecovery: () => void;
   initialUsername?: string;
@@ -268,6 +270,8 @@ function LoginScreen({
   const [pinMode, setPinMode] = useState(false);
   const [username, setUsername] = useState(initialUsername);
   const [secret, setSecret] = useState('');
+const [showPassword, setShowPassword] = useState(false);
+const [capsLock, setCapsLock] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
@@ -370,7 +374,7 @@ function LoginScreen({
     <div className="lock-overlay">
       <div className="lock-box">
         {logo && <img src={logo} alt="Shop logo" className="lock-logo" />}
-        <h2>Rokar POS</h2>
+        <h2>{shopName || 'Rokar POS'}</h2>
         <p className="muted">{t('messages.sign_in_to_continue')}</p>
         {!pinMode && (
           <input
@@ -388,13 +392,22 @@ function LoginScreen({
         )}
         <input
           ref={passRef}
-          type="password"
+          type={showPassword ? 'text' : 'password'}
           placeholder={pinMode ? t('messages.enter_pin') : t('messages.password')}
           value={secret}
           autoFocus={pinMode}
-          onChange={(e) => setSecret(e.target.value)}
+          onChange={(e) => {
+            setSecret(e.target.value);
+          }}
+          onKeyUp={(e) => setCapsLock(!!e.getModifierState && e.getModifierState('CapsLock'))}
           onKeyDown={(e) => e.key === 'Enter' && doLogin()}
         />
+        {!pinMode && (
+          <button type="button" className="btn btn-sm" style={{ marginLeft: 8 }} onClick={() => setShowPassword((v) => !v)}>
+            {showPassword ? 'Hide' : 'Show'}
+          </button>
+        )}
+        {capsLock && !pinMode && <div className="muted small" style={{ marginTop: 4 }}>Caps Lock is on</div>}
         {pinMode && (
           <div className="pin-pad">
             {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map((k) => (
@@ -522,14 +535,20 @@ export default function App() {
   const [locked, setLocked] = useState(false);
   const [mustChangePw, setMustChangePw] = useState(false);
   const [shopLogo, setShopLogo] = useState<string | null>(null);
+  const [shopName, setShopName] = useState<string | null>(null);
   const [sessionRestoring, setSessionRestoring] = useState(true);
+  const [multiBranch, setMultiBranch] = useState(false);
+  const [sessionTimeoutMinutes, setSessionTimeoutMinutes] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [recoveryMode, setRecoveryMode] = useState<'self' | 'support' | null>(null);
   const [recoveryPrefill, setRecoveryPrefill] = useState('');
   const [shortcutMap, setShortcutMap] = useState<Record<string, string>>({});
   const [showFirstRunWizard, setShowFirstRunWizard] = useState(false);
   const [firstRunChecked, setFirstRunChecked] = useState(false);
-  const nav = user ? navFor(user.role) : [];
+ const nav =
+   user
+     ? navFor(user.role).filter((item) => item.key !== 'branches' || multiBranch)
+     : [];
 
   // Load the admin shortcut bindings for the global keyboard layer.
   useEffect(() => {
@@ -557,9 +576,38 @@ export default function App() {
   useEffect(() => {
     window.api.settings
       .getAll()
-      .then((s) => setShopLogo(s.shop_logo ?? null))
+      .then((s) => {
+        setShopLogo(s.shop_logo ?? null);
+        setShopName(s.shop_name ?? null);
+      })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setMultiBranch(false);
+      setSessionTimeoutMinutes(0);
+      return;
+    }
+    window.api.admin.features.isEnabled('multi_branch').then(setMultiBranch).catch(() => setMultiBranch(false));
+    window.api.auth.getSecurityPolicy().then((p) => setSessionTimeoutMinutes(p.session_timeout_minutes || 0)).catch(() => undefined);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || locked || mustChangePw || sessionTimeoutMinutes <= 0) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const reset = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => setLocked(true), sessionTimeoutMinutes * 60 * 1000);
+    };
+    const events = ['mousemove', 'keydown', 'mousedown', 'touchstart', 'scroll'];
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    reset();
+    return () => {
+      clearTimeout(timer);
+      events.forEach((e) => window.removeEventListener(e, reset));
+    };
+  }, [user, locked, mustChangePw, sessionTimeoutMinutes]);
 
   // Restore session from localStorage on mount
   useEffect(() => {
@@ -801,6 +849,7 @@ export default function App() {
             <LoginScreen
               onLogin={handleLogin}
               logo={shopLogo}
+              shopName={shopName}
               initialUsername={recoveryPrefill}
               onForgotPassword={() => setRecoveryMode('self')}
               onSupportRecovery={() => {

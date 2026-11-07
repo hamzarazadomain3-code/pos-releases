@@ -31,7 +31,7 @@ export function listProducts(
   search?: string,
   includeInactive = false,
   categoryId?: number,
-  stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock',
+  stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock' | 'below_cost',
   supplierId?: number,
   expiryFrom?: string,
   expiryTo?: string
@@ -43,6 +43,7 @@ export function listProducts(
     LEFT JOIN categories c ON c.id = p.category_id
     LEFT JOIN units u ON u.id = p.unit_id
     WHERE 1=1
+    AND COALESCE(p.is_test, 0) = 0
   `;
   const params: (string | number | null)[] = [];
   if (!includeInactive) {
@@ -63,6 +64,8 @@ export function listProducts(
     } else if (stockStatus === 'negative_stock') {
       // Phase 1: products whose stock has gone below zero (oversold)
       sql += ' AND p.stock_qty < 0';
+    } else if (stockStatus === 'below_cost') {
+      sql += ' AND COALESCE(p.cost_price, 0) > 0 AND p.sale_price < p.cost_price';
     } else if (stockStatus === 'low_stock') {
       sql += ' AND p.low_stock_threshold > 0 AND p.stock_qty > 0 AND p.stock_qty <= p.low_stock_threshold';
     } else if (stockStatus === 'in_stock') {
@@ -130,7 +133,8 @@ export function getProductByBarcode(barcode: string): Product | null {
          FROM products p
          LEFT JOIN categories c ON c.id = p.category_id
          LEFT JOIN units u ON u.id = p.unit_id
-         WHERE p.barcode = ? AND p.active = 1`
+         WHERE p.barcode = ? AND p.active = 1
+           AND COALESCE(p.is_test, 0) = 0`
       )
       .get(barcode) as unknown as Product | undefined
   ) ?? null;
@@ -360,7 +364,7 @@ export function listLowStock(): Product[] {
        FROM products p
        LEFT JOIN categories c ON c.id = p.category_id
        LEFT JOIN units u ON u.id = p.unit_id
-       WHERE p.active = 1 AND p.low_stock_threshold > 0 AND p.stock_qty <= p.low_stock_threshold
+       WHERE p.active = 1 AND COALESCE(p.is_test, 0) = 0 AND p.low_stock_threshold > 0 AND p.stock_qty <= p.low_stock_threshold
        ORDER BY (p.stock_qty - p.low_stock_threshold) ASC`
     )
     .all() as unknown as Product[];

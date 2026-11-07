@@ -188,3 +188,18 @@ export function formatTimeAdmin(ts: string | null | undefined): string {
   if (!date) return '—';
   return formatTimeSync(date);
 }
+export function formatInputDate(iso: any): string {
+  if (!iso || String(iso).trim() === '') return '';
+  const text = String(iso).trim();
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(text) ? new Date(`${text}T00:00:00`) : new Date(text);
+  if (Number.isNaN(d.getTime())) return text;
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = String(d.getFullYear());
+  const __df = (window as any).__dateFormat || 'DD/MM/YYYY';
+  switch (__df) {
+    case 'MM/DD/YYYY': return `${mm}/${dd}/${yyyy}`;
+    case 'YYYY-MM-DD': return `${yyyy}-${mm}-${dd}`;
+    default: return `${dd}/${mm}/${yyyy}`;
+  }
+}

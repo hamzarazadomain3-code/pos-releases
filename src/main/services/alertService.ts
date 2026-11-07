@@ -71,6 +71,7 @@ export class AlertService {
       SELECT id, name, stock_qty, min_stock_level, low_stock_threshold
       FROM products
       WHERE active = 1
+        AND COALESCE(is_test, 0) = 0
         AND stock_qty <= COALESCE(min_stock_level, low_stock_threshold, 0)
         AND COALESCE(min_stock_level, low_stock_threshold, 0) > 0
       ORDER BY name ASC
@@ -143,7 +144,7 @@ export class AlertService {
         ROUND(sale_price - cost_price, 2) AS profit_per_unit,
         CASE WHEN sale_price = 0 THEN 0 ELSE ROUND((sale_price - cost_price) / sale_price * 100, 2) END AS margin_pct
       FROM products
-      WHERE active = 1 AND sale_price > 0 AND cost_price > 0
+      WHERE active = 1 AND COALESCE(is_test, 0) = 0 AND sale_price > 0 AND cost_price > 0
         AND ((sale_price - cost_price) / sale_price * 100) < ?
       ORDER BY margin_pct ASC
     `;
@@ -174,7 +175,7 @@ export class AlertService {
       FROM products p
       LEFT JOIN sale_items si ON p.id = si.product_id
       LEFT JOIN sales s ON si.sale_id = s.id AND s.status = 'completed'
-      WHERE p.active = 1 AND p.stock_qty > 0
+      WHERE p.active = 1 AND p.stock_qty > 0 AND COALESCE(p.is_test, 0) = 0
       GROUP BY p.id
       HAVING days_no_sale >= ?
       ORDER BY days_no_sale DESC
@@ -307,7 +308,7 @@ export class AlertService {
 
     const lowStock = this.db.prepare(`
       SELECT name, stock_qty FROM products
-      WHERE active = 1 AND stock_qty <= COALESCE(min_stock_level, low_stock_threshold, 0)
+      WHERE active = 1 AND COALESCE(is_test, 0) = 0 AND stock_qty <= COALESCE(min_stock_level, low_stock_threshold, 0)
         AND COALESCE(min_stock_level, low_stock_threshold, 0) > 0
       LIMIT 5
     `).all() as Array<{ name: string; stock_qty: number }>;

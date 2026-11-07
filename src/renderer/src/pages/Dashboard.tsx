@@ -197,6 +197,8 @@ export default function Dashboard() {
   const [payableBalance, setPayableBalance] = useState(0);
   const [receivableBalance, setReceivableBalance] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
+  const [period, setPeriod] = useState<'today' | 'week' | 'month'>('today');
+  const periodLabel = period === 'today' ? 'Today' : period === 'week' ? 'This Week' : 'This Month';
   const [loaded, setLoaded] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -305,31 +307,40 @@ export default function Dashboard() {
         </div>
       )}
 
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+        <span className="muted small">Period:</span>
+        {(['today', 'week', 'month'] as const).map((p) => (
+          <button key={p} className={`btn btn-sm ${period === p ? 'btn-primary' : ''}`} onClick={() => setPeriod(p)}>
+            {p === 'today' ? 'Today' : p === 'week' ? 'This Week' : 'This Month'}
+          </button>
+        ))}
+      </div>
+
       {/* Row 1: Sales & Revenue Metrics (Green) */}
       <div className="billten-kpi-grid-row1">
         <KpiCard
-          label="Today's Sales"
+          label={`${periodLabel} Sales`}
           value={formatMoney(dailyStats.total_sales)}
           icon={CardIcons.sales}
           gradient={KPI_GRADIENTS.sales}
           shadow={KPI_SHADOWS.sales}
         />
         <KpiCard
-          label="Total Sale (Today)"
+          label={`Total Sale (${periodLabel})`}
           value={formatMoney(dailyStats.total_sales)}
           icon={CardIcons.sales}
           gradient={KPI_GRADIENTS.totalSale}
           shadow={KPI_SHADOWS.totalSale}
         />
         <KpiCard
-          label="Today's Orders"
+          label={`${periodLabel} Orders`}
           value={dailyStats.bill_count}
           icon={CardIcons.bills}
           gradient={KPI_GRADIENTS.bills}
           shadow={KPI_SHADOWS.bills}
         />
         <KpiCard
-          label="Today's Avg Bill"
+          label={`${periodLabel} Avg Bill`}
           value={formatMoney(dailyStats.avg_bill)}
           icon={CardIcons.avg}
           gradient={KPI_GRADIENTS.avg}
@@ -361,7 +372,7 @@ export default function Dashboard() {
           shadow={KPI_SHADOWS.outOfStock}
         />
         <KpiCard
-          label="Sale Return"
+          label={`Sale Return (${periodLabel})`}
           value={formatMoney(saleReturnAmount)}
           icon={CardIcons.saleReturn}
           gradient={KPI_GRADIENTS.saleReturn}
@@ -372,14 +383,14 @@ export default function Dashboard() {
       {/* Row 3: Payment & Balance Metrics */}
       <div className="billten-kpi-grid-row3">
         <KpiCard
-          label="Cash In (Today)"
+          label={`Cash In (${periodLabel})`}
           value={formatMoney(paymentInAmount)}
           icon={CardIcons.paymentIn}
           gradient={KPI_GRADIENTS.paymentIn}
           shadow={KPI_SHADOWS.paymentIn}
         />
         <KpiCard
-          label="Cash Out (Today)"
+          label={`Cash Out (${periodLabel})`}
           value={formatMoney(paymentOutAmount)}
           icon={CardIcons.paymentOut}
           gradient={KPI_GRADIENTS.paymentOut}
@@ -404,7 +415,7 @@ export default function Dashboard() {
       {/* Row 4: Expense & Stock Alerts */}
       <div className="billten-kpi-grid-row4">
         <KpiCard
-          label="Today's Expense"
+          label={`${periodLabel} Expense`}
           value={formatMoney(todayExpenses)}
           icon={CardIcons.expense}
           gradient={KPI_GRADIENTS.expense}

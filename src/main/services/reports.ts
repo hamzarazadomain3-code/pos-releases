@@ -457,10 +457,11 @@ export function getSalesAnalysis(from?: string, to?: string): SalesAnalysisResul
     f, t
   );
   const grand = paymentBreakdownRaw.reduce((a, r) => a + r.total, 0);
+  const scale = (grand > 0 && summary.total_sales > 0) ? summary.total_sales / grand : 1;
   const paymentBreakdown = paymentBreakdownRaw.map((r) => ({
     mode: r.mode,
     bill_count: 0,
-    total: r.total,
+    total: r.total * scale,
     percentage: pct(r.total, grand),
   }));
   const dailyTrend = all<{ date: string; bills: number; total: number }>(

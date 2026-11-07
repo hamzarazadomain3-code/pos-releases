@@ -1,5 +1,5 @@
 import { getDb } from '../db';
-import { can, getSessionUserId } from './auth';
+import { can, getSessionUserId, getSecurityPolicy } from './auth';
 import { logActivity } from './activity';
 import { scryptSync } from 'node:crypto';
 import fs from 'node:fs';
@@ -363,7 +363,7 @@ export function listAllUsers(): AdminUserRow[] {
 
 export function resetUserPassword(userId: number, newPassword: string): boolean {
   if (!can('owner')) throw new Error('Only the owner can reset passwords');
-  if (!newPassword || newPassword.length < 4) throw new Error('Password must be at least 4 characters');
+  if (!newPassword || newPassword.length < getSecurityPolicy().min_password_length) throw new Error(`Password must be at least ${getSecurityPolicy().min_password_length} characters`);
   const db = getDb();
   const user = db.prepare('SELECT id FROM users WHERE id = ?').get(userId) as { id: number } | undefined;
   if (!user) throw new Error('User not found');

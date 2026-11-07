@@ -138,6 +138,7 @@ import {
   verifyForUser,
   can,
   defaultPasswordActive,
+  getSecurityPolicy,
 } from './services/auth';
 import {
   clearSecurityQuestion,
@@ -192,6 +193,7 @@ import {
   listCashRefunds,
 } from './services/returns';
 import {
+  cancelAudit,
   completeAudit,
   createAudit,
   getAudit,
@@ -693,7 +695,7 @@ export function registerIpcHandlers(): void {
   });
   ipcMain.handle('auth:currentUser', () => currentUser());
   ipcMain.handle('auth:refreshSession', () => refreshSession());
-  ipcMain.handle('auth:verifyForUser', (_e, userId: number, secret: string) => verifyForUser(userId, secret));
+  ipcMain.handle('auth:getSecurityPolicy', () => getSecurityPolicy());
   ipcMain.handle('auth:defaultPasswordActive', () => defaultPasswordActive());
 
   // Password recovery — Option A (security answer) + Option B (support code)
@@ -819,6 +821,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('audits:get', (_e, id: number) => getAudit(id));
   ipcMain.handle('audits:saveCounts', (_e, auditId: number, counts) => saveCounts(auditId, counts));
   ipcMain.handle('audits:complete', (_e, id: number) => completeAudit(id));
+  ipcMain.handle('audits:cancel', (_e, id: number) => cancelAudit(id));
 
   ipcMain.handle('promotions:list', () => listPromotions());
   ipcMain.handle('promotions:create', (_e, input) => createPromotion(input));

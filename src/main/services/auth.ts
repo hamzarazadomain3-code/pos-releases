@@ -92,6 +92,45 @@ export function logout(): void {
   sessionUserId = null;
 }
 
+export function getSecurityPolicy(): {
+  min_password_length: number;
+  require_uppercase: boolean;
+  require_numbers: boolean;
+  require_special_chars: boolean;
+  password_expiry_days: number;
+  session_timeout_minutes: number;
+  allow_remember_me: boolean;
+  two_factor_enabled: boolean;
+} {
+  const getNum = (key: string, fallback: number): number => {
+    try {
+      const row = getDb().prepare('SELECT value FROM admin_settings WHERE key = ?').get(key) as { value?: string } | undefined;
+      const n = Number.parseInt(String(row?.value ?? ''), 10);
+      return Number.isFinite(n) ? n : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+  const getBool = (key: string, fallback: boolean): boolean => {
+    try {
+      const row = getDb().prepare('SELECT value FROM admin_settings WHERE key = ?').get(key) as { value?: string } | undefined;
+      return row?.value === 'true' || row?.value === '1' ? true : (row?.value === 'false' || row?.value === '0' ? false : fallback);
+    } catch {
+      return fallback;
+    }
+  };
+  return {
+    min_password_length: Math.max(1, getNum('min_password_length', 8)),
+    require_uppercase: getBool('require_uppercase', true),
+    require_numbers: getBool('require_numbers', true),
+    require_special_chars: getBool('require_special_chars', false),
+    password_expiry_days: Math.max(0, getNum('password_expiry_days', 90)),
+    session_timeout_minutes: Math.max(0, getNum('session_timeout_minutes', 480)),
+    allow_remember_me: getBool('allow_remember_me', true),
+    two_factor_enabled: getBool('two_factor_enabled', false),
+  };
+}
+
 export function refreshSession(): UserRow | null {
   return currentUser();
 }
@@ -125,7 +164,8 @@ export function createUser(input: { username: string; password?: string; pin?: s
   if (!input.password && !input.pin) throw new Error('Set a password or PIN');
   if (input.role === 'cashier' && !input.pin) throw new Error('Cashier accounts need a PIN for fast login');
   if (input.pin && !/^\d{4,10}$/.test(input.pin.trim())) throw new Error('PIN must be 4-10 digits');
-  if (input.password && input.password.length < 4) throw new Error('Password must be at least 4 characters');
+  if (input.password && input.password.length < getSecurityPolicy().min_password_length)
+    throw new Error(`Password must be at least ${getSecurityPolicy().min_password_length} characters`);
   const db = getDb();
   db.exec('BEGIN');
   try {
@@ -154,8 +194,8 @@ export function updateUser(id: number, input: { password?: string; pin?: string;
   if (!user) throw new Error('User not found');
   if (input.pin !== undefined && input.pin !== '' && !/^\d{4,10}$/.test(input.pin.trim()))
     throw new Error('PIN must be 4-10 digits');
-  if (input.password !== undefined && input.password !== '' && input.password.length < 4)
-    throw new Error('Password must be at least 4 characters');
+  if (input.password !== undefined && input.password !== '' && input.password.length < getSecurityPolicy().min_password_length)
+    throw new Error(`Password must be at least ${getSecurityPolicy().min_password_length} characters`);
 
   const db = getDb();
   db.exec('BEGIN');

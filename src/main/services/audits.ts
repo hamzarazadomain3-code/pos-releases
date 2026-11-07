@@ -146,6 +146,24 @@ export function saveCounts(auditId: number, counts: AuditCountInput[]): boolean 
   }
 }
 
+export function cancelAudit(auditId: number): boolean {
+  requireAuditAccess();
+  const db = getDb();
+  const audit = db.prepare('SELECT id, status FROM audits WHERE id = ?').get(auditId) as { id: number; status: string } | undefined;
+  if (!audit) throw new Error('Audit not found');
+  if (audit.status !== 'in_progress') throw new Error('Only an in-progress audit can be cancelled');
+  db.exec('BEGIN');
+  try {
+    db.prepare('DELETE FROM audit_items WHERE audit_id = ?').run(auditId);
+    db.prepare('DELETE FROM audits WHERE id = ?').run(auditId);
+    db.exec('COMMIT');
+    logActivity('audit_cancelled', 'audit', auditId, 'cancelled without stock adjustment');
+    return true;
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
 export function completeAudit(auditId: number): AuditFull {
   requireAuditAccess();
   const db = getDb();

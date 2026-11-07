@@ -554,6 +554,7 @@ export default function Inventory() {
     { value: 'low_stock', label: 'Low Stock' },
     { value: 'out_of_stock', label: 'Out of Stock' },
     { value: 'negative_stock', label: 'Negative Stock' },
+    { value: 'below_cost', label: 'Below Cost' },
   ];
   const supplierOptions = suppliers.map(s => ({ value: s.id, label: s.name }));
 
@@ -975,6 +976,13 @@ export default function Inventory() {
                   onChange={(e) => setForm({ ...form, sale_price: e.target.value })}
                 />
               </label>
+              {Number(form.cost_price || 0) > 0 &&
+                Number(form.sale_price || 0) > 0 &&
+                Number(form.sale_price) < Number(form.cost_price) && (
+                  <div className="notice warning span-2" style={{ padding: 8 }}>
+                    Warning: sale price is below cost.
+                  </div>
+                )}
               <label className="field">
                 <span>Wholesale Price</span>
                 <KeyboardInput

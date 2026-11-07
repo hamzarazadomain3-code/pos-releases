@@ -40,6 +40,7 @@ export interface Product {
   tax_rate: number;
   expiry_date: string | null;
   active: number;
+  is_test: number;
   created_at?: string;
   updated_at?: string;
   category_name?: string | null;
@@ -1302,7 +1303,7 @@ export interface PosBridge {
     onStatus: (callback: (status: { state: string; detail?: string }) => void) => () => void;
   };
   inventory: {
-    list: (search?: string, includeInactive?: boolean, categoryId?: number, stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock', supplierId?: number, expiryFrom?: string, expiryTo?: string) => Promise<Product[]>;
+    list: (search?: string, includeInactive?: boolean, categoryId?: number, stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock' | 'below_cost', supplierId?: number, expiryFrom?: string, expiryTo?: string) => Promise<Product[]>;
     get: (id: number) => Promise<Product | null>;
     getByBarcode: (barcode: string) => Promise<Product | null>;
     create: (input: ProductInput) => Promise<Product>;
@@ -1466,6 +1467,16 @@ export interface PosBridge {
     currentUser: () => Promise<UserRow | null>;
     refreshSession: () => Promise<UserRow | null>;
     verifyForUser: (userId: number, secret: string) => Promise<boolean>;
+    getSecurityPolicy: () => Promise<{
+      min_password_length: number;
+      require_uppercase: boolean;
+      require_numbers: boolean;
+      require_special_chars: boolean;
+      password_expiry_days: number;
+      session_timeout_minutes: number;
+      allow_remember_me: boolean;
+      two_factor_enabled: boolean;
+    }>;
     defaultPasswordActive: () => Promise<boolean>;
   };
   recovery: {
@@ -1572,6 +1583,7 @@ export interface PosBridge {
     listPaginated: (page?: number, pageSize?: number, from?: string, to?: string, userId?: number, status?: 'in_progress' | 'completed') => Promise<{ rows: AuditRow[]; total: number }>;
     get: (id: number) => Promise<(AuditRow & { items: AuditItemRow[] }) | null>;
     saveCounts: (auditId: number, counts: AuditCountInput[]) => Promise<boolean>;
+    cancel: (auditId: number) => Promise<boolean>;
     complete: (auditId: number) => Promise<AuditRow & { items: AuditItemRow[] }>;
   };
   promotions: {

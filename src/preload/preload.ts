@@ -22,7 +22,7 @@ const bridge: PosBridge = {
     },
   },
   inventory: {
-    list: (search?: string, includeInactive?: boolean, categoryId?: number, stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock', supplierId?: number, expiryFrom?: string, expiryTo?: string) =>
+    list: (search?: string, includeInactive?: boolean, categoryId?: number, stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock' | 'below_cost', supplierId?: number, expiryFrom?: string, expiryTo?: string) =>
       ipcRenderer.invoke('inventory:list', search, includeInactive, categoryId, stockStatus, supplierId, expiryFrom, expiryTo),
     get: (id: number) => ipcRenderer.invoke('inventory:get', id),
     getByBarcode: (barcode: string) => ipcRenderer.invoke('inventory:getByBarcode', barcode),
@@ -209,6 +209,7 @@ const bridge: PosBridge = {
     currentUser: () => ipcRenderer.invoke('auth:currentUser'),
     refreshSession: () => ipcRenderer.invoke('auth:refreshSession'),
     verifyForUser: (userId: number, secret: string) => ipcRenderer.invoke('auth:verifyForUser', userId, secret),
+    getSecurityPolicy: () => ipcRenderer.invoke('auth:getSecurityPolicy'),
     defaultPasswordActive: () => ipcRenderer.invoke('auth:defaultPasswordActive'),
   },
   recovery: {
@@ -304,6 +305,7 @@ const bridge: PosBridge = {
       ipcRenderer.invoke('audits:listPaginated', page, pageSize, from, to, userId, status),
     get: (id: number) => ipcRenderer.invoke('audits:get', id),
     saveCounts: (auditId: number, counts) => ipcRenderer.invoke('audits:saveCounts', auditId, counts),
+    cancel: (auditId: number) => ipcRenderer.invoke('audits:cancel', auditId),
     complete: (auditId: number) => ipcRenderer.invoke('audits:complete', auditId),
   },
    promotions: {

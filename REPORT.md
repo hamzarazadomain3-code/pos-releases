@@ -181,3 +181,63 @@ Not run in this environment (Electron/UI heavy, require a real display/printer):
 The confirmed P0 data-integrity and security items (A1, A2, A4, A5, A6, A10) are fixed, with regression tests. The remaining items are either partial by design (A3, A8, B7), unconfirmed in the available data (A7, A9, B1a), or need a product decision (B1b). All code changes are on `feature/audit-p0`; `npm run typecheck` and `npm run build` are clean.
 
 **Owner action required:** rebuild/reinstall the desktop app and rebuild/redeploy the web version. No release or deploy was performed by this run.
+
+
+
+## Phase B - Read-only database verification
+
+**DB copy expected at:** `E:\antigravty\db-copy\pos-copy.db`
+
+Result: **NOT RUNNABLE**. The required read-only DB copy does not exist. No query was run against the original `pos.db`.
+
+| Query / audit item | Count |
+| --- | --- |
+| A7: test-like products (`%Wiring Test Item%`, `INIT-%`, `AG0ENT6N`) | unavailable |
+| A9: affected mojibake rows | unavailable |
+| A4: open cash-drawer sessions | unavailable |
+| B1: persisted admin/security rows | unavailable |
+| alert_log rows | unavailable |
+| duplicate alert_log rows by type + product | unavailable |
+| promotions | unavailable |
+| products with sale < cost | unavailable |
+| overdue receivables / payables | unavailable |
+
+Owner action: copy `pos.db` to `E:\antigravty\db-copy\pos-copy.db`, then run Phase B as read-only queries.
+
+## Phase C - Additional fixes (2026-11-07 run)
+
+### Implemented
+- C2: added `products.is_test` via migration `068_products_is_test.js`; normal list paths hide test products.
+- C3: added below-cost stock filter, product-save warning.
+- C4: added idle auto-lock using `session_timeout_minutes`; applied min password length to account create/reset; login screen now shows shop name, password reveal and caps-lock hint; feature toggle gates Branches nav.
+- C5: alert dedup preserved and expired promotions auto-disabled.
+- C6: audit cancellation added to service, IPC, preload and UI.
+- C7: promotions auto-disable expired rules; shared `DateInput` added.
+- C8: shared `<Field>` component added.
+- C10: main shop address migration and branch feature toggle.
+- C11: payment report totals scaled to net sale totals; returns UI uses actual `returned_amount`.
+- C12: dashboard period selector added (Today, This Week, This Month).
+- C13: documented role discrepancy only; no `can()` model change.
+
+### Skipped / still blocked
+- C1 mojibake repair: DB evidence missing (Phase B unavailable).
+- C2 exact marking of test products: DB evidence missing.
+- C5 existing duplicate-alert cleanup: DB evidence missing.
+- C9 Invoice Designer still has compact inline preview; reuse not extracted before typecheck/build deadline.
+- Full below-cost causal explanation is pending Phase B.
+
+## Phase D - Tests
+
+| Suite | Result |
+| --- | --- |
+| `npm run typecheck` | PASS |
+| `npm run build` | PASS |
+| `npm run test:audit` | PASS (27/27) |
+| `node scripts/test_inventoryReports.js` | PASS (12/12) |
+| `npm run test:shortcuts` | NOT RUN in this pass |
+| `npm run test:holdresume` | NOT RUN in this pass |
+| `npm run test:licensing` | NOT RUN in this pass |
+| `npm run test:imageupload` | NOT RUN in this pass |
+| Electron heavy suites (`test:print`, `test:receipt`, `test:receiptdesigner`, `test:return`, `test:keyboard`, `test:recovery:ui`, `smoke:web`) | NOT RUNNABLE in this non-interactive environment |
+
+New bridge tests pass in `test:audit`; `is_test` and alert dedup runtime paths are covered by service changes and inventory report tests; idle timeout and UTF-8 BOM remain runtime/static changes. Desktop rebuild/reinstall and web redeploy are **owner actions**, not performed here.

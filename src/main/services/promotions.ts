@@ -15,6 +15,7 @@ function today(): string {
 
 export function listPromotions(): PromotionRow[] {
   const db = getDb();
+  db.prepare("UPDATE promotions SET active = 0 WHERE active = 1 AND end_date IS NOT NULL AND TRIM(end_date) <> '' AND date(end_date) < date('now','localtime')").run();
   return db
     .prepare(
       `SELECT p.*, pr.name AS product_name, c.name AS category_name
