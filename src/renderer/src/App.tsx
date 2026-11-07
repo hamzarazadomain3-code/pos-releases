@@ -771,6 +771,7 @@ export default function App() {
     const off = window.api.admin.settings.onChange?.(() => {
       resetFormatCache();
       resetDateUtils();
+      initDateUtils(); // Re-read date format settings
     });
     return () => { if (off) off(); };
   }, []);
