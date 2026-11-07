@@ -1434,9 +1434,9 @@ export interface PosBridge {
     expenses: (from?: string, to?: string) => Promise<Expense[]>;
     addExpense: (input: { title: string; category: string; amount: number; expense_date?: string; notes?: string }) => Promise<Expense>;
     deleteExpense: (id: number) => Promise<boolean>;
-    getDailySalesTrend: () => Promise<HourlyTrendRow[]>;
-    getTopProducts: (limit?: number) => Promise<TopProductRow[]>;
-    getDailyStats: () => Promise<DailyStats>;
+    getDailySalesTrend: (from?: string, to?: string) => Promise<HourlyTrendRow[]>;
+    getTopProducts: (limit?: number, from?: string, to?: string) => Promise<TopProductRow[]>;
+    getDailyStats: (from?: string, to?: string) => Promise<DailyStats>;
     getReceiptSettings: () => Promise<ReceiptSettings>;
     updateReceiptSetting: (key: string, value: string) => Promise<boolean>;
     getSalesAnalysis: (from?: string, to?: string) => Promise<SalesAnalysisResult>;

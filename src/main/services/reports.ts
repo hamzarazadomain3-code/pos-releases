@@ -353,46 +353,53 @@ export interface DailyStats {
   avg_bill: number;
 }
 
-export function getDailySalesTrend(): HourlyTrendRow[] {
+export function getDailySalesTrend(from?: string, to?: string): HourlyTrendRow[] {
   const db = getDb();
+  const f = from || todayLocal();
+  const t = to || todayLocal();
   const rows = db
     .prepare(
       `SELECT strftime('%H:00', created_at) AS hour,
               COALESCE(SUM(total_amount - COALESCE(returned_amount,0)),0) AS amount
        FROM sales
-       WHERE status='completed' AND date(created_at) = date('now','localtime')
+       WHERE status='completed' AND date(created_at) BETWEEN date(?) AND date(?)
        GROUP BY strftime('%H', created_at)
        ORDER BY hour`
     )
-    .all() as unknown as HourlyTrendRow[];
+    .all(f, t) as unknown as HourlyTrendRow[];
   const allHours = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}:00`);
   const map = new Map(rows.map((r) => [r.hour, r.amount]));
   return allHours.map((hour) => ({ hour, amount: map.get(hour) ?? 0 }));
 }
 
-export function getTopProducts(limit = 5): TopProductRow[] {
+export function getTopProducts(limit = 5, from?: string, to?: string): TopProductRow[] {
+  const f = from || todayLocal();
+  const t = to || todayLocal();
   return all<TopProductRow>(
     `SELECT p.id, p.name, SUM(i.qty) AS qty_sold, SUM(i.line_total) AS revenue
      FROM sale_items i
      JOIN sales s ON s.id = i.sale_id
      JOIN products p ON p.id = i.product_id
-     WHERE DATE(s.created_at) = date('now','localtime')
+     WHERE date(s.created_at) BETWEEN date(?) AND date(?)
        AND s.status = 'completed'
      GROUP BY p.id
      ORDER BY qty_sold DESC
      LIMIT ?`,
-    limit
+    f, t, limit
   );
 }
 
-export function getDailyStats(): DailyStats {
+export function getDailyStats(from?: string, to?: string): DailyStats {
+  const f = from || todayLocal();
+  const t = to || todayLocal();
   const row = one<{ total_sales: number; bill_count: number; avg_bill: number }>(
     `SELECT COALESCE(SUM(total_amount - COALESCE(returned_amount,0)),0) AS total_sales,
             COUNT(id) AS bill_count,
             COALESCE(AVG(total_amount - COALESCE(returned_amount,0)),0) AS avg_bill
      FROM sales
-     WHERE DATE(created_at) = date('now','localtime')
-       AND status = 'completed'`
+     WHERE date(created_at) BETWEEN date(?) AND date(?)
+       AND status = 'completed'`,
+    f, t
   );
   return {
     total_sales: row.total_sales,

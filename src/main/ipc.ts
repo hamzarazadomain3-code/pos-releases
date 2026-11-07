@@ -651,9 +651,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('reports:addExpense', (_e, input) => addExpense(input));
   ipcMain.handle('reports:deleteExpense', (_e, id: number) => deleteExpense(id));
 
-  ipcMain.handle('reports:getDailySalesTrend', () => getDailySalesTrend());
-  ipcMain.handle('reports:getTopProducts', (_e, limit?: number) => getTopProducts(limit ?? 5));
-  ipcMain.handle('reports:getDailyStats', () => getDailyStats());
+  ipcMain.handle('reports:getDailySalesTrend', (_e, from?: string, to?: string) => getDailySalesTrend(from, to));
+  ipcMain.handle('reports:getTopProducts', (_e, limit?: number, from?: string, to?: string) => getTopProducts(limit ?? 5, from, to));
+  ipcMain.handle('reports:getDailyStats', (_e, from?: string, to?: string) => getDailyStats(from, to));
   ipcMain.handle('reports:getReceiptSettings', () => getReceiptSettings());
   ipcMain.handle('reports:updateReceiptSetting', (_e, key: string, value: string) => {
     updateReceiptSetting(key, value);

@@ -215,9 +215,9 @@ export default function Dashboard() {
         from = toLocalDateString(new Date(now.getFullYear(), now.getMonth(), 1));
       }
       const [trend, top, allTimeStats, lowStock, inventory, parties, periodReturns, cashSales, suppliers, expiring, salesAnalysis, expenseSummary] = await Promise.all([
-        window.api.reports.getDailySalesTrend(),
-        window.api.reports.getTopProducts(5),
-        window.api.reports.getDailyStats(),
+        window.api.reports.getDailySalesTrend(from, to),
+        window.api.reports.getTopProducts(5, from, to),
+        window.api.reports.getDailyStats(from, to),
         window.api.inventory.lowStock().catch(() => []),
         window.api.inventory.list().catch(() => []),
         window.api.customers.list().catch(() => []),
