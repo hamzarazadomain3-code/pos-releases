@@ -19,7 +19,7 @@ const TABS: { key: AdminTab; label: string; icon: string }[] = [
   { key: 'reports', label: 'System Reports', icon: '' },
 ];
 
-export default function AdminPanel() {
+export default function AdminPanel({ onNavigate }: { onNavigate?: (key: string) => void }) {
   const [tab, setTab] = useState<AdminTab>('settings');
 
   const renderContent = () => {
@@ -27,11 +27,11 @@ export default function AdminPanel() {
       case 'shortcuts': return <ShortcutKeys />;
       case 'features': return <FeatureToggles />;
       case 'roles': return <RolesPermissions />;
-      case 'settings': return <SystemSettings />;
+      case 'settings': return <SystemSettings onNavigate={onNavigate} />;
       case 'users': return <UserManagement />;
       case 'activity': return <ActivityLog />;
       case 'reports': return <AdminReports />;
-      default: return <SystemSettings />;
+      default: return <SystemSettings onNavigate={onNavigate} />;
     }
   };
 

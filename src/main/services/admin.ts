@@ -6,6 +6,12 @@ import fs from 'node:fs';
 import { getDbPath } from '../db';
 import { getAllSettings, setSetting } from './settings';
 import { DEFAULT_SHORTCUTS } from '../../shared/shortcuts';
+import {
+  ADMIN_NON_WRITABLE_KEYS,
+  ADMIN_PROFILE_MIRROR,
+  overlayAdminSettings,
+  planAdminBatch,
+} from '../../shared/adminSettingsBridge';
 
 // ═══════════════════════════════════════════
 //  SHORTCUTS
@@ -206,34 +212,23 @@ export interface AdminSettingsMap {
  *
  * Before this bridge, `Settings → Shop Information` wrote `settings.currency`
  * while receipts and the currency formatter read `admin_settings.currency_symbol`
- * — changing the symbol there did nothing. `receipt_footer` had the same split,
- * and the admin panel's `allow_negative_stock` toggle was never read by sales.ts.
+ * — changing the symbol there did nothing. `receipt_footer` had the same split.
+ *
+ * `allow_negative_stock` is intentionally NOT an admin key any more: it has
+ * three states (yes / warn / no) and the old boolean toggle collapsed "warn"
+ * into "off", so Save All could silently turn warning mode into a hard block.
+ * It is edited only in Settings → Billing.
  */
-const SETTINGS_OWNED_BY_PROFILE: Record<string, string> = {
-  currency_symbol: 'currency',
-  receipt_footer_text: 'receipt_footer',
-};
-
 function applyProfileOverrides(map: AdminSettingsMap): void {
-  const profile = getAllSettings();
-  if (profile.currency !== undefined) map.currency_symbol = profile.currency;
-  if (profile.receipt_footer !== undefined) map.receipt_footer_text = profile.receipt_footer;
-  if (profile.allow_negative_stock !== undefined) {
-    map.allow_negative_stock = profile.allow_negative_stock === 'yes' ? 'true' : 'false';
-  }
-  if (profile.default_credit_days !== undefined) {
-    map.payment_due_days = profile.default_credit_days;
-  }
+  const merged = overlayAdminSettings(map, getAllSettings());
+  for (const key of Object.keys(map)) delete map[key];
+  Object.assign(map, merged);
 }
 
 /** Mirror an admin-panel write into the canonical Shop Profile key. */
 function mirrorAdminWrite(key: string, value: string): void {
-  const target = SETTINGS_OWNED_BY_PROFILE[key];
+  const target = ADMIN_PROFILE_MIRROR[key];
   if (target) setSetting(target, value);
-  if (key === 'allow_negative_stock') {
-    setSetting('allow_negative_stock', value === 'true' || value === '1' ? 'yes' : 'no');
-  }
-  if (key === 'payment_due_days') setSetting('default_credit_days', value);
 }
 
 export function getAllAdminSettings(): AdminSettingsMap {
@@ -253,6 +248,9 @@ export function getAdminSetting(key: string): string | null {
 
 export function setAdminSetting(key: string, value: string): void {
   if (!can('owner')) throw new Error('Only the owner can change admin settings');
+  if (ADMIN_NON_WRITABLE_KEYS.has(key)) {
+    throw new Error('Allow Negative Stock is managed in Settings → Billing');
+  }
   const db = getDb();
   db.prepare('INSERT OR REPLACE INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(key, value);
   mirrorAdminWrite(key, value);
@@ -261,10 +259,23 @@ export function setAdminSetting(key: string, value: string): void {
 export function setAdminSettingsBatch(settings: Record<string, string>): void {
   if (!can('owner')) throw new Error('Only the owner can change admin settings');
   const db = getDb();
+
+  const rows = db.prepare('SELECT key, value FROM admin_settings').all() as unknown as {
+    key: string;
+    value: string;
+  }[];
+  const raw: AdminSettingsMap = {};
+  for (const r of rows) raw[r.key] = r.value;
+
+  // `loaded` is what the screen was shown (profile overrides applied). A value
+  // that still matches it was not edited and must not be written back.
+  const loaded = overlayAdminSettings(raw, getAllSettings());
+  const plan = planAdminBatch(raw, loaded, settings);
+
   const stmt = db.prepare('INSERT OR REPLACE INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)');
-  for (const [k, v] of Object.entries(settings)) {
-    stmt.run(k, v);
-    mirrorAdminWrite(k, v);
+  for (const [k, v] of Object.entries(plan.writes)) stmt.run(k, v);
+  for (const mirror of plan.mirrors) {
+    setSetting(mirror.target, mirror.value);
   }
 }
 

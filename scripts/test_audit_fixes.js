@@ -32,6 +32,11 @@ const {
   sumReceivables,
   sumSaleReturns,
 } = require(path.join(ROOT, 'dist', 'shared', 'dashboardMath.js'));
+const {
+  ADMIN_NON_WRITABLE_KEYS,
+  overlayAdminSettings,
+  planAdminBatch,
+} = require(path.join(ROOT, 'dist', 'shared', 'adminSettingsBridge.js'));
 
 let passed = 0;
 let failed = 0;
@@ -136,6 +141,39 @@ check('masking does not mutate the input map', () => {
   const source = { email_smtp_pass: 'hunter2' };
   maskSecrets(source, SECRET_ADMIN_KEYS);
   assert.equal(source.email_smtp_pass, 'hunter2');
+});
+
+console.log('\nadmin/profile settings bridge (phase A)');
+check('allow_negative_stock is never an admin control', () => {
+  const raw = { allow_negative_stock: 'false', currency_symbol: 'Rs' };
+  const profile = { allow_negative_stock: 'warn', currency: 'Rs' };
+  const loaded = overlayAdminSettings(raw, profile);
+  assert.equal(loaded.allow_negative_stock, undefined);
+  assert.ok(ADMIN_NON_WRITABLE_KEYS.has('allow_negative_stock'));
+});
+check('batch Save All cannot overwrite warn with the stale false', () => {
+  const raw = { allow_negative_stock: 'false', currency_symbol: 'Rs', receipt_footer_text: 'old' };
+  const profile = { allow_negative_stock: 'warn', currency: 'Rs', receipt_footer: 'old' };
+  const loaded = overlayAdminSettings(raw, profile);
+  const plan = planAdminBatch(raw, loaded, { ...loaded, allow_negative_stock: 'false' });
+  assert.equal(plan.writes.allow_negative_stock, undefined);
+  assert.equal(profile.allow_negative_stock, 'warn');
+});
+check('unchanged fields are not written back', () => {
+  const raw = { currency_symbol: 'Rs' };
+  const profile = { currency: 'Rs' };
+  const loaded = overlayAdminSettings(raw, profile);
+  const plan = planAdminBatch(raw, loaded, { ...loaded });
+  assert.deepEqual(plan.writes, {});
+  assert.deepEqual(plan.mirrors, []);
+});
+check('a genuinely changed profile-owned field is mirrored', () => {
+  const raw = { currency_symbol: 'Rs' };
+  const profile = { currency: 'Rs' };
+  const loaded = overlayAdminSettings(raw, profile);
+  const plan = planAdminBatch(raw, loaded, { ...loaded, currency_symbol: 'PKR' });
+  assert.equal(plan.writes.currency_symbol, 'PKR');
+  assert.deepEqual(plan.mirrors, [{ target: 'currency', value: 'PKR' }]);
 });
 
 console.log('\ndashboard arithmetic (A2/A3)');

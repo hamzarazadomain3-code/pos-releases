@@ -918,7 +918,7 @@ export default function App() {
           {page === 'fifoStock' && <FIFOStockReport />}
           {page === 'settings' && <Settings />}
           {page === 'users' && <Users />}
-          {page === 'admin' && <AdminPanel />}
+          {page === 'admin' && <AdminPanel onNavigate={(key) => setPage(key as NavPage)} />}
           </Suspense>
         </ErrorBoundary>
       </main>

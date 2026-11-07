@@ -52,7 +52,6 @@ const SECTIONS: Section[] = [
       { key: 'default_payment_mode', label: 'Default Payment Mode', type: 'select', options: ['Cash', 'Card', 'Easypaisa', 'JazzCash'] },
       { key: 'require_customer', label: 'Require Customer for Every Bill', type: 'toggle' },
       { key: 'refund_manager_threshold', label: 'Manager Refund Threshold', type: 'number', hint: 'Refunds above this amount need a manager (0 = off)' },
-      { key: 'allow_negative_stock', label: 'Allow Negative Stock', type: 'toggle' },
       { key: 'invoice_prefix', label: 'Invoice Prefix', type: 'text' },
       { key: 'invoice_start_number', label: 'Starting Invoice Number', type: 'number' },
       { key: 'max_discount_percent', label: 'Max Discount % Allowed', type: 'number' },
@@ -221,13 +220,14 @@ function saveValueFor(key: string, value: string): string {
   return value;
 }
 
-export default function SystemSettings() {
+export default function SystemSettings({ onNavigate }: { onNavigate?: (key: string) => void }) {
   const [settings, setSettings] = useState<AdminSettingsMap>({});
   const [activeSection, setActiveSection] = useState(SECTIONS[0].key);
   const [notice, setNotice] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const [dirtyKeys, setDirtyKeys] = useState<Set<string>>(new Set());
+  const dirty = dirtyKeys.size > 0;
   const [previewing, setPreviewing] = useState(false);
   const wallpaperInputRef = useRef<HTMLInputElement>(null);
    const [cropEditor, setCropEditor] = useState<{ src: string } | null>(null);
@@ -239,16 +239,25 @@ export default function SystemSettings() {
 
   const updateSetting = (key: string, value: string) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
-    setDirty(true);
+    setDirtyKeys((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
   };
 
   const saveAll = async () => {
     setBusy(true);
     setNotice(null);
     try {
-      await window.api.admin.settings.setBatch(settings);
+      // Only send fields the owner actually changed. This is what stops a
+      // loaded-but-untouched field (e.g. a hidden legacy key) from being
+      // written back over the canonical Shop Profile value.
+      const payload: Record<string, string> = {};
+      for (const key of dirtyKeys) payload[key] = settings[key] ?? '';
+      await window.api.admin.settings.setBatch(payload);
       setSaved(true);
-      setDirty(false);
+      setDirtyKeys(new Set());
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
@@ -263,6 +272,7 @@ export default function SystemSettings() {
       await window.api.admin.settings.resetDefaults();
       const fresh = await window.api.admin.settings.getAll();
       setSettings(fresh);
+      setDirtyKeys(new Set());
       setNotice('All settings reset to defaults');
       setTimeout(() => setNotice(null), 2000);
     } catch (e) {
@@ -533,6 +543,24 @@ export default function SystemSettings() {
               )}
             </label>
           ))}
+          {currentSection.key === 'billing' && (
+            <div className="admin-setting-item">
+              <div className="admin-setting-label">
+                <span>Allow Negative Stock</span>
+                <span className="muted small">
+                  Managed in Settings → Billing (yes / warn / no). The old Admin toggle could not
+                  represent “warn”, so it has been removed.
+                </span>
+              </div>
+              <button
+                className="btn btn-sm"
+                onClick={() => onNavigate?.('settings')}
+                disabled={!onNavigate}
+              >
+                Open Settings → Billing
+              </button>
+            </div>
+          )}
           {activeSection === 'backup' && (
             <div style={{ marginTop: 16 }}>
               <button className="btn btn-primary" onClick={handleBackupNow} disabled={backupRunning}>
