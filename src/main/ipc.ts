@@ -670,10 +670,14 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('whatsapp:status', () => getWhatsAppStatus());
   ipcMain.handle('whatsapp:start', async () => {
+    if (!can('owner')) throw new Error('Only the owner can link WhatsApp');
     await restartWhatsAppGateway();
     return getWhatsAppStatus();
   });
-  ipcMain.handle('whatsapp:send', (_e, phone: string, text: string) => sendWhatsAppReceipt(phone, text));
+  ipcMain.handle('whatsapp:send', (_e, phone: string, text: string) => {
+    if (!can('owner')) throw new Error('Only the owner can send WhatsApp messages');
+    return sendWhatsAppReceipt(phone, text);
+  });
   ipcMain.handle('whatsapp:sendSaleReceipt', (_e, saleId: number, phone?: string) =>
     sendSaleReceiptOnWhatsApp(saleId, phone)
   );
@@ -937,8 +941,26 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('2fa:verifyOtp', (_e, userId: number, code: string) => verifyOtp(userId, code));
 
   // ── Email ──
-  ipcMain.handle('email:send', (_e, options: { to: string | string[]; subject: string; text?: string; html?: string }) => sendEmail(options));
-  ipcMain.handle('email:sendDailyReport', () => sendDailySalesReportEmail());
+  // `email:send` is a raw relay: the caller supplies recipient, subject and HTML.
+  // It is not used by the till (receipts go through receipt:sendEmail), so keep
+  // it owner-only — an authenticated cashier must not be able to send arbitrary
+  // mail from the shop's SMTP account.
+  ipcMain.handle('email:send', (_e, options: { to: string | string[]; subject: string; text?: string; html?: string }) => {
+    if (!can('owner')) throw new Error('Only the owner can send email');
+    if (!options || typeof options !== 'object') throw new Error('Invalid email options');
+    const recipients = Array.isArray(options.to) ? options.to : [options.to];
+    if (recipients.length === 0 || recipients.some((r) => typeof r !== 'string' || !r.includes('@'))) {
+      throw new Error('A valid recipient email is required');
+    }
+    if (typeof options.subject !== 'string' || !options.subject.trim()) {
+      throw new Error('An email subject is required');
+    }
+    return sendEmail(options);
+  });
+  ipcMain.handle('email:sendDailyReport', () => {
+    if (!can('owner')) throw new Error('Only the owner can send the daily report');
+    return sendDailySalesReportEmail();
+  });
 
   // ── Quotation Module ──
   ipcMain.handle('quotations:list', (_e, filters?: { status?: string; customer_id?: number; from_date?: string; to_date?: string; search?: string }) =>

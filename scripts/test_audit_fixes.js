@@ -26,6 +26,12 @@ const {
   isMaskedSecret,
   maskSecrets,
 } = require(path.join(ROOT, 'dist', 'main', 'utils', 'secrets.js'));
+const {
+  sumCashCollected,
+  sumPayables,
+  sumReceivables,
+  sumSaleReturns,
+} = require(path.join(ROOT, 'dist', 'shared', 'dashboardMath.js'));
 
 let passed = 0;
 let failed = 0;
@@ -130,6 +136,31 @@ check('masking does not mutate the input map', () => {
   const source = { email_smtp_pass: 'hunter2' };
   maskSecrets(source, SECRET_ADMIN_KEYS);
   assert.equal(source.email_smtp_pass, 'hunter2');
+});
+
+console.log('\ndashboard arithmetic (A2/A3)');
+check('payables come from suppliers, receivables from customers', () => {
+  const suppliers = [{ balance: 500 }, { balance: 125.5 }, { balance: -20 }];
+  const customers = [{ balance: 300 }, { balance: 0 }, { balance: 49.5 }];
+  assert.equal(sumPayables(suppliers), 625.5);
+  assert.equal(sumReceivables(customers), 349.5);
+  assert.notEqual(sumPayables(suppliers), sumReceivables(customers));
+});
+check('negative/NaN balances never inflate totals', () => {
+  assert.equal(sumPayables([{ balance: -10 }, { balance: 'abc' }, {}]), 0);
+  assert.equal(sumReceivables([{ balance: null }, { balance: 12 }]), 12);
+});
+check('sale returns only count returned/negative rows', () => {
+  const rows = [
+    { status: 'completed', total_amount: 1000 },
+    { status: 'returned', total_amount: -150 },
+    { status: 'completed', total_amount: -25 },
+    { status: 'voided', total_amount: 800 },
+  ];
+  assert.equal(sumSaleReturns(rows), 175);
+});
+check('cash collected sums completed sale totals', () => {
+  assert.equal(sumCashCollected([{ total_amount: 100 }, { total_amount: 50.5 }]), 150.5);
 });
 
 console.log('\nreport query schema (A6)');

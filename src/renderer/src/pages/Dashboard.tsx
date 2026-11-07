@@ -15,6 +15,12 @@ import {
   YAxis,
 } from 'recharts';
 import type { DailyStats, HourlyTrendRow, TopProductRow } from '../../../shared/types';
+import {
+  sumCashCollected,
+  sumPayables,
+  sumReceivables,
+  sumSaleReturns,
+} from '../../../shared/dashboardMath';
 import { formatMoney, getCurrencySymbol } from '../utils/currency';
 
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1'];
@@ -220,28 +226,20 @@ export default function Dashboard() {
 
       // A "return" is its own negative sale (status = 'returned'). Summing every
       // sale row here made "Sale Return" equal a slice of revenue, not refunds.
-      const returnTotal = returns
-        .filter((r: any) => r.status === 'returned' || Number(r.total_amount) < 0)
-        .reduce((sum: number, r: any) => sum + Math.abs(Number(r.total_amount) || 0), 0);
+      const returnTotal = sumSaleReturns(returns);
       setSaleReturnAmount(returnTotal);
 
       // Cash actually collected today (payments table rows are cash sales).
-      const paymentInTotal = cashSales.reduce((sum: number, p: any) => sum + (Number(p.total_amount) || 0), 0);
+      const paymentInTotal = sumCashCollected(cashSales);
       setPaymentInAmount(paymentInTotal);
 
       // Receivable = customers owe the shop. Payable = shop owes suppliers.
       // These were both computed from the SAME customers array before, so the two
       // cards always showed an identical number.
-      const receivableTotal = parties.reduce(
-        (sum: number, c: any) => sum + Math.max(0, Number(c.balance) || 0),
-        0
-      );
+      const receivableTotal = sumReceivables(parties);
       setReceivableBalance(receivableTotal);
 
-      const payableTotal = suppliers.reduce(
-        (sum: number, s: any) => sum + Math.max(0, Number(s.balance) || 0),
-        0
-      );
+      const payableTotal = sumPayables(suppliers);
       setPayableBalance(payableTotal);
 
       const dashData = await (window.api as any).reports.dashboard?.().catch(() => null);
