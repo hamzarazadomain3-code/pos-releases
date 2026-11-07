@@ -122,6 +122,13 @@ export default function Users() {
   const roleLabel = (r: string) =>
     r === 'owner' ? 'Owner' : r === 'manager' ? 'Manager' : 'Cashier';
 
+  // Multi-owner is allowed, but it is a real privilege escalation worth warning
+  // about. Count the OTHER owners so editing an existing owner does not warn
+  // about itself.
+  const ownersBesidesCurrent = users.filter(
+    (u) => u.role === 'owner' && !(modal?.mode === 'edit' && u.id === modal.user.id)
+  ).length;
+
   // ── Recovery & security ────────────────────────────────────────────────
   const saveSecurity = async () => {
     if (!me) return;
@@ -441,6 +448,13 @@ export default function Users() {
             <option value="manager">Manager (inventory + reports)</option>
             <option value="owner">Owner (full access)</option>
           </select>
+          {role === 'owner' && ownersBesidesCurrent > 0 && (
+            <div className="muted small" style={{ color: '#b45309', marginTop: 4 }}>
+              This shop already has {ownersBesidesCurrent} owner
+              {ownersBesidesCurrent === 1 ? '' : 's'}. Adding another owner gives them full control,
+              including user management and licensing. Consider a Manager instead.
+            </div>
+          )}
           {modal.mode === 'edit' && (
             <label className="lbl">
               Username: <strong>{modal.user.username}</strong>

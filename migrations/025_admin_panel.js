@@ -276,7 +276,7 @@ exports.up = function (db) {
     ['require_numbers', 'true'],
     ['require_special_chars', 'false'],
     ['password_expiry_days', '90'],
-    ['session_timeout_minutes', '30'],
+    ['session_timeout_minutes', '480'],
     ['allow_remember_me', 'true'],
     ['two_factor_enabled', 'false'],
     ['two_factor_method', 'email'],

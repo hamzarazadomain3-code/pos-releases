@@ -181,6 +181,23 @@ check('profitability + inventory reports use unit_price', () => {
   }
 });
 
+console.log('\nweb/desktop safety (phase 3)');
+check('raw email and WhatsApp relays are owner-gated', () => {
+  const ipc = fs.readFileSync(path.join(ROOT, 'src', 'main', 'ipc.ts'), 'utf8');
+  assert.ok(
+    /'email:send'[\s\S]{0,600}can\('owner'\)/.test(ipc),
+    'email:send must require the owner role'
+  );
+  assert.ok(
+    /'whatsapp:start'[\s\S]{0,600}can\('owner'\)/.test(ipc),
+    'whatsapp:start must require the owner role'
+  );
+  assert.ok(
+    /'whatsapp:send'[\s\S]{0,600}can\('owner'\)/.test(ipc),
+    'whatsapp:send must require the owner role'
+  );
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
 else console.log('ALL PASSED');

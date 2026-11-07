@@ -1,673 +1,183 @@
-# Rokar POS — Phase 1/2/3 Build Report
+# Rokar POS — Autonomous Audit & Fix Run
 
-**Build date**: 2026-11-01  
-**Branch**: `main`  
-**Head commit**: `2dc9fef` (2.22.0 release bump)  
-**Version**: **2.22.0** — released 2026-11-01 (bump authorised after the initial build; see Deployment)
-
----
-
-## Executive Summary
-
-| Phase | Status | Build | Tests |
-|-------|--------|-------|-------|
-| Phase 1 — Negative Stock | ✅ PASS | ✅ | 27/27 |
-| Phase 2 — Address / Single Renderer | ✅ PASS | ✅ | 68/68 + 73/73 |
-| Phase 3 — Purchase Import | ✅ PASS | ✅ | 34/34 |
-
-All suites pass; `npm run typecheck` and `npm run build` clean.
+**Audit date:** 2026-11-07  
+**Branch:** `feature/audit-p0`  
+**Base:** `main` @ `6d2209f` (v2.23.0)  
+**Scope:** `E:\antigravty\billing softwere\pos-app` only. The Cloudflare Worker/web project under `cloud/` was audited **read-only**; nothing outside this repository was edited.  
+**Deployment:** **No release, version bump, `latest.yml`, push, or Cloudflare/Vercel deploy was performed.** This report supersedes the previous phase report (still available in git history).
 
 ---
 
-## Phase 1 — Negative Stock (Sell Out-of-Stock)
+## Executive summary
 
-### Backend (completed in prior commits + small fixes here)
-- `sales.ts`: reads `allow_negative_stock` ('yes' | 'warn' | 'no', default 'warn') before blocking; enforces `max_negative_qty` cap; logs `[Stock Warning]` when 'warn'; audit-log entry `stock_negative` written when a sale pushes a product negative.
-- `inventory.ts`: `adjustStock` no longer throws on negative; `deductStockFIFO` accepts `allowNegative` flag; partial-batch shortfall creates a `NULL` batch row so the sale line is always stored.
-- `fifoEngine.ts`: `getFIFOCostForSaleItem` falls back to last purchase cost when no FIFO rows exist (no NaN).
-- `returns.ts` / `voidSale`: restore stock via `recordMovement` (handles negative → positive correctly).
-- Migration `062_negative_stock_permissions.js`: seeds `can_sell_negative_stock` and `can_import_purchase` for super_admin (idempotent).
+| Phase | Status | Typecheck | Build | Tests |
+| --- | --- | --- | --- | --- |
+| 0 — Architecture audit | ✅ PASS | — | — | — |
+| 1 — Verify findings in code | ✅ PASS | — | — | — |
+| 2 — Fix CONFIRMED P0 items | ✅ PASS (with documented PARTIAL/SKIPPED items) | ✅ | ✅ | ✅ |
+| 3 — Web/desktop safety | ✅ PASS | ✅ | ✅ | ✅ |
+| 4 — P1 UI / Sidebar cleanup | ⏭️ SKIPPED (gate not met) | — | — | — |
+| 5 — Tests + owner checklist | ✅ PASS | ✅ | ✅ | ✅ |
 
-### Frontend (Billing.tsx)
-- Settings already existed (`allow_negative_stock` yes/warn/no, `max_negative_qty`, `price_floor_enabled`).
-- Cart row amber badge when `warn` and qty > stock → shows projection `Stock: X → -Y`.
-- Single non-blocking toast per bill (via `notice`) when `warn` mode and any line exceeds available stock.
-- 'no' mode keeps old hard block; 'yes' mode is silent.
-- Negative stock shown red with minus sign in:
-  - Inventory list (style + "(oversold)" badge)
-  - Product picker (browse grid + search dropdown)
-- Inventory filter: added `negative_stock` option.
-- "Oversold items" report added (product, negative qty, last sale date/invoice).
-- Inventory exports: negative rows flagged "NEGATIVE STOCK" in Status column.
-- Dashboard KPI: `negative_stock` count shown.
-- Stock valuation: includes negative items valued at last purchase cost; flagged in summary.
-
-### Tests (`scripts/test_negative_stock.js`)
-- Stock 0 → sell 1 → stock -1 ✅
-- Purchase 10 → stock 9 ✅
-- Return 1 → stock 10 ✅
-- 'warn' mode: bill saves + warning logged ✅
-- 'no' mode: cashier blocked, owner override works ✅
-- `max_negative_qty` cap enforced ✅
-- Hold/resume preserves negative qty ✅
-- Audit-log entry on negative push ✅
-- Last-purchase-cost fallback for profit ✅
+The **installed desktop app must be rebuilt and reinstalled** by the owner to receive these fixes. The **web version must be rebuilt and redeployed** by the owner; this run deliberately did not publish anything.
 
 ---
 
-## Phase 2 — Remove Fixed Branch Address / Single Renderer
+## Phase 0 — Architecture audit (report only)
 
-### Removed Hardcoded Literals
-| Literal | Source |
-|---------|--------|
-| Faqirwali, Haroonabad, Chishtian, Dharanwala | removed from `ReceiptDesigner.tsx` branch dropdown & migration seeds |
-| 03001234567, 03706863313 | removed from `Settings.tsx` placeholder, `UdhaarCustomerModal.tsx` placeholder & migration seeds |
-| "Come again soon", "Thank you! Visit again" | removed from receipt templates; footer defaults now empty |
-| "SOFTWARE BY", "Rokar POS", "Al Baghdad" | removed from receipt renderers (only owner-set value prints) |
-| logo.png | left only in `LabelStudio` absolute layout (different paradigm) |
-
-### Resolution Order (strict)
-**Template block override (key exists, even "") → Branch override → Shop Profile → empty**.  
-Never `||` for user-editable text; uses `hasOwnProperty` / `!== undefined`. Empty = skip block entirely.
-
-### Files Changed
-| File | Change |
-|------|--------|
-| `receiptDesigner.ts` | `blockHtml()` rewritten with strict resolution; dead legacy code kept but disabled |
-| `renderDocument.ts` | HTML escape fixed; `phone_whatsapp` no longer duplicates; footer message empty = print nothing; roll name column "ITEM" on 58mm |
-| `receiptTemplates.ts` | footer / software credit only prints when owner provided a value |
-| `printDocs.ts` | same escape fix + ShopProfile field `receiptFooterText` |
-| `receiptDesign.ts` | `defaultSections` deduped (no duplicate QR / return banner) |
-| `ReceiptDesigner.tsx` | Address = multi-line textarea; "Use Shop Profile value" = clears override; branch overrides use real branch list (no preset names) |
-| `Settings.tsx` / `UdhaarCustomerModal.tsx` | Phone placeholder changed to generic "03XXXXXXXXX" |
-| `SystemSettings.tsx` | Footer hint: "empty = nothing printed" |
-| `inventory.ts` | `listProducts` filter `negative_stock` added |
-| `reports.ts` | `stockValuation` + `negative_items/qty/cost_value`; `listOversoldItems()` |
-| `export.ts` | XLSX exports flag negative rows "NEGATIVE STOCK" |
-| `Dashboard.tsx` | `negative_stock` KPI card added |
-
-### Migration `063_my_receipt_template.js`
-- Idempotent one-time migration: copies current install values into a saved template "My receipt" and makes it active **only if** no custom design was already applied (`receipt_design_json` absent).
-- Existing installs keep byte-identical output until the owner edits.
-
-### Guard (`scripts/check-forbidden-strings.js`)
-- Runs in `npm run typecheck`; fails build if any of the 7 identity literals or 2 shop-content literals appear in `src/` (tests/migrations exempt).
-
-### Tests
-| Script | Result |
-|--------|--------|
-| `scripts/test_receipt_address.js` | 22/22 ✅ (address shows, empty prints nothing, branch override, template override, migration seed) |
-| `receipt_design_check.js` | 68/68 ✅ (layout audit, no clip, invoice on one line, NET TOTAL on one line, DISC conditional) |
-| `receipt_designer_check.js` | 73/73 ✅ (DISC conditional, long name wraps, software credit hidden until set, return banner, library resolution, enable/disable wiring) |
+- Desktop: Electron + React renderer + `node:sqlite` (`src/main/db.ts`), services under `src/main/services/`, IPC in `src/main/ipc.ts`, preload bridge in `src/preload/preload.ts`.
+- Web: the same renderer is built with `npm run build:web` into `cloud/web-dist/app` and served at `/app`. The Worker front door (`cloud/src/accounts.ts`, D1 `ACCOUNTS`) validates a web session and forwards each call to the shop's `ShopObject` Durable Object. That object runs the real 50-migration POS schema in DO SQLite and calls the real `registerIpcHandlers()` through `cloud/src/dispatch.ts`.
+- Web session model: one web session maps to one POS user id. `dispatch` sets that user as the service session while the handler runs, then clears it. `auth:login` / `auth:loginWithPin` set their own session internally.
+- **No desktop ↔ web sync.** They are separate databases. A fix applied here reaches web only after the owner rebuilds/redeploys the web bundle; it does not merge the data.
+- `src/main/main.ts` uses `contextIsolation: true`, `nodeIntegration: false`; the preload still needs Node, so `sandbox: false`. No change made.
 
 ---
 
-## Phase 3 — Purchase Import Wizard (Excel/CSV)
+## Phase 1 — Findings and status
 
-### Backend (`purchaseImport.ts`)
-- `parsePurchaseFile()` — auto-detects header row (first row with ≥2 non-empty cells), supports .xlsx/.xls/.csv; returns headers + rows.
-- Column mapping auto-guess (English + common Urdu/roman names) with fuzzy fallback; remembered per supplier.
-- Row matching: barcode → SKU → exact name → fuzzy suggestion (Levenshtein ≤35% length).
-- Unmatched rows: "Create new product" or "Skip" (bulk).
-- Preview grid: status OK / New / Warning / Error; editable qty/cost/sale/wholesale/discount%/tax%/batch/expiry.
-- Options: "Update product cost price", "Update sale price", "Update only if changed", "Merge duplicates".
-- Confirm → single transaction: creates PO or Purchase Invoice; stock for Invoice; product price updates; supplier ledger; audit log; undo payload saved.
-- Summary: imported / created / skipped / failed + downloadable error CSV.
-- `undoPurchaseImport()` — reverses stock (for Invoice), supplier ledger, deletes PO, clears undo payload.
-- Partial receive for POs (`receivePurchaseOrder(id, lines?)`); order status transitions `pending` → `partial` → `received`.
-- `buildPurchaseOrderHtml` / `printPurchaseOrder` / `previewPurchaseOrder` / `savePurchaseOrderText` → all through **shared `renderDocument()`**.
-- `listPurchaseImports()`, `lastUndoableImport()` for Purchases screen.
+Status meanings: **CONFIRMED** = reproduced in code/data; **PARTIAL** = part of the claim is true but not all; **NOT CONFIRMED** = evidence did not support the claim.
 
-### Frontend (`PurchaseImportWizard.tsx` + Purchases.tsx integration)
-- 6-step ModalShell wizard (Details → File → Map → Match → Review → Confirm).
-- Drag-drop on Purchases screen → opens wizard preloaded with that file.
-- File picker button, "Download sample template" (canonical headers + 2 sample rows).
-- Column mapping dropdown per header (auto-guessed, editable).
-- Matching UI: bulk actions (Accept all fuzzy / Create all new / Skip all).
-- Review grid: editable qty/cost/sale/whole/discount/tax/batch/expiry; invalid qty highlighted red; totals row.
-- Options row (cost / sale / only-if-changed / merge).
-- Confirm → shows summary; buttons: Preview/Print, Copy for WhatsApp, Save as text, Undo.
-- Error report CSV download.
-- PO view: partial receive inputs per line; "Receive typed" / "Receive all remaining" / "Cancel"; Preview/Print/Save text.
-- "Import from file" button + drag-drop zone on Purchases screen; "Undo last import" button when applicable.
+| Finding | Status | Evidence (file:line) | Fixed? | Notes |
+| --- | --- | --- | --- | --- |
+| **A1** Two competing settings stores (`settings` vs `admin_settings`) with conflicting keys | **CONFIRMED** | `src/main/services/admin.ts:208-236`, `src/main/services/settings.ts`, `src/main/services/printDocs.ts` (merge order legacy `receipt_settings` → `settings` → `admin_settings`). Dev DB had `settings.receipt_footer='Thank you! Visit again'` while `admin_settings.receipt_footer_text='Come again soon!'`; `sales.ts` read `settings.allow_negative_stock`, so the Admin toggle was dead. | ✅ Yes | Canonical bridge (`applyProfileOverrides` + `mirrorAdminWrite`): `settings` wins for `currency`, `receipt_footer`, `allow_negative_stock`, `default_credit_days`; admin keys are overlaid on read and mirrored on write. No destructive table merge. |
+| **A2** Dashboard payable and receivable both came from the customer list; payments wrong | **CONFIRMED** | `src/renderer/src/pages/Dashboard.tsx:229-242`; `src/shared/dashboardMath.ts` | ✅ Yes | Payable now sums **supplier** balances; receivable sums **customer** balances. “Payment In” is cash sales collected; “Payment Out” uses `today_expenses`; “Sale Return” counts only `status='returned'` / negative sales. Supplier payments are **not** included in “Cash Out” (documented assumption). |
+| **A3** Cash-drawer label said “Total Sales Today” for a shift-scoped total; dashboard daily queries hard-code “today” | **CONFIRMED (partial)** | `src/renderer/src/components/CashDrawer.tsx`; `src/main/services/reports.ts` (`getDailyStats`, `getDailySalesTrend`) | ◐ Partial | Labels now say **“Total Received (This Session)”** and **“Bills (This Session)”**. Daily dashboard queries intentionally remain “today”; no user-selectable period selector was added in this run. |
+| **A4** Shift and cash drawer were separate; force-close allowed no reason; no >24 h warning | **CONFIRMED** | `src/main/services/shifts.ts:43,55-73,149,157-181`; `src/main/services/cashDrawer.ts:40-55`; `src/renderer/src/pages/Billing.tsx:2024-2044`; `src/renderer/src/pages/Shifts.tsx` | ✅ Yes | Opening a shift now creates the matching drawer session; drawer opening cash syncs `shifts.start_cash`; closing a shift closes the open drawer with counted cash/variance; force-close **requires a non-empty reason** and records `reason=…` in the `shift_force_closed` audit row. Billing shows a warning pill after 24 h. |
+| **A5** Secrets (`email_smtp_pass`, `sms_api_key`, `sms_api_secret`, licence key) returned to the renderer in clear text | **CONFIRMED** | `src/main/ipc.ts:362,896-901`; `src/main/utils/secrets.ts` | ✅ Yes | Masked at the IPC boundary only (`••••••••`). Services still read the real values. Saving the mask back is a no-op, so a settings page cannot overwrite a real secret with dots. |
+| **A6** Report queries reference non-existent `sale_items.price` | **CONFIRMED** | `src/main/services/profitability.ts:89,216`; `src/main/services/inventoryReports.ts:321` | ✅ Yes | Replaced with `si.unit_price` (schema verified: `sale_items` has `unit_price`, not `price`). Regression test in `scripts/test_audit_fixes.js`. |
+| **A7** Shipped/test products (`%Wiring Test Item%`, `INIT-%`, `AG0ENT6N`) and no `is_test` flag | **NOT CONFIRMED** | Dev DB (`pos.db`) contains 0 matching products; no `is_test` column exists. | ❌ No | No evidence in the available database. No `is_test` column / “Remove test data” action was added, because deleting real inventory on an unconfirmed finding is unsafe. Owner should search their own DB for those names before deciding. |
+| **A8** Price-floor enforcement / below-cost sales | **PARTIAL** | `src/main/services/sales.ts:102-120` — below-cost lines are blocked unless `price_floor_override`, gated by `settings.price_floor_enabled` (default on) | ◐ Partial | Enforcement already exists in v2.23.0. A dedicated **below-cost report** was not added in this run. Note: items with `cost_price = 0` are not blocked (the comparison is `price < cost`). |
+| **A9** Mojibake / encoding damage in existing data | **NOT CONFIRMED** | No DB rows available to reproduce; dev DB is freshly seeded/empty. | ❌ No | Encoding migration was intentionally **not** written: the brief allowed it only with DB evidence. UTF-8 BOM import/export and the Urdu/en-dash test were therefore also not changed. |
+| **A10** Overdue credit days duplicated and shop default unused | **CONFIRMED** | `src/main/services/udhaar.ts:205,426`; `src/shared/creditDays.ts`; `migrations/067_default_credit_days.js` | ✅ Yes | One shared `resolveCreditDays()`. Customer `credit_days > 0` wins; `0` now means “use shop default” (`settings.default_credit_days`, seeded from legacy `admin_settings.payment_due_days` or 30). Shop default `0` disables overdue tracking. UI hint updated to “0 = shop default”. |
+| **B1a** Security settings fields appear empty | **NOT CONFIRMED** | `src/renderer/src/pages/AdminPanel/SystemSettings.tsx:127-137`; dev DB has `min_password_length=8`, `session_timeout_minutes=30`, 2FA off | ❌ No | The code path and seeded values are present; the empty screenshot could not be reproduced from the available DB. |
+| **B1b** `session_timeout_minutes` is not enforced | **CONFIRMED** | The key is read only by `SystemSettings.tsx:134`; no main/renderer code uses it for an idle timer. | ❌ No | Implementing idle auto-lock is a feature, not a one-line fix; recorded for the owner. New-install default was changed to **480 minutes** in `migrations/025_admin_panel.js:279` (existing installs keep their value). |
+| **B7** Add User roles do not match Roles & Permissions | **PARTIAL** | `src/renderer/src/pages/Users.tsx:439-447` offers owner/manager/cashier; `migrations/025_admin_panel.js:167-172` also defines `super_admin` and `inventory_manager`. | ◐ Partial | Added a **multi-owner warning** when adding/promoting another owner. **Inventory Manager was not added** to the user dropdown: the app’s `can()` model is a three-level rank and has no per-route permission check, so adding the label alone would either give that user billing access or lock them out of inventory. This needs a permission-model change first. |
 
-### Migration `064_purchase_import.js`
-Additive columns on `purchase_orders` (`reference_no`, `document_type`, `import_id`, `invoice_date`) and `purchase_items` (`batch_no`, `expiry_date`, `discount_pct`, `tax_pct`, `received_qty`, `sale_price`, `wholesale_price`). New table `purchase_imports` for undo payload.
+### Other observations (not changed)
 
-### Tests (`scripts/test_purchase_import.js`)
-- 5-row CSV: 2 by barcode, 1 duplicate (merged), 1 by name, 1 new, 1 invalid qty → 34/34 ✅
-  - Stock after import ✅ (merged 10+2=12, 5, 3, 2)
-  - Cost updated from file ✅
-  - Supplier ledger balance 913 ✅
-  - Price history row ✅
-  - Undo reverses stock, ledger, deletes PO ✅
-  - Purchase Order: stock unchanged until receive ✅
-  - Partial receive (4 of 10) → `partial`; rest → `received` ✅
-  - PO document via shared renderer ✅ (reference, supplier present)
+- `email:send` was a raw relay (recipient/subject/HTML supplied by the caller) with no role check. It is not used by the till; receipts use `receipt:sendEmail`. Now owner-only with basic validation.
+- `whatsapp:start` / `whatsapp:send` were ungated; now owner-only. `whatsapp:sendSaleReceipt` remains available to cashiers (it is the till receipt action).
+- `backup:run` / `backup:restore` were already owner-gated.
+- The web session is derived from the bearer token in `cloud/src/accounts.ts`; `sessionUser` is **not** taken from the client body. Trial expiry is enforced before `/rpc`. This is correct.
+- Web Worker `nodemailer` / filesystem / `child_process` leaves are inert shims; raw email cannot send from the Worker. The desktop remains the only place those handlers do real work.
 
 ---
 
-## Changed Files (since `ffcafeb`)
+## Phase 2 — Changes applied
 
-### Backend (main process)
-```
-src/main/services/sales.ts
-src/main/services/inventory.ts
-src/main/services/fifoEngine.ts
-src/main/services/receiptDesigner.ts
-src/main/services/renderDocument.ts
-src/main/services/receiptTemplates.ts
-src/main/services/printDocs.ts
-src/main/services/reports.ts
-src/main/services/export.ts
-src/main/services/purchases.ts
-src/main/services/purchaseImport.ts (NEW)
-src/main/services/activity.ts (used)
-src/main/services/auth.ts (can import)
-src/main/services/admin.ts (used)
-src/main/ipc.ts
-src/main/db.ts (migrations auto-run)
-```
-
-### Frontend (renderer)
-```
-src/renderer/src/pages/Billing.tsx
-src/renderer/src/pages/Inventory.tsx
-src/renderer/src/pages/Reports.tsx
-src/renderer/src/pages/Dashboard.tsx
-src/renderer/src/pages/Settings.tsx
-src/renderer/src/pages/ReceiptDesigner.tsx
-src/renderer/src/pages/Purchases.tsx
-src/renderer/src/components/PurchaseImportWizard.tsx (NEW)
-src/renderer/src/components/ModalShell.tsx (reused)
-```
-
-### Shared / Preload / Types
-```
-src/shared/receiptDesign.ts
-src/shared/renderDocument.ts
-src/shared/types.ts
-src/preload/preload.ts
-```
-
-### Migrations
-```
-migrations/062_negative_stock_permissions.js
-migrations/063_my_receipt_template.js
-migrations/064_purchase_import.js
-```
-
-### Tests
-```
-scripts/test_negative_stock.js
-scripts/test_receipt_address.js
-scripts/test_purchase_import.js
-scripts/check-forbidden-strings.js (guard, runs in typecheck)
-```
-
-### CI / Package
-```
-.github/workflows/ci.yml (added test:negstock, test:address, test:purchaseimport)
-package.json (added npm scripts)
-```
-
----
-
-## Verification Checklist (from requirements)
-
-| Requirement | Status |
-|-------------|--------|
-| Stock 0 → bill saves, stock -1 red in Inventory | ✅ |
-| Purchase of 10 → stock 9 | ✅ |
-| Hold/resume + return with negative stock correct | ✅ |
-| Receipt + A4 invoice after typing new address print only new address, no old branch names | ✅ |
-| Sample purchase import: preview, mapping, confirm, verify stock/cost/supplier balance | ✅ |
-| Undo import | ✅ |
-| `npm run typecheck` | ✅ |
-| `npm run build` | ✅ |
-| No GitHub release, no version bump during phases 1-3 (2.22.0 cut later on explicit request) | ✅ |
-
----
-
-## Assumptions / Skipped Items
-
-| Item | Reason |
-|------|--------|
-| `labelStudioPrinting.ts` (mm-coordinate absolute layout) | Separate rendering paradigm; left untouched per prior decision. |
-| `receiptTemplates.ts` legacy thermal layouts | Not migrated to `renderDocument`; kept for backwards compatibility of `buildReceiptHtml` fallback path. |
-| Quotation → Sale conversion path with negative stock | Uses same `createSale` path; covered by test. |
-| Barcode scale items in negative stock | Cart validation uses same `stock_qty` check; covered. |
-| Excel export of negative stock in Reports / Dashboard | Negative flag added to Inventory export; other exports use same data so inherit it. |
-| WhatsApp share deep-link | Clipboard copy of plain-text version provided; platform share API varies by OS. |
-| Very large CSV (>5000 rows) streaming | Chunked processing (200 rows per tick) implemented; progress bar in wizard. |
-
----
-
-## Final Notes
-
-- Phases 1-3 shipped without a release; the 2.22.0 release + version bump were done afterwards on explicit request (see Deployment).
-- All migrations additive with safe defaults; no user data deleted.
-- Every numeric path guarded with `safeNumber` / `round2` / `roundStock`; no NaN in DB.
-- Single-renderer rule enforced: `receiptTemplates.ts`, `printDocs.ts`, `receiptDesigner.ts`, `udhaarPrinting.ts` all call `renderDocument()` for their output.
-- Forbidden-strings guard prevents regressions on hardcoded shop literals.
-
----
-
-## Deployment (2026-11-01)
-
-### Cloudflare Worker (live web app) — ✅ DEPLOYED
-
-| Item | Value |
-|------|-------|
-| Worker | `rokar-pos` (account `b36d7e51cbe94762345df8bbae41b223`) |
-| Method | Manual deploy from the dev machine: `cd cloud && npm run deploy` (build + `wrangler deploy` via local Wrangler OAuth login) |
-| Version ID | `c0901bed-febe-4d80-aa22-7d62ff7c2762` |
-| Assets | 31 files uploaded (8 unchanged), total 833.99 KiB / 179.75 KiB gzip |
-| Live URL | https://rokar-pos.bakery-saas.workers.dev/app |
-
-Post-deploy verification:
-
-| Check | Result |
-|-------|--------|
-| `GET /app` | 200, HTML references `assets/index-BhM1XPDo.js` (matches uploaded build) |
-| `GET /app/assets/Purchases-DGWudmZz.js` | 200, 40,026 bytes, contains the new import wizard ("Undo last import") — Phase 3 UI is live |
-| Worker bindings | `SHOP` (Durable Object), `ACCOUNTS` (D1 `rokar-accounts`), `ASSETS` |
-
-### CI auto-deploy — ⚠️ STILL SKIPPED
-
-The `Deploy to Cloudflare` job in `.github/workflows/ci.yml` skips itself when the
-repository secrets are missing (by design, so a missing secret does not turn the
-build red). Secrets are **not** present on `hamzarazadomain3-code/pos-releases`.
-
-To enable automatic deploys on every push to `main`, add at
-`https://github.com/hamzarazadomain3-code/pos-releases/settings/secrets/actions`:
-
-- `CLOUDFLARE_API_TOKEN` — a Cloudflare **API token** (not an OAuth token), scoped to
-  *Account → Workers Scripts → Edit*, *Account → Account Settings → Read*,
-  *Account → D1 → Edit*, *Zone → Workers Routes → Edit*
-- `CLOUDFLARE_ACCOUNT_ID` — `b36d7e51cbe94762345df8bbae41b223`
-
-Then re-run the workflow. No code change is required.
-
-### Local auto-deploy on push — ✅ INSTALLED (no secrets needed)
-
-Because the CI job needs repo secrets, this clone now deploys the Worker itself
-whenever something is pushed to `main`.
-
-| Item | Value |
-|------|-------|
-| Hook | `.git/hooks/pre-push` (source kept in `scripts/git-hooks/pre-push`) |
-| Runner | `scripts/deploy-cloud.ps1` — runs `npm run deploy` in `cloud/` |
-| Behaviour | detached (push never blocks/fails), mutex-guarded (no two deploys at once) |
-| Log | `.git/deploy-cloud.log` |
-| Disable once | `git push --no-verify` |
-| Disable permanently | delete `.git/hooks/pre-push` |
-| Verified | two clean runs: `ed3cbb92-e0b6-4efc-9cd4-94dff100b6bb`, `7d5d9fa6-f66e-433c-8e2e-ad0109db3dd9` |
-
-If the Wrangler OAuth session ever expires the hook writes `DEPLOY FAILED` plus
-the fix (`npx.cmd wrangler login`) into the log instead of failing silently.
-
-### Desktop installer / GitHub release — ✅ DEPLOYED (v2.22.0)
-
-| Item | Value |
-|------|-------|
-| Release | https://github.com/hamzarazadomain3-code/pos-releases/releases/tag/v2.22.0 |
-| Version | 2.21.0 → **2.22.0** (minor: new features), tag `v2.22.0` created by `finalize-release.js` |
-| Method | `npm run release` (build → electron-builder NSIS + portable → GitHub publish → finalize) |
-| Assets | `RokarPOS-Setup-2.22.0.exe` (114.8 MB), `RokarPOS-Portable-2.22.0.exe` (114.5 MB), `.blockmap`, `latest.yml`, and the version-less mirror `RokarPOS-Setup.exe` |
-| Auto-update feed | `latest.yml` at the release reports `version: 2.22.0` → installed 2.21.x clients will update to 2.22.0 on next check |
-| Stable download | `…/releases/latest/download/RokarPOS-Setup.exe` → HTTP 200, 114.8 MB (verified) |
-
-Notes:
-- The build ran with `TEMP`/`TMP` redirected to `E:\antigravty\tmp` because the system drive had < 1 GB free.
-- `GH_TOKEN` for the publish step came from the existing `gh` CLI session (`gh auth token`, `repo` scope); the token in `.env` was not used.
-- `warningsAsErrors: false`, no code signing (`signAndEditExecutable: false`) — installer is unsigned, as in every previous release.
-
-### Marketing site (Vercel) — ✅ DEPLOYED
-
-| Item | Value |
-|------|-------|
-| Repo | `hamzarazadomain3-code/rokar-pos-site` (commit `91f09bf`) |
-| Domain | https://rokarpos.co.uk (Vercel, `Server: Vercel`, `X-Vercel-Cache: HIT`) |
-| Change | `src/content.json`: `site.latestVersion` → `2.22.0`, new 2.22.0 changelog entry (negative stock, Oversold Items report, Excel/CSV purchase import + undo, partial receive, single renderer address fix) |
-| Deploy | Vercel GitHub integration builds on push to `main` — no release-triggered workflow exists in that repo |
-| Pre-push check | `node build/verify-content.mjs` → `CONTENT SHAPE OK` (9 changelog entries) |
-
-Note: `rokarpos.com` does not resolve in DNS; only `rokarpos.co.uk` serves the site.
-
-### Not deployed (intentionally)
-
-| Item | Reason |
-|------|--------|
-| Cloudflare CI auto-deploy | Still requires the two repo secrets listed above; the Worker itself is live (deployed manually). |
-
-### Security note
-
-Access tokens were pasted into the chat during this work and must be considered
-compromised. Revoke/rotate them: GitHub PAT, Vercel token, and any Cloudflare API
-token shared in the conversation. The local Wrangler OAuth session used for this
-deploy is separate and remains valid.
-
----
----
-
-## Bug fix — receipt shop header (address / phone)
-
-**Reported**: the printed receipt/preview still shows
-`Faqirwali, Haroonabad, Chishtian, Dharanwala` and `03001234567`; editing
-**Shop Profile** or the **Receipt Designer** has no effect.
-
-**Date**: 2026-11-03 · **Mode**: build-only, no version bump, no release.
-
-### STEP 1 — where every source lives
-
-#### a) Grep of `src/`, `scripts/`, `resources/`, `migrations/`
-
-| Literal | Found in code? | Where |
-|---|---|---|
-| `Faqirwali`, `Haroonabad`, `Chishtian`, `Dharanwala` | **No** in `src/` | only `scripts/check-forbidden-strings.js` (the guard list), `scripts/smoke.js` test data, and this report |
-| `03001234567`, `03706863313` | **No** in `src/` | only `migrations/014_clean_smoke_test_data.js` (deletes old smoke data), `scripts/smoke.js`, the guard list |
-| `Come again soon`, `Thank you! Visit again` | No hardcoded | `SystemSettings.tsx` only has the *label* "Software By Name" |
-| `SOFTWARE BY` | No hardcoded | rendered from `receipt_software_by` setting |
-| `Al Baghdad` | No hardcoded | only this report / old migrations already emptied in Phase 2 |
-
-So the bug is **not** in the code any more — it is **stale data** in the live DB
-plus a merge-order bug that lets that data win.
-
-#### b) The live SQLite DB
-
-Path used by the app: `app.getPath('userData')/pos.db`
-(`src/main/db.ts:47-55`). On this machine:
-`C:\Users\Hamza PC\AppData\Roaming\pos-app\pos.db` (2.6 MB, last write
-2026-11-01). Migrations `060`–`064` are all applied.
-
-The identity strings live in the **legacy `receipt_settings` table**, not in the
-profile the owner edits:
-
-| Table | Key | Value | Updated |
-|---|---|---|---|
-| `receipt_settings` | `shop_name` | `Al Baghdad Sweets & Bakers` | 2026-08-19 |
-| `receipt_settings` | `shop_address` | `Faqirwali, Haroonabad, Chishtian, Dharanwala` | 2026-08-19 |
-| `receipt_settings` | `shop_phone` | `03001234567` | 2026-08-19 |
-| `receipt_settings` | `custom_footer` | `Shukrya! Aap ka Pasandeedah Dukan` | 2026-08-19 |
-| `settings` | `shop_name` | `Al Bagdad sweets & bakers` | current |
-| `settings` | `shop_address` | `HAROONABAD` | current |
-| `settings` | `shop_phone` | `03706863313` | current |
-| `settings` | `shop_whatsapp` | `03706863313` | current |
-| `settings` | `receipt_footer` | `Thank you! Visit again` | current |
-
-`branches` row 1 has `address = 'Shop Address'` (a placeholder, never printed by
-the thermal header), row 2 has `NULL`. No JSON blob in `admin_settings`,
-`settings`, or `invoice_templates` contains the old strings.
-
-Re-seeding check: nothing re-inserts them on launch. `receipt_settings` is only
-written by `reports:updateReceiptSetting` (`src/main/ipc.ts:646`) and by migration
-`002` (already emptied in Phase 2). `settings` is only written by
-`settings:set` (`src/main/ipc.ts:356`). No `INSERT OR REPLACE` / `ON CONFLICT DO
-UPDATE` touches the identity keys. No `electron-store` / `localStorage` copy
-exists.
-
-#### c) Every function that prints the shop header
-
-All of them read the same merged map, so one function is the root cause:
-
-| Renderer | Reads | Header source |
-|---|---|---|
-| `printing.buildReceiptHtml` → `receiptTemplates.buildReceiptHtml` → `receiptDesigner.buildDesignedReceipt` | `getPrintSettings()` (`receiptTemplates.ts:167`, `receiptDesigner.ts:787`) | `toShopProfile(s)` |
-| `printing.buildInvoiceHtml` → `printDocs.buildInvoiceHtml` | `getPrintSettings()` (`printDocs.ts:254`) | `toShopProfile(s)` |
-| `printing.buildReceiptText` (WhatsApp/SMS) | `getPrintSettings()` (`printing.ts:369`) | `s.shop_address` / `s.shop_phone` directly |
-| `udhaarPrinting.*` (credit slip / statement) | `getPrintSettings()` (`udhaarPrinting.ts:78,103,574,590`) | local `toShopProfile(s)` copy |
-| `purchaseImport.printPurchaseOrder` | `getPrintSettings()` (`purchaseImport.ts:525`) | local `toShopProfile(s)` copy |
-| Designer preview / test print | `buildDesignedReceiptAsync` (`receiptDesigner.ts:805`) | `toShopProfile(getPrintSettings())` |
-
-`getPrintSettings()` (`src/main/services/printDocs.ts:56-86`) is the single merge
-point:
-
-```ts
-const base = { ...getAllSettings(), ...getReceiptSettings() };   // line 58
-```
-
-`getReceiptSettings()` reads the **legacy** `receipt_settings` table
-(`src/main/services/reports.ts:404-421`) and is spread **last**, so every legacy
-key **overrides** the Shop Profile value. That is the bug: `settings.shop_address
-= 'HAROONABAD'` is overwritten by `receipt_settings.shop_address = 'Faqirwali…'`
-on every single render. Shop Profile writes only `settings`
-(`settings:set`), so the old value can never be changed from the UI.
-
-Secondary data bug found while tracing: `admin_settings.receipt_header_lines` is
-the JSON text `[]` (seeded by migration `050`), but the single renderer receives
-it as a raw string (`toShopProfile`) and prints a literal `[]` line.
-
-#### d) Debug footer
-
-`shared/renderDocument.ts` now emits a dev-only footer when
-`POS_DEBUG_RENDER=1`:
-
-```
-renderer=renderDocument doc=receipt paper=thermal80 template=my-receipt address=profile
-```
-
-`address` is one of `template` / `branch` / `profile` / `empty` (and
-`*(empty)` for an explicit empty override), so the actual source of the printed
-header is visible without guessing. It is off unless the env var is set, so it
-can never reach a customer's receipt.
-
-### STEP 2 — fix the data
-
-**Root cause (file + line)**: `src/main/services/printDocs.ts:58`
-
-```ts
-const base = { ...getAllSettings(), ...getReceiptSettings() };
-```
-
-`getReceiptSettings()` (`src/main/services/reports.ts:404-421`) reads the legacy
-`receipt_settings` table and was spread **last**, overriding the Shop Profile.
-
-**Fix**: merge order is now
-`{ ...getReceiptSettings(), ...getAllSettings() }` — the profile always wins.
-The legacy table only supplies keys the profile does not own
-(`paper_width`, `show_logo`, `facebook_page`, `tax_id`).
-
-**Migration `065_retire_legacy_receipt_settings.js`** (additive, idempotent):
-
-1. Adopts a legacy value into `settings` **only when `settings` has no row for
-   that key** — existing owner values are never overwritten, so installs that
-   never filled the profile keep their current output.
-2. Deletes the shadowing legacy rows (`shop_name`, `shop_address`,
-   `shop_phone`, `shop_whatsapp`, `custom_footer`, `shop_website`) so they can
-   never act as hidden defaults again.
-3. Normalises `admin_settings.receipt_header_lines` from `[]` to `''`.
-
-Dry run on a **copy** of the live DB (`pos-app/pos.db`, never modified):
-
-| After 065 | Value |
-|---|---|
-| `settings.shop_address` | `HAROONABAD` (unchanged) |
-| `settings.shop_phone` | `03706863313` (unchanged) |
-| `settings.shop_website` | `www.albagdad.com` (adopted — profile had none) |
-| `receipt_settings` remaining | `paper_width`, `show_logo`, `facebook_page`, `tax_id` only |
-| `receipt_header_lines` | `''` (was `[]`) |
-
-So on the next launch the receipt prints **HAROONABAD / 03706863313**, and the
-old `Faqirwali… / 03001234567` can no longer appear.
-
-**Deviation from the brief (documented)**: the brief asked to copy the current
-address/phone into the saved "My receipt" template "so nothing changes
-visually". In this codebase the stale values live in `receipt_settings`, not in
-a template, and writing them into a template would *re-create* the same bug
-(template override beats the Shop Profile by design). The migration therefore
-adopts legacy values into the **Shop Profile** only when the profile has no
-value, which preserves the visual for untouched installs while making the
-value editable. On this install the profile already has values, so the stale
-address is gone as requested.
-
-### STEP 3 — fix the rendering
-
-| Change | File |
-|---|---|
-| Profile wins over legacy table | `src/main/services/printDocs.ts:52-63` |
-| ONE `toShopProfile()` exported; the three duplicate copies in `receiptDesigner.ts`, `purchaseImport.ts`, `udhaarPrinting.ts` deleted and imported from `printDocs` | `printDocs.ts:120-176` |
-| Multi-line address → one centred `.shop-line` per non-empty line; blank lines dropped | `src/shared/renderDocument.ts:299-312` |
-| `receipt_header_lines` JSON `[]` → `''` (no literal `[]` line) | `printDocs.ts:120-147` |
-| Shop Profile "Receipt Footer" (`receipt_footer`) reaches the receipt when `receipt_footer_text` is absent | `printDocs.ts:163-165` |
-| Dev-only provenance footer (`POS_DEBUG_RENDER=1`) | `renderDocument.ts:764-798` |
-| "Shop Information" address is a multi-line textarea (was a single-line input) | `src/renderer/src/pages/Settings.tsx:155-173` |
-
-Resolution order is unchanged and strict: **template block text (even `""`) →
-branch override → Shop Profile → empty** (`renderDocument.ts:144-171`). The
-Receipt Designer already exposes editable Address / Phone textareas and the
-"Use Shop Profile value" reset (`ReceiptDesigner.tsx:1412-1475`); it now works
-because the profile is the live source.
-
-### STEP 4 — proof
-
-`scripts/test_receipt_address.js` — **42/42** (was 22):
-
-```
-=== Thermal receipt ===        PASS (address, phone, no old names)
-=== A4 invoice ===             PASS
-=== PDF ===                    PASS (51 KB PDF from the same HTML)
-=== WhatsApp / SMS ===         PASS
-=== Empty address ===          PASS (no line, no blank line)
-=== Empty phone ===            PASS (no line)
-=== Multi-line address ===     PASS (one line each, blanks dropped)
-=== Legacy receipt_settings === PASS (profile beats stale row; 065 deletes it;
-                                     never overwrites profile; idempotent)
-=== Header lines ===           PASS ("[]" prints nothing)
-=== Footer resolution ===      PASS (profile footer prints; cleared = nothing)
-=== Debug footer ===           PASS (off by default, source=profile when on)
-=== Restart keeps empty ===    PASS ("" survives a migration re-run)
-=== Template override order === PASS
-=== Branch override order ===  PASS
-=== My receipt template ===    PASS
-```
-
-Regression suites (all green):
-
-| Suite | Result |
-|---|---|
-| `test_receipt_address.js` | 42/42 |
-| `receipt_design_check.js` | 68/68 |
-| `receipt_designer_check.js` | 73/73 |
-| `test_purchase_import.js` | 34/34 |
-| `test_negative_stock.js` | 27/27 |
-
-`npm run typecheck` ✅ (includes `check-forbidden-strings.js`: no shop identity
-or shop-content literal anywhere in `src/`) · `npm run build` ✅.
-
-### Changed files
+### Backend
 
 | File | Change |
-|---|---|
-| `src/main/services/printDocs.ts` | merge order; exported `toShopProfile` + `headerLinesText`; footer fallback |
-| `src/main/services/receiptDesigner.ts` | use shared `toShopProfile`; debug `templateId` |
-| `src/main/services/purchaseImport.ts` | use shared `toShopProfile` |
-| `src/main/services/udhaarPrinting.ts` | use shared `toShopProfile` |
-| `src/shared/renderDocument.ts` | multi-line address; dev provenance footer |
-| `src/renderer/src/pages/Settings.tsx` | address is a textarea |
-| `migrations/065_retire_legacy_receipt_settings.js` | new, idempotent |
-| `scripts/test_receipt_address.js` | +20 checks (42 total) |
-| `REPORT.md` | this section |
+| --- | --- |
+| `src/main/services/admin.ts` | Canonical settings bridge: `applyProfileOverrides()` overlays `settings` onto admin reads; `mirrorAdminWrite()` writes `currency_symbol→currency`, `receipt_footer_text→receipt_footer`, `allow_negative_stock→yes/no`, `payment_due_days→default_credit_days`. Batch writes use the same mirror. |
+| `src/main/services/profitability.ts` | `si.price` → `si.unit_price` (2 queries). |
+| `src/main/services/inventoryReports.ts` | `si.price` → `si.unit_price` (1 query). |
+| `src/main/services/shifts.ts` | `openShift()` auto-creates a matching `cash_drawer_sessions` row. New `closeOpenDrawerForShift()` closes it with counted cash, variance and notes. `closeShift()` / `forceCloseShift()` close the drawer. Force-close requires a reason and writes `reason=…` to the audit row. |
+| `src/main/services/cashDrawer.ts` | `openDrawer()` syncs `shifts.start_cash` to the entered opening cash for older shifts. |
+| `src/main/services/udhaar.ts` | Uses `resolveCreditDays()` in both overdue computations; reads `settings.default_credit_days` with a safe fallback. |
+| `src/main/ipc.ts` | Secret masking on `settings:getAll`, `admin:settings:getAll/get`; masked writes are ignored. Owner gates + validation for `email:send`, `email:sendDailyReport`, `whatsapp:start`, `whatsapp:send`. |
+| `src/main/utils/secrets.ts` | New shared mask/keys/detection helpers. |
+| `migrations/067_default_credit_days.js` | Additive, idempotent seed of `settings.default_credit_days` from `admin_settings.payment_due_days`, else 30. |
+| `migrations/025_admin_panel.js` | New-install security default `session_timeout_minutes = 480` (was 30). Existing installs are not rewritten. |
 
-### Assumptions
+### Renderer
 
-- `receipt_footer_text` (admin panel) wins when it has a non-empty value;
-  clearing it returns control to the Shop Profile `receipt_footer` field. The
-  two fields are intentionally kept, with the profile as the fallback.
-- `paper_width`, `show_logo`, `facebook_page`, `tax_id` stay in
-  `receipt_settings` because the Shop Profile does not own them.
-- The debug footer stays in the code behind `POS_DEBUG_RENDER=1` (not removed)
-  so the provenance can be re-checked without another code change.
-- No version bump, no release, no GitHub tag — as instructed.
+| File | Change |
+| --- | --- |
+| `src/renderer/src/pages/Dashboard.tsx` | Uses pure helpers from `src/shared/dashboardMath.ts`; payable from suppliers, receivable from customers, returns only returned sales, cash collected from cash sales. |
+| `src/shared/dashboardMath.ts` | New pure `sumPayables`, `sumReceivables`, `sumSaleReturns`, `sumCashCollected` with NaN/negative guards. |
+| `src/renderer/src/components/CashDrawer.tsx` | Opening cash defaults to `shift.start_cash`; labels now session-scoped. |
+| `src/renderer/src/pages/Billing.tsx` | Shift pill warns after 24 h (“…h open — reconcile”). |
+| `src/renderer/src/pages/Shifts.tsx` | Force-close is labelled “Reason (required)” and explains why. |
+| `src/renderer/src/components/UdhaarCustomerModal.tsx` | Credit-days placeholder now says “0 = shop default”. |
+| `src/renderer/src/pages/Users.tsx` | Multi-owner warning when another owner already exists. |
 
-### Skipped / limits
+### Tests / tooling
 
-- **Not rebuilt into an installer**: this run is build-only (no version bump,
-  no release), so `dist/` has the fix but the installed 2.22.0 app does not.
-- No browser click-through: there is no browser-automation tool in this
-  environment, so the UI was verified by typecheck/build and by the renderer
-  tests rather than by screenshot.
-- `receipt_design_enabled` is still `false` on the live DB (opt-in design
-  system). Receipts therefore render the built-in layout with live Shop Profile
-  values — which is exactly the fixed behaviour. The Designer's "apply" toggle
-  still controls whether a saved template overrides the layout.
+| File | Change |
+| --- | --- |
+| `scripts/test_audit_fixes.js` | New suite: credit-day resolution, migration 067 idempotency, secret masking, dashboard arithmetic, report-query schema/static checks, owner-gate static checks. |
+| `scripts/test_inventoryReports.js` | Replaced a hard-coded expiry date (`2026-09-15`, now in the past) with `Date.now() + 15 days`; the suite no longer rots with the calendar. |
+| `package.json` | New `test:audit` script. |
 
-### ⚠️ You must rebuild / reinstall to see the fix
+---
 
-The fix lives in `src/` and in migration `065`. The installed 2.22.0 build does
-not contain it. Do one of:
+## Phase 3 — Web/desktop safety
 
-1. **Dev**: `npm run dev` (migration 065 applies on first launch), or
-2. **Installer**: `npm run build` → `npm run dist` (or `npm run release` when
-   you want a new version), then install the new build.
+- Confirmed the web app runs the **real** IPC handlers, so any handler that is unsafe on the desktop is also exposed to the web session.
+- Fixed the two raw relays (`email:send`, `whatsapp:start/send`) with owner gates and recipient/subject validation (see above). The till’s own `receipt:sendEmail` and `whatsapp:sendSaleReceipt` paths are unchanged.
+- Confirmed the Worker derives `sessionUser` from the session token, not from the request body, and enforces the trial gate before dispatch.
+- Confirmed Worker shims make filesystem, `child_process`, `nodemailer`, `browser-window`, and updater calls inert. `backup:run/restore` are owner-gated on top of that.
+- `contextIsolation: true` and `nodeIntegration: false` remain set on the desktop window. No `sandbox` change was made because the preload needs Node.
+- No `cloud/` file was edited (read-only audit).
 
-On first launch after the update, migration 065 deletes the stale
-`receipt_settings` rows, so the receipt immediately prints the Shop Profile
-## Phase 7 — Embedded Urdu font (2026-11-03)
+---
 
-Commit: pending. Build-only run: NO version bump, NO release.
+## Phase 4 — Sidebar / UI cleanup
 
-### Deliverables ✅
-- `resources/fonts/NotoNastaliqUrdu-{Regular,Bold}.ttf` (~528 KB / ~528 KB) downloaded
-  from fonts.gstatic.com, licensed under the SIL Open Font License v1.1 (file
-  included as `resources/fonts/OFL-1.1.txt`).
-- `package.json`: `extraResources` now copies `resources/fonts` → `fonts` so the
-  font ships in every packaged build and works offline on any PC.
-- `src/main/services/urduFont.ts`: `getUrduFontPath()` / `getUrduFontUrl()` resolve
-  the bundled font to an absolute `file:///.../*.ttf` URL (following
-  `process.resourcesPath` when packaged, `resources/fonts` in dev); return null
-  gracefully if ever missing.
-- `src/shared/renderDocument.ts`: `RenderContext.urduFontUrl` + new `options.urduFontUrl`;
-  `buildCss()` prepends an `@font-face` rule when a URL is supplied; `[dir="rtl"]`
-  font-family keeps the existing fallback stack (embedded font first, then system
-  fallbacks), so disconnected glyphs/boxes cannot occur offline.
-- `src/main/services/receiptDesigner.ts`: both `buildDesignedReceiptAsync` and
-  `buildDesignedReceipt` pass `urduFontUrl: getUrduFontUrl() || undefined`, so the
-  designed receipt embeds the local font in both preview and print paths.
-- `src/main/services/printService.ts`: renderJob/previewDocument call
-  `document.fonts.ready` + `document.fonts.load(...)` after `loadDocument` and
-  before geometry / print / PDF, so thermal print and PDF wait for the embedded
-  font before rendering.
+**SKIPPED.** The brief allowed the Sidebar restructure only if **everything else passed**. Phase 2 still has documented PARTIAL/SKIPPED items (A3 period selector, A7, A8 below-cost report, A9, B1b idle timeout, B7 Inventory Manager). Restructuring navigation on top of unresolved permission gaps would hide the problem rather than fix it. The existing Sidebar was left unchanged.
 
-### Tests ✅
-- `scripts/test_urdu_font.js`: 5/5 PASS (font files exist, OFL licence exists,
-  extraResources configured, `@font-face` directive in HTML, filename
-  referenced).
-- `npm run typecheck` ✅, `npm run build` ✅, `test_table_overflow` 5/5 ✅.
-- Thermal output: the @font-face uses the embedded font first and the existing
-  `[dir="rtl"]` block turns on RTL, so Urdu blocks render joined letters without
-  boxes at 80 mm and 58 mm in both preview and PDF.
+---
 
-### Note
-The PDF bytes are not visually inspected in CI; the @font-face is the same HTML
-used for print and PDF, and `document.fonts.ready` covers both.
+## Phase 5 — Verification and owner checklist
 
-Commit: `13f2d7f` on `feature/receipt-polish`. Build-only run: NO version bump, NO GitHub release, NO latest.yml, NO push.
+### Automated verification run
 
-### Phase 1 — Safe migrations (auto-backup) ✅
-- `src/main/db.ts`: safety copy before pending migrations run; restore on throw; error dialog via `main.ts`.
-- Migration `066_legacy_receipt_keys_to_settings.js`: adopt remaining legacy keys.
-- Test `scripts/test_migration_backup.js`: 11/11 PASS.
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` | ✅ clean (`gen:key` + forbidden-strings + both `tsc` projects) |
+| `npm run build` | ✅ main + renderer built |
+| `npm run test:audit` | ✅ **23/23** |
+| `node scripts/test_inventoryReports.js` | ✅ **12/12** |
+| `npm run test:shortcuts` | ✅ all registry checks |
+| `npm run test:holdresume` | ✅ all cart round-trip checks |
+| `npm run test:licensing` | ✅ **55/55** |
+| `npm run test:imageupload` | ✅ **23/23** |
 
-### Phase 2 — Receipt items table + meta layout ✅
-- `src/shared/renderDocument.ts`: shared `defaultColumnWidths()` with 80mm spread (#6%, Item34%, Qty12%, Rate20%, Amount28%); qty forced; meta labels + one-line date/time.
-- Test `scripts/test_table_overflow.js`: 5/5 PASS.
+Not run in this environment (Electron/UI heavy, require a real display/printer): `test:print`, `test:receipt`, `test:receiptdesigner`, `test:return`, `test:keyboard`, `test:recovery:ui`, `smoke:web`. They should be run by the owner on the build machine before release.
 
-### Phase 3 — Designer editing completeness ✅
-- DRAFT marker in preview/test print, field captions panel with Urdu preset, logo upload + grayscale/threshold, 8 built-in templates.
+### Owner manual checklist
 
-### Phase 4 — Urdu, QR, extras ✅
-- QR/barcode/FBR-QR resolve tokens, skipped when empty; new Pharmacy/Medical and Garment templates.
+1. **Install**: rebuild the desktop installer from `feature/audit-p0` (no version bump was made) and install it on a test machine, not the live till first.
+2. **Settings bridge**: open Shop Profile and Admin → System Settings. Change currency symbol and receipt footer in each; confirm the other screen and a printed receipt show the new value. Confirm `allow_negative_stock` toggled in Admin actually affects billing.
+3. **Secrets**: open Admin → Email/SMS. Confirm the password/API secret fields show dots, not the real values. Change an unrelated setting and save; confirm the secret still works by sending a test email/SMS. Do **not** paste the secret into a screenshot or log.
+4. **Dashboard**: with at least one supplier balance and one customer udhaar, confirm **Total Payable (Suppliers)** and **Total Receivable (Udhaar)** are different and match the respective ledgers. Make a cash sale and an expense today; confirm Cash In / Cash Out. Make a return; confirm Sale Return equals the refund, not total revenue.
+5. **Shift + drawer**: open a shift → Cash Drawer. Confirm the drawer opens with the same opening cash. Close the drawer, then close the shift; confirm no orphan drawer session remains. Force-close a test shift without a reason → must be refused; with a reason → succeeds and the audit row contains `reason=`.
+6. **>24 h warning**: leave a test shift open past 24 h (or adjust `opened_at` in a copy of the DB) and confirm the Billing pill warns.
+7. **Credit days**: set a customer credit period to 0 and the shop default to 30; confirm the customer becomes overdue after 30 days, not never. Set shop default to 0 and confirm overdue tracking is disabled.
+8. **Reports**: open Profitability and Inventory Reports; confirm they load (no `no such column: si.price`) and show average selling price.
+9. **Users**: add a user with Owner role while another owner exists; confirm the warning appears. Confirm no role changes happen silently.
+10. **Email/WhatsApp**: as a cashier, confirm the till can still send a receipt; as a cashier, confirm the raw Admin “send test” actions are refused. As owner, confirm they work.
+11. **Web**: rebuild `cloud/web-dist/app` and redeploy; log in as owner and cashier; confirm `/app` still works, settings load, and secrets are masked. Confirm the web cashier cannot call raw email/WhatsApp relays.
+12. **Backups**: take a backup before merging to `main`. Migration 067 is additive, but a backup is still required.
 
-### Phase 5 — Print behaviour ✅ verified (no change needed beyond dart).
+---
 
-### Phase 6 — Automated tests ✅
-- migration-backup 11/11, table-overflow 5/5, address 42/42, negstock 27/27, purchase-import 34/34, receipt 68/68, receipt-designer 73/73.
-- `npm run typecheck` ✅, `npm run build` ✅.
+## Assumptions recorded
 
-### ⚠️ Rebuild or reinstall required
-Migrations `065` and `066` run on first launch of the rebuilt app. The installed 2.22.0 build does not contain these changes.
+1. **A1** was resolved as a canonical bridge, not a destructive table merge. `settings` wins for the four bridged keys; no data was deleted.
+2. **A10** changes behaviour: customer `credit_days = 0` now means “use the shop default”, not “never overdue”. This is intentional and documented in the UI. A shop that wants “never overdue” sets the **shop default** to 0.
+3. Dashboard **Cash Out** is `today_expenses` only. Supplier payments are not included because they are not an expense in this schema’s cash-flow sense.
+4. New-install `session_timeout_minutes` is 480, but the setting is **not enforced** yet (B1b). Existing installs keep their stored value.
+5. Inventory Manager was not added to Add User because the app has no per-route permission gate; adding the label without that gate would be misleading or unsafe.
+6. A7/A9 were not “fixed” because the available database could not confirm the finding. Deleting products or rewriting text encoding without evidence would risk real shop data.
 
-### Token reminder
-Rotate GitHub PAT / Vercel / Cloudflare tokens pasted in chat earlier.
+## Skipped / blocked items
 
+| Item | Reason |
+| --- | --- |
+| A7 test-data products / `is_test` flag / “Remove test data” | NOT CONFIRMED in `pos.db`; destructive action needs owner DB evidence. |
+| A9 encoding migration / BOM import-export / Urdu test | NOT CONFIRMED; no DB rows to reproduce. |
+| A8 dedicated below-cost report | Price-floor enforcement already exists; report is a new feature, not a P0 fix. |
+| B1b idle session timeout | Setting exists but no idle timer; implementing it is a feature with UX/security decisions. |
+| B7 Inventory Manager in Add User | Needs a per-route permission model, not just a dropdown label. |
+| Phase 4 Sidebar restructure | Gate (“everything else passed”) not met. |
+| Release / version bump / `latest.yml` / push / deploy | Explicitly out of scope for this run. |
+
+---
+
+## Final status
+
+The confirmed P0 data-integrity and security items (A1, A2, A4, A5, A6, A10) are fixed, with regression tests. The remaining items are either partial by design (A3, A8, B7), unconfirmed in the available data (A7, A9, B1a), or need a product decision (B1b). All code changes are on `feature/audit-p0`; `npm run typecheck` and `npm run build` are clean.
+
+**Owner action required:** rebuild/reinstall the desktop app and rebuild/redeploy the web version. No release or deploy was performed by this run.
