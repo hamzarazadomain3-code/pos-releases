@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Modal } from '@components/Modal';
 import { KeyboardInput } from '@components/KeyboardInput';
+import { DateInput } from '@components/DateInput';
 import type { LabelRunOptions } from './types';
 
 interface Props {
@@ -53,10 +54,18 @@ export function PrintRunModal({ onClose, onConfirm, initial, rollCols, labelLayo
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <label className="field"><span>Mfg date (all)</span>
-            <input type="date" className="field-input" value={mfgDate} onChange={e => setMfgDate(e.target.value)} />
+            <DateInput
+              className="field-input"
+              value={mfgDate}
+              onChange={setMfgDate}
+            />
           </label>
           <label className="field"><span>Expiry (all)</span>
-            <input type="date" className="field-input" value={expOverride} onChange={e => setExpOverride(e.target.value)} />
+            <DateInput
+              className="field-input"
+              value={expOverride}
+              onChange={setExpOverride}
+            />
           </label>
           <label className="field"><span>Price source</span>
             <select className="field-select" value={priceSource} onChange={e => setPriceSource(e.target.value as any)}>

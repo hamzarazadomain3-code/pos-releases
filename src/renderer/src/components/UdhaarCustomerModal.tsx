@@ -3,6 +3,7 @@ import type { Customer, CustomerInput, CustomerDuplicates } from '../../../share
 import { ModalShell, type ModalShellTab } from './ModalShell';
 import { KeyboardInput } from './KeyboardInput';
 import { ImageField } from './ImageField';
+import { DateInput } from './DateInput';
 import { getCurrencySymbol } from '../utils/currency';
 
 export interface UdhaarCustomerModalProps {
@@ -574,10 +575,9 @@ export function UdhaarCustomerModal({ customer, onClose, onSaved, onOpenExisting
           </label>
           <label className="field">
             <span>Opening as of</span>
-            <input
-              type="date"
+            <DateInput
               value={form.opening_balance_as_of}
-              onChange={(e) => set('opening_balance_as_of', e.target.value)}
+              onChange={(v) => set('opening_balance_as_of', v)}
             />
           </label>
           <div className="field span-2">
@@ -598,11 +598,17 @@ export function UdhaarCustomerModal({ customer, onClose, onSaved, onOpenExisting
           </label>
           <label className="field">
             <span>Birthday</span>
-            <input type="date" value={form.birthday} onChange={(e) => set('birthday', e.target.value)} />
+            <DateInput
+              value={form.birthday}
+              onChange={(v) => set('birthday', v)}
+            />
           </label>
           <label className="field">
             <span>Anniversary</span>
-            <input type="date" value={form.anniversary} onChange={(e) => set('anniversary', e.target.value)} />
+            <DateInput
+              value={form.anniversary}
+              onChange={(v) => set('anniversary', v)}
+            />
           </label>
           <label className="field">
             <span>Reminder</span>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ActivityLogEntry } from '../../../../shared/types';
 import { formatTimestamp } from '../../utils/dateUtils';
+import { DateInput } from '../../components/DateInput';
 
 export default function ActivityLog() {
   const [logs, setLogs] = useState<ActivityLogEntry[]>([]);
@@ -57,11 +58,21 @@ export default function ActivityLog() {
       <div className="log-filters">
         <label className="field-inline">
           <span>From</span>
-          <input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} />
+          <DateInput
+            value={filters.from}
+            onChange={(v) => setFilters({ ...filters, from: v })}
+            placeholder="From"
+            style={{ width: '130px' }}
+          />
         </label>
         <label className="field-inline">
           <span>To</span>
-          <input type="date" value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} />
+          <DateInput
+            value={filters.to}
+            onChange={(v) => setFilters({ ...filters, to: v })}
+            placeholder="To"
+            style={{ width: '130px' }}
+          />
         </label>
         <label className="field-inline">
           <span>Action</span>

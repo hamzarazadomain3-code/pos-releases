@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { toLocalDateString } from '../../utils/dateUtils';
+import { DateInput } from '../DateInput';
 
 type Preset = 'today' | 'yesterday' | 'week' | 'month' | 'lastmonth' | 'custom';
 
@@ -101,31 +102,29 @@ export function DateRangePicker({
       </select>
       <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '12px', color: '#666' }}>
         {labelFrom}
-        <input
-          type="date"
+        <DateInput
           value={localFrom}
-          onChange={(e) => {
-            const v = e.target.value;
+          onChange={(v) => {
             setLocalFrom(v);
             if (localPreset !== 'custom') setLocalPreset('custom');
             onChange(v, localTo);
           }}
           style={{ width: '130px', marginLeft: 4 }}
+          placeholder={labelFrom}
         />
       </label>
       <span className="muted" style={{ fontSize: '12px' }}>to</span>
       <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '12px', color: '#666' }}>
         {labelTo}
-        <input
-          type="date"
+        <DateInput
           value={localTo}
-          onChange={(e) => {
-            const v = e.target.value;
+          onChange={(v) => {
             setLocalTo(v);
             if (localPreset !== 'custom') setLocalPreset('custom');
             onChange(localFrom, v);
           }}
           style={{ width: '130px', marginLeft: 4 }}
+          placeholder={labelTo}
         />
       </label>
     </div>

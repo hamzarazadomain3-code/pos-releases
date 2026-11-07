@@ -323,6 +323,26 @@ check('formatInputDate 2024-01-15 => YYYY-MM-DD', () => {
   assert.equal(formatInputDate('2024-01-15'), '2024-01-15');
 });
 
+check('no <input type="date"> in renderer src', () => {
+  function walk(dir) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const e of entries) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name.endsWith('.tsx') || e.name.endsWith('.ts')) {
+        const src = fs.readFileSync(p, 'utf8');
+        if (/type="date"/.test(src)) {
+          const rel = path.relative(ROOT, p);
+          // Allow the one remaining in ProductPickerPanel.tsx (raw HTML modal, cannot use React component)
+          if (rel.includes('ProductPickerPanel.tsx')) continue;
+          throw new Error(rel + ' still contains <input type="date">');
+        }
+      }
+    }
+  }
+  walk(path.join(ROOT, 'src', 'renderer', 'src'));
+});
+
 console.log('\nweb/desktop safety (phase 3)');
 check('raw email and WhatsApp relays are owner-gated', () => {
   const ipc = fs.readFileSync(path.join(ROOT, 'src', 'main', 'ipc.ts'), 'utf8');

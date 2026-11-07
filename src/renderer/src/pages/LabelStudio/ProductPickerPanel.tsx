@@ -71,6 +71,9 @@ export function ProductPickerPanel({
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
     modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center';
+    // NOTE: This modal uses raw HTML string because it's created dynamically outside React tree.
+    // The expiry input uses type="date" here as it cannot use the shared DateInput React component.
+    // This is the one remaining <input type="date"> in the codebase (tracked in 1.1).
     modal.innerHTML = `
       <div className="modal" style="width:400px;background:white;border-radius:8px;padding:20px;max-height:80vh;overflow:auto">
         <h3 style="margin:0 0 16px">Override: ${p.name}</h3>

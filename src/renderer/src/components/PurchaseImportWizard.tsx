@@ -6,6 +6,7 @@ import type {
   Supplier,
 } from '../../../shared/types';
 import { ModalShell } from './ModalShell';
+import { DateInput } from './DateInput';
 
 /**
  * Phase 3 — Purchase import wizard (Excel / CSV).
@@ -609,7 +610,11 @@ export default function PurchaseImportWizard({
           </div>
           <div className="form-group" style={{ minWidth: 160 }}>
             <label>Invoice date</label>
-            <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+            <DateInput
+              value={invoiceDate}
+              onChange={setInvoiceDate}
+              placeholder="Invoice date"
+            />
           </div>
         </div>
       )}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { UdhaarEntryLineInput, UdhaarItemLookup } from '../../../shared/types';
 import { Modal } from './Modal';
 import { KeyboardInput } from './KeyboardInput';
+import { DateInput } from './DateInput';
 import { formatMoney } from '../utils/currency';
 
 /**
@@ -505,7 +506,10 @@ export function UdhaarEntryModal({
                 </label>
                 <label className="field">
                   <span>Expiry</span>
-                  <input type="date" value={notFound.expiry} onChange={(e) => setNotFound({ ...notFound, expiry: e.target.value })} />
+                  <DateInput
+                    value={notFound.expiry}
+                    onChange={(v) => setNotFound({ ...notFound, expiry: v })}
+                  />
                 </label>
               </div>
               <div className="udhaar-options" style={{ alignItems: 'center' }}>
@@ -569,11 +573,10 @@ export function UdhaarEntryModal({
                       <input className="cell-input" value={l.batch ?? ''} onChange={(e) => updateLine(l.key, { batch: e.target.value })} />
                     </td>
                     <td>
-                      <input
+                      <DateInput
                         className="cell-input"
-                        type="date"
                         value={l.expiry ?? ''}
-                        onChange={(e) => updateLine(l.key, { expiry: e.target.value })}
+                        onChange={(v) => updateLine(l.key, { expiry: v })}
                       />
                     </td>
                     <td className="num">
@@ -633,7 +636,10 @@ export function UdhaarEntryModal({
             </label>
             <label className="field">
               <span>Date</span>
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              <DateInput
+                value={date}
+                onChange={(v) => setDate(v)}
+              />
             </label>
             <label className="field">
               <span>Reference no.</span>
