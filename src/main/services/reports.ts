@@ -442,6 +442,56 @@ function pct(num: number, denom: number): number {
   return Math.round((num / denom) * 10000) / 100;
 }
 
+interface PaymentRow { mode: string; amount: number; }
+interface SaleRow { id: number; net_total: number; payments: PaymentRow[]; }
+
+/**
+ * Pure payment reconciliation helper.
+ * For each completed sale:
+ *   net = total_amount - returned_amount
+ *   tendered = sum(payments)
+ *   given = max(0, tendered - net)  // change given + cash refunds against this sale
+ *   Allocate given to cash first, then other modes by descending tendered amount.
+ *   collected_per_mode = tendered_mode - allocated_given
+ * Returns { breakdown: Map<mode, collected>, remainder: total_sales - sum(collected) }
+ * remainder >= 0 always; if > 0.005, it's a real unpaid amount (credit not recorded as payment).
+ */
+function reconcilePayments(sales: SaleRow[]): { breakdown: Map<string, number>; remainder: number } {
+  const collectedByMode = new Map<string, number>();
+  let totalCollected = 0;
+  let totalSales = 0;
+
+  for (const sale of sales) {
+    totalSales += sale.net_total;
+    const tenderedByMode = new Map<string, number>();
+    let tendered = 0;
+    for (const p of sale.payments) {
+      tendered += p.amount;
+      tenderedByMode.set(p.mode, (tenderedByMode.get(p.mode) || 0) + p.amount);
+    }
+    const given = Math.max(0, tendered - sale.net_total);
+
+    // Allocate given: cash first, then other modes by descending amount
+    const modesByAmount = Array.from(tenderedByMode.entries()).sort((a, b) => {
+      const cashFirst = a[0] === 'Cash' ? -1 : (b[0] === 'Cash' ? 1 : 0);
+      return cashFirst || b[1] - a[1];
+    });
+
+    let remainingGiven = given;
+    for (const [mode, amt] of modesByAmount) {
+      const alloc = Math.min(amt, remainingGiven);
+      const collected = amt - alloc;
+      collectedByMode.set(mode, (collectedByMode.get(mode) || 0) + collected);
+      totalCollected += collected;
+      remainingGiven -= alloc;
+      if (remainingGiven <= 0.0001) break;
+    }
+  }
+
+  const remainder = totalSales - totalCollected;
+  return { breakdown: collectedByMode, remainder };
+}
+
 // 1) SALES ANALYSIS
 export function getSalesAnalysis(from?: string, to?: string): SalesAnalysisResult {
   const [f, t] = dateRange(from, to);
@@ -456,29 +506,48 @@ export function getSalesAnalysis(from?: string, to?: string): SalesAnalysisResul
      WHERE status='completed' AND date(created_at) BETWEEN date(?) AND date(?)`,
     f, t
   );
-  const paymentBreakdownRaw = all<{ mode: string; total: number }>(
-    `SELECT p.mode AS mode, COALESCE(SUM(p.amount),0) AS total
-     FROM payments p JOIN sales s ON s.id = p.sale_id
+
+  // Fetch per-sale payments and net totals for accurate reconciliation
+  const salesWithPayments = all<{ id: number; net_total: number; mode: string; amount: number }>(
+    `SELECT s.id, (s.total_amount - COALESCE(s.returned_amount,0)) AS net_total, p.mode, p.amount
+     FROM sales s
+     JOIN payments p ON p.sale_id = s.id
      WHERE s.status='completed' AND date(s.created_at) BETWEEN date(?) AND date(?)
-     GROUP BY p.mode ORDER BY total DESC`,
+     ORDER BY s.id, p.mode`,
     f, t
   );
-  const grand = paymentBreakdownRaw.reduce((a, r) => a + r.total, 0);
-  const adjustment = summary.total_sales - grand;
-  const paymentBreakdown = paymentBreakdownRaw.map((r) => ({
-    mode: r.mode,
+
+  // Group by sale
+  const salesMap = new Map<number, SaleRow>();
+  for (const row of salesWithPayments) {
+    let sale = salesMap.get(row.id);
+    if (!sale) {
+      sale = { id: row.id, net_total: row.net_total, payments: [] };
+      salesMap.set(row.id, sale);
+    }
+    sale.payments.push({ mode: row.mode, amount: row.amount });
+  }
+  const salesArray = Array.from(salesMap.values());
+
+  const { breakdown, remainder } = reconcilePayments(salesArray);
+
+  const paymentBreakdown = Array.from(breakdown.entries()).map(([mode, total]) => ({
+    mode,
     bill_count: 0,
-    total: r.total,
-    percentage: pct(r.total, grand),
+    total,
+    percentage: pct(total, summary.total_sales),
   }));
-  if (Math.abs(adjustment) > 0.005) {
+
+  // Add "Change / adjustments" row ONLY for a real remainder (unpaid credit)
+  if (remainder > 0.005) {
     paymentBreakdown.push({
       mode: 'Change / adjustments',
       bill_count: 0,
-      total: adjustment,
-      percentage: pct(Math.abs(adjustment), Math.abs(summary.total_sales) || 1),
+      total: remainder,
+      percentage: pct(remainder, summary.total_sales),
     });
   }
+
   const dailyTrend = all<{ date: string; bills: number; total: number }>(
     `SELECT date(created_at) AS date, COUNT(*) AS bills,
             COALESCE(SUM(total_amount - COALESCE(returned_amount,0)),0) AS total
