@@ -305,7 +305,8 @@ export class AlertService {
         const res = await sendWhatsAppReceipt(phone, text);
         if (res.ok) sent++;
         else errors++;
-      } catch {
+      } catch (e) {
+        console.error('[alertService] WhatsApp send failed:', e instanceof Error ? e.message : String(e));
         errors++;
       }
     }
@@ -373,7 +374,9 @@ export class AlertService {
       try {
         const res = await sendWhatsAppReceipt(phone, text);
         if (res.ok) sent++;
-      } catch { /* ignore */ }
+      } catch (e) {
+        console.error('[alertService] WhatsApp daily summary send failed:', e instanceof Error ? e.message : String(e));
+      }
     }
     return { ok: sent > 0, message: `Summary sent to ${sent}/${phoneNumbers.length} recipients` };
   }
