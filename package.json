@@ -28,6 +28,7 @@
     "test:dateparse": "npm run build:main && node scripts/test_dateParse.cjs",
     "test:paymentreconciliation": "npm run build:main && node scripts/test_paymentReconciliation.cjs",
     "test:promotions": "npm run build:main && node scripts/test_promotions.cjs",
+    "test:alerts": "npm run build:main && node scripts/test_alerts.cjs",
     "gen:key": "node scripts/gen-support-key.js",
     "build:main": "npm run gen:key && tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
