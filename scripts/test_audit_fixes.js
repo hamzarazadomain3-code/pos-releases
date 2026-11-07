@@ -219,6 +219,110 @@ check('profitability + inventory reports use unit_price', () => {
   }
 });
 
+function parseInputDate(text) {
+  const value = String(text ?? '').trim();
+  if (!value) return null;
+  const isoM = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(value);
+  if (isoM) {
+    const year = parseInt(isoM[1], 10);
+    const month = parseInt(isoM[2], 10);
+    const day = parseInt(isoM[3], 10);
+    if (!Number.isNaN(year) && !Number.isNaN(month) && !Number.isNaN(day)
+        && year >= 1900 && year <= 9999 && month >= 1 && month <= 12 && day >= 1
+        && day <= monthDays(month, year)) {
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
+  const sepM = /^(?:(\d{1,2})[\/.\-])?(\d{1,2})[\/.\-](\d{4})$/.exec(value);
+  if (sepM) {
+    const candidateMonth = _dateFormat === 'MM/DD/YYYY' ? parseInt(sepM[1], 10) : parseInt(sepM[2], 10);
+    const candidateDay = _dateFormat === 'MM/DD/YYYY' ? parseInt(sepM[2], 10) : parseInt(sepM[1], 10);
+    const candidateYear = parseInt(sepM[3], 10);
+    if (!Number.isNaN(candidateMonth) && !Number.isNaN(candidateDay) && !Number.isNaN(candidateYear)
+        && candidateYear >= 1900 && candidateYear <= 9999 && candidateMonth >= 1 && candidateMonth <= 12
+        && candidateDay >= 1 && candidateDay <= monthDays(candidateMonth, candidateYear)) {
+      return `${candidateYear}-${String(candidateMonth).padStart(2, '0')}-${String(candidateDay).padStart(2, '0')}`;
+    }
+  }
+  // No generic Date fallback - reject unrecognized formats to avoid rollover.
+  return null;
+}
+
+function monthDays(month, year) {
+  return new Date(year, month, 0).getDate();
+}
+
+let _dateFormat = 'DD/MM/YYYY';
+
+function formatInputDate(iso) {
+  if (!iso || String(iso).trim() === '') return '';
+  const text = String(iso).trim();
+  const parts = parseParts(text);
+  if (!parts) return text;
+  const dd = String(parts.day).padStart(2, '0');
+  const mm = String(parts.month).padStart(2, '0');
+  const yyyy = parts.year;
+  switch (_dateFormat) {
+    case 'MM/DD/YYYY': return `${mm}/${dd}/${yyyy}`;
+    case 'YYYY-MM-DD': return `${yyyy}-${mm}-${dd}`;
+    default: return `${dd}/${mm}/${yyyy}`;
+  }
+}
+
+function parseParts(text) {
+  // Try ISO yyyy-mm-dd first
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(text);
+  if (m) {
+    const year = parseInt(m[1], 10);
+    const month = parseInt(m[2], 10);
+    const day = parseInt(m[3], 10);
+    if (!Number.isNaN(year) && !Number.isNaN(month) && !Number.isNaN(day)
+        && year >= 1 && year <= 9999 && month >= 1 && month <= 12 && day >= 1
+        && day <= monthDays(month, year)) {
+      return { year, month, day };
+    }
+    return null;
+  }
+  // Try dd/mm/yyyy or mm/dd/yyyy
+  m = /^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/.exec(text);
+  if (m) {
+    const year = parseInt(m[3], 10);
+    const month = parseInt(m[2], 10);
+    const day = parseInt(m[1], 10);
+    if (!Number.isNaN(year) && !Number.isNaN(month) && !Number.isNaN(day)
+        && year >= 1 && year <= 9999 && month >= 1 && month <= 12 && day >= 1
+        && day <= monthDays(month, year)) {
+      return { year, month, day };
+    }
+    return null;
+  }
+  return null;
+}
+
+console.log('\ndate parsing validation (2.2)');
+check('parseInputDate rejects invalid 31/02/2020', () => assert.equal(parseInputDate('31/02/2020'), null));
+check('parseInputDate rejects invalid 45/13/2020', () => assert.equal(parseInputDate('45/13/2020'), null));
+check('parseInputDate rejects 29/02/2027 (non-leap)', () => assert.equal(parseInputDate('29/02/2027'), null));
+check('parseInputDate accepts 29/02/2028 (leap)', () => assert.equal(parseInputDate('29/02/2028'), '2028-02-29'));
+check('parseInputDate rejects 2020-02-31 (ISO invalid)', () => assert.equal(parseInputDate('2020-02-31'), null));
+check('parseInputDate rejects 2020-13-45 (ISO invalid)', () => assert.equal(parseInputDate('2020-13-45'), null));
+check('parseInputDate accepts 2024-12-31', () => assert.equal(parseInputDate('2024-12-31'), '2024-12-31'));
+check('parseInputDate accepts dd/mm/yyyy 01/01/2024', () => assert.equal(parseInputDate('01/01/2024'), '2024-01-01'));
+check('parseInputDate empty returns null', () => assert.equal(parseInputDate(''), null));
+check('parseInputDate bad text returns null', () => assert.equal(parseInputDate('abc'), null));
+check('formatInputDate 2024-01-15 => DD/MM/YYYY', () => {
+  _dateFormat = 'DD/MM/YYYY';
+  assert.equal(formatInputDate('2024-01-15'), '15/01/2024');
+});
+check('formatInputDate 2024-01-15 => MM/DD/YYYY', () => {
+  _dateFormat = 'MM/DD/YYYY';
+  assert.equal(formatInputDate('2024-01-15'), '01/15/2024');
+});
+check('formatInputDate 2024-01-15 => YYYY-MM-DD', () => {
+  _dateFormat = 'YYYY-MM-DD';
+  assert.equal(formatInputDate('2024-01-15'), '2024-01-15');
+});
+
 console.log('\nweb/desktop safety (phase 3)');
 check('raw email and WhatsApp relays are owner-gated', () => {
   const ipc = fs.readFileSync(path.join(ROOT, 'src', 'main', 'ipc.ts'), 'utf8');
