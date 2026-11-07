@@ -5,6 +5,7 @@ import { formatDateAdmin } from '../utils/dateUtils';
 import { formatMoney, getCurrencySymbol } from '../utils/currency';
 import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
+import { DateInput } from '../components/DateInput';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
@@ -184,8 +185,8 @@ export default function Commissions() {
             <option value="paid">Paid</option>
             <option value="cancelled">Cancelled</option>
           </select>
-          <input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} placeholder="From" />
-          <input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} placeholder="To" />
+          <DateInput value={filterFrom} onChange={(v) => setFilterFrom(v)} placeholder="From" />
+          <DateInput value={filterTo} onChange={(v) => setFilterTo(v)} placeholder="To" />
         </div>
       )}
 

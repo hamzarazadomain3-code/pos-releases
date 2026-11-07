@@ -199,8 +199,8 @@ export default function Expenses() {
             <option value="">All Categories</option>
             {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} placeholder="From" />
-          <input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} placeholder="To" />
+          <DateInput value={filterFrom} onChange={(v) => setFilterFrom(v)} placeholder="From" />
+          <DateInput value={filterTo} onChange={(v) => setFilterTo(v)} placeholder="To" />
         </div>
       )}
 

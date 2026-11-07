@@ -6,9 +6,11 @@ interface DateInputProps {
   onChange: (value: string) => void;
   className?: string;
   placeholder?: string;
+  title?: string;
+  style?: any;
 }
 
-export function DateInput({ value, onChange, className = 'inp', placeholder }: DateInputProps) {
+export function DateInput({ value, onChange, className = 'inp', placeholder, title, style }: DateInputProps) {
   const [text, setText] = useState(formatInputDate(value));
   useEffect(() => {
     setText(formatInputDate(value));
@@ -29,7 +31,8 @@ export function DateInput({ value, onChange, className = 'inp', placeholder }: D
   return (
     <input
       className={className}
-      type="text"
+      title={title}
+      style={style}
       placeholder={placeholder || formatInputDate('2000-01-01')}
       value={text}
       onChange={(e) => setText(e.target.value)}

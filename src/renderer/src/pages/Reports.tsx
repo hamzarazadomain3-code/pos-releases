@@ -41,6 +41,7 @@ import type {
 import { formatDateAdmin, toLocalDateString } from '../utils/dateUtils';
 import { formatMoney, getCurrencySymbol } from '../utils/currency';
 import { KeyboardInput } from '../components/KeyboardInput';
+import { DateInput } from '../components/DateInput';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
@@ -296,17 +297,13 @@ export default function Reports() {
         <div className="toolbar">
            {tab !== 'closing' && tab !== 'customers' && tab !== 'inventory' && tab !== 'alerts' && tab !== 'profitability' && (
              <>
-               <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+               <DateInput value={from} onChange={(v) => setFrom(v)} />
                <span className="muted">to</span>
-               <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+               <DateInput value={to} onChange={(v) => setTo(v)} />
             </>
           )}
           {tab === 'closing' && (
-            <input
-              type="date"
-              value={closingDate}
-              onChange={(e) => setClosingDate(e.target.value)}
-            />
+            <DateInput value={closingDate} onChange={(v) => setClosingDate(v)} />
           )}
           <button className="btn btn-sm" onClick={loadTab}>
             Refresh
@@ -1208,11 +1205,7 @@ export default function Reports() {
               value={expForm.amount}
               onChange={(e) => setExpForm({ ...expForm, amount: e.target.value })}
             />
-            <input
-              type="date"
-              value={expForm.date}
-              onChange={(e) => setExpForm({ ...expForm, date: e.target.value })}
-            />
+            <DateInput value={expForm.date} onChange={(v) => setExpForm({ ...expForm, date: v })} />
             <input
               placeholder="Notes"
               value={expForm.notes}

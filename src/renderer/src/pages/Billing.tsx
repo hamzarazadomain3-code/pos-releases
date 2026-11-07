@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CashDrawer from '../components/CashDrawer';
 import LiveClock from '../components/LiveClock';
 import { Modal } from '../components/Modal';
+import { DateInput } from '../components/DateInput';
 import { KeyboardInput } from '../components/KeyboardInput';
 import { formatDateTimeAdmin, formatTimeAdmin, formatDateAdmin, toLocalDateString } from '../utils/dateUtils';
 import { getCurrencySymbol, formatMoney } from '../utils/currency';
@@ -3599,9 +3600,9 @@ const handleUnitChange = (newLevel: number) => {
                   <option value="lastmonth">Last Month</option>
                   <option value="custom">Custom</option>
                 </select>
-                <input type="date" value={historyFilters.from} onChange={(e) => setHistoryFilters(f => ({ ...f, from: e.target.value }))} title="From Date" style={{ width: '140px' }} />
+                <DateInput value={historyFilters.from} onChange={(v) => setHistoryFilters(f => ({ ...f, from: v }))} title="From Date" style={{ width: '140px' }} />
                 <span className="muted">to</span>
-                <input type="date" value={historyFilters.to} onChange={(e) => setHistoryFilters(f => ({ ...f, to: e.target.value }))} title="To Date" style={{ width: '140px' }} />
+                <DateInput value={historyFilters.to} onChange={(v) => setHistoryFilters(f => ({ ...f, to: v }))} title="To Date" style={{ width: '140px' }} />
                 <input type="text" value={historyFilters.saleNo} onChange={(e) => setHistoryFilters(f => ({ ...f, saleNo: e.target.value }))} placeholder="Sale No (INV-...)" style={{ width: '180px' }} />
                 <select className="field-select" value={historyFilters.status} onChange={(e) => { setHistoryFilters(f => ({ ...f, status: e.target.value as 'completed' | 'voided' | 'held' | 'returned' | 'all' })); applyHistoryFilters(); }} style={{ width: '140px' }}>
                   <option value="completed">Completed</option>
