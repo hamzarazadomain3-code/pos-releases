@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { InvoiceTemplateRow } from '../../../shared/types';
-import { formatDateAdmin } from '../utils/dateUtils';
+import type { InvoiceTemplateRow, TemplateConfig } from '../../../shared/types';
+import { DEFAULT_TEMPLATE_CONFIG, parseTemplateConfig } from '../../../shared/invoiceTemplateConfig';
 import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
+import { Field } from '../components/Field';
+import { InvoiceTemplatePreview } from '../components/InvoiceTemplatePreview';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
@@ -33,6 +35,8 @@ export default function InvoiceDesigner() {
   const [fontSize, setFontSize] = useState(12);
   const [primaryColor, setPrimaryColor] = useState('#DC3545');
   const [footerText, setFooterText] = useState('Thank you for your business!');
+  const [baseConfig, setBaseConfig] = useState<TemplateConfig>(DEFAULT_TEMPLATE_CONFIG);
+  const [previewTemplate, setPreviewTemplate] = useState<InvoiceTemplateRow | null>(null);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -54,6 +58,10 @@ export default function InvoiceDesigner() {
     setName('');
     setType('sale');
     setPaperSize('a4');
+    setFontSize(DEFAULT_TEMPLATE_CONFIG.fontSize);
+    setPrimaryColor(DEFAULT_TEMPLATE_CONFIG.primaryColor);
+    setFooterText(DEFAULT_TEMPLATE_CONFIG.footerText);
+    setBaseConfig(DEFAULT_TEMPLATE_CONFIG);
     setEditorOpen(true);
   };
 
@@ -62,12 +70,11 @@ export default function InvoiceDesigner() {
     setName(t.name);
     setType(t.type);
     setPaperSize(t.paper_size);
-    try {
-      const cfg = JSON.parse(t.config_json);
-      setFontSize(cfg.fontSize || 12);
-      setPrimaryColor(cfg.primaryColor || '#DC3545');
-      setFooterText(cfg.footerText || '');
-    } catch { /* use defaults */ }
+    const cfg = parseTemplateConfig(t.config_json);
+    setBaseConfig(cfg);
+    setFontSize(cfg.fontSize || 12);
+    setPrimaryColor(cfg.primaryColor || '#DC3545');
+    setFooterText(cfg.footerText || '');
     setEditorOpen(true);
   };
 
@@ -75,12 +82,14 @@ export default function InvoiceDesigner() {
     setSaving(true);
     setErr('');
     try {
-      const config = {
-        showLogo: true, showShopName: true, showShopAddress: true, showShopPhone: true,
-        showInvoiceNo: true, showDate: true, showCustomer: true, showItemsTable: true,
-        showTotals: true, showPaymentInfo: true, showFooter: true,
-        boldInvoiceNo: true, boldTotal: true, boldGrandTotal: true,
-        fontSize, primaryColor, footerText, headerLines: [],
+      // Keep every loaded toggle (logo, address, bold flags, …) instead of
+      // resetting the template to defaults on each save.
+      const config: TemplateConfig = {
+        ...baseConfig,
+        fontSize,
+        primaryColor,
+        footerText,
+        headerLines: baseConfig.headerLines ?? [],
       };
       const input = { name, type, paper_size: paperSize, config, is_default: false };
       const res = editingId
@@ -171,6 +180,7 @@ export default function InvoiceDesigner() {
                     <td>
                       <div className="row-btns">
                         <button className="btn btn-sm btn-primary" onClick={() => openEdit(t)}>Edit</button>
+                        <button className="btn btn-sm" onClick={() => setPreviewTemplate(t)}>Preview</button>
                         {!t.is_default && (
                           <button className="btn btn-sm" onClick={() => handleSetDefault(t)}>Set Default</button>
                         )}
@@ -195,73 +205,45 @@ export default function InvoiceDesigner() {
           shortcuts={[{ action: 'save', label: 'Save template' }]}
         >
 
-            <div className="form-group">
-              <label>Template Name</label>
+            <Field label="Template Name" required>
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Main Sale Receipt" />
-            </div>
+            </Field>
 
             <div className="form-row">
-              <div className="form-group">
-                <label>Document Type</label>
+              <Field label="Document Type">
                 <select value={type} onChange={(e) => setType(e.target.value)}>
                   {Object.entries(TYPE_LABELS).map(([v, l]) => (
                     <option key={v} value={v}>{l}</option>
                   ))}
                 </select>
-              </div>
-              <div className="form-group">
-                <label>Paper Size</label>
+              </Field>
+              <Field label="Paper Size">
                 <select value={paperSize} onChange={(e) => setPaperSize(e.target.value)}>
                   {PAPER_SIZES.map((p) => (
                     <option key={p.value} value={p.value}>{p.label}</option>
                   ))}
                 </select>
-              </div>
+              </Field>
             </div>
 
             <div className="form-row">
-              <div className="form-group">
-                <label>Primary Color</label>
+              <Field label="Primary Color">
                 <input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label>Font Size (px)</label>
+              </Field>
+              <Field label="Font Size (px)">
                 <KeyboardInput type="text" decimals={false} value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} />
-              </div>
+              </Field>
             </div>
 
-            <div className="form-group">
-              <label>Footer Text</label>
+            <Field label="Footer Text">
               <input value={footerText} onChange={(e) => setFooterText(e.target.value)} />
-            </div>
+            </Field>
 
-            {/* Preview */}
-            <div style={{
-              border: '1px solid #ddd', borderRadius: 8, padding: 16, marginTop: 12,
-              fontFamily: 'monospace', fontSize, background: '#fafafa',
-            }}>
-              <div style={{ color: primaryColor, fontWeight: 'bold', fontSize: fontSize + 4, marginBottom: 8 }}>
-                Rokar POS
-              </div>
-              <div style={{ fontSize: fontSize - 2, color: '#666', marginBottom: 8 }}>
-                Shop Address • Phone
-              </div>
-              <hr style={{ border: 'none', borderTop: '1px solid #ddd', margin: '8px 0' }} />
-              <div style={{ marginBottom: 4 }}>Invoice #: INV-001</div>
-              <div style={{ marginBottom: 8 }}>Date: {formatDateAdmin(new Date().toISOString())}</div>
-              <table style={{ width: '100%', fontSize: fontSize - 2 }}>
-                <tbody>
-                  <tr><td>Sample Product</td><td style={{ textAlign: 'right' }}>2 × 500</td><td style={{ textAlign: 'right' }}>1,000</td></tr>
-                </tbody>
-              </table>
-              <hr style={{ border: 'none', borderTop: '1px solid #ddd', margin: '8px 0' }} />
-              <div style={{ fontWeight: 'bold', color: primaryColor }}>Total: 1,000</div>
-              {footerText && (
-                <div style={{ marginTop: 12, fontSize: fontSize - 2, color: '#888', textAlign: 'center' }}>
-                  {footerText}
-                </div>
-              )}
-            </div>
+            {/* Preview (shared component; honours every persisted config flag) */}
+            <InvoiceTemplatePreview
+              config={{ ...baseConfig, fontSize, primaryColor, footerText }}
+              style={{ marginTop: 12 }}
+            />
 
             <div className="row-btns" style={{ justifyContent: 'flex-end', marginTop: 16 }}>
               <button className="btn" onClick={() => setEditorOpen(false)}>Cancel</button>
@@ -269,6 +251,16 @@ export default function InvoiceDesigner() {
                 {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Create Template'}
               </button>
             </div>
+        </Modal>
+      )}
+
+      {previewTemplate && (
+        <Modal
+          onClose={() => setPreviewTemplate(null)}
+          title={`Preview: ${previewTemplate.name}`}
+          style={{ maxWidth: 560, width: '95%' }}
+        >
+          <InvoiceTemplatePreview config={parseTemplateConfig(previewTemplate.config_json)} />
         </Modal>
       )}
     </div>

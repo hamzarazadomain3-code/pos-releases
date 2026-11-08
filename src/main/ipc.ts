@@ -117,6 +117,7 @@ import {
   getTaxReport,
   getTopProducts,
   listExpenses,
+  listBelowCostProducts,
   listExpiringSoon,
   listOversoldItems,
   profitLoss,
@@ -241,6 +242,7 @@ import {
   resetUserPassword,
   getSystemHealth,
 } from './services/admin';
+import { previewTestData, removeTestData } from './services/testData';
 import { is2FAEnabled, get2FAMethod, generateOtp, verifyOtp } from './services/twoFactorAuth';
 import { sendEmail, sendDailySalesReportEmail } from './services/emailService';
 import { sendSmsReceipt, sendEmailReceipt } from './services/smsService';
@@ -648,6 +650,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('reports:bestSellers', (_e, from?: string, to?: string, limit?: number) => bestSellers(from, to, limit));
   ipcMain.handle('reports:stockValuation', () => stockValuation());
   ipcMain.handle('reports:oversoldItems', () => listOversoldItems());
+  ipcMain.handle('reports:belowCostItems', () => listBelowCostProducts());
   ipcMain.handle('reports:expenses', (_e, from?: string, to?: string) => listExpenses(from, to));
   ipcMain.handle('reports:addExpense', (_e, input) => addExpense(input));
   ipcMain.handle('reports:deleteExpense', (_e, id: number) => deleteExpense(id));
@@ -938,6 +941,16 @@ export function registerIpcHandlers(): void {
 
   // ── Admin: System Health ──
   ipcMain.handle('admin:systemHealth', () => getSystemHealth());
+
+  // ── Admin: Test-data cleanup ──
+  ipcMain.handle('admin:testData:preview', () => {
+    if (!can('owner')) throw new Error('Only the owner can review test data');
+    return previewTestData();
+  });
+  ipcMain.handle('admin:testData:remove', (_e, confirmText: string) => {
+    if (!can('owner')) throw new Error('Only the owner can remove test data');
+    return removeTestData(confirmText);
+  });
 
   // ── 2FA ──
   ipcMain.handle('2fa:isEnabled', () => is2FAEnabled());

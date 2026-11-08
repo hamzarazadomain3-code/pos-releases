@@ -37,6 +37,7 @@ import type {
   ProductPurchaseSummaryRow,
   DailySnapshotResult,
   OversoldItemRow,
+  BelowCostItemRow,
 } from '../../../shared/types';
 import { formatDateAdmin, toLocalDateString } from '../utils/dateUtils';
 import { formatMoney, getCurrencySymbol } from '../utils/currency';
@@ -85,7 +86,7 @@ export default function Reports() {
   const [expForm, setExpForm] = useState({ title: '', category: 'Other', amount: '', date: today(), notes: '' });
 
   // ── v1.8.0 state ──
-  const [invSubTab, setInvSubTab] = useState<'purchaseHistory' | 'daily' | 'weekly' | 'monthly' | 'supplierMetrics' | 'oversold'>('daily');
+  const [invSubTab, setInvSubTab] = useState<'purchaseHistory' | 'daily' | 'weekly' | 'monthly' | 'supplierMetrics' | 'oversold' | 'belowCost'>('daily');
   const [dailyInv, setDailyInv] = useState<DailyInventoryRow[]>([]);
   const [weeklyInv, setWeeklyInv] = useState<WeeklyInventoryRow[]>([]);
   const [monthlyInv, setMonthlyInv] = useState<MonthlyInventoryRow[]>([]);
@@ -93,6 +94,8 @@ export default function Reports() {
   const [supplierMetrics, setSupplierMetrics] = useState<SupplierMetricRow[]>([]);
   // Phase 1: "Oversold items" report data
   const [oversoldItems, setOversoldItems] = useState<OversoldItemRow[]>([]);
+  // Loss-makers: sale price at or below cost
+  const [belowCostItems, setBelowCostItems] = useState<BelowCostItemRow[]>([]);
 
   const [profitSubTab, setProfitSubTab] = useState<'daily' | 'weekly' | 'monthly' | 'category' | 'breakEven' | 'lowProfit' | 'topProducts' | 'worstProducts'>('daily');
   const [profitData, setProfitData] = useState<ProductProfitRow[]>([]);
@@ -209,6 +212,8 @@ export default function Reports() {
         setSupplierMetrics(await window.api.inventoryReports.supplierMetrics());
       } else if (invSubTab === 'oversold') {
         setOversoldItems(await window.api.reports.oversoldItems());
+      } else if (invSubTab === 'belowCost') {
+        setBelowCostItems(await window.api.reports.belowCostItems());
       }
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err));
@@ -662,6 +667,7 @@ export default function Reports() {
                 ['purchaseHistory', 'Purchase History'],
                 ['supplierMetrics', 'Supplier Metrics'],
                 ['oversold', 'Oversold Items'],
+                ['belowCost', 'Below Cost'],
               ] as [typeof invSubTab, string][]
             ).map(([k, label]) => (
               <button
@@ -982,6 +988,73 @@ export default function Reports() {
                         r.stock_qty * (r.cost_price ?? 0),
                         r.last_sale_date || '',
                         r.last_sale_invoice || '',
+                      ]),
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Loss-makers: sale price at or below cost */}
+          {invSubTab === 'belowCost' && (
+            <div>
+              <div className="panel">
+                <div className="panel-title">Products Selling Below Cost</div>
+                {belowCostItems.length === 0 ? (
+                  <div className="muted center pad">No products are priced at or below their recorded cost.</div>
+                ) : (
+                  <div className="table-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Product</th>
+                          <th>SKU</th>
+                          <th>Category</th>
+                          <th className="num">Stock</th>
+                          <th className="num">Cost</th>
+                          <th className="num">Sale Price</th>
+                          <th className="num">Margin / Unit</th>
+                          <th className="num">Margin %</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {belowCostItems.map((r) => (
+                          <tr key={r.product_id}>
+                            <td>{r.name}</td>
+                            <td>{r.sku || '-'}</td>
+                            <td>{r.category_name || '-'}</td>
+                            <td className="num">{fmt(r.stock_qty)}</td>
+                            <td className="num">{fmt(r.cost_price)}</td>
+                            <td className="num">{fmt(r.sale_price)}</td>
+                            <td className="num" style={{ color: 'var(--danger)', fontWeight: 700 }}>
+                              {fmt(r.margin)}
+                            </td>
+                            <td className="num" style={{ color: 'var(--danger)' }}>
+                              {r.margin_pct === null ? '-' : `${fmt(r.margin_pct)}%`}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {belowCostItems.length > 0 && (
+                  <ExportButtons
+                    reportType="below-cost-items"
+                    data={belowCostItems}
+                    xlsx={{
+                      name: 'below-cost-items',
+                      headers: ['Product', 'SKU', 'Category', 'Stock', 'Cost', 'Sale Price', 'Margin / Unit', 'Margin %'],
+                      rows: belowCostItems.map((r) => [
+                        r.name,
+                        r.sku || '',
+                        r.category_name || '',
+                        r.stock_qty,
+                        r.cost_price,
+                        r.sale_price,
+                        r.margin,
+                        r.margin_pct ?? '',
                       ]),
                     }}
                   />

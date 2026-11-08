@@ -6,6 +6,7 @@ import { formatMoney, getCurrencySymbol } from '../utils/currency';
 import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
 import { DateInput } from '../components/DateInput';
+import { Field } from '../components/Field';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
@@ -214,30 +215,25 @@ export default function Expenses() {
           shortcuts={[{ action: 'save', label: 'Save expense' }]}
         >
           <div className="modal-content">
-            <div className="form-group">
-              <label>Category</label>
+            <Field label="Category" required>
               <select value={formCat} onChange={(e) => setFormCat(Number(e.target.value))}>
                 <option value="">Select...</option>
                 {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-            </div>
-            <div className="form-group">
-              <label>Title</label>
+            </Field>
+            <Field label="Title" required>
               <input value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="Expense title" />
-            </div>
-            <div className="form-group">
-              <label>Description</label>
+            </Field>
+            <Field label="Description">
               <input value={formDesc} onChange={(e) => setFormDesc(e.target.value)} placeholder="Optional description" />
-            </div>
+            </Field>
             <div className="form-row">
-              <div className="form-group">
-                <label>Amount ({getCurrencySymbol()})</label>
+              <Field label={`Amount (${getCurrencySymbol()})`} required>
                 <KeyboardInput type="text" decimals value={formAmount} onChange={(e) => setFormAmount(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label>Date</label>
+              </Field>
+              <Field label="Date">
                 <DateInput value={formDate} onChange={(v) => setFormDate(v)} />
-              </div>
+              </Field>
             </div>
             <div className="form-group">
               <label>
@@ -270,18 +266,15 @@ export default function Expenses() {
           shortcuts={[{ action: 'save', label: 'Save category' }]}
         >
           <div className="modal-content">
-            <div className="form-group">
-              <label>Name</label>
+            <Field label="Name" required>
               <input value={catName} onChange={(e) => setCatName(e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label>Description</label>
+            </Field>
+            <Field label="Description">
               <input value={catDesc} onChange={(e) => setCatDesc(e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label>Color</label>
+            </Field>
+            <Field label="Color">
               <input type="color" value={catColor} onChange={(e) => setCatColor(e.target.value)} />
-            </div>
+            </Field>
           </div>
           <div className="modal-footer">
             <button className="btn" onClick={resetCatForm}>Cancel</button>

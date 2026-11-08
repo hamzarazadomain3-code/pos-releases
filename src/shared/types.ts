@@ -692,7 +692,7 @@ export interface StockValuation {
   negative_cost_value: number;
 }
 
-/** Phase 1: "Oversold items" report — products currently below zero stock. */
+/** Phase 1: "Oversold items" report - products currently below zero stock. */
 export interface OversoldItemRow {
   product_id: number;
   name: string;
@@ -704,6 +704,20 @@ export interface OversoldItemRow {
   sale_price: number;
   last_sale_date: string | null;
   last_sale_invoice: string | null;
+}
+
+/** Products selling at or below recorded cost (loss-makers). */
+export interface BelowCostItemRow {
+  product_id: number;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  category_name: string | null;
+  stock_qty: number;
+  cost_price: number;
+  sale_price: number;
+  margin: number;
+  margin_pct: number | null;
 }
 
 // ============ v1.6.0 Reports ============
@@ -1436,6 +1450,7 @@ export interface PosBridge {
     bestSellers: (from?: string, to?: string, limit?: number) => Promise<BestSellerRow[]>;
     stockValuation: () => Promise<StockValuation>;
     oversoldItems: () => Promise<OversoldItemRow[]>;
+    belowCostItems: () => Promise<BelowCostItemRow[]>;
     expenses: (from?: string, to?: string) => Promise<Expense[]>;
     addExpense: (input: { title: string; category: string; amount: number; expense_date?: string; notes?: string }) => Promise<Expense>;
     deleteExpense: (id: number) => Promise<boolean>;
@@ -1681,6 +1696,10 @@ export interface PosBridge {
       resetPassword: (userId: number, newPassword: string) => Promise<boolean>;
     };
     systemHealth: () => Promise<SystemHealth>;
+    testData: {
+      preview: () => Promise<TestDataPreview>;
+      remove: (confirmText: string) => Promise<RemoveTestDataResult>;
+    };
   };
   twoFactor: {
     isEnabled: () => Promise<boolean>;
@@ -2067,6 +2086,29 @@ export interface SystemHealth {
   db_size_bytes: number;
   db_path: string;
   uptime_seconds: number;
+}
+
+export interface TestProductRow {
+  id: number;
+  name: string;
+  sku: string | null;
+  stock_qty: number;
+  references: number;
+  action: 'delete' | 'quarantine';
+}
+
+export interface TestDataPreview {
+  products: TestProductRow[];
+  total_products: number;
+  delete_count: number;
+  quarantine_count: number;
+}
+
+export interface RemoveTestDataResult {
+  backupPath: string;
+  deleted: number;
+  quarantined: number;
+  products: TestProductRow[];
 }
 
 export interface ActivityFilters {

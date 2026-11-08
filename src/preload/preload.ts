@@ -164,6 +164,7 @@ const bridge: PosBridge = {
     bestSellers: (from?: string, to?: string, limit?: number) => ipcRenderer.invoke('reports:bestSellers', from, to, limit),
     stockValuation: () => ipcRenderer.invoke('reports:stockValuation'),
     oversoldItems: () => ipcRenderer.invoke('reports:oversoldItems'),
+    belowCostItems: () => ipcRenderer.invoke('reports:belowCostItems'),
     expenses: (from?: string, to?: string) => ipcRenderer.invoke('reports:expenses', from, to),
     addExpense: (input) => ipcRenderer.invoke('reports:addExpense', input),
     deleteExpense: (id: number) => ipcRenderer.invoke('reports:deleteExpense', id),
@@ -400,6 +401,10 @@ const bridge: PosBridge = {
       resetPassword: (userId: number, newPassword: string) => ipcRenderer.invoke('admin:users:resetPassword', userId, newPassword),
     },
     systemHealth: () => ipcRenderer.invoke('admin:systemHealth'),
+    testData: {
+      preview: () => ipcRenderer.invoke('admin:testData:preview'),
+      remove: (confirmText: string) => ipcRenderer.invoke('admin:testData:remove', confirmText),
+    },
   },
   twoFactor: {
     isEnabled: () => ipcRenderer.invoke('2fa:isEnabled'),

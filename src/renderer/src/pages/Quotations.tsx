@@ -4,6 +4,7 @@ import type { QuotationRow, Customer, Product } from '../../../shared/types';
 import { formatDateTimeAdmin } from '../utils/dateUtils';
 import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
+import { Field } from '../components/Field';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
@@ -305,18 +306,16 @@ export default function Quotations() {
           label="Quotation"
           shortcuts={[{ action: 'save', label: 'Save quotation' }]}
         >
-            <div className="form-group">
-              <label>Customer</label>
+            <Field label="Customer">
               <select value={customerId} onChange={(e) => setCustomerId(e.target.value ? Number(e.target.value) : '')}>
                 <option value="">Walk-in Customer</option>
                 {customers.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
-            </div>
+            </Field>
 
-            <div className="form-group">
-              <label>Add Product (search by name or barcode)</label>
+            <Field label="Add Product (search by name or barcode)">
               <input
                 placeholder="Type to search..."
                 value={productSearch}
@@ -335,7 +334,7 @@ export default function Quotations() {
                   ))}
                 </div>
               )}
-            </div>
+            </Field>
 
             {items.length > 0 && (
               <table className="data-table" style={{ marginBottom: 12 }}>
@@ -380,10 +379,9 @@ export default function Quotations() {
               </table>
             )}
 
-            <div className="form-group">
-              <label>Notes</label>
+            <Field label="Notes">
               <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
-            </div>
+            </Field>
 
             <div className="row-btns" style={{ justifyContent: 'space-between' }}>
               <strong>Total: {fmt(totalAmount)}</strong>

@@ -1,5 +1,6 @@
 import { getDb } from '../db';
 import { logError } from '../logger';
+import { parseTemplateConfig } from '../../shared/invoiceTemplateConfig';
 
 export interface InvoiceTemplateRow {
   id: number;
@@ -74,38 +75,8 @@ export function getDefaultTemplate(type: string): InvoiceTemplateRow | null {
 }
 
 export function getTemplateConfig(template: InvoiceTemplateRow): TemplateConfig {
-  try {
-    const cfg = JSON.parse(template.config_json);
-    return {
-      showLogo: cfg.showLogo ?? true,
-      showShopName: cfg.showShopName ?? true,
-      showShopAddress: cfg.showShopAddress ?? true,
-      showShopPhone: cfg.showShopPhone ?? true,
-      showInvoiceNo: cfg.showInvoiceNo ?? true,
-      showDate: cfg.showDate ?? true,
-      showCustomer: cfg.showCustomer ?? true,
-      showItemsTable: cfg.showItemsTable ?? true,
-      showTotals: cfg.showTotals ?? true,
-      showPaymentInfo: cfg.showPaymentInfo ?? true,
-      showFooter: cfg.showFooter ?? true,
-      boldInvoiceNo: cfg.boldInvoiceNo ?? true,
-      boldTotal: cfg.boldTotal ?? true,
-      boldGrandTotal: cfg.boldGrandTotal ?? true,
-      fontSize: cfg.fontSize ?? 12,
-      primaryColor: cfg.primaryColor ?? '#DC3545',
-      footerText: cfg.footerText ?? 'Thank you for your business!',
-      headerLines: cfg.headerLines ?? [],
-      customFields: cfg.customFields ?? {},
-    };
-  } catch {
-    return {
-      showLogo: true, showShopName: true, showShopAddress: true, showShopPhone: true,
-      showInvoiceNo: true, showDate: true, showCustomer: true, showItemsTable: true,
-      showTotals: true, showPaymentInfo: true, showFooter: true,
-      boldInvoiceNo: true, boldTotal: true, boldGrandTotal: true,
-      fontSize: 12, primaryColor: '#DC3545', footerText: 'Thank you!', headerLines: [],
-    };
-  }
+  // Single source of truth shared with the renderer preview.
+  return parseTemplateConfig(template.config_json);
 }
 
 export function createTemplate(input: {

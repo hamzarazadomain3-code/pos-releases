@@ -6,6 +6,7 @@ import { formatMoney, getCurrencySymbol } from '../utils/currency';
 import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
 import { DateInput } from '../components/DateInput';
+import { Field } from '../components/Field';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
@@ -201,36 +202,31 @@ export default function Commissions() {
           shortcuts={[{ action: 'save', label: 'Save rule' }]}
         >
             <div className="modal-content">
-              <div className="form-group">
-                <label>Rule Name</label>
+              <Field label="Rule Name" required>
                 <input value={ruleName} onChange={(e) => setRuleName(e.target.value)} placeholder="e.g. 5% on all sales" />
-              </div>
+              </Field>
               <div className="form-row">
-                <div className="form-group">
-                  <label>Type</label>
+                <Field label="Type">
                   <select value={ruleType} onChange={(e) => setRuleType(e.target.value as any)}>
                     <option value="percent">Percent (%)</option>
                     <option value="fixed">Fixed ({getCurrencySymbol()})</option>
                   </select>
-                </div>
-                <div className="form-group">
-                  <label>Value</label>
+                </Field>
+                <Field label="Value" required>
                   <KeyboardInput type="text" decimals value={ruleValue} onChange={(e) => setRuleValue(e.target.value)} />
-                </div>
+                </Field>
               </div>
               <div className="form-row">
-                <div className="form-group">
-                  <label>Scope</label>
+                <Field label="Scope">
                   <select value={ruleScope} onChange={(e) => setRuleScope(e.target.value as any)}>
                     <option value="global">Global</option>
                     <option value="category">Category</option>
                     <option value="product">Product</option>
                   </select>
-                </div>
-                <div className="form-group">
-                  <label>Priority</label>
+                </Field>
+                <Field label="Priority">
                   <KeyboardInput type="text" decimals={false} value={rulePriority} onChange={(e) => setRulePriority(e.target.value)} />
-                </div>
+                </Field>
               </div>
             </div>
             <div className="modal-footer">

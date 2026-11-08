@@ -88,6 +88,21 @@ export interface OversoldItemRow {
   last_sale_invoice: string | null;
 }
 
+export interface BelowCostItemRow {
+  product_id: number;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  category_name: string | null;
+  stock_qty: number;
+  cost_price: number;
+  sale_price: number;
+  /** sale_price - cost_price (negative means a loss per unit). */
+  margin: number;
+  /** Margin as a percentage of cost; null when cost is zero. */
+  margin_pct: number | null;
+}
+
 export interface Expense {
   id: number;
   title: string;
@@ -303,6 +318,30 @@ export function listOversoldItems(): OversoldItemRow[] {
        LEFT JOIN categories c ON c.id = p.category_id
       WHERE p.active = 1 AND p.stock_qty < 0
       ORDER BY p.stock_qty ASC, p.name`
+  );
+}
+
+export function listBelowCostProducts(): BelowCostItemRow[] {
+  return all<BelowCostItemRow>(
+    `SELECT p.id AS product_id,
+            p.name,
+            p.sku,
+            p.barcode,
+            c.name AS category_name,
+            p.stock_qty,
+            COALESCE(p.cost_price,0) AS cost_price,
+            p.sale_price,
+            ROUND(p.sale_price - COALESCE(p.cost_price,0), 4) AS margin,
+            CASE WHEN COALESCE(p.cost_price,0) > 0
+                 THEN ROUND((p.sale_price - p.cost_price) * 100.0 / p.cost_price, 2)
+                 ELSE NULL END AS margin_pct
+       FROM products p
+       LEFT JOIN categories c ON c.id = p.category_id
+      WHERE p.active = 1
+        AND COALESCE(p.is_test,0) = 0
+        AND COALESCE(p.cost_price,0) > 0
+        AND p.sale_price <= p.cost_price
+      ORDER BY margin ASC, p.name`
   );
 }
 

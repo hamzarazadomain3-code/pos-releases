@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import type { AdminSettingsMap } from '../../../../shared/types';
+import type { AdminSettingsMap, TestDataPreview } from '../../../../shared/types';
 import { validateImageUpload } from '@shared/imageMath';
 import WallpaperEditor from '../../components/WallpaperEditor';
 import WallpaperPresets from '../../components/WallpaperPresets';
@@ -167,6 +167,10 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    key: 'system', label: 'System',
+    settings: [],
+  },
+  {
     key: 'shift', label: 'Shift Management',
     settings: [
       { key: 'default_opening_cash', label: 'Default Opening Cash (Rs)', type: 'number' },
@@ -232,6 +236,10 @@ export default function SystemSettings({ onNavigate }: { onNavigate?: (key: stri
   const wallpaperInputRef = useRef<HTMLInputElement>(null);
    const [cropEditor, setCropEditor] = useState<{ src: string } | null>(null);
    const [backupRunning, setBackupRunning] = useState(false);
+  const [testPreview, setTestPreview] = useState<TestDataPreview | null>(null);
+  const [testBusy, setTestBusy] = useState(false);
+  const [testPhrase, setTestPhrase] = useState('');
+  const [testAck, setTestAck] = useState(false);
 
   useEffect(() => {
     window.api.admin.settings.getAll().then(setSettings).catch((e) => setNotice(String(e)));
@@ -293,6 +301,52 @@ export default function SystemSettings({ onNavigate }: { onNavigate?: (key: stri
       setNotice(e instanceof Error ? e.message : String(e));
     }
     setBackupRunning(false);
+  };
+
+  const handlePreviewTestData = async () => {
+    setTestBusy(true);
+    setNotice(null);
+    try {
+      const preview = await window.api.admin.testData.preview();
+      setTestPreview(preview);
+      setTestPhrase('');
+      setTestAck(false);
+      setNotice(
+        preview.total_products === 0
+          ? 'No test products match the approved patterns.'
+          : `${preview.total_products} matching test product(s) found.`
+      );
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e));
+    }
+    setTestBusy(false);
+  };
+
+  const handleRemoveTestData = async () => {
+    if (!testPreview || testPreview.total_products === 0) return;
+    if (!testAck || testPhrase !== 'REMOVE TEST DATA') return;
+    if (!confirm(
+      `Remove ${testPreview.total_products} test product(s) now?\n\n` +
+      `${testPreview.delete_count} with no history will be deleted and ` +
+      `${testPreview.quarantine_count} with history will be hidden (is_test=1, inactive).\n` +
+      'A local backup is created first.'
+    )) return;
+    setTestBusy(true);
+    setNotice(null);
+    try {
+      const result = await window.api.admin.testData.remove(testPhrase);
+      setNotice(
+        result.backupPath
+          ? `Deleted ${result.deleted}, quarantined ${result.quarantined}. Backup: ${result.backupPath}`
+          : 'Nothing matched - no changes made.'
+      );
+      setTestPreview(null);
+      setTestPhrase('');
+      setTestAck(false);
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e));
+    }
+    setTestBusy(false);
   };
 
   const currentSection = SECTIONS.find((s) => s.key === activeSection) ?? SECTIONS[0];
@@ -569,6 +623,92 @@ export default function SystemSettings({ onNavigate }: { onNavigate?: (key: stri
               <div style={{ marginTop: 8 }}>
                 Last backup: {settings.backup_last || 'Never'}
               </div>
+            </div>
+          )}
+          {activeSection === 'system' && (
+            <div style={{ marginTop: 4 }}>
+              <p className="muted small" style={{ marginBottom: 12 }}>
+                Diagnostic data left behind by test runs can distort stock and reports. Preview matches
+                first (dry run, no writes), then confirm. Products with sales or stock history are hidden
+                instead of deleted so history is never destroyed. A local backup is taken before any change.
+              </p>
+              <button className="btn" onClick={handlePreviewTestData} disabled={testBusy}>
+                {testBusy ? 'Checking...' : 'Preview Test Data (dry run)'}
+              </button>
+
+              {testPreview && (
+                <div style={{ marginTop: 16 }}>
+                  {testPreview.total_products === 0 ? (
+                    <p className="muted">No products match the approved test patterns.</p>
+                  ) : (
+                    <>
+                      <div className="table-wrap" style={{ maxHeight: 260 }}>
+                        <table className="data-table">
+                          <thead>
+                            <tr>
+                              <th>ID</th>
+                              <th>Name</th>
+                              <th>SKU</th>
+                              <th>Stock</th>
+                              <th>History rows</th>
+                              <th>Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {testPreview.products.map((p) => (
+                              <tr key={p.id}>
+                                <td>{p.id}</td>
+                                <td>{p.name}</td>
+                                <td>{p.sku || '-'}</td>
+                                <td>{p.stock_qty}</td>
+                                <td>{p.references}</td>
+                                <td>
+                                  <span className={p.action === 'delete' ? 'badge bad' : 'badge-warn'}>
+                                    {p.action === 'delete' ? 'Delete' : 'Hide (keep history)'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="small" style={{ marginTop: 8 }}>
+                        {testPreview.delete_count} to delete, {testPreview.quarantine_count} to hide.
+                      </p>
+
+                      <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                        <label className="field" style={{ marginBottom: 10 }}>
+                          <span>Type REMOVE TEST DATA to confirm</span>
+                          <input
+                            value={testPhrase}
+                            onChange={(e) => setTestPhrase(e.target.value)}
+                            placeholder="REMOVE TEST DATA"
+                          />
+                        </label>
+                        <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 12 }}>
+                          <input
+                            type="checkbox"
+                            checked={testAck}
+                            onChange={(e) => setTestAck(e.target.checked)}
+                            style={{ marginTop: 3 }}
+                          />
+                          <span className="small">
+                            I understand a backup will be created and matching products will be deleted or
+                            hidden. This cannot be undone from the app.
+                          </span>
+                        </label>
+                        <button
+                          className="btn btn-danger"
+                          onClick={handleRemoveTestData}
+                          disabled={testBusy || !testAck || testPhrase !== 'REMOVE TEST DATA'}
+                        >
+                          {testBusy ? 'Working...' : 'Remove Test Data'}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )}
           {activeSection === 'theme' && settings.primary_color && (

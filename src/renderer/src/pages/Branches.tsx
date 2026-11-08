@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { BranchRow } from '../../../shared/types';
 import { Modal } from '../components/Modal';
+import { Field } from '../components/Field';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
@@ -189,25 +190,21 @@ export default function Branches() {
           label="Branch"
           shortcuts={[{ action: 'save', label: 'Save branch' }]}
         >
-            <div className="form-group">
-              <label>Branch Name</label>
+            <Field label="Branch Name" required>
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Main Shop" />
-            </div>
+            </Field>
 
-            <div className="form-group">
-              <label>Address</label>
+            <Field label="Address">
               <textarea value={address} onChange={(e) => setAddress(e.target.value)} rows={2} />
-            </div>
+            </Field>
 
             <div className="form-row">
-              <div className="form-group">
-                <label>Phone</label>
+              <Field label="Phone">
                 <input value={phone} onChange={(e) => setPhone(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label>Email</label>
+              </Field>
+              <Field label="Email">
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-              </div>
+              </Field>
             </div>
 
             <div className="form-row">

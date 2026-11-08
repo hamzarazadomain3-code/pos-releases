@@ -3,6 +3,7 @@ import type { Category, Product, PromotionInput, PromotionRow } from '../../../s
 import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
 import { DateInput } from '../components/DateInput';
+import { Field } from '../components/Field';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
@@ -260,30 +261,28 @@ export default function Promotions() {
           label="Promotion"
           shortcuts={[{ action: 'save', label: 'Save promotion' }]}
         >
-            <label className="lbl">Name *</label>
-            <input className="inp" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus />
+            <Field label="Name" required>
+              <input className="inp" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus />
+            </Field>
 
             <div className="form-grid" style={{ marginTop: 10 }}>
-              <div className="field">
-                <span>Type</span>
+              <Field label="Type">
                 <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as PromotionInput['type'] })}>
                   <option value="percent">Percent off</option>
                   <option value="fixed">Fixed amount off</option>
                   <option value="bogo">BOGO (Buy X Get Y)</option>
                 </select>
-              </div>
-              <div className="field">
-                <span>Applies To</span>
+              </Field>
+              <Field label="Applies To">
                 <select value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value as PromotionInput['scope'] })}>
                   <option value="product">Product</option>
                   <option value="category">Category</option>
                 </select>
-              </div>
+              </Field>
             </div>
 
             {form.scope === 'product' ? (
-              <label className="field" style={{ marginTop: 10 }}>
-                <span>Product *</span>
+              <Field label="Product" required style={{ marginTop: 10 }}>
                 <select
                   value={form.product_id ?? ''}
                   onChange={(e) => setForm({ ...form, product_id: e.target.value ? Number(e.target.value) : null })}
@@ -295,10 +294,9 @@ export default function Promotions() {
                     </option>
                   ))}
                 </select>
-              </label>
+              </Field>
             ) : (
-              <label className="field" style={{ marginTop: 10 }}>
-                <span>Category *</span>
+              <Field label="Category" required style={{ marginTop: 10 }}>
                 <select
                   value={form.category_id ?? ''}
                   onChange={(e) => setForm({ ...form, category_id: e.target.value ? Number(e.target.value) : null })}
@@ -310,61 +308,56 @@ export default function Promotions() {
                     </option>
                   ))}
                 </select>
-              </label>
+              </Field>
             )}
 
             <div className="form-grid" style={{ marginTop: 10 }}>
               {form.type === 'percent' && (
-                <label className="field">
-                  <span>Discount % (1-100)</span>
+                <Field label="Discount % (1-100)">
                   <KeyboardInput
                     type="text"
                     decimals
                     value={form.discount_value}
                     onChange={(e) => setForm({ ...form, discount_value: Number(e.target.value) })}
                   />
-                </label>
+                </Field>
               )}
               {form.type === 'fixed' && (
-                <label className="field">
-                  <span>Amount off</span>
+                <Field label="Amount off">
                   <KeyboardInput
                     type="text"
                     decimals
                     value={form.discount_value}
                     onChange={(e) => setForm({ ...form, discount_value: Number(e.target.value) })}
                   />
-                </label>
+                </Field>
               )}
               {form.type === 'bogo' && (
                 <>
-                  <label className="field">
-                    <span>Buy (qty)</span>
+                  <Field label="Buy (qty)">
                     <KeyboardInput
                       type="text"
                       decimals={false}
                       value={form.buy_qty}
                       onChange={(e) => setForm({ ...form, buy_qty: Number(e.target.value) })}
                     />
-                  </label>
-                  <label className="field">
-                    <span>Get (qty)</span>
+                  </Field>
+                  <Field label="Get (qty)">
                     <KeyboardInput
                       type="text"
                       decimals={false}
                       value={form.free_qty}
                       onChange={(e) => setForm({ ...form, free_qty: Number(e.target.value) })}
                     />
-                  </label>
-                  <label className="field">
-                    <span>Free-item discount % (100 = free)</span>
+                  </Field>
+                  <Field label="Free-item discount % (100 = free)">
                     <KeyboardInput
                       type="text"
                       decimals
                       value={form.discount_value}
                       onChange={(e) => setForm({ ...form, discount_value: Number(e.target.value) })}
                     />
-                  </label>
+                  </Field>
                 </>
               )}
               {form.type !== 'bogo' && (
@@ -383,14 +376,12 @@ export default function Promotions() {
             </div>
 
             <div className="form-grid" style={{ marginTop: 10 }}>
-              <label className="field">
-                <span>Start date (optional)</span>
+              <Field label="Start date (optional)">
                 <DateInput value={form.start_date ?? ''} onChange={(v) => setForm({ ...form, start_date: v })} />
-              </label>
-              <label className="field">
-                <span>End date (optional)</span>
+              </Field>
+              <Field label="End date (optional)">
                 <DateInput value={form.end_date ?? ''} onChange={(v) => setForm({ ...form, end_date: v })} />
-              </label>
+              </Field>
             </div>
             {form.type === 'bogo' && (
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
