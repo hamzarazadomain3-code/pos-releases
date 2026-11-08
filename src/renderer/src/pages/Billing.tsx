@@ -1468,7 +1468,7 @@ useEffect(() => {
     }
   }, [roundOffEnabled, applyRoundOff]);
 
-  // Load customer loyalty when customer changes
+  // Load customer loyalty & auto-apply default discount when customer changes
   useEffect(() => {
     if (customerId) {
       window.api.customers.list().then((custs) => {
@@ -1477,10 +1477,19 @@ useEffect(() => {
           // Calculate loyalty based on purchase history (mock for now)
           // In real implementation, this would come from a loyalty API
           setSelectedCustomerLoyalty({ points: Math.floor(cust.balance / 100), tier: cust.balance > 10000 ? 'Gold' : cust.balance > 5000 ? 'Silver' : 'Bronze' });
+
+          // Auto-apply customer's default discount if set
+          const defDisc = Number(cust.default_discount_pct ?? 0);
+          if (defDisc > 0) {
+            setBillDiscount(String(defDisc));
+            setDiscountType('percent');
+          }
         }
       }).catch(() => undefined);
     } else {
       setSelectedCustomerLoyalty(null);
+      // Clear discount when customer is removed (optional — comment out if you want to keep the last discount)
+      setBillDiscount('');
     }
   }, [customerId]);
 
