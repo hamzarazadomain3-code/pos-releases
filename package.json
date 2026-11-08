@@ -28,6 +28,7 @@
     "test:dateparse": "npm run build:main && node scripts/test_dateParse.cjs",
     "test:dashboardPeriod": "npm run build:main && node scripts/test_dashboardPeriod.cjs",
     "test:belowCost": "npm run build:main && node scripts/test_belowCost.cjs",
+    "test:utf8Export": "npm run build:main && node scripts/test_utf8Export.cjs",
     "test:paymentreconciliation": "npm run build:main && node scripts/test_paymentReconciliation.cjs",
     "test:promotions": "npm run build:main && node scripts/test_promotions.cjs",
     "test:alerts": "npm run build:main && node scripts/test_alerts.cjs",
