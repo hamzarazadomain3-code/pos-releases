@@ -323,14 +323,14 @@ Migration 071 applied: 19 Wiring Test Item + 1 AG0ENT6N marked `is_test=1`.
 | **B3** Audit cancel test: cancelled/items kept/log | **DONE** | scripts/test_audit_fixes.js:270-285 | test:audit 48/48 ✅ |
 | **B4** Promotions test: expired not applied / list read-only / idempotent | **DONE** | scripts/test_promotions.cjs | test:promotions 11/11 ✅ |
 | **B5** Alerts test: no duplicates / auto-resolve / ack hidden / migration 070 idempotent | **DONE** | scripts/test_alerts.cjs | test:alerts 5/5 ✅ |
-| **C1** Shared Field → 6 modals | **DONE** | Branches.tsx:193, Quotations.tsx:309, Expenses.tsx:218, Commissions.tsx:205, Promotions.tsx:264, InvoiceDesigner.tsx:208 | test:audit (UI) ✅ |
+| **C1** Shared Field → 6 modals | **PARTIAL** (no test: UI) | Branches.tsx:193, Quotations.tsx:309, Expenses.tsx:218, Commissions.tsx:205, Promotions.tsx:264, InvoiceDesigner.tsx:208 | No automated UI assertion that each modal renders the shared field; `test:audit` covers the component, not the 6 mount points. |
 | **C2** Remove test data (Settings→System) dry-run/backup/two-step | **DONE** | src/main/services/testData.ts; SystemSettings.tsx:239-337 | test:testdata 5/5 ✅ |
-| **C3** Returns "Returned" = returned_amount; payment pie uses B2 helper | **DONE** | Returns.tsx:304; Reports.tsx uses reconcilePayments | test:return 29/29 ✅ |
-| **C4** Below Cost tab (sale OR wholesale < cost, margin) | **DONE** | reports.ts:325-350; Reports.tsx:999-1052 | test:audit (UI) ✅ |
-| **C5** UTF-8 BOM CSV/Excel import/export + Urdu/en-dash | **DONE** | export.ts:20 (BOM present); import uses XLSX (UTF-8) | test:utf8Export 2/2 ✅ |
+| **C3** Returns "Returned" = returned_amount; payment pie uses B2 helper | **PARTIAL** (no test: UI) | `Returns.tsx:293` (header "Returned"), `Returns.tsx:304` (cell renders `(s.returned_amount ?? 0).toFixed(2)`; unchanged from v2.23.0); `Reports.tsx` uses `reconcilePayments` | `test:return` 29/29 covers the service-level `returned_amount` total; the column rendering itself has no automated UI test. |
+| **C4** Below Cost tab (sale OR wholesale < cost, margin) | **PARTIAL** (no test: UI) | reports.ts:325-350 (`listBelowCostProducts`); Reports.tsx:999-1052 (tab) | `test:belowCost` 7/7 covers the real service query; the Reports tab rendering/filter has no automated UI test. |
+| **C5** UTF-8 BOM CSV/Excel import/export + Urdu/en-dash | **DONE** | `export.ts:24-27` (`buildCsvBuffer` writes `\uFEFF` + CRLF), `export.ts:41` (`saveCsv` uses it); import uses XLSX (UTF-8) | `test:utf8Export` 2/2 imports the real `dist` function: BOM `EF BB BF`, Urdu + en-dash round-trip, comma/quote escaping. |
 | **C6** Idle lock (session_timeout_minutes, 0=disabled) + min_password_length | **PARTIAL** (desktop done, web pending) | auth.ts:101,128; App.tsx:597-610; Users.tsx create/reset | test:audit (UI timer not testable headless) |
-| **C7** Shared negative-stock rule (Billing + QuickSale) | **DONE** | src/shared/negativeStock.ts; Billing.tsx, QuickSaleGrid.tsx | test:negstock 27/27 ✅ |
-| **C8** Login screen: shop logo/name, show-pwd, Caps Lock; Branches gated | **DONE** | App.tsx:254-442 (login); LoginRecovery.tsx:202 | test:audit (UI) ✅ |
+| **C7** Shared negative-stock rule (Billing + QuickSale) | **DONE** | src/shared/negativeStock.ts; Billing.tsx, QuickSaleGrid.tsx | `test:negstock` 31/31 (real service: cap enforced, cap 0/unset = no cap). |
+| **C8** Login screen: shop logo/name, show-pwd, Caps Lock; Branches gated | **PARTIAL** (no test: UI) | App.tsx:377-379 (shop name / "Sign in to continue"); LoginRecovery.tsx:202 | `test:keyboard` 93/93 and `test:recovery:ui` 26/26 exercise login/Enter/recovery; logo, Caps Lock and the `multi_branch` gate are not asserted. |
 | **C9** Invoice Designer preview extracted to shared component | **DONE** | src/shared/invoiceTemplateConfig.ts; InvoiceTemplatePreview.tsx; InvoiceDesigner.tsx | test:invoiceTemplateConfig 6/6 ✅ |
 
 ### Part D — Real data (read-only on pos-copy.db)
@@ -429,3 +429,114 @@ No incomplete implementations or TODO placeholders.
 | Log rotation/size cap | NOT DONE | Separate task as noted in owner checklist |
 
 All confirmed P0 items fixed with regression tests. Typecheck/build clean. Desktop rebuild/reinstall and web redeploy are **owner actions** — not performed by this run.
+
+---
+
+## Run 11 (2026-11-09) — Final cleanup: proof, not claims
+
+This section is **authoritative** where earlier text conflicts with it. It records what is now provable in code and tests, and it removes ambiguous "DONE (UI)" labels.
+
+### Commits in this run
+
+| Commit | Item |
+| --- | --- |
+| `5603f2c` | Item 1 — migration 071 restricted to `%Wiring Test Item%` (LIKE) + exact `AG0ENT6N`; only `AG0ENT6N` history-checked; idempotent safety suite. |
+| `14ec1d6` | Item 2 — `buildCsvBuffer()` extracted and exported; UTF-8 test imports real `dist` code. |
+| `9a06012` | Item 3 — dashboard-period test derives today / 6-days-ago / 30-days-ago at runtime from real `todayLocal()` / `daysAgo()`. |
+| `038fd3e` | Item 4 — `max_negative_qty` unified on `settings`; migration 072 seeds `'0'`; real-service "0 = no cap" checks. |
+| `a331519` | Supporting fix — headless UI smoke tests wait for stable login copy (`Sign in to continue`) and enable the `multi_branch` fixture toggle; inventoryReports dedup fixture uses localtime. |
+
+### LEDGER — every item, current status
+
+| Item | Status | File:line | Test run this session |
+| --- | --- | --- | --- |
+| **Item 1** migration 071 safety | **DONE** | `migrations/071_mark_test_products.js`; `src/main/services/testData.ts` (`TEST_PRODUCT_PATTERNS = ['%Wiring Test Item%', 'AG0ENT6N']`) | `test:migration071` **7/7**; `test:testdata` **5/5** |
+| **Item 2** UTF-8 CSV real-code test | **DONE** | `src/main/services/export.ts:24-27` (`buildCsvBuffer`, writes `\uFEFF` + CRLF); `:41` (`saveCsv` uses it) | `test:utf8Export` **2/2** (BOM `EF BB BF`, Urdu + en-dash, comma/quote escaping; imports `dist`) |
+| **Item 3** dashboard period date independence | **DONE** | `scripts/test_dashboardPeriod.cjs:1-211` (dates from `dist/main/utils/timezone.js`: `todayLocal`, `daysAgo`); `reports.ts:402-488` | `test:dashboardPeriod` **11/11** (today, 7-day inclusive, 31-day zero-fill, top products) |
+| **Item 4** `max_negative_qty` single store + default | **DONE** | read: `src/main/services/sales.ts:151`, `Billing.tsx:893`, `QuickSaleGrid.tsx:67`, `Settings.tsx:228`; seed: `migrations/072_max_negative_qty_default.js` | `test:migration072` **6/6**; `test:negstock` **31/31** (cap enforced; `0` and unset = no cap; stock reaches -5/-3) |
+| **Item 5** REPORT honesty pass | **DONE** | this section | documentation; matches the test runs below |
+| **C1** Shared `<Field>` in 6 modals | **PARTIAL** (no test: UI) | `Branches.tsx:193`, `Quotations.tsx:309`, `Expenses.tsx:218`, `Commissions.tsx:205`, `Promotions.tsx:264`, `InvoiceDesigner.tsx:208` | No per-modal UI assertion. |
+| **C2** `is_test` flag + test-data tooling | **DONE** | `migrations/068_products_is_test.js`, `071_mark_test_products.js`; `src/main/services/testData.ts` | `test:testdata` **5/5**; `test:migration071` **7/7** |
+| **C3** Returns "Returned" column | **PARTIAL** (no test: UI) | `Returns.tsx:293` header; `Returns.tsx:304` cell `(s.returned_amount ?? 0).toFixed(2)` — **unchanged** from v2.23.0; payment totals use `reconcilePayments` | `test:return` **29/29** (service totals); column rendering untested. |
+| **C4** Below Cost tab | **PARTIAL** (no test: UI) | `src/main/services/reports.ts:325-350` (`listBelowCostProducts`); `Reports.tsx:999-1052` | `test:belowCost` **7/7** (real service query); tab rendering untested. |
+| **C5** UTF-8 BOM export | **DONE** | `export.ts:24-27`, `:41` | `test:utf8Export` **2/2** (real `dist`) |
+| **C6** idle lock + min password length | **PARTIAL** (desktop done, web pending) | `App.tsx:597-610`; `auth.ts:101,128`; `Users.tsx` create/reset | `test:audit` **48/48** covers policy logic; no idle-timer UI test. |
+| **C7** shared negative-stock rule | **DONE** | `src/shared/negativeStock.ts`; `Billing.tsx`, `QuickSaleGrid.tsx` | `test:negstock` **31/31** |
+| **C8** login screen / Branches gate | **PARTIAL** (no test: UI) | `App.tsx:377-379`; `LoginRecovery.tsx:202`; `App.tsx:550,592` | `test:keyboard` **93/93** and `test:recovery:ui` **26/26** cover login/Enter/recovery; logo, Caps Lock and the gate are not asserted. |
+| **C9** shared invoice preview | **DONE** | `src/shared/invoiceTemplateConfig.ts`; `InvoiceTemplatePreview.tsx`; `InvoiceDesigner.tsx` | `test:invoiceTemplateConfig` **6/6** |
+| **C10** main shop address + branch toggle | **DONE** | `migrations/069_main_shop_address.js`; `App.tsx:550,592` | `test:keyboard` **93/93** (Branches hidden by default; enabled fixture renders the page) |
+| **C11** payment reconciliation + returns totals | **DONE** | `src/shared/paymentReconciliation.ts`; `Returns.tsx:304` | `test:paymentreconciliation` **13/13**; `test:return` **29/29** |
+| **C12** dashboard period selector | **DONE** | `Dashboard.tsx`; `reports.ts:426-453` | `test:dashboardPeriod` **11/11** |
+| **C13** role discrepancy | **DONE** (documented only) | `REPORT.md` (B7 / assumptions) | No code change; no test applicable. |
+
+### Items not DONE (and why)
+
+| Item | Status | Reason |
+| --- | --- | --- |
+| C1 per-modal UI rendering | PARTIAL | No automated UI harness asserts the shared `<Field>` inside each of the 6 modals. |
+| C3 / C4 / C8 UI-only behaviour | PARTIAL | The underlying services are tested; the specific rendered controls/columns have **no test: UI**. |
+| C6 web idle lock | PARTIAL | Desktop timer implemented; the web build was not exercised in this environment. |
+| C2 deleting exact test products | NOT DONE | Migration 071 **flags** `is_test=1` only; it never deletes. Deleting inventory requires explicit owner confirmation. |
+| C5 backward duplicate-alert cleanup | NOT DONE | Migration 070 is forward-only; 5 duplicate groups still exist in the real DB and cleanup needs owner sign-off. |
+| Per-route permission model / Inventory Manager role | NOT DONE | `can()` is a three-level rank; a dropdown label alone would be unsafe. |
+| Log rotation / size cap | NOT DONE | Separate task; `activity_log` remains unbounded. |
+| `smoke:web` | NOT RUN | Requires a deployed Cloudflare Worker; nothing was deployed by this run. |
+| Phase 4 sidebar restructure | SKIPPED | Gate ("everything else passed") is still not met because of the PARTIAL items above. |
+
+### Test results — actual output lines (this session)
+
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` | exit **0** |
+| `npm run build` | exit **0** |
+| `npm run test:audit` | **48 passed, 0 failed** — ALL PASSED |
+| `npm run test:holdresume` | **26/26** checks passed |
+| `npm run test:shortcuts` | **22/22** checks passed |
+| `npm run test:licensing` | **55/55** passed |
+| `npm run test:imageupload` | **23/23** checks |
+| `npm run test:dateparse` | **22 passed, 0 failed** — ALL PASSED |
+| `npm run test:dashboardPeriod` | **11 passed, 0 failed** — ALL PASSED |
+| `npm run test:belowCost` | **7 passed, 0 failed** — ALL PASSED |
+| `npm run test:utf8Export` | **2 passed, 0 failed** — ALL PASSED |
+| `npm run test:paymentreconciliation` | **13 passed, 0 failed** — ALL PASSED |
+| `npm run test:promotions` | **11 passed, 0 failed** — ALL PASSED |
+| `npm run test:alerts` | **5 passed, 0 failed** — ALL PASSED |
+| `npm run test:testdata` | **5 passed, 0 failed** — ALL PASSED |
+| `npm run test:invoiceTemplateConfig` | **6 passed, 0 failed** — ALL PASSED |
+| `npm run test:migration071` | **7 passed, 0 failed** — ALL PASSED |
+| `npm run test:migration072` | **6 passed, 0 failed** — ALL PASSED |
+| `npm run test:negstock` | **31/31** checks passed |
+| `npm run test:return` | **29/29** checks passed |
+| `npm run test:receipt` | **68/68** — RESULT: PASS |
+| `npm run test:receiptdesigner` | **73/73** — ALL PASSED |
+| `npm run test:recovery` | **48/48** checks passed |
+| `npm run test:print` | **138/138** — RESULT: PASS |
+| `npm run test:keyboard` | **93/93** — ALL PASSED |
+| `npm run test:recovery:ui` | **26/26** — ALL PASSED |
+| `npm run test:address` | **42/42** — PASS |
+| `npm run test:purchaseimport` | **34/34** — PASS |
+| `node scripts/test_inventoryReports.js` | **12/12** |
+
+No suite reports "0 passed" or a pass while a check failed. The two previously blocked headless suites (`test:keyboard`, `test:recovery:ui`) now pass because their stale "Rokar POS" wait was replaced with the stable login copy and the Branches fixture enables `multi_branch`.
+
+### Migration warning — migrations run automatically on next app start
+
+`initDatabase()` applies every pending `migrations/*.js` at startup. Back up `pos.db` before launching this build.
+
+- **Migration 071** will mark `%Wiring Test Item%` (LIKE, 19 rows) and exact-name `AG0ENT6N` (1 row, id 130) as `is_test=1` in the **real** DB. An `AG0ENT6N` row with history in `sale_items`, `purchase_items`, or `stock_movements` is skipped and logged. **Nothing is deleted.**
+- **Migration 072** will add `settings.max_negative_qty = '0'` if the key is missing; if an old install wrote it to `admin_settings`, that value is adopted and a non-empty `settings` value always wins. Additive and idempotent.
+
+### Owner actions (real DB findings, read-only copy)
+
+1. **Close shifts 53 and 54** — open roughly 2,000 hours.
+2. **Close cash-drawer session id 1** — attached to shift 53, open roughly 1,703 hours.
+3. **Cancel the 12 `in_progress` audits** (or complete them deliberately).
+4. **Review promotion id 52** — past `end_date` and still active; auto-disable runs at startup/daily after this build.
+5. **Review below-cost products** — `juice` (sale 180 < cost 200), `dwan bred` (60 < 70), `dalda ghee` (wholesale 1000 == cost 1000). Cause not proven; likely old override/manual price/wholesale-at-cost.
+6. **Review test-product marking** after first launch. The 20 flagged rows are hidden by default; deletion is a separate, explicit decision.
+7. **Rotate the Gmail app password** — the SMTP secret was masked at the IPC boundary, but the stored value is unchanged.
+8. **Rebuild/reinstall desktop and rebuild/redeploy web** — separate databases; neither was released by this run.
+
+### Closing statement
+
+Everything marked **DONE** above is backed by a permanent test that imports the real `dist` code and passed in this session. Everything UI-only is marked **PARTIAL (no test: UI)** rather than dressed up as verified. No release, version bump, push, deploy, or destructive data operation was performed.
