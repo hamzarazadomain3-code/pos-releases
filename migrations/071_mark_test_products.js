@@ -5,10 +5,12 @@
  * and sets their `is_test` flag to 1, so they are hidden from normal
  * billing, quick sale, reports and alerts while preserving their history.
  *
- * Patterns (case-insensitive):
- *   - %Wiring Test Item%
- *   - INIT-%
- *   - %AG0ENT6N%
+ * Patterns:
+ *   - %Wiring Test Item% (case-insensitive)
+ *   - AG0ENT6N (exact match, case-insensitive)
+ *
+ * Products with history in sale_items, purchase_items, or stock_movements
+ * are NOT marked unless their name matches '%Wiring Test Item%' pattern.
  *
  * This migration is additive and idempotent - it only sets is_test=1
  * and never deletes any data.
@@ -29,32 +31,55 @@ exports.up = async function (db) {
   db.prepare("UPDATE products SET is_test = COALESCE(is_test, 0)").run();
 
   // Define test product patterns
+  // Only %Wiring Test Item% and AG0ENT6N (exact match) are marked
   const patterns = [
-    { pattern: '%Wiring Test Item%', label: 'Wiring Test Item' },
-    { pattern: 'INIT-%', label: 'INIT-' },
-    { pattern: '%AG0ENT6N%', label: 'AG0ENT6N' },
+    { pattern: '%Wiring Test Item%', label: 'Wiring Test Item', checkHistory: false },
+    { pattern: 'AG0ENT6N', label: 'AG0ENT6N', checkHistory: true, exactMatch: true },
   ];
 
   let totalMarked = 0;
 
-  for (const { pattern, label } of patterns) {
-    // Count products matching this pattern that are not already marked
-    const count = db.prepare(`
-      SELECT COUNT(*) as cnt FROM products
-      WHERE name LIKE ? AND COALESCE(is_test, 0) = 0
-    `).get(pattern).cnt;
-
-    if (count > 0) {
-      // Mark them as test products
-      db.prepare(`
-        UPDATE products SET is_test = 1
-        WHERE name LIKE ? AND COALESCE(is_test, 0) = 0
-      `).run(pattern);
-
-      console.log(`[migration 071] Marked ${count} product(s) as is_test=1 (pattern: ${label})`);
-      totalMarked += count;
+  for (const { pattern, label, checkHistory, exactMatch } of patterns) {
+    // Find candidate products
+    let candidates;
+    if (exactMatch) {
+      candidates = db.prepare(`
+        SELECT id, name FROM products
+        WHERE LOWER(name) = LOWER(?) AND COALESCE(is_test, 0) = 0
+      `).all(pattern);
     } else {
+      candidates = db.prepare(`
+        SELECT id, name FROM products
+        WHERE name LIKE ? AND COALESCE(is_test, 0) = 0
+      `).all(pattern);
+    }
+
+    if (candidates.length === 0) {
       console.log(`[migration 071] No products to mark for pattern: ${label}`);
+      continue;
+    }
+
+    for (const product of candidates) {
+      let shouldMark = true;
+
+      if (checkHistory) {
+        // Check if product has history in sale_items, purchase_items, or stock_movements
+        const hasSaleHistory = db.prepare('SELECT 1 FROM sale_items WHERE product_id = ? LIMIT 1').get(product.id);
+        const hasPurchaseHistory = db.prepare('SELECT 1 FROM purchase_items WHERE product_id = ? LIMIT 1').get(product.id);
+        const hasStockHistory = db.prepare('SELECT 1 FROM stock_movements WHERE product_id = ? LIMIT 1').get(product.id);
+        const hasHistory = hasSaleHistory || hasPurchaseHistory || hasStockHistory;
+
+        if (hasHistory) {
+          shouldMark = false;
+          console.log(`[migration 071] SKIP product id=${product.id} name="${product.name}" (has history in sale_items/purchase_items/stock_movements)`);
+        }
+      }
+
+      if (shouldMark) {
+        db.prepare('UPDATE products SET is_test = 1 WHERE id = ?').run(product.id);
+        console.log(`[migration 071] Marked product id=${product.id} name="${product.name}" as is_test=1 (pattern: ${label})`);
+        totalMarked++;
+      }
     }
   }
 

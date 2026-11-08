@@ -20,11 +20,12 @@
 import { getDb } from '../db';
 import { logActivity } from './activity';
 
-/** Approved test-product name patterns (case-insensitive, additive). */
+/** Approved test-product name patterns (case-insensitive, additive).
+ * Only %Wiring Test Item% and exact AG0ENT6N match.
+ * INIT-% and %AG0ENT6N% are NOT included to avoid matching real products. */
 export const TEST_PRODUCT_PATTERNS = [
   '%Wiring Test Item%',
-  'INIT-%',
-  '%AG0ENT6N%',
+  'AG0ENT6N',
 ];
 
 /** Tables that reference `products(id)` through a `product_id` column. */
@@ -100,11 +101,15 @@ function countReferences(db: ReturnType<typeof getDb>, productId: number): numbe
 /**
  * Read-only preview. Matches products by the approved patterns unless they are
  * already flagged `is_test`, which keeps repeated runs idempotent.
+ * Patterns: '%Wiring Test Item%' (LIKE), 'AG0ENT6N' (exact match).
  */
 export function previewTestData(): TestDataPreview {
   const db = getDb();
   const hasIsTest = columnExists(db, 'products', 'is_test');
-  const patternClause = TEST_PRODUCT_PATTERNS.map(() => 'name LIKE ?').join(' OR ');
+  // Build pattern clause: LIKE for Wiring Test Item, = for AG0ENT6N
+  const patternClause = TEST_PRODUCT_PATTERNS.map((p) =>
+    p === 'AG0ENT6N' ? 'name = ?' : 'name LIKE ?'
+  ).join(' OR ');
   const sql = hasIsTest
     ? `SELECT id, name, sku, stock_qty FROM products
        WHERE COALESCE(is_test, 0) = 0 AND (${patternClause})
