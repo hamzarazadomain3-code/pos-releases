@@ -7,12 +7,14 @@
  *   - Applying max_negative_qty cap (from settings)
  *   - Warning toast logic
  *
- * The setting `allow_negative_stock` is stored in admin_settings as:
+ * The setting `allow_negative_stock` is stored in the Shop Profile (`settings`
+ * table) as:
  *   'yes'  = allow negative stock silently
  *   'warn' = allow but warn once per session
  *   'no'   = block sales that would make stock negative
  *
- * The setting `max_negative_qty` (in settings table) caps how negative stock can go.
+ * The setting `max_negative_qty` (same `settings` table, seeded to '0' by
+ * migration 072) caps how negative stock can go.
  *   0 = no cap (unlimited negative)
  *   >0 = max absolute negative value allowed
  */

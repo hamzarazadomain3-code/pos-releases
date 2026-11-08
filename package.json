@@ -34,6 +34,7 @@
     "test:alerts": "npm run build:main && node scripts/test_alerts.cjs",
     "test:testdata": "npm run build:main && node scripts/test_testData.cjs",
     "test:migration071": "npm run build:main && node scripts/test_migration071.cjs",
+    "test:migration072": "npm run build:main && node scripts/test_migration072.cjs",
     "test:invoiceTemplateConfig": "npm run build:main && node scripts/test_invoiceTemplateConfig.cjs",
     "gen:key": "node scripts/gen-support-key.js",
     "build:main": "npm run gen:key && tsc -p tsconfig.main.json",

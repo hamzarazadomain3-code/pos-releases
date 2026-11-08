@@ -230,6 +230,35 @@ async function run() {
   check('stock is -2 after capped sale', near(Number(inventory.getProduct(p4.id).stock_qty), -2));
   settings.setSetting('max_negative_qty', '0');
 
+  // -- 7. max_negative_qty = 0 (or unset) means "no cap" ------------------
+  section('max_negative_qty 0 = no cap');
+  settings.setSetting('allow_negative_stock', 'warn');
+  settings.setSetting('max_negative_qty', '0');
+  const p5 = inventory.createProduct({ name: 'Unlimited Negative Widget', sale_price: 10, cost_price: 5, stock_qty: 0, tax_rate: 0 });
+  const unlimited = throws(() =>
+    sales.createSale({
+      items: [{ product_id: p5.id, qty: 5, price: 10, line_discount: 0, tax_rate: 0 }],
+      payments: [{ mode: 'Cash', amount: 50 }],
+      price_mode: 'retail',
+    })
+  );
+  check('sale of 5 goes through when cap is 0', unlimited === null, unlimited || 'ok');
+  check('stock reaches -5 with no cap', near(Number(inventory.getProduct(p5.id).stock_qty), -5), String(inventory.getProduct(p5.id).stock_qty));
+
+  // An unset key must behave exactly like 0 (pre-migration installs).
+  db.prepare("DELETE FROM settings WHERE key = 'max_negative_qty'").run();
+  const p6 = inventory.createProduct({ name: 'Missing Setting Widget', sale_price: 10, cost_price: 5, stock_qty: 0, tax_rate: 0 });
+  const missing = throws(() =>
+    sales.createSale({
+      items: [{ product_id: p6.id, qty: 3, price: 10, line_discount: 0, tax_rate: 0 }],
+      payments: [{ mode: 'Cash', amount: 30 }],
+      price_mode: 'retail',
+    })
+  );
+  check('missing max_negative_qty behaves as no cap', missing === null, missing || 'ok');
+  check('stock reaches -3 with setting absent', near(Number(inventory.getProduct(p6.id).stock_qty), -3), String(inventory.getProduct(p6.id).stock_qty));
+  settings.setSetting('max_negative_qty', '0');
+
   // ── 6. Hold / resume with an out-of-stock item keeps totals ────────────────
   section('Hold/resume with out-of-stock item');
   const { lineTotals, serializeCartLine, rehydrateCartLines } = require('../dist/shared/cartMath.js');
