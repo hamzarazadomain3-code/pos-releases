@@ -26,6 +26,7 @@
     "test:audit": "npm run build:main && node scripts/test_audit_fixes.js",
     "test:imageupload": "npm run build:main && node scripts/test_image_upload.js",
     "test:dateparse": "npm run build:main && node scripts/test_dateParse.cjs",
+    "test:dashboardPeriod": "npm run build:main && node scripts/test_dashboardPeriod.cjs",
     "test:paymentreconciliation": "npm run build:main && node scripts/test_paymentReconciliation.cjs",
     "test:promotions": "npm run build:main && node scripts/test_promotions.cjs",
     "test:alerts": "npm run build:main && node scripts/test_alerts.cjs",
