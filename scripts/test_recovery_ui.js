@@ -165,13 +165,13 @@ async function goToLoginScreen() {
   await js('window.location.reload()');
   await new Promise((r) => setTimeout(r, 900));
   await ensureHelpers();
-  await waitFor('Rokar POS', 20000);
+  await waitFor('Sign in to continue', 20000);
 }
 
 /** Sign in through the real login form and land inside the app. */
 async function signIn(username, password) {
   await ensureHelpers();
-  await waitFor('Rokar POS');
+  await waitFor('Sign in to continue');
   await js(`window.__t.set(0, ${JSON.stringify(username)})`);
   await js(`window.__t.set(1, ${JSON.stringify(password)})`);
   await js("window.__t.click('Login')");
@@ -226,7 +226,7 @@ async function run() {
 
   // ─────────────────────────────────────────────────────────────────────
   section('Boot + first login');
-  await waitFor('Rokar POS', 15000);
+  await waitFor('Sign in to continue', 15000);
   check('login screen renders', (await js('window.__t.hasLoginBox()')) === true);
   check('"Forgot password?" link is present on the login screen',
     (await js("Array.from(document.querySelectorAll('.lock-box button')).some(b => b.innerText.includes('Forgot password'))")) === true);
@@ -270,7 +270,7 @@ async function run() {
   check('password is reset and the success screen appears', true);
 
   await js("window.__t.click('Back to login')");
-  await waitFor('Rokar POS');
+  await waitFor('Sign in to continue');
   check('login screen returns with the username prefilled',
     (await js("window.__t.inputs()[0].value")) === 'admin',
     await js("window.__t.inputs()[0].value"));

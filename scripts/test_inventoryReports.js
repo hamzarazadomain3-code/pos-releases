@@ -178,8 +178,8 @@ async function main() {
 
   // 8. Alert dedup
   db.prepare(`
-    INSERT INTO alert_log (alert_type, product_id, message, severity, is_read)
-    VALUES ('low_stock', 3, 'test', 'critical', 0)
+    INSERT INTO alert_log (alert_type, product_id, message, severity, is_read, created_at)
+    VALUES ('low_stock', 3, 'test', 'critical', 0, datetime('now', 'localtime'))
   `).run();
   const dup = db.prepare(`
     SELECT 1 FROM alert_log WHERE alert_type = 'low_stock' AND is_read = 0

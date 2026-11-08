@@ -287,12 +287,12 @@ async function goToLoginScreen() {
   await js('window.location.reload()');
   await sleep(1000);
   await ensureHelpers();
-  await waitFor('Rokar POS', 20000);
+  await waitFor('Sign in to continue', 20000);
 }
 
 async function signIn(username, password) {
   await ensureHelpers();
-  await waitFor('Rokar POS');
+  await waitFor('Sign in to continue');
   await js(`window.__t.set(0, ${JSON.stringify(username)})`);
   await js(`window.__t.set(1, ${JSON.stringify(password)})`);
   await js("window.__t.click('Login')");
@@ -356,9 +356,14 @@ async function run() {
 
   // ── Boot + login, then seed the shortcut table and a product ──────────────
   section('Boot + login');
-  await waitFor('Rokar POS', 15000);
+  await waitFor('Sign in to continue', 15000);
   await signIn('admin', 'admin123');
   check('owner signed in', true);
+
+  // The Branches nav is intentionally gated behind the multi_branch feature
+  // toggle (default off). Enable it before the reload below so the nav checks
+  // exercise the real page instead of failing on a hidden menu item.
+  await js("window.api.admin.features.toggle('multi_branch')");
 
   // Seed the default shortcut bindings so Ctrl+F / Ctrl+S resolve, then reload
   // so App.tsx reads the fresh map on mount.
