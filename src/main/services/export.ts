@@ -17,6 +17,16 @@ function csvCell(v: string | number): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+/**
+ * Build a CSV buffer with UTF-8 BOM (EF BB BF).
+ * Pure function - no Electron dependencies, easily testable.
+ */
+export function buildCsvBuffer(headers: string[], rows: (string | number)[][]): Buffer {
+  const lines = [headers.map(csvCell).join(','), ...rows.map((r) => r.map(csvCell).join(','))];
+  const csvString = '\uFEFF' + lines.join('\r\n');
+  return Buffer.from(csvString, 'utf8');
+}
+
 export async function saveCsv(
   win: BrowserWindow | null,
   defaultName: string,
@@ -28,8 +38,8 @@ export async function saveCsv(
     filters: [{ name: 'CSV', extensions: ['csv'] }],
   });
   if (canceled || !filePath) return false;
-  const lines = [headers.map(csvCell).join(','), ...rows.map((r) => r.map(csvCell).join(','))];
-  fs.writeFileSync(filePath, '\uFEFF' + lines.join('\r\n'), 'utf8');
+  const buffer = buildCsvBuffer(headers, rows);
+  fs.writeFileSync(filePath, buffer);
   return true;
 }
 
