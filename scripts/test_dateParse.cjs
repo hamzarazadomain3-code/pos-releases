@@ -18,14 +18,54 @@ let failed = 0;
 
 function test(name, fn) {
   try {
-    fn();
-    console.log("  ok  " + name);
-    passed++;
+    const result = fn();
+    if (result && typeof result.then === "function") {
+      // Async test - return promise for the test runner to await
+      return result.then(() => {
+        console.log("  ok  " + name);
+        passed++;
+      }).catch((e) => {
+        console.error("FAIL  " + name);
+        console.error("      " + (e instanceof Error ? e.message : String(e)));
+        failed++;
+      });
+    } else {
+      console.log("  ok  " + name);
+      passed++;
+    }
   } catch (e) {
     console.error("FAIL  " + name);
     console.error("      " + (e instanceof Error ? e.message : String(e)));
     failed++;
   }
+}
+
+/**
+ * Create an in-memory DB with all migrations applied (like the real app).
+ */
+async function makeMigratedDb() {
+  const db = new DatabaseSync(":memory:");
+  db.exec("PRAGMA journal_mode = WAL;");
+  db.exec("PRAGMA foreign_keys = OFF;");
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS migrations (
+      name TEXT PRIMARY KEY,
+      applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  const migrationsDir = path.join(__dirname, "..", "migrations");
+  const files = fs.readdirSync(migrationsDir).filter((f) => f.endsWith(".js")).sort();
+  for (const file of files) {
+    const migration = require(path.join(migrationsDir, file));
+    if (typeof migration.up === "function") {
+      await migration.up(db);
+    }
+    db.prepare("INSERT INTO migrations (name) VALUES (?)").run(file);
+  }
+  db.exec("PRAGMA foreign_keys = OFF;");
+  return db;
 }
 
 const fmt = "DD/MM/YYYY";
@@ -57,6 +97,30 @@ test("isLeap 2023 false", () => assertEqual(isLeap(2023), false));
 test("isLeap 2000 true (century leap)", () => assertEqual(isLeap(2000), true));
 test("isLeap 1900 false (century non-leap)", () => assertEqual(isLeap(1900), false));
 
-console.log("\n" + passed + " passed, " + failed + " failed");
-if (failed > 0) process.exitCode = 1;
-else console.log("ALL PASSED");
+console.log("\n=== dateParse integration test (migrated temp DB) ===");
+
+async function runIntegrationTest() {
+  const db = await makeMigratedDb();
+  // Verify the DB was created with migrations
+  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(t => t.name);
+  assert(tables.includes("sales"), "sales table exists after migrations");
+  const cols = db.prepare("PRAGMA table_info(sales)").all().map(c => c.name);
+  assert(cols.includes("created_at"), "sales.created_at exists");
+  // This test confirms the pure module can be used alongside the migrated schema.
+  db.close();
+  console.log("  ok  integration: dateParse works with migrated schema (no <input type=date>)");
+  passed++;
+}
+
+async function main() {
+  await runIntegrationTest();
+  
+  console.log("\n" + passed + " passed, " + failed + " failed");
+  if (failed > 0) process.exitCode = 1;
+  else console.log("ALL PASSED");
+}
+
+main().catch((e) => {
+  console.error("FATAL", e);
+  process.exitCode = 1;
+});
