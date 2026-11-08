@@ -716,8 +716,11 @@ export interface BelowCostItemRow {
   stock_qty: number;
   cost_price: number;
   sale_price: number;
-  margin: number;
-  margin_pct: number | null;
+  wholesale_price: number;
+  margin_retail: number;
+  margin_wholesale: number;
+  margin_pct_retail: number | null;
+  margin_pct_wholesale: number | null;
 }
 
 // ============ v1.6.0 Reports ============

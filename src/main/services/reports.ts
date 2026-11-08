@@ -3,6 +3,7 @@ import { getAllSettings } from './settings';
 import { BrowserWindow, dialog } from 'electron';
 import { todayLocal, formatLocalString, daysAgo, toLocalDateString } from '../utils/timezone';
 import { createWriteStream } from 'fs';
+import { reconcilePayments, type SaleRow as ReconciliationSaleRow } from '../../shared/paymentReconciliation';
 import type {
   SalesAnalysisResult,
   ProductPerformanceResult,
@@ -331,17 +332,22 @@ export function listBelowCostProducts(): BelowCostItemRow[] {
             p.stock_qty,
             COALESCE(p.cost_price,0) AS cost_price,
             p.sale_price,
-            ROUND(p.sale_price - COALESCE(p.cost_price,0), 4) AS margin,
+            COALESCE(p.wholesale_price,0) AS wholesale_price,
+            ROUND(p.sale_price - COALESCE(p.cost_price,0), 4) AS margin_retail,
+            ROUND(p.wholesale_price - COALESCE(p.cost_price,0), 4) AS margin_wholesale,
             CASE WHEN COALESCE(p.cost_price,0) > 0
                  THEN ROUND((p.sale_price - p.cost_price) * 100.0 / p.cost_price, 2)
-                 ELSE NULL END AS margin_pct
+                 ELSE NULL END AS margin_pct_retail,
+            CASE WHEN COALESCE(p.cost_price,0) > 0
+                 THEN ROUND((p.wholesale_price - p.cost_price) * 100.0 / p.cost_price, 2)
+                 ELSE NULL END AS margin_pct_wholesale
        FROM products p
        LEFT JOIN categories c ON c.id = p.category_id
       WHERE p.active = 1
         AND COALESCE(p.is_test,0) = 0
         AND COALESCE(p.cost_price,0) > 0
-        AND p.sale_price <= p.cost_price
-      ORDER BY margin ASC, p.name`
+        AND (p.sale_price <= p.cost_price OR (p.wholesale_price > 0 AND p.wholesale_price <= p.cost_price))
+      ORDER BY margin_retail ASC, margin_wholesale ASC, p.name`
   );
 }
 
@@ -518,52 +524,7 @@ function pct(num: number, denom: number): number {
 interface PaymentRow { mode: string; amount: number; }
 interface SaleRow { id: number; net_total: number; payments: PaymentRow[]; }
 
-/**
- * Pure payment reconciliation helper.
- * For each completed sale:
- *   net = total_amount - returned_amount
- *   tendered = sum(payments)
- *   given = max(0, tendered - net)  // change given + cash refunds against this sale
- *   Allocate given to cash first, then other modes by descending tendered amount.
- *   collected_per_mode = tendered_mode - allocated_given
- * Returns { breakdown: Map<mode, collected>, remainder: total_sales - sum(collected) }
- * remainder >= 0 always; if > 0.005, it's a real unpaid amount (credit not recorded as payment).
- */
-function reconcilePayments(sales: SaleRow[]): { breakdown: Map<string, number>; remainder: number } {
-  const collectedByMode = new Map<string, number>();
-  let totalCollected = 0;
-  let totalSales = 0;
 
-  for (const sale of sales) {
-    totalSales += sale.net_total;
-    const tenderedByMode = new Map<string, number>();
-    let tendered = 0;
-    for (const p of sale.payments) {
-      tendered += p.amount;
-      tenderedByMode.set(p.mode, (tenderedByMode.get(p.mode) || 0) + p.amount);
-    }
-    const given = Math.max(0, tendered - sale.net_total);
-
-    // Allocate given: cash first, then other modes by descending amount
-    const modesByAmount = Array.from(tenderedByMode.entries()).sort((a, b) => {
-      const cashFirst = a[0] === 'Cash' ? -1 : (b[0] === 'Cash' ? 1 : 0);
-      return cashFirst || b[1] - a[1];
-    });
-
-    let remainingGiven = given;
-    for (const [mode, amt] of modesByAmount) {
-      const alloc = Math.min(amt, remainingGiven);
-      const collected = amt - alloc;
-      collectedByMode.set(mode, (collectedByMode.get(mode) || 0) + collected);
-      totalCollected += collected;
-      remainingGiven -= alloc;
-      if (remainingGiven <= 0.0001) break;
-    }
-  }
-
-  const remainder = totalSales - totalCollected;
-  return { breakdown: collectedByMode, remainder };
-}
 
 // 1) SALES ANALYSIS
 export function getSalesAnalysis(from?: string, to?: string): SalesAnalysisResult {

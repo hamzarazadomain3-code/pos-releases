@@ -996,8 +996,7 @@ export default function Reports() {
             </div>
           )}
 
-          {/* Loss-makers: sale price at or below cost */}
-          {invSubTab === 'belowCost' && (
+          {/* Loss-makers: sale price at or below cost */}          {invSubTab === 'belowCost' && (
             <div>
               <div className="panel">
                 <div className="panel-title">Products Selling Below Cost</div>
@@ -1014,8 +1013,11 @@ export default function Reports() {
                           <th className="num">Stock</th>
                           <th className="num">Cost</th>
                           <th className="num">Sale Price</th>
-                          <th className="num">Margin / Unit</th>
-                          <th className="num">Margin %</th>
+                          <th className="num">Wholesale</th>
+                          <th className="num">Margin (Retail)</th>
+                          <th className="num">Margin % (Retail)</th>
+                          <th className="num">Margin (Wholesale)</th>
+                          <th className="num">Margin % (Wholesale)</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1027,11 +1029,18 @@ export default function Reports() {
                             <td className="num">{fmt(r.stock_qty)}</td>
                             <td className="num">{fmt(r.cost_price)}</td>
                             <td className="num">{fmt(r.sale_price)}</td>
+                            <td className="num">{fmt(r.wholesale_price)}</td>
                             <td className="num" style={{ color: 'var(--danger)', fontWeight: 700 }}>
-                              {fmt(r.margin)}
+                              {fmt(r.margin_retail)}
                             </td>
                             <td className="num" style={{ color: 'var(--danger)' }}>
-                              {r.margin_pct === null ? '-' : `${fmt(r.margin_pct)}%`}
+                              {r.margin_pct_retail === null ? '-' : `${fmt(r.margin_pct_retail)}%`}
+                            </td>
+                            <td className="num" style={{ color: 'var(--danger)', fontWeight: 700 }}>
+                              {fmt(r.margin_wholesale)}
+                            </td>
+                            <td className="num" style={{ color: 'var(--danger)' }}>
+                              {r.margin_pct_wholesale === null ? '-' : `${fmt(r.margin_pct_wholesale)}%`}
                             </td>
                           </tr>
                         ))}
@@ -1045,7 +1054,7 @@ export default function Reports() {
                     data={belowCostItems}
                     xlsx={{
                       name: 'below-cost-items',
-                      headers: ['Product', 'SKU', 'Category', 'Stock', 'Cost', 'Sale Price', 'Margin / Unit', 'Margin %'],
+                      headers: ['Product', 'SKU', 'Category', 'Stock', 'Cost', 'Sale Price', 'Wholesale', 'Margin (Retail)', 'Margin % (Retail)', 'Margin (Wholesale)', 'Margin % (Wholesale)'],
                       rows: belowCostItems.map((r) => [
                         r.name,
                         r.sku || '',
@@ -1053,8 +1062,11 @@ export default function Reports() {
                         r.stock_qty,
                         r.cost_price,
                         r.sale_price,
-                        r.margin,
-                        r.margin_pct ?? '',
+                        r.wholesale_price,
+                        r.margin_retail,
+                        r.margin_pct_retail ?? '',
+                        r.margin_wholesale,
+                        r.margin_pct_wholesale ?? '',
                       ]),
                     }}
                   />

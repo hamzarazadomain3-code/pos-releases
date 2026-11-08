@@ -5,6 +5,7 @@ import { formatMoney } from '../utils/currency';
 import { useBarcodeScan } from '../hooks/useBarcodeScan';
 import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
+import { parseNegativeStockPolicy, checkNegativeStock, type NegativeStockPolicy } from '@shared/negativeStock';
 
 interface CartItem {
   product_id: number;
@@ -32,6 +33,7 @@ export default function QuickSaleGrid() {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
   const [success, setSuccess] = useState('');
+  const [allowNegativeStock, setAllowNegativeStock] = useState<NegativeStockPolicy>('warn');
   const [pendingQty, setPendingQty] = useState(1);
   const [qtyDialog, setQtyDialog] = useState<Product | null>(null);
   const [qtyDialogValue, setQtyDialogValue] = useState('1');
@@ -48,15 +50,22 @@ export default function QuickSaleGrid() {
   const [searchSelIdx, setSearchSelIdx] = useState(-1);
   const [searchQty, setSearchQty] = useState('1');
 
+  const [maxNegativeQty, setMaxNegativeQty] = useState(0);
+
   useEffect(() => {
     Promise.all([
       window.api.inventory.list(),
       window.api.inventory.categories(),
       window.api.customers.list(),
-    ]).then(([prods, cats, custs]) => {
+      window.api.settings.getAll(),
+    ]).then(([prods, cats, custs, settings]) => {
       setProducts(prods);
       setCategories(cats);
       setCustomers(custs);
+      const v = settings?.['allow_negative_stock'];
+      setAllowNegativeStock(parseNegativeStockPolicy(v));
+      const maxNeg = Number(settings?.['max_negative_qty'] ?? 0);
+      setMaxNegativeQty(Number.isFinite(maxNeg) ? maxNeg : 0);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
@@ -179,6 +188,22 @@ export default function QuickSaleGrid() {
 
   const handleCheckout = async () => {
     if (cart.length === 0) { setErr('Cart is empty'); return; }
+    
+    // Check negative stock policy before creating sale
+    for (const item of cart) {
+      const product = products.find((p) => p.id === item.product_id);
+      if (product) {
+        const result = checkNegativeStock(product, item.qty, allowNegativeStock, maxNegativeQty);
+        if (!result.allowed) {
+          setErr(result.warning ?? 'Cannot complete sale: stock would go negative');
+          return;
+        }
+        if (result.warning) {
+          setErr(`⚠ ${result.warning}. Sale will still be saved.`);
+        }
+      }
+    }
+
     setSaving(true);
     setErr(''); setSuccess('');
 
