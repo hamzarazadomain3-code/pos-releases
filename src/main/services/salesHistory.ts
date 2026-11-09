@@ -310,12 +310,23 @@ export function historyOpenHeldCount(): number {
 export function historySummary(filters: HistoryFilters = {}): HistorySummary {
   const db = getDb();
   const { sql, params } = buildWhere(filters);
+  // Join sales to get status and returned_amount.
+  // Only 'completed' sales contribute to salesTotal (voided sales are excluded;
+  // their cancellation is represented by the 'void' event).
+  // For completed sales, use (total_amount - returned_amount) so salesTotal
+  // matches Dashboard's today_sales (which already subtracts legacy returns).
   const rows = db
     .prepare(
-      `SELECT e.event_type, COALESCE(e.amount,0) AS amount, COALESCE((
-          SELECT SUM(p.amount) FROM payments p
-          WHERE p.sale_id = e.sale_id AND lower(p.mode) = 'cash'
-        ), 0) AS cash_amount
+      `SELECT e.event_type,
+              COALESCE(e.amount,0) AS amount,
+              COALESCE((
+                SELECT SUM(p.amount) FROM payments p
+                WHERE p.sale_id = e.sale_id AND lower(p.mode) = 'cash'
+              ), 0) AS cash_amount,
+              s.status AS sale_status,
+              COALESCE(s.total_amount,0) AS sale_total,
+              COALESCE(s.returned_amount,0) AS sale_returned,
+              e.snapshot_json
        FROM sale_events e
        LEFT JOIN sales s ON s.id = e.sale_id
        LEFT JOIN customers c ON c.id = s.customer_id
@@ -326,6 +337,10 @@ export function historySummary(filters: HistoryFilters = {}): HistorySummary {
     event_type: HistoryEventType;
     amount: number;
     cash_amount: number;
+    sale_status: string | null;
+    sale_total: number;
+    sale_returned: number;
+    snapshot_json: string | null;
   }[];
 
   const s: HistorySummary = {
@@ -352,15 +367,42 @@ export function historySummary(filters: HistoryFilters = {}): HistorySummary {
   for (const r of rows) {
     const amount = Number(r.amount) || 0;
     switch (r.event_type) {
-      case 'sale':
-        s.salesCount++;
-        s.salesTotal += amount;
-        s.cashTotal += Number(r.cash_amount) || 0;
+      case 'sale': {
+        // Only count sales that are still 'completed'.
+        // Voided sales have a separate 'void' event; their sale event is excluded.
+        // For completed sales, use (total_amount - returned_amount) to match Dashboard.
+        if (r.sale_status === 'completed') {
+          const netAmount = Number(r.sale_total) - Number(r.sale_returned);
+          s.salesCount++;
+          s.salesTotal += netAmount;
+          s.cashTotal += Number(r.cash_amount) || 0;
+        }
+        // If sale_status is null (historical sale before events table), include it.
+        else if (r.sale_status === null) {
+          s.salesCount++;
+          s.salesTotal += amount;
+          s.cashTotal += Number(r.cash_amount) || 0;
+        }
+        // voided/returned sales: skip the sale event; void/return events handle it.
         break;
-      case 'return':
-        s.returnsCount++;
-        s.returnsTotal += Math.abs(amount);
+      }
+case 'return': {
+        // Skip legacy/backfilled returns: they are already reflected in
+        // sales.returned_amount (which is subtracted from salesTotal above).
+        // Only count NEW runtime returns to avoid double-subtraction.
+        let isLegacy = false;
+        if (r.snapshot_json) {
+          try {
+            const snap = JSON.parse(r.snapshot_json);
+            if (snap.source === 'backfill') isLegacy = true;
+          } catch { /* ignore */ }
+        }
+        if (!isLegacy) {
+          s.returnsCount++;
+          s.returnsTotal += Math.abs(amount);
+        }
         break;
+      }
       case 'cash_refund':
         s.cashRefundsCount++;
         s.cashRefundsTotal += Math.abs(amount);
@@ -394,7 +436,9 @@ export function historySummary(filters: HistoryFilters = {}): HistorySummary {
   s.deletesTotal = roundMoney(s.deletesTotal);
   s.cashTotal = roundMoney(s.cashTotal);
   s.nonCashTotal = roundMoney(s.salesTotal - s.cashTotal);
+  // netSales = completed sales (net of legacy returns) - timeline returns - cash refunds
   s.netSales = roundMoney(s.salesTotal - s.returnsTotal - s.cashRefundsTotal);
+  // cancelledValue = voids + deletes (never subtracted from netSales)
   s.cancelledValue = roundMoney(s.voidsTotal + s.deletesTotal);
   return s;
 }

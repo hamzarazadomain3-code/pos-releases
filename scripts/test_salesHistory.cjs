@@ -212,6 +212,107 @@ async function main() {
     assert(threw, "voidSale must require a reason");
   });
 
+  // ── void summary: sale today voided today -> salesTotal excludes it ───────
+  await test("sale voided same day: salesTotal excludes voided sale", () => {
+    // Create a sale for TODAY (using current business date)
+    const today = shared.currentBusinessDate(0);
+    const todayIso = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO sales (id, invoice_no, customer_id, user_id, shift_id, subtotal, tax_amount, discount_amount, total_amount, status, created_at)
+       VALUES (20, 'INV-VOID-TODAY', NULL, 1, 1, 200, 0, 0, 200, 'completed', ?)`
+    ).run(todayIso);
+    db.prepare(
+      "INSERT INTO sale_items (sale_id, product_id, qty, unit_price, discount, tax_rate, line_total) VALUES (20, 1, 2, 100, 0, 0, 200)"
+    ).run();
+    db.prepare("INSERT INTO payments (sale_id, mode, amount) VALUES (20, 'Cash', 200)").run();
+    history.recordSaleEvent({
+      event_type: "sale",
+      sale_id: 20,
+      invoice_no: "INV-VOID-TODAY",
+      user_id: 1,
+      amount: 200,
+      snapshot: { state: "completed", total: 200 },
+      created_at: todayIso,
+    });
+
+    const beforeSummary = history.historySummary({ from: today, to: today });
+    // Sale 11 (100) + Sale 20 (200) = 2 completed sales, 300 total
+    assertEqual(beforeSummary.salesCount, 2, "two completed sales before void (11 + 20)");
+    closeTo(beforeSummary.salesTotal, 300, "salesTotal 300 before void");
+
+    sales.voidSale(20, "customer changed mind");
+
+    const afterSummary = history.historySummary({ from: today, to: today });
+    // After void: only Sale 11 (100) remains completed
+    assertEqual(afterSummary.salesCount, 1, "only one completed sale after void");
+    closeTo(afterSummary.salesTotal, 100, "salesTotal 100 after void (only sale 11)");
+    // Two void events in today's range: sale 10 (voided earlier) + sale 20 (just voided)
+    assertEqual(afterSummary.voidsCount, 2, "two void events in today's range");
+    closeTo(afterSummary.voidsTotal, 300, "voidsTotal 300 (100 + 200)");
+    closeTo(afterSummary.netSales, 100, "netSales equals remaining completed sale");
+    closeTo(afterSummary.cancelledValue, 300, "cancelledValue equals both voided amounts");
+  });
+
+  // ── void summary: sale yesterday voided today -> yesterday unchanged ──────
+  await test("sale voided next day: previous day summary unchanged", () => {
+    const yesterday = shared.currentBusinessDate(0);
+    // We can't easily test "yesterday" without knowing the exact date, so we use a fixed old date
+    // and verify that voiding it today doesn't affect the old date's summary.
+    const oldDate = "2020-01-01";
+    const oldFilters = { from: oldDate, to: oldDate };
+
+    const beforeOld = history.historySummary(oldFilters);
+    // Sale 10 is from 2020-01-01 and was already voided in the earlier test
+    // So salesCount should be 0 for that day (sale 10 was voided)
+    // The void event for sale 10 is TODAY, not in the old date range, so voidsCount = 0
+    assertEqual(beforeOld.salesCount, 0, "no completed sales on old date");
+    assertEqual(beforeOld.voidsCount, 0, "void event is today, not in old date range");
+
+    // Create a NEW sale on the old date (simulating a historical sale)
+    db.prepare(
+      `INSERT INTO sales (id, invoice_no, customer_id, user_id, shift_id, subtotal, tax_amount, discount_amount, total_amount, status, created_at)
+       VALUES (30, 'INV-OLD-NEW', NULL, 1, 1, 500, 0, 0, 500, 'completed', '2020-01-01T05:00:00.000Z')`
+    ).run();
+    db.prepare(
+      "INSERT INTO sale_items (sale_id, product_id, qty, unit_price, discount, tax_rate, line_total) VALUES (30, 1, 5, 100, 0, 0, 500)"
+    ).run();
+    db.prepare("INSERT INTO payments (sale_id, mode, amount) VALUES (30, 'Cash', 500)").run();
+    history.recordSaleEvent({
+      event_type: "sale",
+      sale_id: 30,
+      invoice_no: "INV-OLD-NEW",
+      user_id: 1,
+      amount: 500,
+      snapshot: { state: "completed", total: 500 },
+      created_at: "2020-01-01T05:00:00.000Z",
+    });
+
+    const afterInsert = history.historySummary(oldFilters);
+    assertEqual(afterInsert.salesCount, 1, "one completed sale on old date after insert");
+    closeTo(afterInsert.salesTotal, 500, "salesTotal 500 on old date");
+    assertEqual(afterInsert.voidsCount, 0, "void count still 0 (void is today)");
+
+    // Now void sale 30 (using current session, but sale date is old)
+    sales.voidSale(30, "historical void");
+
+    const afterVoid = history.historySummary(oldFilters);
+    // The sale event for 30 is on 2020-01-01, the void event is NOW (today)
+    // So the old date summary should still show the sale (since void is today)
+    // With Rule B (current-state): voiding sale 30 updates the sales table
+    // status to 'voided', so the old date summary now excludes the sale.
+    // The void event is today, not in the old date range.
+    assertEqual(afterVoid.salesCount, 0, "old date sale excluded after void (Rule B)");
+    closeTo(afterVoid.salesTotal, 0, "old date salesTotal 0 after void");
+    assertEqual(afterVoid.voidsCount, 0, "old date voids unchanged (void is today)");
+
+    // Today's summary should now have the void
+    const today = shared.currentBusinessDate(0);
+    const todayVoid = history.historySummary({ from: today, to: today });
+    // Today has voids for sale 10, sale 20, and sale 30
+    assertEqual(todayVoid.voidsCount, 3, "today has three voids (sale 10, 20, 30)");
+    closeTo(todayVoid.voidsTotal, 800, "today voidsTotal includes all three voids (100+200+500)");
+  });
+
   // ── return + cash refund: negative rows ─────────────────────────────────
   const ret = returns.createReturnBill({
     items: [{ product_id: 1, qty: 1, unit_price: 30 }],
