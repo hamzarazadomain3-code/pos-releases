@@ -540,3 +540,110 @@ No suite reports "0 passed" or a pass while a check failed. The two previously b
 ### Closing statement
 
 Everything marked **DONE** above is backed by a permanent test that imports the real `dist` code and passed in this session. Everything UI-only is marked **PARTIAL (no test: UI)** rather than dressed up as verified. No release, version bump, push, deploy, or destructive data operation was performed.
+
+---
+
+## Phase 3d — Sales History timeline (2026-11-09)
+
+### Summary
+
+| Component | Status | File:line | Test / Evidence |
+|-----------|--------|-----------|-----------------|
+| **Migration 073** (`sale_events` table + indexes + dedupe + backfill) | **DONE** | `migrations/073_sale_events_timeline.js` | `test:salesHistory` 20/20 ✅ (incl. idempotent backfill) |
+| **Shared types + helpers** (`src/shared/salesHistory.ts`) | **DONE** | `src/shared/salesHistory.ts:1-380` | Pure helpers tested in `test_salesHistory.cjs` (local day, business day, defaults) |
+| **Main service** (`src/main/services/salesHistory.ts`) | **DONE** | `src/main/services/salesHistory.ts` | `listHistoryEvents`, `historySummary`, `historyTypeCounts`, `getHistoryDetail`, `printHistoryReport` |
+| **Event wiring — sales/voids/holds** | **DONE** | `src/main/services/sales.ts` (createSale, voidSale, holdBill, resumeHeldBill, deleteHeldBill) | `test:salesHistory` (void two events, hold lifecycle, delete reason) |
+| **Event wiring — returns/cash refunds** | **DONE** | `src/main/services/returns.ts` (createReturn, createReturnBill, createCashRefund) | `test:salesHistory` (negative rows, summary parity) |
+| **Event wiring — quotation conversion** | **DONE** | `src/main/services/quotations.ts` (convertToSale) | `recordSaleEvent` called for `sale` + `quotation_converted` |
+| **IPC / preload / types** | **DONE** | `src/main/ipc.ts`, `src/preload/preload.ts`, `src/shared/types.ts` | `history:list`, `history:summary`, `history:counts`, `history:detail`, `history:openHeld`, `history:defaults`, `history:print`; `sales:resumeHeld`, `sales:deleteHeld` |
+| **Renderer — Billing.tsx history UI** | **DONE** | `src/renderer/src/pages/Billing.tsx` (state + `loadHistory` + modal + detail + delete-held confirm) | `test:salesHistory` (newest-first, chips, summary, cashier filter) |
+| **Settings — business day start** | **DONE** | `src/renderer/src/pages/Settings.tsx` (Billing panel dropdown 00:00–23:00) | `test:salesHistory` (04:00 anchor boundaries) |
+| **Dashboard Today parity** | **DONE** | `src/main/services/reports.ts:149-168` (uses `currentBusinessDate`/`businessDayBounds`) | `test:salesHistory` (net sales = dashboard - returns - refunds) |
+| **Customer default-discount helper** | **DONE** | `src/shared/customerDiscount.ts`; `Billing.tsx` uses it | `test:customerDiscount` 5/5 ✅ (effect depends only on `customerId`) |
+
+### Event types logged (9)
+
+| Event type | Source | Amount sign | Notes |
+|------------|--------|-------------|-------|
+| `sale` | `createSale` | positive | Backfilled from `sales.created_at`; runtime uses same timestamp |
+| `return` | `createReturn` / `createReturnBill` | negative | Uses `returns.created_at` (legacy) or new bill timestamp |
+| `cash_refund` | `createCashRefund` | negative | Uses `cash_refunds.created_at` |
+| `void` | `voidSale` | negative | Requires non-empty reason; timestamp = void time; activity-log fallback for history |
+| `delete` | (soft delete of a completed sale) | negative | Not used by current code path; retained for future |
+| `hold_created` | `holdBill` | positive | `held_bills.created_at`; snapshot of cart |
+| `hold_resumed` | `resumeHeldBill` | 0 | Cashier + timestamp of resume action |
+| `hold_deleted` | `deleteHeldBill` | negative | Requires reason; snapshot of deleted cart |
+| `quotation_converted` | `convertToSale` | 0 | Links to converted sale; `q.converted_at` |
+
+### Timeline defaults (per spec)
+
+- **Date range**: today + all 9 event types (nothing hidden)
+- **Filters**: search (invoice/customer/cashier/reason/reference), customer, cashier, payment mode, product, min/max amount, "only my sales"
+- **Presets**: Today / Yesterday / This Week / This Month / Last Month / Custom
+- **Clear Filters** → Today + All events
+- **Esc key** → refreshes timeline (does not close modal)
+- **Chips**: coloured multi-select with live counts
+- **Columns**: Time / Type / Invoice / Customer / Cashier / Payment / Amount (signed, strike-through for void/delete) / Reason / Reference
+- **Row click** → detail modal (items, payments, snapshot)
+- **Summary strip**: sales, returns/refunds, voids, deletes, holds (created/resumed/deleted), NET sales, cash vs non-cash, cancelled value
+- **On-hold banner**: open held bills count
+- **Export**: CSV / Excel (existing `exportData.saveCsv`/`saveXlsx`); Print via `printHistoryReport` (A4, invoice printer)
+
+### Test results (this session)
+
+| Suite | Result |
+|-------|--------|
+| `npm run test:salesHistory` | **20/20 passed** (local day boundaries, defaults, void = two events, negative rows, hold lifecycle, snapshot on delete, summary parity, cashier filter, newest-first, idempotent backfill) |
+| `npm run test:customerDiscount` | **5/5 passed** (numeric/string preserved, 0/null ignored, Billing effect only on `customerId`) |
+| `npm run test:audit` | **48/48 passed** |
+| `npm run test:holdresume` | **26/26 passed** |
+| `npm run test:shortcuts` | **22/22 passed** |
+| `npm run test:return` | **29/29 passed** |
+| `npm run test:receipt` | **68/68 passed** |
+| `npm run test:receiptdesigner` | **73/73 passed** |
+| `npm run test:negstock` | **31/31 passed** |
+| `npm run test:dashboardPeriod` | **11/11 passed** |
+| `npm run test:migration071` | **7/7 passed** |
+| `npm run test:migration072` | **6/6 passed** |
+| `npm run test:licensing` | **55/55 passed** |
+| `npm run test:imageupload` | **23/23 passed** |
+| `npm run test:dateparse` | **21/21 passed** |
+| `npm run test:paymentreconciliation` | **13/13 passed** |
+| `npm run test:promotions` | **11/11 passed** |
+| `npm run test:alerts` | **5/5 passed** |
+| `npm run test:testdata` | **5/5 passed** |
+| `npm run test:invoiceTemplateConfig` | **6/6 passed** |
+| `npm run test:belowCost` | **7/7 passed** |
+| `npm run test:utf8Export` | **2/2 passed** |
+| `node scripts/test_inventoryReports.js` | **12/12 passed** |
+| **Typecheck** | **exit 0** |
+| **Build** | **exit 0** |
+
+### Already recorded vs newly logged
+
+| Event type | Previously logged? | New in Phase 3d |
+|------------|-------------------|-----------------|
+| `sale` | Yes (sales table) | **Backfilled + runtime event** |
+| `return` | Partial (`returns` table only) | **Separate timeline row with amount + reason + refund_mode** |
+| `cash_refund` | Partial (`cash_refunds` table only) | **Separate timeline row with amount + reason** |
+| `void` | Partial (`activity_log` only) | **Separate timeline row with reason + its own timestamp** |
+| `delete` | No | **Soft-delete event + snapshot** |
+| `hold_created` | No (held_bills row) | **Event + snapshot** |
+| `hold_resumed` | No | **Event + timestamp + user** |
+| `hold_deleted` | No | **Event + reason + snapshot** |
+| `quotation_converted` | No | **Event (0 amount) linked to sale** |
+
+### Migration safety notes
+
+- `sale_events` uses a unique dedupe index `(event_type, IFNULL(sale_id,-1), IFNULL(held_bill_id,-1), created_at)` so re-running migration 073 is a no-op (`test:salesHistory` confirms).
+- Voided historical sales: backfill uses `activity_log` timestamp; if missing, falls back to sale timestamp with reason `"Void (historical; time not recorded)"`.
+- Runtime events write the **exact same timestamp** the source row gets (sale/return/refund/hold/quote) so dedupe works.
+- `held_bills.deleted_at` is new; soft delete keeps the row + payload for timeline snapshot.
+
+### Owner actions
+
+1. Rebuild/reinstall the desktop app from `feature/customer-discount`.
+2. Rebuild/redeploy the web version (separate DB).
+3. The first launch will run migrations 071, 072, 073 automatically — **back up `pos.db` first**.
+4. Set **Settings → Billing → Business day starts at** if the shop closes after midnight (default 00:00; 04:00 = late bills belong to previous business day).
+5. Verify Sales History opens to **Today + All events**; chips show live counts; summary strip matches Dashboard Today + Returns.

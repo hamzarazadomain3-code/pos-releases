@@ -10,6 +10,18 @@ import { eventCombo, keyFromEvent, matchesShortcut } from '../utils/shortcutKeys
 import { type CartLine, lineTotals, rehydrateCartLines, serializeCartLine, summarizeHeldBill, type HeldBillSummary } from '@shared/cartMath';
 import { defaultCombo, hintRows, isActionAllowedOn, resolveCombo } from '@shared/shortcuts';
 import { parseNegativeStockPolicy, checkNegativeStock, type NegativeStockPolicy } from '@shared/negativeStock';
+import { defaultBillDiscount } from '@shared/customerDiscount';
+import {
+  HISTORY_EVENT_CLASSES,
+  HISTORY_EVENT_LABELS,
+  HISTORY_EVENT_TYPES,
+  type HistoryDetail,
+  type HistoryEventRow,
+  type HistoryEventType,
+  type HistoryFilters,
+  type HistorySummary,
+  type HistoryTypeCount,
+} from '@shared/salesHistory';
 import type {
   Category,
   Customer,
@@ -71,6 +83,69 @@ const RETURN_REASONS = [
   'Expired',
   'Other',
 ];
+/** Renderer-side form state; converted to the shared HistoryFilters for IPC. */
+interface HistoryUiFilters {
+  from: string;
+  to: string;
+  types: HistoryEventType[];
+  search: string;
+  customer: string;
+  userId: string;
+  paymentMode: string;
+  product: string;
+  minAmount: string;
+  maxAmount: string;
+  onlyMySales: boolean;
+}
+
+function emptyHistoryUiFilters(): HistoryUiFilters {
+  return {
+    from: '',
+    to: '',
+    types: [...HISTORY_EVENT_TYPES],
+    search: '',
+    customer: '',
+    userId: '',
+    paymentMode: '',
+    product: '',
+    minAmount: '',
+    maxAmount: '',
+    onlyMySales: false,
+  };
+}
+
+function historyUiFromService(f: HistoryFilters): HistoryUiFilters {
+  return {
+    from: f.from ?? '',
+    to: f.to ?? '',
+    types: f.types && f.types.length ? f.types : [...HISTORY_EVENT_TYPES],
+    search: f.search ?? '',
+    customer: f.customer ?? '',
+    userId: f.userId != null ? String(f.userId) : '',
+    paymentMode: f.paymentMode ?? '',
+    product: f.product ?? '',
+    minAmount: f.minAmount != null ? String(f.minAmount) : '',
+    maxAmount: f.maxAmount != null ? String(f.maxAmount) : '',
+    onlyMySales: !!f.onlyMySales,
+  };
+}
+
+function historyUiToService(f: HistoryUiFilters): HistoryFilters {
+  return {
+    from: f.from || undefined,
+    to: f.to || undefined,
+    types: f.types,
+    search: f.search || undefined,
+    customer: f.customer || undefined,
+    userId: f.userId ? Number(f.userId) : null,
+    paymentMode: f.paymentMode || undefined,
+    product: f.product || undefined,
+    minAmount: f.minAmount ? Number(f.minAmount) : null,
+    maxAmount: f.maxAmount ? Number(f.maxAmount) : null,
+    onlyMySales: f.onlyMySales,
+  };
+}
+
 const RETURN_REFUND_MODES = [
   { value: 'cash', label: 'Cash' },
   { value: 'card', label: 'Card' },
@@ -125,42 +200,23 @@ export default function Billing({ onNavigate, onLogout }: BillingProps) {
   const [returnNote, setReturnNote] = useState('');
   const [returnBusy, setReturnBusy] = useState(false);
   const returnConfirmBtnRef = useRef<HTMLButtonElement>(null);
-  const [history, setHistory] = useState<Sale[] | null>(null);
-  const [historyFilter, setHistoryFilter] = useState<'completed' | 'voided' | 'held'>('completed');
+  /** `null` = modal closed. An empty array = open with "No activity today yet". */
+  const [history, setHistory] = useState<HistoryEventRow[] | null>(null);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historySummary, setHistorySummary] = useState<HistorySummary | null>(null);
+  const [historyCounts, setHistoryCounts] = useState<HistoryTypeCount[]>([]);
+  const [historyOpenHolds, setHistoryOpenHolds] = useState(0);
+  const [historyDetail, setHistoryDetail] = useState<HistoryDetail | null>(null);
+  const [holdDeleteTarget, setHoldDeleteTarget] = useState<HeldBill | null>(null);
+  const [holdDeleteReason, setHoldDeleteReason] = useState('');
   const [voidReason, setVoidReason] = useState('');
   const [voidTarget, setVoidTarget] = useState<Sale | null>(null);
   const [ctrlSPressTime, setCtrlSPressTime] = useState<number>(0);
   const [promoMap, setPromoMap] = useState<Record<number, ResolvedPromotion>>({});
-  const [historyFilters, setHistoryFilters] = useState<{
-    from: string;
-    to: string;
-    saleNo: string;
-    customerId: string;
-    userId: string;
-    paymentMode: string;
-    productId: string;
-    minAmount: string;
-    maxAmount: string;
-    sortBy: 'date' | 'amount' | 'saleNo';
-    sortOrder: 'asc' | 'desc';
-    onlyMySales: boolean;
-    status: 'completed' | 'voided' | 'held' | 'returned' | 'all';
-  }>({
-    from: '',
-    to: '',
-    saleNo: '',
-    customerId: '',
-    userId: '',
-    paymentMode: '',
-    productId: '',
-    minAmount: '',
-    maxAmount: '',
-    sortBy: 'date',
-    sortOrder: 'desc',
-    onlyMySales: false,
-    status: 'completed',
-  });
-  const [datePreset, setDatePreset] = useState<'today' | 'yesterday' | 'week' | 'month' | 'lastmonth' | 'custom'>('month');
+  const [historyFilters, setHistoryFilters] = useState<HistoryUiFilters>(emptyHistoryUiFilters());
+  const [datePreset, setDatePreset] = useState<'today' | 'yesterday' | 'week' | 'month' | 'lastmonth' | 'custom'>('today');
   const [cashiers, setCashiers] = useState<UserRow[]>([]);
   const [saleDetail, setSaleDetail] = useState<SaleDetail | null>(null);
   const [paymentModes] = useState(['Cash', 'Card', 'Udhaar', 'Wholesale']);
@@ -1478,11 +1534,13 @@ useEffect(() => {
           // In real implementation, this would come from a loyalty API
           setSelectedCustomerLoyalty({ points: Math.floor(cust.balance / 100), tier: cust.balance > 10000 ? 'Gold' : cust.balance > 5000 ? 'Silver' : 'Bronze' });
 
-          // Auto-apply customer's default discount if set
-          const defDisc = Number(cust.default_discount_pct ?? 0);
-          if (defDisc > 0) {
-            setBillDiscount(String(defDisc));
-            setDiscountType('percent');
+          // Auto-apply the customer's default discount only when the customer is
+          // chosen. The pure helper returns null for 0/NaN so a manually edited
+          // bill discount is never wiped by a no-discount customer.
+          const defDisc = defaultBillDiscount(cust);
+          if (defDisc) {
+            setBillDiscount(defDisc.value);
+            setDiscountType(defDisc.type);
           }
         }
       }).catch(() => undefined);
@@ -1708,7 +1766,11 @@ setQuotationMode(false);
 
   async function resumeHeld(h: HeldBill) {
     try {
-      const data = JSON.parse(h.data);
+      // PHASE 3d: record the resume event in the main process before the cart is
+      // rehydrated, so the timeline gets the cashier + timestamp of the action.
+      const resumed = await window.api.sales.resumeHeld(h.id);
+      if (!resumed) throw new Error('Held bill not found');
+      const data = JSON.parse(resumed.data);
       const mode: 'retail' | 'wholesale' = data.price_mode === 'wholesale' ? 'wholesale' : 'retail';
       // Re-hydrate each line from the current product data (name, unit list,
       // stock) and coerce every number, so bills held before the full line was
@@ -1731,7 +1793,22 @@ setQuotationMode(false);
 
   async function openHistory() {
     await loadCashiers();
-    await applyHistoryFilters();
+    try {
+      const def = await window.api.history.defaults();
+      const ui = historyUiFromService({
+        ...def,
+        // Preserve the existing role restriction: a cashier only sees own events.
+        onlyMySales: userRole === 'cashier' ? true : !!def.onlyMySales,
+      });
+      setHistoryFilters(ui);
+      setDatePreset('today');
+      setHistoryDetail(null);
+      setHistory([]);
+      await loadHistory(ui, 1);
+    } catch (e) {
+      setNotice(String((e as Error)?.message || e));
+      setHistory([]);
+    }
   }
 
   async function loadCashiers() {
@@ -1743,33 +1820,43 @@ setQuotationMode(false);
     }
   }
 
-  async function applyHistoryFilters() {
-    const isCashier = userRole === 'cashier';
-    const onlyMySales = historyFilters.onlyMySales || (userRole === 'cashier' && !historyFilters.onlyMySales);
-    
-    setHistory(await window.api.sales.list(
-      historyFilters.from || undefined,
-      historyFilters.to || undefined,
-      historyFilters.status !== 'voided',
-      historyFilters.customerId ? Number(historyFilters.customerId) : undefined,
-      onlyMySales ? undefined : (historyFilters.userId ? Number(historyFilters.userId) : undefined),
-      historyFilters.paymentMode || undefined,
-      historyFilters.productId ? Number(historyFilters.productId) : undefined,
-      historyFilters.minAmount ? Number(historyFilters.minAmount) : undefined,
-      historyFilters.maxAmount ? Number(historyFilters.maxAmount) : undefined,
-      historyFilters.saleNo || undefined,
-      historyFilters.sortBy,
-      historyFilters.sortOrder,
-      historyFilters.onlyMySales,
-      historyFilters.status
-    ));
+  /** One round-trip set for every panel: rows + summary + chip counts + held badge. */
+  async function loadHistory(filters: HistoryUiFilters = historyFilters, page = 1) {
+    setHistoryBusy(true);
+    try {
+      const service = historyUiToService(filters);
+      const [list, summary, counts, openHeld] = await Promise.all([
+        window.api.history.list(service, page, 50),
+        window.api.history.summary(service),
+        window.api.history.counts(service),
+        window.api.history.openHeldCount(),
+      ]);
+      setHistory(list.rows);
+      setHistoryTotal(list.total);
+      setHistoryPage(list.page);
+      setHistorySummary(summary);
+      setHistoryCounts(counts);
+      setHistoryOpenHolds(openHeld);
+    } catch (e) {
+      setNotice(String((e as Error)?.message || e));
+      setHistory((prev) => prev ?? []);
+    } finally {
+      setHistoryBusy(false);
+    }
+  }
+
+  async function applyHistoryFilters(page = 1) {
+    await loadHistory(historyFilters, page);
   }
 
   function applyDatePreset(preset: typeof datePreset) {
+    if (preset === 'custom') {
+      setDatePreset('custom');
+      return;
+    }
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     let from: Date, to: Date;
-    
     switch (preset) {
       case 'today':
         from = new Date(today);
@@ -1793,32 +1880,110 @@ setQuotationMode(false);
         from = new Date(today.getFullYear(), today.getMonth() - 1, 1);
         to = new Date(today.getFullYear(), today.getMonth(), 0);
         break;
-      case 'custom':
-        setDatePreset('custom');
-        return;
+      default:
+        from = new Date(today);
+        to = new Date(today);
     }
-    setHistoryFilters(f => ({ ...f, from: toLocalDateString(from), to: toLocalDateString(to) }));
+    const next = { ...historyFilters, from: toLocalDateString(from), to: toLocalDateString(to) };
+    setHistoryFilters(next);
     setDatePreset(preset);
+    void loadHistory(next, 1);
   }
 
+  /** Clear Filters always means "Today + All events" (never a blank/unfiltered month). */
   function clearHistoryFilters() {
-    setHistoryFilters({
-      from: '',
-      to: '',
-      saleNo: '',
-      customerId: '',
-      userId: '',
-      paymentMode: '',
-      productId: '',
-      minAmount: '',
-      maxAmount: '',
-      sortBy: 'date',
-      sortOrder: 'desc',
+    const today = toLocalDateString(new Date());
+    const next: HistoryUiFilters = {
+      ...emptyHistoryUiFilters(),
+      from: today,
+      to: today,
       onlyMySales: userRole === 'cashier',
-      status: 'completed',
-    });
-    setDatePreset('month');
-    applyHistoryFilters();
+    };
+    setHistoryFilters(next);
+    setDatePreset('today');
+    void loadHistory(next, 1);
+  }
+
+  function toggleHistoryType(type: HistoryEventType) {
+    const allSelected = historyFilters.types.length >= HISTORY_EVENT_TYPES.length;
+    let nextTypes: HistoryEventType[];
+    if (allSelected) {
+      // First click out of "All" narrows to exactly the clicked chip.
+      nextTypes = [type];
+    } else if (historyFilters.types.includes(type)) {
+      nextTypes = historyFilters.types.filter((t) => t !== type);
+    } else {
+      nextTypes = [...historyFilters.types, type];
+    }
+    if (nextTypes.length === 0) nextTypes = [...HISTORY_EVENT_TYPES];
+    const next = { ...historyFilters, types: nextTypes };
+    setHistoryFilters(next);
+    void loadHistory(next, 1);
+  }
+
+  async function openHistoryDetail(eventId: number) {
+    try {
+      setHistoryDetail(await window.api.history.detail(eventId));
+    } catch (e) {
+      setNotice(String((e as Error)?.message || e));
+    }
+  }
+
+  async function voidFromHistory(e: HistoryEventRow) {
+    if (!e.sale_id) return;
+    try {
+      const sale = await window.api.sales.get(e.sale_id);
+      if (!sale) return;
+      setVoidTarget(sale as unknown as Sale);
+      setVoidReason('');
+    } catch (err) {
+      setNotice(String((err as Error)?.message || err));
+    }
+  }
+
+  async function confirmDeleteHeld() {
+    if (!holdDeleteTarget || !holdDeleteReason.trim()) return;
+    try {
+      await window.api.sales.deleteHeld(holdDeleteTarget.id, holdDeleteReason.trim());
+      setHoldDeleteTarget(null);
+      setHoldDeleteReason('');
+      const held = await window.api.sales.heldBills();
+      setHeldModal((prev) => (prev ? { ...prev, rows: held } : prev));
+      setHeldCount(held.length);
+      if (history) await loadHistory(historyFilters, historyPage);
+    } catch (e) {
+      setNotice(String((e as Error)?.message || e));
+    }
+  }
+
+  function historyExportRows(): (string | number)[][] {
+    return (history ?? []).map((e) => [
+      formatDateTimeAdmin(e.occurred_at),
+      HISTORY_EVENT_LABELS[e.event_type],
+      e.invoice_no ?? '',
+      e.customer ?? '',
+      e.user ?? '',
+      e.payment_mode ?? '',
+      e.amount,
+      e.reason ?? '',
+      e.reference_invoice ?? '',
+    ]);
+  }
+
+  async function exportHistoryCsv() {
+    const headers = ['Time', 'Type', 'Invoice', 'Customer', 'Cashier', 'Payment', 'Amount', 'Reason', 'Reference'];
+    await window.api.exportData.saveCsv(
+      `sales-history-${historyFilters.from || 'all'}.csv`,
+      headers,
+      historyExportRows()
+    );
+  }
+
+  async function exportHistoryExcel() {
+    const headers = ['Time', 'Type', 'Invoice', 'Customer', 'Cashier', 'Payment', 'Amount', 'Reason', 'Reference'];
+    await window.api.exportData.saveXlsx(`sales-history-${historyFilters.from || 'all'}.xlsx`, [
+      { name: 'Sales History', headers, rows: historyExportRows() },
+    ]);
   }
 
   async function openSaleDetail(saleId: number) {
@@ -1912,23 +2077,7 @@ setQuotationMode(false);
       await window.api.sales.void(voidTarget.id, voidReason.trim());
       setVoidTarget(null);
       setVoidReason('');
-      const includeVoided = historyFilters.status === 'voided' || historyFilters.status === 'held';
-      setHistory(await window.api.sales.list(
-        historyFilters.from || undefined,
-        historyFilters.to || undefined,
-        includeVoided,
-        historyFilters.customerId ? Number(historyFilters.customerId) : undefined,
-        historyFilters.userId ? Number(historyFilters.userId) : undefined,
-        historyFilters.paymentMode || undefined,
-        historyFilters.productId ? Number(historyFilters.productId) : undefined,
-        historyFilters.minAmount ? Number(historyFilters.minAmount) : undefined,
-        historyFilters.maxAmount ? Number(historyFilters.maxAmount) : undefined,
-        historyFilters.saleNo || undefined,
-        historyFilters.sortBy,
-        historyFilters.sortOrder,
-        historyFilters.onlyMySales,
-        historyFilters.status
-      ));
+      if (history) await loadHistory(historyFilters, historyPage);
       setNotice('Sale voided. Stock restored.');
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
@@ -3559,10 +3708,9 @@ const handleUnitChange = (newLevel: number) => {
                             </button>
                             <button
                               className="btn btn-sm btn-danger"
-                              onClick={async () => {
-                                await window.api.sales.deleteHeld(h.id);
-                                openHeld(heldModal.tab);
-                                updateHeldCounts();
+                              onClick={() => {
+                                setHoldDeleteReason('');
+                                setHoldDeleteTarget(h);
                               }}
                             >
                               Del
@@ -3593,139 +3741,294 @@ const handleUnitChange = (newLevel: number) => {
       {history && (
         <Modal
           onClose={() => setHistory(null)}
-          title="Sales History"
+          title="Sales History — Today's Timeline"
           className="modal-wide"
           closeOnOverlay={false}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              // Spec: Esc REFRESHES the timeline (it does not close the modal).
+              e.preventDefault();
+              e.stopPropagation();
+              void loadHistory(historyFilters, historyPage);
+            }
+          }}
         >
-            <select className="field-select" value={historyFilter} onChange={(e) => { setHistoryFilter(e.target.value as any); applyHistoryFilters(); }} style={{ width: '160px', marginBottom: '12px' }}>
-              <option value="completed">Completed</option>
-              <option value="returned">Refunds/Returns</option>
-              <option value="voided">Voided</option>
-              <option value="held">Held</option>
-              <option value="all">All</option>
-            </select>
-            
-            {/* Filter Bar */}
-            <div className="filter-bar" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px', padding: '12px', background: '#f8f9fa', borderRadius: '4px', border: '1px solid #e0e0e0' }}>
-              {/* Row 1: Date Preset, Date Range, Sale No, Status, Sort */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', width: '100%' }}>
-                <select className="field-select" value={datePreset} onChange={(e) => applyDatePreset(e.target.value as any)} style={{ width: '140px' }}>
-                  <option value="today">Today</option>
-                  <option value="yesterday">Yesterday</option>
-                  <option value="week">This Week</option>
-                  <option value="month">This Month</option>
-                  <option value="lastmonth">Last Month</option>
-                  <option value="custom">Custom</option>
-                </select>
-                <DateInput value={historyFilters.from} onChange={(v) => setHistoryFilters(f => ({ ...f, from: v }))} title="From Date" style={{ width: '140px' }} />
-                <span className="muted">to</span>
-                <DateInput value={historyFilters.to} onChange={(v) => setHistoryFilters(f => ({ ...f, to: v }))} title="To Date" style={{ width: '140px' }} />
-                <input type="text" value={historyFilters.saleNo} onChange={(e) => setHistoryFilters(f => ({ ...f, saleNo: e.target.value }))} placeholder="Sale No (INV-...)" style={{ width: '180px' }} />
-                <select className="field-select" value={historyFilters.status} onChange={(e) => { setHistoryFilters(f => ({ ...f, status: e.target.value as 'completed' | 'voided' | 'held' | 'returned' | 'all' })); applyHistoryFilters(); }} style={{ width: '140px' }}>
-                  <option value="completed">Completed</option>
-                  <option value="returned">Refunds/Returns</option>
-                  <option value="voided">Voided</option>
-                  <option value="held">Held</option>
-                  <option value="all">All</option>
-                </select>
-                <select className="field-select" value={historyFilters.sortBy} onChange={(e) => { setHistoryFilters(f => ({ ...f, sortBy: e.target.value as 'date' | 'amount' | 'saleNo' })); applyHistoryFilters(); }} style={{ width: '140px' }}>
-                  <option value="date">Sort: Date</option>
-                  <option value="amount">Sort: Amount</option>
-                  <option value="saleNo">Sort: Sale No</option>
-                </select>
-                <select className="field-select" value={historyFilters.sortOrder} onChange={(e) => { setHistoryFilters(f => ({ ...f, sortOrder: e.target.value as 'asc' | 'desc' })); applyHistoryFilters(); }} style={{ width: '100px' }}>
-                  <option value="desc">Desc</option>
-                  <option value="asc">Asc</option>
-                </select>
+            {historyOpenHolds > 0 && (
+              <div style={{ marginBottom: '10px', padding: '8px 12px', borderRadius: '6px', background: '#fff7e6', border: '1px solid #ffd591', color: '#8a5a00' }}>
+                <strong>{historyOpenHolds}</strong> bill{historyOpenHolds === 1 ? '' : 's'} currently on hold — they are not sales yet.
               </div>
-              
-              {/* Row 2: Customer, Cashier, Payment, Product, Amount Range, Only My Sales */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', width: '100%' }}>
-                <input type="text" value={historyFilters.customerId} onChange={(e) => setHistoryFilters(f => ({ ...f, customerId: e.target.value }))} placeholder="Customer name..." style={{ width: '180px' }} />
-                <select className="field-select" value={historyFilters.userId} onChange={(e) => setHistoryFilters(f => ({ ...f, userId: e.target.value }))} style={{ width: '160px' }}>
-                  <option value="">All Cashiers</option>
-                  {cashiers.map(u => <option key={u.id} value={u.id}>{u.username} ({u.role})</option>)}
-                </select>
-                <select className="field-select" value={historyFilters.paymentMode} onChange={(e) => setHistoryFilters(f => ({ ...f, paymentMode: e.target.value }))} style={{ width: '140px' }}>
-                  <option value="">All Payments</option>
-                  {paymentModes.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-                <input type="text" value={historyFilters.productId} onChange={(e) => setHistoryFilters(f => ({ ...f, productId: e.target.value }))} placeholder="Product name..." style={{ width: '180px' }} />
-                <KeyboardInput type="text" decimals value={historyFilters.minAmount} onChange={(e) => setHistoryFilters(f => ({ ...f, minAmount: e.target.value }))} placeholder="Min Amt" style={{ width: '100px' }} />
-                <KeyboardInput type="text" decimals value={historyFilters.maxAmount} onChange={(e) => setHistoryFilters(f => ({ ...f, maxAmount: e.target.value }))} placeholder="Max Amt" style={{ width: '100px' }} />
-                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#333' }}>
-                  <input type="checkbox" checked={historyFilters.onlyMySales} onChange={(e) => setHistoryFilters(f => ({ ...f, onlyMySales: e.target.checked }))} />
-                  Only My Sales
-                </label>
+            )}
+
+            {/* Summary strip — must equal Dashboard Today + Returns for the same range. */}
+            {historySummary && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: '8px', marginBottom: '12px' }}>
+                {[
+                  { label: 'Sales', value: `${historySummary.salesCount}`, sub: formatMoney(historySummary.salesTotal), tone: '#0a7a33' },
+                  { label: 'Returns / Refunds', value: `${historySummary.returnsCount + historySummary.cashRefundsCount}`, sub: formatMoney(-(historySummary.returnsTotal + historySummary.cashRefundsTotal)), tone: '#b42318' },
+                  { label: 'Voids', value: `${historySummary.voidsCount}`, sub: formatMoney(-historySummary.voidsTotal), tone: '#b42318' },
+                  { label: 'Deletes', value: `${historySummary.deletesCount}`, sub: formatMoney(-historySummary.deletesTotal), tone: '#b42318' },
+                  { label: 'Holds', value: `${historySummary.holdCreatedCount}/${historySummary.holdResumedCount}/${historySummary.holdDeletedCount}`, sub: 'held / resumed / deleted', tone: '#8a5a00' },
+                  { label: 'NET SALES', value: formatMoney(historySummary.netSales), sub: 'after returns + refunds', tone: '#0b3d91' },
+                  { label: 'Cash / Non-cash', value: formatMoney(historySummary.cashTotal), sub: formatMoney(historySummary.nonCashTotal), tone: '#333' },
+                  { label: 'Cancelled value', value: formatMoney(historySummary.cancelledValue), sub: 'voids + deleted bills', tone: '#b42318' },
+                ].map((card) => (
+                  <div key={card.label} style={{ padding: '8px 10px', borderRadius: '6px', background: '#f8f9fa', border: '1px solid #e0e0e0' }}>
+                    <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '.4px', color: '#666' }}>{card.label}</div>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: card.tone }}>{card.value}</div>
+                    <div style={{ fontSize: '11px', color: '#666' }}>{card.sub}</div>
+                  </div>
+                ))}
               </div>
-              
-              {/* Row 3: Actions */}
-              <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
-                <button className="btn btn-sm" onClick={clearHistoryFilters}>Clear Filters</button>
-                <button className="btn btn-primary btn-sm" onClick={applyHistoryFilters}>Apply</button>
-              </div>
+            )}
+
+            {/* Multi-select type chips. Every type is on by default; nothing is hidden. */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${historyFilters.types.length >= HISTORY_EVENT_TYPES.length ? 'btn-primary' : ''}`}
+                onClick={() => {
+                  const next = { ...historyFilters, types: [...HISTORY_EVENT_TYPES] };
+                  setHistoryFilters(next);
+                  void loadHistory(next, 1);
+                }}
+              >
+                All events
+              </button>
+              {HISTORY_EVENT_TYPES.map((type) => {
+                const selected = historyFilters.types.includes(type);
+                const count = historyCounts.find((c) => c.event_type === type)?.count ?? 0;
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    className={`btn btn-sm ${HISTORY_EVENT_CLASSES[type]}`}
+                    onClick={() => toggleHistoryType(type)}
+                    style={{
+                      opacity: selected ? 1 : 0.45,
+                      border: selected ? '2px solid #0b3d91' : '1px solid #ccc',
+                      fontWeight: selected ? 700 : 400,
+                    }}
+                    title={`${HISTORY_EVENT_LABELS[type]} — ${count} in this range`}
+                  >
+                    {HISTORY_EVENT_LABELS[type]} <span style={{ opacity: 0.7 }}>({count})</span>
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="table-wrap" style={{ overflow: 'auto', maxHeight: '60vh' }}>
-              <table className="data-table" style={{ minWidth: '1200px' }}>
+            {/* Filters */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px', padding: '10px', background: '#f8f9fa', borderRadius: '4px', border: '1px solid #e0e0e0' }}>
+              <select className="field-select" value={datePreset} onChange={(e) => applyDatePreset(e.target.value as typeof datePreset)} style={{ width: '130px' }}>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="week">This Week</option>
+                <option value="month">This Month</option>
+                <option value="lastmonth">Last Month</option>
+                <option value="custom">Custom</option>
+              </select>
+              <DateInput value={historyFilters.from} onChange={(v) => { setHistoryFilters(f => ({ ...f, from: v })); setDatePreset('custom'); }} title="From Date" style={{ width: '135px' }} />
+              <span className="muted">to</span>
+              <DateInput value={historyFilters.to} onChange={(v) => { setHistoryFilters(f => ({ ...f, to: v })); setDatePreset('custom'); }} title="To Date" style={{ width: '135px' }} />
+              <input type="text" value={historyFilters.search} onChange={(e) => setHistoryFilters(f => ({ ...f, search: e.target.value }))} placeholder="Invoice / customer / reason..." style={{ width: '210px' }} />
+              <input type="text" value={historyFilters.customer} onChange={(e) => setHistoryFilters(f => ({ ...f, customer: e.target.value }))} placeholder="Customer..." style={{ width: '150px' }} />
+              <select className="field-select" value={historyFilters.userId} onChange={(e) => setHistoryFilters(f => ({ ...f, userId: e.target.value }))} style={{ width: '170px' }}>
+                <option value="">Done by: anyone</option>
+                {cashiers.map(u => <option key={u.id} value={u.id}>{u.username} ({u.role})</option>)}
+              </select>
+              <select className="field-select" value={historyFilters.paymentMode} onChange={(e) => setHistoryFilters(f => ({ ...f, paymentMode: e.target.value }))} style={{ width: '140px' }}>
+                <option value="">All payments</option>
+                {paymentModes.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <input type="text" value={historyFilters.product} onChange={(e) => setHistoryFilters(f => ({ ...f, product: e.target.value }))} placeholder="Product..." style={{ width: '150px' }} />
+              <KeyboardInput type="text" decimals value={historyFilters.minAmount} onChange={(e) => setHistoryFilters(f => ({ ...f, minAmount: e.target.value }))} placeholder="Min amount" style={{ width: '105px' }} />
+              <KeyboardInput type="text" decimals value={historyFilters.maxAmount} onChange={(e) => setHistoryFilters(f => ({ ...f, maxAmount: e.target.value }))} placeholder="Max amount" style={{ width: '105px' }} />
+              <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#333' }}>
+                <input type="checkbox" checked={historyFilters.onlyMySales} onChange={(e) => setHistoryFilters(f => ({ ...f, onlyMySales: e.target.checked }))} />
+                Only mine
+              </label>
+              <button className="btn btn-primary btn-sm" onClick={() => void applyHistoryFilters(1)} disabled={historyBusy}>Apply</button>
+              <button className="btn btn-sm" onClick={clearHistoryFilters}>Clear Filters</button>
+              <button className="btn btn-sm" onClick={() => void exportHistoryCsv()} disabled={!history.length}>CSV</button>
+              <button className="btn btn-sm" onClick={() => void exportHistoryExcel()} disabled={!history.length}>Excel</button>
+              <button className="btn btn-sm" onClick={() => void window.api.history.print(historyUiToService(historyFilters))} disabled={!history.length}>Print</button>
+            </div>
+
+            <div className="table-wrap" style={{ overflow: 'auto', maxHeight: '58vh' }}>
+              <table className="data-table" style={{ minWidth: '1150px' }}>
                 <thead>
                   <tr>
-                    <th>Invoice</th>
-                    <th>Date</th>
                     <th>Time</th>
-                    <th>Sale No</th>
+                    <th>Type</th>
+                    <th>Invoice</th>
                     <th>Customer</th>
                     <th>Cashier</th>
                     <th>Payment</th>
-                    <th>Subtotal</th>
-                    <th>Discount</th>
-                    <th>Tax</th>
-                    <th>Total</th>
-                    <th>Status</th>
+                    <th style={{ textAlign: 'right' }}>Amount</th>
+                    <th>Reason</th>
+                    <th>Reference</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {history.map((s) => (
-                    <tr key={s.id} onClick={() => openSaleDetail(s.id)} style={{ cursor: 'pointer' }}>
-                      <td>{s.invoice_no}</td>
-                      <td>{s.created_at ? formatDateAdmin(s.created_at) : '—'}</td>
-                      <td>{s.created_at ? formatTimeAdmin(s.created_at) : '—'}</td>
-                      <td>{s.invoice_no}</td>
-                      <td>{s.customer_name ?? 'Walk-in'}</td>
-                      <td>{s.cashier_name ?? '—'}</td>
-                      <td>{Object.keys((s as any).paymentBreakdown || {}).join(', ') || '—'}</td>
-                      <td>{(s as any).subtotal?.toFixed(2) ?? '—'}</td>
-                      <td>{(s as any).discount_amount?.toFixed(2) ?? '—'}</td>
-                      <td>{(s as any).tax_amount?.toFixed(2) ?? '—'}</td>
-                      <td>{s.total_amount.toFixed(2)}</td>
-                      <td>
-                        <span className={`badge ${s.status === 'voided' ? 'badge-danger' : s.status === 'held' ? 'badge-warn' : ''}`}>{s.status}</span>
-                      </td>
-                      <td>
-                        {s.status === 'completed' && (
-                          <button
-                            className="btn btn-sm btn-danger"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setVoidTarget(s);
-                              setVoidReason('');
-                            }}
-                          >
-                            Void
-                          </button>
+                  {history.map((e) => {
+                    const isVoidOrDelete = e.event_type === 'void' || e.event_type === 'delete' || e.event_type === 'hold_deleted';
+                    const negative = e.amount < 0;
+                    return (
+                      <tr key={e.event_id} onClick={() => void openHistoryDetail(e.event_id)} style={{ cursor: 'pointer' }}>
+                        <td title={formatDateTimeAdmin(e.occurred_at)}>
+                          <div>{formatTimeAdmin(e.occurred_at)}</div>
+                          <div className="muted" style={{ fontSize: '11px' }}>{e.local_day}</div>
+                        </td>
+                        <td><span className={`badge ${HISTORY_EVENT_CLASSES[e.event_type]}`}>{HISTORY_EVENT_LABELS[e.event_type]}</span></td>
+                        <td>{e.invoice_no ?? '—'}</td>
+                        <td>{e.customer ?? 'Walk-in'}</td>
+                        <td>{e.user ?? 'System'}</td>
+                        <td>{e.payment_mode ?? '—'}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700, color: negative ? '#b42318' : '#0a7a33', textDecoration: isVoidOrDelete ? 'line-through' : 'none' }}>
+                          {negative ? '-' : ''}{formatMoney(Math.abs(e.amount))}
+                        </td>
+                        <td title={e.reason ?? ''}>{e.reason ?? '—'}</td>
+                        <td>{e.reference_invoice ?? '—'}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <button className="btn btn-sm" onClick={(ev) => { ev.stopPropagation(); void openHistoryDetail(e.event_id); }}>View</button>
+                            {e.event_type === 'sale' && e.sale_id && e.status === 'completed' && (
+                              <button
+                                className="btn btn-sm btn-danger"
+                                onClick={(ev) => { ev.stopPropagation(); void voidFromHistory(e); }}
+                              >
+                                Void
+                              </button>
+                            )}
+                            {e.event_type === 'hold_created' && e.held_bill_id && (
+                              <button
+                                className="btn btn-sm btn-danger"
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  setHoldDeleteReason('');
+                                  setHoldDeleteTarget({ id: e.held_bill_id as number, kind: 'held', label: e.invoice_no, data: '{}' });
+                                }}
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {history.length === 0 && (
+                    <tr>
+                      <td colSpan={10} className="muted center" style={{ padding: '24px' }}>
+                        {historyBusy ? 'Loading…' : 'No activity today yet.'}
+                        {!historyBusy && (
+                          <div style={{ marginTop: '8px' }}>
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => {
+                                const now = new Date();
+                                const from = toLocalDateString(new Date(now.getFullYear(), now.getMonth(), 1));
+                                const to = toLocalDateString(now);
+                                const next = { ...historyFilters, from, to };
+                                setHistoryFilters(next);
+                                setDatePreset('month');
+                                void loadHistory(next, 1);
+                              }}
+                            >
+                              Show this month
+                            </button>
+                          </div>
                         )}
                       </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="modal-actions" style={{ justifyContent: 'space-between' }}>
+              <span className="muted" style={{ fontSize: '12px' }}>
+                {historyBusy ? 'Loading…' : `${history.length} of ${historyTotal} event${historyTotal === 1 ? '' : 's'} · newest first`}
+              </span>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button className="btn btn-sm" disabled={historyPage <= 1 || historyBusy} onClick={() => void applyHistoryFilters(historyPage - 1)}>Previous</button>
+                <button className="btn btn-sm" disabled={historyPage * 50 >= historyTotal || historyBusy} onClick={() => void applyHistoryFilters(historyPage + 1)}>Next</button>
+                <button className="btn" onClick={() => setHistory(null)}>Close</button>
+              </div>
+            </div>
+        </Modal>
+      )}
+
+      {historyDetail && (
+        <Modal
+          onClose={() => setHistoryDetail(null)}
+          title={`${HISTORY_EVENT_LABELS[historyDetail.event.event_type]} — ${historyDetail.event.invoice_no ?? 'Event #' + historyDetail.event.event_id}`}
+          className="modal-wide"
+          closeOnOverlay={false}
+        >
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '12px' }}>
+            <div><strong>Time:</strong> {formatDateTimeAdmin(historyDetail.event.occurred_at)}</div>
+            <div><strong>Done by:</strong> {historyDetail.event.user ?? 'System'}</div>
+            <div><strong>Amount:</strong> {formatMoney(historyDetail.event.amount)}</div>
+            <div><strong>Payment:</strong> {historyDetail.event.payment_mode ?? '—'}</div>
+            <div><strong>Reason:</strong> {historyDetail.event.reason ?? '—'}</div>
+            <div><strong>Reference:</strong> {historyDetail.event.reference_invoice ?? '—'}</div>
+          </div>
+          {historyDetail.items.length > 0 && (
+            <div className="table-wrap" style={{ maxHeight: '40vh', overflow: 'auto' }}>
+              <table className="data-table">
+                <thead>
+                  <tr><th>Product</th><th style={{ textAlign: 'right' }}>Qty</th><th style={{ textAlign: 'right' }}>Rate</th><th style={{ textAlign: 'right' }}>Discount</th><th style={{ textAlign: 'right' }}>Line total</th></tr>
+                </thead>
+                <tbody>
+                  {historyDetail.items.map((it, i) => (
+                    <tr key={i}>
+                      <td>{it.product_name}</td>
+                      <td style={{ textAlign: 'right' }}>{it.qty}</td>
+                      <td style={{ textAlign: 'right' }}>{formatMoney(it.unit_price)}</td>
+                      <td style={{ textAlign: 'right' }}>{formatMoney(it.discount ?? 0)}</td>
+                      <td style={{ textAlign: 'right' }}>{formatMoney(it.line_total)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <div className="modal-actions">
-              <button className="btn" onClick={() => setHistory(null)}>
-                Close
-              </button>
-            </div>
+          )}
+          {historyDetail.snapshot != null && (
+            <details style={{ marginTop: '12px' }}>
+              <summary style={{ cursor: 'pointer' }}>Snapshot (state at the time of this event)</summary>
+              <pre style={{ whiteSpace: 'pre-wrap', fontSize: '11px', maxHeight: '30vh', overflow: 'auto', background: '#f6f6f6', padding: '8px' }}>
+                {JSON.stringify(historyDetail.snapshot, null, 2)}
+              </pre>
+            </details>
+          )}
+          <div className="modal-actions">
+            <button className="btn" onClick={() => setHistoryDetail(null)}>Close</button>
+          </div>
+        </Modal>
+      )}
+
+      {holdDeleteTarget && (
+        <Modal
+          onClose={() => setHoldDeleteTarget(null)}
+          title="Delete held bill — reason required"
+          className="modal-sm"
+          closeOnOverlay={false}
+        >
+          <p className="muted">The bill stays visible in Sales History with this reason. Stock was never moved.</p>
+          <label className="field">
+            <span>Reason</span>
+            <input
+              autoFocus
+              value={holdDeleteReason}
+              onChange={(e) => setHoldDeleteReason(e.target.value)}
+              placeholder="e.g. customer left / duplicate hold"
+            />
+          </label>
+          <div className="modal-actions">
+            <button className="btn" onClick={() => setHoldDeleteTarget(null)}>Cancel</button>
+            <button className="btn btn-danger" disabled={!holdDeleteReason.trim()} onClick={() => void confirmDeleteHeld()}>Delete</button>
+          </div>
         </Modal>
       )}
       {/* Below cost confirmation modal */}

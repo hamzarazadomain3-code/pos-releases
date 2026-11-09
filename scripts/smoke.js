@@ -184,7 +184,7 @@ async function runSmoke() {
   const held = sales.holdBill('held', 'test', { items: [{ a: 1 }] });
   console.log('HELD_ID=' + held.id);
   console.log('HELD_LIST=' + sales.listHeldBills('held').length);
-  console.log('HELD_DELETE=' + sales.deleteHeldBill(held.id));
+  console.log('HELD_DELETE=' + sales.deleteHeldBill(held.id, 'smoke cleanup'));
 
    console.log('INV_NEXT=' + sales.nextInvoiceNo());
    settings.setSetting('shop_name', 'Smoke Shop');

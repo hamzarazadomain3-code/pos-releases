@@ -39,9 +39,19 @@ import {
   listSales,
   nextInvoiceNo,
   receivePayment,
+  resumeHeldBill,
   setCreditLimit,
   voidSale,
 } from './services/sales';
+import {
+  getHistoryDetail,
+  historyDefaults,
+  historyOpenHeldCount,
+  historySummary,
+  historyTypeCounts,
+  listHistoryEvents,
+  printHistoryReport,
+} from './services/salesHistory';
 import { getAllSettings, setSetting } from './services/settings';
 import {
   printLabel,
@@ -285,7 +295,19 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('sales:hold', (_e, kind: string, label: string, data) => holdBill(kind as 'held' | 'quotation', label, data));
   ipcMain.handle('sales:heldBills', (_e, kind?: string) => listHeldBills(kind as 'held' | 'quotation' | undefined));
   ipcMain.handle('sales:getHeld', (_e, id: number) => getHeldBill(id));
-  ipcMain.handle('sales:deleteHeld', (_e, id: number) => deleteHeldBill(id));
+  ipcMain.handle('sales:deleteHeld', (_e, id: number, reason?: string) => deleteHeldBill(id, reason));
+  ipcMain.handle('sales:resumeHeld', (_e, id: number) => resumeHeldBill(id));
+
+  // PHASE 3d — one timeline service for every event type.
+  ipcMain.handle('history:defaults', () => historyDefaults());
+  ipcMain.handle('history:list', (_e, filters, page?: number, pageSize?: number) =>
+    listHistoryEvents(filters ?? {}, page, pageSize)
+  );
+  ipcMain.handle('history:counts', (_e, filters) => historyTypeCounts(filters ?? {}));
+  ipcMain.handle('history:summary', (_e, filters) => historySummary(filters ?? {}));
+  ipcMain.handle('history:openHeld', () => historyOpenHeldCount());
+  ipcMain.handle('history:detail', (_e, eventId: number) => getHistoryDetail(eventId));
+  ipcMain.handle('history:print', (_e, filters) => printHistoryReport(filters ?? {}));
 
   ipcMain.handle('customers:list', () => listCustomers());
   ipcMain.handle('customers:create', (_e, name: string, phone?: string, openingBalance?: number) =>

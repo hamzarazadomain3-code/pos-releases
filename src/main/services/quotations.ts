@@ -1,6 +1,7 @@
 import { getDb } from '../db';
 import { logError } from '../logger';
 import { getAllSettings } from './settings';
+import { recordSaleEvent } from './salesHistory';
 import { todayLocal, daysFromNow } from '../utils/timezone';
 
 export interface QuotationRow {
@@ -299,6 +300,65 @@ export function convertToSale(quotationId: number, actorUserId: number): { ok: b
         SET status = 'converted', converted_sale_id = ?, converted_at = datetime('now', 'utc') || 'Z', updated_at = datetime('now', 'utc') || 'Z'
         WHERE id = ?
       `).run(saleId, quotationId);
+
+      // PHASE 3d: conversion creates the normal sale event PLUS its own
+      // "quote → sale" event. The conversion event carries 0 revenue so it can
+      // never be counted twice; the sale event keeps Dashboard parity.
+      const customerName = q.customer_id
+        ? ((db.prepare('SELECT name FROM customers WHERE id = ?').get(q.customer_id) as
+            | { name: string }
+            | undefined)?.name ?? null)
+        : null;
+      // Match the source rows' own timestamps so the 073 backfill dedupes
+      // instead of appending a second identical event.
+      const saleCreatedAt =
+        ((db.prepare('SELECT created_at FROM sales WHERE id = ?').get(saleId) as
+          | { created_at: string }
+          | undefined)?.created_at) ?? undefined;
+      const convertedAt =
+        ((db.prepare('SELECT converted_at FROM quotations WHERE id = ?').get(quotationId) as
+          | { converted_at: string }
+          | undefined)?.converted_at) ?? undefined;
+      recordSaleEvent({
+        event_type: 'sale',
+        sale_id: saleId,
+        invoice_no: invoiceNo,
+        user_id: actorUserId,
+        amount: q.total_amount,
+        snapshot: {
+          state: 'completed',
+          customer_id: q.customer_id,
+          customer_name: customerName,
+          payment_mode: '',
+          total: q.total_amount,
+          quotation_id: quotationId,
+          quotation_no: q.quote_no,
+          lines: items.map((it) => ({
+            product_id: it.product_id,
+            qty: it.qty,
+            unit_price: it.unit_price,
+            line_total: it.line_total,
+          })),
+        },
+        created_at: saleCreatedAt,
+      });
+      recordSaleEvent({
+        event_type: 'quotation_converted',
+        sale_id: saleId,
+        invoice_no: q.quote_no,
+        user_id: actorUserId,
+        amount: 0,
+        snapshot: {
+          state: 'converted',
+          quotation_id: quotationId,
+          quote_no: q.quote_no,
+          converted_sale_id: saleId,
+          reference_invoice: invoiceNo,
+          customer_id: q.customer_id,
+          customer_name: customerName,
+        },
+        created_at: convertedAt,
+      });
 
       db.exec('COMMIT');
     } catch (e) {

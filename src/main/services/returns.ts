@@ -5,6 +5,7 @@ import { getSale } from './sales';
 import { currentShift } from './shifts';
 import { can, getSessionUserId } from './auth';
 import { getAdminSetting } from './admin';
+import { recordSaleEvent } from './salesHistory';
 import type { CashRefundRow, ReturnItemRow, ReturnRow } from '../../shared/types';
 
 export interface ReturnInputItem {
@@ -198,6 +199,45 @@ export function createReturn(input: {
       input.sale_id
     );
 
+    // PHASE 3d: a return is its own negative timeline event, separate from the
+    // original sale row and carrying the refund mode + reason.
+    const customerName = sale.customer_id
+      ? ((db.prepare('SELECT name FROM customers WHERE id = ?').get(sale.customer_id) as
+          | { name: string }
+          | undefined)?.name ?? null)
+      : null;
+    // Use the SAME timestamp the `returns` row got, so a later re-run of the
+    // 073 backfill sees an identical dedupe key instead of adding a duplicate.
+    const returnCreatedAt =
+      ((db.prepare('SELECT created_at FROM returns WHERE id = ?').get(returnId) as
+        | { created_at: string }
+        | undefined)?.created_at) ?? undefined;
+    recordSaleEvent({
+      event_type: 'return',
+      sale_id: input.sale_id,
+      invoice_no: sale.invoice_no,
+      user_id: getSessionUserId() ?? 1,
+      amount: -Math.abs(refund),
+      reason: input.reason?.trim() || null,
+      snapshot: {
+        state: 'returned',
+        reference_invoice: sale.invoice_no,
+        original_invoice: sale.invoice_no,
+        customer_id: sale.customer_id,
+        customer_name: customerName,
+        payment_mode: input.refund_mode,
+        refund_mode: input.refund_mode,
+        restock: !!input.restock,
+        lines: lines.map((l) => ({
+          product_id: l.product_id,
+          qty: l.qty,
+          unit_price: l.unit_price,
+          line_total: -round2(l.qty * l.unit_price),
+        })),
+      },
+      created_at: returnCreatedAt,
+    });
+
     db.exec('COMMIT');
     logActivity(
       'return_created',
@@ -322,6 +362,46 @@ export function createReturnBill(input: ReturnBillInput): ReturnRow & { items: R
         mode === 'credit' && customerId ? { customerId, amount: refund } : null,
     });
 
+    // PHASE 3d: the cart return is a negative timeline event. It is NOT tied to
+    // the original invoice as a second return row — this negative sale IS the
+    // return, so history shows exactly one return event.
+    const customerName = customerId
+      ? ((db.prepare('SELECT name FROM customers WHERE id = ?').get(customerId) as
+          | { name: string }
+          | undefined)?.name ?? null)
+      : null;
+    const linkedInvoice = input.linked_sale_id
+      ? ((db.prepare('SELECT invoice_no FROM sales WHERE id = ?').get(input.linked_sale_id) as
+          | { invoice_no: string }
+          | undefined)?.invoice_no ?? null)
+      : null;
+    recordSaleEvent({
+      event_type: 'return',
+      sale_id: returnSaleId,
+      invoice_no: invoiceNo,
+      user_id: userId,
+      amount: -Math.abs(refund),
+      reason,
+      snapshot: {
+        state: 'returned',
+        customer_id: customerId,
+        customer_name: customerName,
+        reference_invoice: linkedInvoice,
+        linked_sale_id: input.linked_sale_id ?? null,
+        payment_mode: mode,
+        refund_mode: mode,
+        restock,
+        note,
+        lines: items.map((it) => ({
+          product_id: it.product_id,
+          qty: it.qty,
+          unit_price: it.unit_price,
+          line_total: -round2(Number(it.qty) * Number(it.unit_price)),
+        })),
+      },
+      created_at: nowIso,
+    });
+
     db.exec('COMMIT');
     logActivity(
       'return_created',
@@ -404,20 +484,46 @@ export function createCashRefund(amount: number, reason?: string, mode: string =
   const db = getDb();
   const shift = currentShift();
   if (!shift) throw new Error('No open shift — please open a shift before issuing a refund');
-  const info = db
-    .prepare(
-      `INSERT INTO cash_refunds (amount, reason, mode, user_id, shift_id)
-       VALUES (?, ?, ?, ?, ?)`
-    )
-    .run(
-      amount,
-      reason?.trim() || null,
-      mode,
-      getSessionUserId() ?? 1,
-      shift.id
-    );
-  const id = Number(info.lastInsertRowid);
-  logActivity('cash_refund', 'refund', id, `amount=${amount}${reason ? ' | ' + reason : ''}`);
+  const userId = getSessionUserId() ?? 1;
+  const cleanReason = reason?.trim() || null;
+
+  db.exec('BEGIN');
+  let id = 0;
+  try {
+    const info = db
+      .prepare(
+        `INSERT INTO cash_refunds (amount, reason, mode, user_id, shift_id)
+         VALUES (?, ?, ?, ?, ?)`
+      )
+      .run(amount, cleanReason, mode, userId, shift.id);
+    id = Number(info.lastInsertRowid);
+    const refundCreatedAt =
+      ((db.prepare('SELECT created_at FROM cash_refunds WHERE id = ?').get(id) as
+        | { created_at: string }
+        | undefined)?.created_at) ?? undefined;
+
+    // PHASE 3d: manual cash refund is a negative timeline event, same transaction.
+    recordSaleEvent({
+      event_type: 'cash_refund',
+      user_id: userId,
+      amount: -Math.abs(amount),
+      reason: cleanReason,
+      snapshot: {
+        state: 'refunded',
+        refund_id: id,
+        mode,
+        payment_mode: mode,
+        refund_mode: mode,
+        shift_id: shift.id,
+      },
+      created_at: refundCreatedAt,
+    });
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  logActivity('cash_refund', 'refund', id, `amount=${amount}${cleanReason ? ' | ' + cleanReason : ''}`);
   const row = db
     .prepare(
       `SELECT r.*, u.username FROM cash_refunds r

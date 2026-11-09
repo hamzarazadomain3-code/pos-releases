@@ -1,4 +1,11 @@
 ﻿import type { ReceiptDesign, ReceiptLibrary } from './receiptDesign';
+import type {
+  HistoryDetail,
+  HistoryFilters,
+  HistoryListResult,
+  HistorySummary,
+  HistoryTypeCount,
+} from './salesHistory';
 
 export interface Category {
   id: number;
@@ -370,6 +377,8 @@ export interface HeldBill {
   label: string | null;
   data: string;
   created_at?: string;
+  /** Soft-delete stamp (PHASE 3d). Deleted bills stay visible in Sales History. */
+  deleted_at?: string | null;
 }
 
 export interface SettingsMap {
@@ -1357,7 +1366,18 @@ export interface PosBridge {
     hold: (kind: 'held' | 'quotation', label: string, data: unknown) => Promise<HeldBill>;
     heldBills: (kind?: 'held' | 'quotation') => Promise<HeldBill[]>;
     getHeld: (id: number) => Promise<HeldBill | null>;
-    deleteHeld: (id: number) => Promise<boolean>;
+    resumeHeld: (id: number) => Promise<HeldBill | null>;
+    deleteHeld: (id: number, reason?: string) => Promise<boolean>;
+  };
+  /** PHASE 3d — the Sales History timeline (one call returns every event type). */
+  history: {
+    defaults: () => Promise<HistoryFilters>;
+    list: (filters: HistoryFilters, page?: number, pageSize?: number) => Promise<HistoryListResult>;
+    counts: (filters: HistoryFilters) => Promise<HistoryTypeCount[]>;
+    summary: (filters: HistoryFilters) => Promise<HistorySummary>;
+    openHeldCount: () => Promise<number>;
+    detail: (eventId: number) => Promise<HistoryDetail | null>;
+    print: (filters: HistoryFilters) => Promise<{ ok: boolean; message: string }>;
   };
   customers: {
     list: () => Promise<Customer[]>;

@@ -6,6 +6,8 @@ import { can, getSessionUserId } from './auth';
 import * as licensing from './licensing';
 import { currentShift } from './shifts';
 import { resolvePromotions } from './promotions';
+import { recordSaleEvent } from './salesHistory';
+import { summarizeHeldBill } from '../../shared/cartMath';
 import type {
   BillLineInput,
   Customer,
@@ -331,6 +333,39 @@ export function createSale(input: SaleInput): SaleCreateResult {
       ).run(input.customer_id, saleId, balance, 'sale');
     }
 
+    // PHASE 3d: the sale is a timeline event, written in the SAME transaction
+    // as the sale itself. A later void adds a second, separate event.
+    const customerName = input.customer_id
+      ? ((db.prepare('SELECT name FROM customers WHERE id = ?').get(input.customer_id) as
+          | { name: string }
+          | undefined)?.name ?? null)
+      : null;
+    recordSaleEvent({
+      event_type: 'sale',
+      sale_id: saleId,
+      invoice_no: invoiceNo,
+      user_id: getSessionUserId() ?? 1,
+      amount: finalTotal,
+      reason: input.notes ?? null,
+      snapshot: {
+        state: 'completed',
+        customer_id: input.customer_id ?? null,
+        customer_name: customerName,
+        payment_mode: payments.map((p) => p.mode).join(', '),
+        subtotal: lines.reduce((s, l) => s + l.line_taxable, 0),
+        discount_amount,
+        tax_amount,
+        total: finalTotal,
+        lines: lines.map((l) => ({
+          product_id: l.product_id,
+          qty: l.qty,
+          unit_price: l.price,
+          line_total: l.line_total,
+        })),
+      },
+      created_at: nowIso,
+    });
+
     db.exec('COMMIT');
 
     const sale = getSale(saleId);
@@ -480,11 +515,13 @@ export function voidSale(id: number, reason: string): boolean {
   const sale = getSale(id);
   if (!sale) throw new Error('Sale not found');
   if (sale.status !== 'completed') throw new Error('Only completed sales can be voided');
+  const cleanReason = String(reason ?? '').trim();
+  if (!cleanReason) throw new Error('A void reason is required');
 
   db.exec('BEGIN');
   try {
     db.prepare("UPDATE sales SET status = 'voided', notes = ? WHERE id = ?").run(
-      (sale.notes ? sale.notes + ' | ' : '') + 'VOID: ' + reason,
+      (sale.notes ? sale.notes + ' | ' : '') + 'VOID: ' + cleanReason,
       id
     );
     for (const it of sale.items) {
@@ -520,8 +557,33 @@ export function voidSale(id: number, reason: string): boolean {
         ).run(sale.customer_id, id, -reverse, 'void');
       }
     }
+    // PHASE 3d: the void is its own timeline event with the void's timestamp,
+    // user and reason — the original sale event is left untouched.
+    recordSaleEvent({
+      event_type: 'void',
+      sale_id: id,
+      invoice_no: sale.invoice_no,
+      user_id: getSessionUserId() ?? 1,
+      amount: -Math.abs(sale.total_amount),
+      reason: cleanReason,
+      snapshot: {
+        state: 'voided',
+        original_invoice: sale.invoice_no,
+        customer_id: sale.customer_id,
+        customer_name: sale.customer_name ?? null,
+        total: sale.total_amount,
+        lines: sale.items.map((it) => ({
+          product_id: it.product_id,
+          name: it.product_name ?? null,
+          qty: it.qty,
+          unit_price: it.unit_price,
+          line_total: it.line_total,
+        })),
+      },
+    });
+
     db.exec('COMMIT');
-    logActivity('sale_voided', 'sale', id, `invoice=${sale.invoice_no} | reason=${reason}`);
+    logActivity('sale_voided', 'sale', id, `invoice=${sale.invoice_no} | reason=${cleanReason}`);
     return true;
   } catch (e) {
     db.exec('ROLLBACK');
@@ -529,20 +591,61 @@ export function voidSale(id: number, reason: string): boolean {
   }
 }
 
+function heldPayload(data: unknown): unknown {
+  if (typeof data === 'string') {
+    try {
+      return JSON.parse(data);
+    } catch {
+      return data;
+    }
+  }
+  return data;
+}
+
+function heldTotal(data: unknown): number {
+  try {
+    return Math.abs(Number(summarizeHeldBill(heldPayload(data)).total) || 0);
+  } catch {
+    return 0;
+  }
+}
+
 export function holdBill(kind: 'held' | 'quotation', label: string, data: unknown): HeldBill {
   const db = getDb();
-  const info = db
-    .prepare('INSERT INTO held_bills (kind, label, data) VALUES (?, ?, ?)')
-    .run(kind, label, JSON.stringify(data));
-  return { id: Number(info.lastInsertRowid), kind, label, data: JSON.stringify(data) };
+  const json = JSON.stringify(data);
+  db.exec('BEGIN');
+  try {
+    const info = db
+      .prepare('INSERT INTO held_bills (kind, label, data) VALUES (?, ?, ?)')
+      .run(kind, label, json);
+    const id = Number(info.lastInsertRowid);
+    const heldCreatedAt =
+      ((db.prepare('SELECT created_at FROM held_bills WHERE id = ?').get(id) as
+        | { created_at: string }
+        | undefined)?.created_at) ?? undefined;
+    recordSaleEvent({
+      event_type: 'hold_created',
+      held_bill_id: id,
+      invoice_no: `HOLD-${id}`,
+      user_id: getSessionUserId() ?? 1,
+      amount: heldTotal(data),
+      snapshot: { ...(typeof heldPayload(data) === 'object' ? (heldPayload(data) as object) : {}), state: 'open', label },
+      created_at: heldCreatedAt,
+    });
+    db.exec('COMMIT');
+    return { id, kind, label, data: json };
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
 }
 
 export function listHeldBills(kind?: 'held' | 'quotation'): HeldBill[] {
   const db = getDb();
   const params: string[] = [];
-  let sql = 'SELECT * FROM held_bills';
+  let sql = 'SELECT * FROM held_bills WHERE deleted_at IS NULL';
   if (kind) {
-    sql += ' WHERE kind = ?';
+    sql += ' AND kind = ?';
     params.push(kind);
   }
   sql += ' ORDER BY id DESC LIMIT 100';
@@ -554,9 +657,68 @@ export function getHeldBill(id: number): HeldBill | null {
   return (db.prepare('SELECT * FROM held_bills WHERE id = ?').get(id) as unknown as HeldBill | undefined) ?? null;
 }
 
-export function deleteHeldBill(id: number): boolean {
+/**
+ * Resume is a real timeline event (not just "read the row"): the cashier did
+ * something, and the event carries its own timestamp/user.
+ */
+export function resumeHeldBill(id: number): HeldBill | null {
   const db = getDb();
-  return db.prepare('DELETE FROM held_bills WHERE id = ?').run(id).changes > 0;
+  const hb = getHeldBill(id);
+  if (!hb) return null;
+  if (hb.deleted_at) throw new Error('This held bill was deleted');
+  db.exec('BEGIN');
+  try {
+    recordSaleEvent({
+      event_type: 'hold_resumed',
+      held_bill_id: id,
+      invoice_no: `HOLD-${id}`,
+      user_id: getSessionUserId() ?? 1,
+      amount: 0,
+      snapshot: { ...(typeof heldPayload(hb.data) === 'object' ? (heldPayload(hb.data) as object) : {}), state: 'resumed', label: hb.label },
+    });
+    db.exec('COMMIT');
+    return hb;
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
+
+/**
+ * Soft delete: the row and its payload stay in the database, so the timeline can
+ * still show exactly what was deleted and by whom. The list filters it out.
+ */
+export function deleteHeldBill(id: number, reason?: string): boolean {
+  const db = getDb();
+  const hb = getHeldBill(id);
+  if (!hb) return false;
+  if (hb.deleted_at) return false;
+  const cleanReason = String(reason ?? '').trim();
+  if (!cleanReason) throw new Error('A delete reason is required');
+
+  db.exec('BEGIN');
+  try {
+    db.prepare("UPDATE held_bills SET deleted_at = datetime('now', 'utc') || 'Z' WHERE id = ? AND deleted_at IS NULL").run(id);
+    recordSaleEvent({
+      event_type: 'hold_deleted',
+      held_bill_id: id,
+      invoice_no: `HOLD-${id}`,
+      user_id: getSessionUserId() ?? 1,
+      amount: -heldTotal(hb.data),
+      reason: cleanReason,
+      snapshot: {
+        ...(typeof heldPayload(hb.data) === 'object' ? (heldPayload(hb.data) as object) : {}),
+        state: 'deleted',
+        label: hb.label,
+        deleted_bill_id: id,
+      },
+    });
+    db.exec('COMMIT');
+    return true;
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
 }
 
 export function listCustomers(status?: 'paid' | 'pending' | 'all', from?: string, to?: string): Customer[] {

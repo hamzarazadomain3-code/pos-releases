@@ -241,6 +241,23 @@ export default function Settings() {
               </select>
               <span className="muted small">If enabled, the till warns when an item's price is below its cost price. Owner/Manager can override with PIN.</span>
             </label>
+            <label className="field">
+              <span>Business day starts at</span>
+              <select
+                value={String(settings.business_day_start_hour ?? '0')}
+                onChange={(e) => setSettings({ ...settings, business_day_start_hour: e.target.value })}
+              >
+                {Array.from({ length: 24 }, (_, h) => (
+                  <option key={h} value={String(h)}>
+                    {String(h).padStart(2, '0')}:00 {h === 0 ? '(midnight)' : ''}
+                  </option>
+                ))}
+              </select>
+              <span className="muted small">
+                Sales History and Dashboard “Today” use this boundary. 00:00 is the normal calendar day;
+                set 04:00 if the shop closes after midnight and the late bills belong to the previous day.
+              </span>
+            </label>
             <div className="modal-actions">
               <button className="btn btn-primary" onClick={saveShop}>
                 {saved ? 'Saved!' : 'Save'}

@@ -3462,6 +3462,16 @@ input.qty-val::-webkit-inner-spin-button {
 
 .badge-quote { background: #ede9fe; color: #5b21b6; }
 .badge-danger { background: #fee2e2; color: #991b1b; }
+
+/* PHASE 3d — Sales History timeline type chips / badges. */
+.hist-type-sale { background: #e7f7ee; color: #0a7a33; }
+.hist-type-return { background: #fff1f0; color: #b42318; }
+.hist-type-refund { background: #fff7e6; color: #8a5a00; }
+.hist-type-void { background: #fee2e2; color: #991b1b; }
+.hist-type-delete { background: #f3f4f6; color: #4b5563; }
+.hist-type-hold { background: #e0f2fe; color: #075985; }
+.hist-type-resume { background: #ecfccb; color: #3f6212; }
+.hist-type-quote { background: #ede9fe; color: #5b21b6; }
 .pad { padding: 20px; }
 .modal-wide { width: 820px; }
 

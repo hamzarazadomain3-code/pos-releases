@@ -4,6 +4,11 @@ import { BrowserWindow, dialog } from 'electron';
 import { todayLocal, formatLocalString, daysAgo, toLocalDateString } from '../utils/timezone';
 import { createWriteStream } from 'fs';
 import { reconcilePayments, type SaleRow as ReconciliationSaleRow } from '../../shared/paymentReconciliation';
+import {
+  businessDayBounds,
+  currentBusinessDate,
+  normalizeBusinessDayStart,
+} from '../../shared/salesHistory';
 import type {
   SalesAnalysisResult,
   ProductPerformanceResult,
@@ -148,9 +153,19 @@ export function listExpiringSoon(days = 30): ExpiringRow[] {
 
 export function dashboard(): DashboardData {
   const db = getDb();
+  // PHASE 3d: one local business-day boundary shared with Sales History, so an
+  // overnight shop (04:00 anchor) does not see yesterday's late bills as "today".
+  const settings = getAllSettings() as Record<string, string>;
+  const startHour = normalizeBusinessDayStart(settings.business_day_start_hour ?? 0);
+  const businessDate = currentBusinessDate(startHour);
+  const { fromUtc, toUtc } = businessDayBounds(businessDate, businessDate, startHour);
   const today = one<{ total: number; count: number }>(
     `SELECT COALESCE(SUM(total_amount - COALESCE(returned_amount,0)),0) AS total, COUNT(*) AS count
-     FROM sales WHERE status='completed' AND date(created_at) = date('now','localtime')`
+     FROM sales WHERE status='completed'
+       AND datetime(created_at) >= datetime(?)
+       AND datetime(created_at) < datetime(?)`,
+    fromUtc,
+    toUtc
   );
   const udhaar = one<{ due: number }>('SELECT COALESCE(SUM(balance),0) AS due FROM customers');
   const low = one<{ c: number }>(

@@ -50,7 +50,18 @@ const bridge: PosBridge = {
       ipcRenderer.invoke('sales:hold', kind, label, data),
     heldBills: (kind?: 'held' | 'quotation') => ipcRenderer.invoke('sales:heldBills', kind),
     getHeld: (id: number) => ipcRenderer.invoke('sales:getHeld', id),
-    deleteHeld: (id: number) => ipcRenderer.invoke('sales:deleteHeld', id),
+    resumeHeld: (id: number) => ipcRenderer.invoke('sales:resumeHeld', id),
+    deleteHeld: (id: number, reason?: string) => ipcRenderer.invoke('sales:deleteHeld', id, reason),
+  },
+  history: {
+    defaults: () => ipcRenderer.invoke('history:defaults'),
+    list: (filters: unknown, page?: number, pageSize?: number) =>
+      ipcRenderer.invoke('history:list', filters, page, pageSize),
+    counts: (filters: unknown) => ipcRenderer.invoke('history:counts', filters),
+    summary: (filters: unknown) => ipcRenderer.invoke('history:summary', filters),
+    openHeldCount: () => ipcRenderer.invoke('history:openHeld'),
+    detail: (eventId: number) => ipcRenderer.invoke('history:detail', eventId),
+    print: (filters: unknown) => ipcRenderer.invoke('history:print', filters),
   },
   customers: {
     list: () => ipcRenderer.invoke('customers:list'),
