@@ -1,5 +1,5 @@
 import { getDb } from '../db';
-import { getSessionUserId } from './auth';
+import { getSessionUserId, currentUser } from './auth';
 import { getSetting } from './settings';
 import { printDocument } from './printService';
 import {
@@ -72,6 +72,21 @@ export function recordSaleEvent(input: RecordSaleEventInput): number {
 /** The optional business-day anchor stored in settings (0 = midnight). */
 export function getBusinessDayStartHour(): number {
   return normalizeBusinessDayStart(getSetting('business_day_start_hour') ?? 0);
+}
+
+/** Check if the current user is a cashier (restricted to own events). */
+function isCashier(): boolean {
+  const user = currentUser();
+  return user?.role === 'cashier';
+}
+
+/** Enforce server-side role rules: cashiers only see their own events. */
+function enforceRoleRules(filters: HistoryFilters): HistoryFilters {
+  if (isCashier()) {
+    // Cashier: ignore client's onlyMySales, force to true
+    return { ...filters, onlyMySales: true };
+  }
+  return filters;
 }
 
 function effectiveFilters(filters: HistoryFilters): Required<
@@ -188,6 +203,7 @@ const EVENT_SELECT = `
     e.invoice_no,
     e.sale_id,
     e.held_bill_id,
+    e.user_id,
     COALESCE(c.name, json_extract(e.snapshot_json, '$.customer_name'), '') AS customer,
     COALESCE(u.username, json_extract(e.snapshot_json, '$.user_name'), '') AS user,
     COALESCE(e.amount, 0) AS amount,
@@ -247,7 +263,8 @@ export function listHistoryEvents(
   pageSize = 100
 ): HistoryListResult {
   const db = getDb();
-  const { sql, params } = buildWhere(filters);
+  const enforced = enforceRoleRules(filters);
+  const { sql, params } = buildWhere(enforced);
   const paging = normalizePage(page, pageSize);
 
   const totalRow = db
@@ -282,7 +299,8 @@ export function listHistoryEvents(
 
 export function historyTypeCounts(filters: HistoryFilters = {}): HistoryTypeCount[] {
   const db = getDb();
-  const { sql, params } = buildWhere(filters);
+  const enforced = enforceRoleRules(filters);
+  const { sql, params } = buildWhere(enforced);
   const rows = db
     .prepare(
       `SELECT e.event_type, COUNT(*) AS count, COALESCE(SUM(e.amount),0) AS total
@@ -310,7 +328,8 @@ export function historyOpenHeldCount(): number {
 
 export function historySummary(filters: HistoryFilters = {}): HistorySummary {
   const db = getDb();
-  const { sql, params } = buildWhere(filters);
+  const enforced = enforceRoleRules(filters);
+  const { sql, params } = buildWhere(enforced);
   // Join sales to get status and returned_amount.
   // Only 'completed' sales contribute to salesTotal (voided sales are excluded;
   // their cancellation is represented by the 'void' event).
@@ -452,6 +471,14 @@ export function getHistoryDetail(eventId: number): HistoryDetail | null {
   if (!raw) return null;
   const event = mapRow(raw);
 
+  // Server-side role check: cashier can only view their own events.
+  if (isCashier()) {
+    const uid = getSessionUserId();
+    if (Number(raw.user_id) !== uid) {
+      return null;
+    }
+  }
+
   let snapshot: unknown = null;
   if (event.has_snapshot) {
     const snapRow = db
@@ -499,8 +526,9 @@ function escapeHtml(value: unknown): string {
  * invoice printer slot). Same rows the screen is showing, newest first.
  */
 export async function printHistoryReport(filters: HistoryFilters = {}) {
-  const list = listHistoryEvents(filters, 1, 500);
-  const summary = historySummary(filters);
+  const enforced = enforceRoleRules(filters);
+  const list = listHistoryEvents(enforced, 1, 500);
+  const summary = historySummary(enforced);
   const f = effectiveFilters(filters);
   const rows = list.rows
     .map(
