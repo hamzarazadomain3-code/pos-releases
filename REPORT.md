@@ -537,9 +537,29 @@ No suite reports "0 passed" or a pass while a check failed. The two previously b
 7. **Rotate the Gmail app password** — the SMTP secret was masked at the IPC boundary, but the stored value is unchanged.
 8. **Rebuild/reinstall desktop and rebuild/redeploy web** — separate databases; neither was released by this run.
 
-### Closing statement
+## Item 7 — Real-data check of migration 073 (2026-11-09)
 
-Everything marked **DONE** above is backed by a permanent test that imports the real `dist` code and passed in this session. Everything UI-only is marked **PARTIAL (no test: UI)** rather than dressed up as verified. No release, version bump, push, deploy, or destructive data operation was performed.
+**Source:** `E:\antigravty\db-copy\pos-copy.db` copied to `E:\temp\pos-073-check.db` (original untouched).
+**Method:** All 73 migrations run on the temp copy; migration 073 run twice for idempotency.
+
+| Metric | Value |
+|--------|-------|
+| Total sale_events after first run | 216 |
+| — sale | 207 |
+| — return | 6 |
+| — void | 3 |
+| — cash_refund | 0 |
+| — hold_created | 0 |
+| — hold_resumed | 0 |
+| — hold_deleted | 0 |
+| — quotation_converted | 0 |
+| Sales without an event | 0 |
+| Second run added | 0 rows (idempotent) |
+| Integrity check | ok |
+| Migration run time | ~15.5 seconds (all 73 migrations) |
+| Migration 073 second run | ~5.4 seconds |
+
+**Conclusion:** Migration 073 backfills correctly with 0 sales missing events. Idempotent. No errors.
 
 ---
 
