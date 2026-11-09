@@ -7,7 +7,7 @@ import { can, getSessionUserId } from './auth';
 import { getAdminSetting } from './admin';
 import { recordSaleEvent } from './salesHistory';
 import { businessDayBounds } from '../../shared/salesHistory';
-import { getBusinessDayStartHour } from './salesHistory';
+import { getBusinessDayStartHour, getShopTimezone } from './salesHistory';
 import type { CashRefundRow, ReturnItemRow, ReturnRow } from '../../shared/types';
 
 export interface ReturnInputItem {
@@ -458,12 +458,12 @@ export function listReturns(
   `;
   const params: (string | number)[] = [];
   if (from) {
-    const { fromUtc } = businessDayBounds(from, from, getBusinessDayStartHour());
+    const { fromUtc } = businessDayBounds(from, from, getBusinessDayStartHour(), getShopTimezone());
     sql += ' AND datetime(r.created_at) >= datetime(?)';
     params.push(fromUtc);
   }
   if (to) {
-    const { toUtc } = businessDayBounds(to, to, getBusinessDayStartHour());
+    const { toUtc } = businessDayBounds(to, to, getBusinessDayStartHour(), getShopTimezone());
     sql += ' AND datetime(r.created_at) < datetime(?)';
     params.push(toUtc);
   }
@@ -547,12 +547,12 @@ export function listCashRefunds(from?: string, to?: string): CashRefundRow[] {
   `;
   const params: (string | number)[] = [];
   if (from) {
-    const { fromUtc } = businessDayBounds(from, from, getBusinessDayStartHour());
+    const { fromUtc } = businessDayBounds(from, from, getBusinessDayStartHour(), getShopTimezone());
     sql += ' AND datetime(r.created_at) >= datetime(?)';
     params.push(fromUtc);
   }
   if (to) {
-    const { toUtc } = businessDayBounds(to, to, getBusinessDayStartHour());
+    const { toUtc } = businessDayBounds(to, to, getBusinessDayStartHour(), getShopTimezone());
     sql += ' AND datetime(r.created_at) < datetime(?)';
     params.push(toUtc);
   }

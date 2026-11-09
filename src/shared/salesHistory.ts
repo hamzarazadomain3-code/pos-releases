@@ -174,8 +174,50 @@ export interface HistoryDetail {
   payments: HistoryDetailPayment[];
 }
 
-/** Pakistan has observed UTC+05:00 with no DST since 2009. */
-export const PKT_OFFSET_MINUTES = 300;
+/** Default shop timezone (used when the setting is missing or invalid). */
+export const DEFAULT_SHOP_TIMEZONE = 'Asia/Karachi';
+
+/** Options for the Settings > Billing timezone dropdown. */
+export const SHOP_TIMEZONE_OPTIONS = [
+  'Asia/Karachi',
+  'Asia/Dubai',
+  'Asia/Riyadh',
+  'Asia/Kolkata',
+  'UTC',
+] as const;
+
+/**
+ * Compute the UTC offset (in minutes) for a given IANA timezone at a given
+ * instant. Uses Intl so DST is handled correctly for zones that observe it.
+ */
+export function getTzOffsetMinutes(timezone: string, date: Date = new Date()): number {
+  const tz = timezone || DEFAULT_SHOP_TIMEZONE;
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(date);
+    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '0';
+    const year = Number(get('year'));
+    const month = Number(get('month')) - 1;
+    const day = Number(get('day'));
+    const hour = Number(get('hour'));
+    const minute = Number(get('minute'));
+    const second = Number(get('second'));
+    const localMs = Date.UTC(year, month, day, hour, minute, second);
+    return Math.round((localMs - date.getTime()) / 60_000);
+  } catch {
+    // Fallback for invalid timezone strings.
+    return 300; // Asia/Karachi default
+  }
+}
 
 /** Parse a DB timestamp that may be `...Z`, ISO with offset, or bare UTC. */
 export function parseDbTimestamp(ts: string | null | undefined): Date | null {
@@ -195,25 +237,28 @@ export function parseDbTimestamp(ts: string | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** The Asia/Karachi calendar day (`YYYY-MM-DD`) of a UTC timestamp. */
-export function localDayOf(ts: string | null | undefined): string {
+export function localDayOf(ts: string | null | undefined, timezone: string = DEFAULT_SHOP_TIMEZONE): string {
   const d = parseDbTimestamp(ts);
   if (!d) return '';
-  const shifted = new Date(d.getTime() + PKT_OFFSET_MINUTES * 60_000);
+  const offset = getTzOffsetMinutes(timezone, d);
+  const shifted = new Date(d.getTime() + offset * 60_000);
   return shifted.toISOString().slice(0, 10);
 }
 
-/** The Asia/Karachi clock time (`HH:MM:SS`) of a UTC timestamp. */
-export function localTimeOf(ts: string | null | undefined): string {
+/** The local clock time (`HH:MM:SS`) of a UTC timestamp. */
+export function localTimeOf(ts: string | null | undefined, timezone: string = DEFAULT_SHOP_TIMEZONE): string {
   const d = parseDbTimestamp(ts);
   if (!d) return '';
-  const shifted = new Date(d.getTime() + PKT_OFFSET_MINUTES * 60_000);
+  const offset = getTzOffsetMinutes(timezone, d);
+  const shifted = new Date(d.getTime() + offset * 60_000);
   return shifted.toISOString().slice(11, 19);
 }
 
-function localDateToUtcMs(dateStr: string, hour: number): number {
+function localDateToUtcMs(dateStr: string, hour: number, timezone: string = DEFAULT_SHOP_TIMEZONE): number {
   const [y, m, d] = dateStr.split('-').map(Number);
-  return Date.UTC(y, (m || 1) - 1, d || 1, hour, 0, 0, 0) - PKT_OFFSET_MINUTES * 60_000;
+  const refDate = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12, 0, 0));
+  const offset = getTzOffsetMinutes(timezone, refDate);
+  return Date.UTC(y, (m || 1) - 1, d || 1, hour, 0, 0, 0) - offset * 60_000;
 }
 
 function toSqlUtc(ms: number): string {
@@ -221,17 +266,17 @@ function toSqlUtc(ms: number): string {
 }
 
 /**
- * UTC [from, to) bounds for a local calendar range. With a 04:00 business-day
- * anchor `2026-11-09..2026-11-09` means 2026-11-09 04:00 → 2026-11-10 04:00 PKT.
+ * UTC [from, to) bounds for a local calendar range.
  */
 export function businessDayBounds(
   from: string,
   to: string,
-  startHour = 0
+  startHour = 0,
+  timezone: string = DEFAULT_SHOP_TIMEZONE
 ): { fromUtc: string; toUtc: string } {
   const hour = normalizeBusinessDayStart(startHour);
-  const startMs = localDateToUtcMs(from, hour);
-  const endMs = localDateToUtcMs(to, hour) + 24 * 60 * 60 * 1000;
+  const startMs = localDateToUtcMs(from, hour, timezone);
+  const endMs = localDateToUtcMs(to, hour, timezone) + 24 * 60 * 60 * 1000;
   return { fromUtc: toSqlUtc(startMs), toUtc: toSqlUtc(endMs) };
 }
 
@@ -246,9 +291,10 @@ export function normalizeBusinessDayStart(value: unknown): number {
  * The date whose business day contains `now`. With a 04:00 anchor, 02:00 on
  * 10 Nov is still the business day that started on 9 Nov.
  */
-export function currentBusinessDate(startHour = 0, now: Date = new Date()): string {
+export function currentBusinessDate(startHour = 0, now: Date = new Date(), timezone: string = DEFAULT_SHOP_TIMEZONE): string {
   const hour = normalizeBusinessDayStart(startHour);
-  const shifted = new Date(now.getTime() + PKT_OFFSET_MINUTES * 60_000);
+  const offset = getTzOffsetMinutes(timezone, now);
+  const shifted = new Date(now.getTime() + offset * 60_000);
   const y = shifted.getUTCFullYear();
   const m = shifted.getUTCMonth();
   const d = shifted.getUTCDate();
@@ -285,9 +331,10 @@ export function defaultHistoryFilters(today: string): HistoryFilters {
 export function presetRange(
   preset: 'today' | 'yesterday' | 'week' | 'month' | 'lastmonth' | 'custom',
   startHour = 0,
-  now: Date = new Date()
+  now: Date = new Date(),
+  timezone: string = DEFAULT_SHOP_TIMEZONE
 ): { from: string; to: string } {
-  const today = currentBusinessDate(startHour, now);
+  const today = currentBusinessDate(startHour, now, timezone);
   const [y, m, d] = today.split('-').map(Number);
 
   switch (preset) {

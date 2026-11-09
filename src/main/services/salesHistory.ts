@@ -6,6 +6,8 @@ import {
   businessDayBounds,
   currentBusinessDate,
   defaultHistoryFilters,
+  DEFAULT_SHOP_TIMEZONE,
+  getTzOffsetMinutes,
   localDayOf,
   localTimeOf,
   normalizeBusinessDayStart,
@@ -74,6 +76,11 @@ export function getBusinessDayStartHour(): number {
   return normalizeBusinessDayStart(getSetting('business_day_start_hour') ?? 0);
 }
 
+/** The shop's IANA timezone (default Asia/Karachi). */
+export function getShopTimezone(): string {
+  return getSetting('shop_timezone') ?? DEFAULT_SHOP_TIMEZONE;
+}
+
 /** Check if the current user is a cashier (restricted to own events). */
 function isCashier(): boolean {
   const user = currentUser();
@@ -95,7 +102,8 @@ function effectiveFilters(filters: HistoryFilters): Required<
   const startHour = normalizeBusinessDayStart(
     filters.businessDayStartHour ?? getBusinessDayStartHour()
   );
-  const today = currentBusinessDate(startHour);
+  const tz = getShopTimezone();
+  const today = currentBusinessDate(startHour, new Date(), tz);
   return {
     ...filters,
     from: filters.from || today,
@@ -114,7 +122,8 @@ function buildWhere(filters: HistoryFilters): WhereParts {
   const clauses: string[] = [];
   const params: (string | number)[] = [];
 
-  const { fromUtc, toUtc } = businessDayBounds(f.from!, f.to!, f.businessDayStartHour!);
+  const tz = getShopTimezone();
+  const { fromUtc, toUtc } = businessDayBounds(f.from!, f.to!, f.businessDayStartHour!, tz);
   clauses.push('datetime(e.created_at) >= datetime(?)');
   params.push(fromUtc);
   clauses.push('datetime(e.created_at) < datetime(?)');
@@ -240,7 +249,7 @@ function mapRow(raw: Record<string, unknown>): HistoryEventRow {
     event_id: Number(raw.event_id),
     event_type: String(raw.event_type) as HistoryEventType,
     occurred_at: String(raw.occurred_at ?? ''),
-    local_day: localDayOf(String(raw.occurred_at ?? '')),
+    local_day: localDayOf(String(raw.occurred_at ?? ''), getShopTimezone()),
     invoice_no: (raw.invoice_no as string | null) ?? null,
     sale_id: raw.sale_id == null ? null : Number(raw.sale_id),
     held_bill_id: raw.held_bill_id == null ? null : Number(raw.held_bill_id),
@@ -530,10 +539,11 @@ export async function printHistoryReport(filters: HistoryFilters = {}) {
   const list = listHistoryEvents(enforced, 1, 500);
   const summary = historySummary(enforced);
   const f = effectiveFilters(filters);
+  const tz = getShopTimezone();
   const rows = list.rows
     .map(
       (e) => `<tr>
-        <td>${escapeHtml(localDayOf(e.occurred_at))} ${escapeHtml(localTimeOf(e.occurred_at))}</td>
+        <td>${escapeHtml(localDayOf(e.occurred_at, tz))} ${escapeHtml(localTimeOf(e.occurred_at, tz))}</td>
         <td>${escapeHtml(e.event_type)}</td>
         <td>${escapeHtml(e.invoice_no ?? '')}</td>
         <td>${escapeHtml(e.customer ?? '')}</td>
@@ -567,16 +577,20 @@ export async function printHistoryReport(filters: HistoryFilters = {}) {
 
 export function historyPresetRange(preset: string): { from: string; to: string } {
   const startHour = getBusinessDayStartHour();
+  const tz = getShopTimezone();
   const valid = ['today', 'yesterday', 'week', 'month', 'lastmonth', 'custom'] as const;
   const p = valid.includes(preset as any) ? (preset as typeof valid[number]) : 'today';
-  return presetRange(p, startHour);
+  return presetRange(p, startHour, new Date(), tz);
 }
 
 /** The default view every caller should open Sales History with. */
 export function historyDefaults(businessDayStartHour?: number): HistoryFilters {
+  const tz = getShopTimezone();
   return defaultHistoryFilters(
     currentBusinessDate(
-      businessDayStartHour ?? getBusinessDayStartHour()
+      businessDayStartHour ?? getBusinessDayStartHour(),
+      new Date(),
+      tz
     )
   );
 }

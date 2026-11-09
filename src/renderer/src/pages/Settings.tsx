@@ -258,6 +258,23 @@ export default function Settings() {
                 set 04:00 if the shop closes after midnight and the late bills belong to the previous day.
               </span>
             </label>
+            <label className="field">
+              <span>Shop timezone</span>
+              <select
+                value={String(settings.shop_timezone ?? 'Asia/Karachi')}
+                onChange={(e) => setSettings({ ...settings, shop_timezone: e.target.value })}
+              >
+                <option value="Asia/Karachi">Asia/Karachi (PKT, UTC+5)</option>
+                <option value="Asia/Dubai">Asia/Dubai (GST, UTC+4)</option>
+                <option value="Asia/Riyadh">Asia/Riyadh (AST, UTC+3)</option>
+                <option value="Asia/Kolkata">Asia/Kolkata (IST, UTC+5:30)</option>
+                <option value="UTC">UTC (UTC+0)</option>
+              </select>
+              <span className="muted small">
+                Used for all local-day boundaries (Dashboard Today, Returns, Sales History).
+                Change only if the shop is outside Pakistan.
+              </span>
+            </label>
             <div className="modal-actions">
               <button className="btn btn-primary" onClick={saveShop}>
                 {saved ? 'Saved!' : 'Save'}

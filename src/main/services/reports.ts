@@ -157,8 +157,9 @@ export function dashboard(): DashboardData {
   // overnight shop (04:00 anchor) does not see yesterday's late bills as "today".
   const settings = getAllSettings() as Record<string, string>;
   const startHour = normalizeBusinessDayStart(settings.business_day_start_hour ?? 0);
-  const businessDate = currentBusinessDate(startHour);
-  const { fromUtc, toUtc } = businessDayBounds(businessDate, businessDate, startHour);
+  const tz = settings.shop_timezone ?? 'Asia/Karachi';
+  const businessDate = currentBusinessDate(startHour, new Date(), tz);
+  const { fromUtc, toUtc } = businessDayBounds(businessDate, businessDate, startHour, tz);
   const today = one<{ total: number; count: number }>(
     `SELECT COALESCE(SUM(total_amount - COALESCE(returned_amount,0)),0) AS total, COUNT(*) AS count
      FROM sales WHERE status='completed'
