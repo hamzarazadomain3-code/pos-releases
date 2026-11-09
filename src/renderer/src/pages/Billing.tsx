@@ -10,7 +10,7 @@ import { eventCombo, keyFromEvent, matchesShortcut } from '../utils/shortcutKeys
 import { type CartLine, lineTotals, rehydrateCartLines, serializeCartLine, summarizeHeldBill, type HeldBillSummary } from '@shared/cartMath';
 import { defaultCombo, hintRows, isActionAllowedOn, resolveCombo } from '@shared/shortcuts';
 import { parseNegativeStockPolicy, checkNegativeStock, type NegativeStockPolicy } from '@shared/negativeStock';
-import { defaultBillDiscount } from '@shared/customerDiscount';
+import { applyCustomerDiscount, defaultBillDiscount } from '@shared/customerDiscount';
 import {
   HISTORY_EVENT_CLASSES,
   HISTORY_EVENT_LABELS,
@@ -173,6 +173,7 @@ export default function Billing({ onNavigate, onLogout }: BillingProps) {
   const [priceMode, setPriceMode] = useState<'retail' | 'wholesale'>('retail');
   const [userRole, setUserRole] = useState<string | null>(null);
   const [billDiscount, setBillDiscount] = useState('');
+  const [autoAppliedDiscount, setAutoAppliedDiscount] = useState(false);
   const [discountType, setDiscountType] = useState<'amount' | 'percent'>('amount');
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1531,23 +1532,29 @@ useEffect(() => {
         const cust = custs.find((c) => String(c.id) === customerId);
         if (cust) {
           // Calculate loyalty based on purchase history (mock for now)
-          // In real implementation, this would come from a loyalty API
           setSelectedCustomerLoyalty({ points: Math.floor(cust.balance / 100), tier: cust.balance > 10000 ? 'Gold' : cust.balance > 5000 ? 'Silver' : 'Bronze' });
 
-          // Auto-apply the customer's default discount only when the customer is
-          // chosen. The pure helper returns null for 0/NaN so a manually edited
-          // bill discount is never wiped by a no-discount customer.
-          const defDisc = defaultBillDiscount(cust);
-          if (defDisc) {
-            setBillDiscount(defDisc.value);
-            setDiscountType(defDisc.type);
-          }
+          // Apply customer default discount using the pure helper.
+          const result = applyCustomerDiscount({
+            customer: cust,
+            currentDiscount: billDiscount,
+            autoApplied: autoAppliedDiscount,
+          });
+          setBillDiscount(result.discount);
+          setDiscountType(result.type);
+          setAutoAppliedDiscount(result.autoApplied);
         }
       }).catch(() => undefined);
     } else {
       setSelectedCustomerLoyalty(null);
-      // Clear discount when customer is removed (optional — comment out if you want to keep the last discount)
-      setBillDiscount('');
+      // Clear only auto-applied discounts when customer is removed.
+      const result = applyCustomerDiscount({
+        customer: null,
+        currentDiscount: billDiscount,
+        autoApplied: autoAppliedDiscount,
+      });
+      setBillDiscount(result.discount);
+      setAutoAppliedDiscount(result.autoApplied);
     }
   }, [customerId]);
 
@@ -2792,7 +2799,7 @@ const handleUnitChange = (newLevel: number) => {
                     type="number"
                     value={discountType === 'percent' ? billDiscount : ''}
                     placeholder="0"
-                    onChange={(e) => { setBillDiscount(e.target.value); setDiscountType('percent'); }}
+                    onChange={(e) => { setBillDiscount(e.target.value); setDiscountType('percent'); setAutoAppliedDiscount(false); }}
                   />
                 </label>
                 <label className="bsf-field">
@@ -2804,7 +2811,7 @@ const handleUnitChange = (newLevel: number) => {
                     type="number"
                     value={discountType === 'amount' ? billDiscount : ''}
                     placeholder="0"
-                    onChange={(e) => { setBillDiscount(e.target.value); setDiscountType('amount'); }}
+                    onChange={(e) => { setBillDiscount(e.target.value); setDiscountType('amount'); setAutoAppliedDiscount(false); }}
                   />
                 </label>
                 <label className="bsf-field">
