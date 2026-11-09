@@ -3719,14 +3719,6 @@ const handleUnitChange = (newLevel: number) => {
           title="Sales History — Today's Timeline"
           className="modal-wide"
           closeOnOverlay={false}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              // Spec: Esc REFRESHES the timeline (it does not close the modal).
-              e.preventDefault();
-              e.stopPropagation();
-              void loadHistory(historyFilters, historyPage);
-            }
-          }}
         >
             {historyOpenHolds > 0 && (
               <div style={{ marginBottom: '10px', padding: '8px 12px', borderRadius: '6px', background: '#fff7e6', border: '1px solid #ffd591', color: '#8a5a00' }}>
@@ -3823,6 +3815,7 @@ const handleUnitChange = (newLevel: number) => {
               </label>
               <button className="btn btn-primary btn-sm" onClick={() => void applyHistoryFilters(1)} disabled={historyBusy}>Apply</button>
               <button className="btn btn-sm" onClick={clearHistoryFilters}>Clear Filters</button>
+              <button className="btn btn-sm" onClick={() => void loadHistory(historyFilters, historyPage)} disabled={historyBusy}>Refresh</button>
               <button className="btn btn-sm" onClick={() => void exportHistoryCsv()} disabled={!history.length}>CSV</button>
               <button className="btn btn-sm" onClick={() => void exportHistoryExcel()} disabled={!history.length}>Excel</button>
               <button className="btn btn-sm" onClick={() => void window.api.history.print(historyUiToService(historyFilters))} disabled={!history.length}>Print</button>
@@ -3923,7 +3916,7 @@ const handleUnitChange = (newLevel: number) => {
 
             <div className="modal-actions" style={{ justifyContent: 'space-between' }}>
               <span className="muted" style={{ fontSize: '12px' }}>
-                {historyBusy ? 'Loading…' : `${history.length} of ${historyTotal} event${historyTotal === 1 ? '' : 's'} · newest first`}
+                {historyBusy ? 'Loading…' : `${history.length} of ${historyTotal} event${historyTotal === 1 ? '' : 's'} · newest first. Press Esc to close, Refresh to reload.`}
               </span>
               <div style={{ display: 'flex', gap: '6px' }}>
                 <button className="btn btn-sm" disabled={historyPage <= 1 || historyBusy} onClick={() => void applyHistoryFilters(historyPage - 1)}>Previous</button>
