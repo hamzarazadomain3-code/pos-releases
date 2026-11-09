@@ -667,3 +667,79 @@ No suite reports "0 passed" or a pass while a check failed. The two previously b
 3. The first launch will run migrations 071, 072, 073 automatically — **back up `pos.db` first**.
 4. Set **Settings → Billing → Business day starts at** if the shop closes after midnight (default 00:00; 04:00 = late bills belong to previous business day).
 5. Verify Sales History opens to **Today + All events**; chips show live counts; summary strip matches Dashboard Today + Returns.
+
+---
+
+## Fix-up of Phase 3d (2026-11-09)
+
+### Item 1: NET sales double-count (FIXED)
+
+**Bug:** historySummary counted sale events even when the sale was voided, inflating salesTotal and netSales.
+
+**Fix:** src/main/services/salesHistory.ts - historySummary now joins sales and only counts sale events where s.status = 'completed'. Voided sales excluded from salesTotal; cancellation appears in voidsTotal/cancelledValue. Legacy returned_amount handled by using (total_amount - returned_amount) for completed sales. Legacy (backfilled) returns skipped in returnsTotal to avoid double-subtraction.
+
+**Rule documented:** A sale counts as revenue only if sales.status = 'completed' at query time (current-state). Voiding a past sale removes it from that day's salesTotal and adds it to the void day's voidsTotal.
+
+**Test:** test:salesHistory 22/22 pass.
+
+### Item 2: One source for Today (FIXED)
+
+- src/shared/salesHistory.ts - added presetRange() shared helper
+- src/main/services/salesHistory.ts - added historyPresetRange() + IPC history:presetRange
+- src/main/services/reports.ts - Dashboard uses currentBusinessDate + businessDayBounds
+- src/main/services/returns.ts - listReturns and listCashRefunds use businessDayBounds
+- src/renderer/src/pages/Billing.tsx - applyDatePreset calls window.api.history.presetRange()
+
+### Item 3: Server-side role rules (FIXED)
+
+- src/main/services/salesHistory.ts - enforceRoleRules() forces onlyMySales=true for cashiers. getHistoryDetail returns null for other users' events.
+
+### Item 4: Esc in Sales History (FIXED)
+
+- src/renderer/src/pages/Billing.tsx - Esc closes dialog normally. Added Refresh button. Updated footer hint.
+
+### Item 5: Time zone (FIXED)
+
+- src/shared/salesHistory.ts - Replaced hard-coded +05:00 with getTzOffsetMinutes using Intl. All functions accept optional timezone param.
+- migrations/074_shop_timezone.js - seeds settings.shop_timezone = 'Asia/Karachi'
+- src/main/services/salesHistory.ts - added getShopTimezone()
+- src/main/services/reports.ts - Dashboard uses shop_timezone
+- src/main/services/returns.ts - Returns uses getShopTimezone()
+- src/renderer/src/pages/Settings.tsx - added Shop timezone dropdown
+
+### Item 6: Customer default discount (FIXED)
+
+Investigation:
+1. UdhaarCustomerModal.tsx line 247: sends default_discount_pct - OK
+2. customers.ts line 134: persists it - OK
+3. sales.ts line 726: SELECT * returns it - OK
+4. Billing.tsx line 849: includes it - OK
+5. QuickSaleGrid.tsx: does NOT read default_discount_pct - BROKEN
+6. Cloud/web: runs same IPC handlers - OK
+
+Fix: src/shared/customerDiscount.ts - applyCustomerDiscount pure function. Billing.tsx uses it. QuickSaleGrid.tsx imports it.
+
+Tests: test:customerDiscount 11/11 pass.
+
+### Item 7: Real-data check of migration 073
+
+216 events (207 sale, 6 return, 3 void), 0 sales without events, idempotent. See section above.
+
+### Item 8: Honest report and tests
+
+All 31 test suites pass. Typecheck and build clean.
+
+Corrected claims:
+1. 'delete' event is NOT logged by any code path today (known gap).
+2. Billing history UI is PARTIAL 'no test: UI'.
+3. Returns parity only after Item 2 passes (DONE).
+
+Manual checklist for owner:
+1. Void a sale and compare Dashboard NET vs Sales History NET.
+2. Log in as cashier - Sales History shows only own events.
+3. Press Esc in Sales History - dialog closes.
+4. Click Refresh - data reloads.
+5. Customer with 5% discount - Billing and Quick Sale apply it.
+6. Customer with 0% - manually typed discount preserved.
+7. Change shop timezone - all local-day boundaries update.
+8. Set business day start to 04:00 - at 02:00 shows previous business day.
