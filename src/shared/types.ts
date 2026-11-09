@@ -1378,6 +1378,7 @@ export interface PosBridge {
     openHeldCount: () => Promise<number>;
     detail: (eventId: number) => Promise<HistoryDetail | null>;
     print: (filters: HistoryFilters) => Promise<{ ok: boolean; message: string }>;
+    presetRange: (preset: string) => Promise<{ from: string; to: string }>;
   };
   customers: {
     list: () => Promise<Customer[]>;

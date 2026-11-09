@@ -176,7 +176,8 @@ export function dashboard(): DashboardData {
     `SELECT COUNT(*) AS c FROM products WHERE active=1 AND stock_qty < 0`
   );
   const expensesToday = one<{ total: number }>(
-    `SELECT COALESCE(SUM(amount),0) AS total FROM expenses WHERE expense_date = date('now','localtime')`
+    `SELECT COALESCE(SUM(amount),0) AS total FROM expenses WHERE expense_date = ?`,
+    businessDate
   );
   const topProducts = all<BestSellerRow>(
     `SELECT p.name AS name, SUM(i.qty) AS qty, SUM(i.line_total) AS revenue

@@ -49,6 +49,7 @@ import {
   historyOpenHeldCount,
   historySummary,
   historyTypeCounts,
+  historyPresetRange,
   listHistoryEvents,
   printHistoryReport,
 } from './services/salesHistory';
@@ -308,6 +309,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('history:openHeld', () => historyOpenHeldCount());
   ipcMain.handle('history:detail', (_e, eventId: number) => getHistoryDetail(eventId));
   ipcMain.handle('history:print', (_e, filters) => printHistoryReport(filters ?? {}));
+  ipcMain.handle('history:presetRange', (_e, preset: string) => historyPresetRange(preset ?? 'today'));
 
   ipcMain.handle('customers:list', () => listCustomers());
   ipcMain.handle('customers:create', (_e, name: string, phone?: string, openingBalance?: number) =>

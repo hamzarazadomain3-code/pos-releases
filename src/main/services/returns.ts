@@ -6,6 +6,8 @@ import { currentShift } from './shifts';
 import { can, getSessionUserId } from './auth';
 import { getAdminSetting } from './admin';
 import { recordSaleEvent } from './salesHistory';
+import { businessDayBounds } from '../../shared/salesHistory';
+import { getBusinessDayStartHour } from './salesHistory';
 import type { CashRefundRow, ReturnItemRow, ReturnRow } from '../../shared/types';
 
 export interface ReturnInputItem {
@@ -456,12 +458,14 @@ export function listReturns(
   `;
   const params: (string | number)[] = [];
   if (from) {
-    sql += ' AND date(r.created_at) >= date(?)';
-    params.push(from);
+    const { fromUtc } = businessDayBounds(from, from, getBusinessDayStartHour());
+    sql += ' AND datetime(r.created_at) >= datetime(?)';
+    params.push(fromUtc);
   }
   if (to) {
-    sql += ' AND date(r.created_at) <= date(?)';
-    params.push(to);
+    const { toUtc } = businessDayBounds(to, to, getBusinessDayStartHour());
+    sql += ' AND datetime(r.created_at) < datetime(?)';
+    params.push(toUtc);
   }
   if (customerId) {
     sql += ' AND s.customer_id = ?';
@@ -543,12 +547,14 @@ export function listCashRefunds(from?: string, to?: string): CashRefundRow[] {
   `;
   const params: (string | number)[] = [];
   if (from) {
-    sql += ' AND date(r.created_at) >= date(?)';
-    params.push(from);
+    const { fromUtc } = businessDayBounds(from, from, getBusinessDayStartHour());
+    sql += ' AND datetime(r.created_at) >= datetime(?)';
+    params.push(fromUtc);
   }
   if (to) {
-    sql += ' AND date(r.created_at) <= date(?)';
-    params.push(to);
+    const { toUtc } = businessDayBounds(to, to, getBusinessDayStartHour());
+    sql += ' AND datetime(r.created_at) < datetime(?)';
+    params.push(toUtc);
   }
   sql += ' ORDER BY r.id DESC LIMIT 500';
   return db.prepare(sql).all(...params) as unknown as CashRefundRow[];

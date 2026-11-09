@@ -11,6 +11,7 @@ import {
   normalizeBusinessDayStart,
   normalizeHistoryTypes,
   normalizePage,
+  presetRange,
   roundMoney,
   type HistoryDetail,
   type HistoryEventRow,
@@ -534,6 +535,13 @@ export async function printHistoryReport(filters: HistoryFilters = {}) {
     <tbody>${rows || '<tr><td colspan="9">No activity in this range.</td></tr>'}</tbody></table>
     </body></html>`;
   return printDocument({ html, paper: 'a4', printerKey: 'invoice', jobName: 'Sales History' });
+}
+
+export function historyPresetRange(preset: string): { from: string; to: string } {
+  const startHour = getBusinessDayStartHour();
+  const valid = ['today', 'yesterday', 'week', 'month', 'lastmonth', 'custom'] as const;
+  const p = valid.includes(preset as any) ? (preset as typeof valid[number]) : 'today';
+  return presetRange(p, startHour);
 }
 
 /** The default view every caller should open Sales History with. */

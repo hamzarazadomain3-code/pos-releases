@@ -62,6 +62,7 @@ const bridge: PosBridge = {
     openHeldCount: () => ipcRenderer.invoke('history:openHeld'),
     detail: (eventId: number) => ipcRenderer.invoke('history:detail', eventId),
     print: (filters: unknown) => ipcRenderer.invoke('history:print', filters),
+    presetRange: (preset: string) => ipcRenderer.invoke('history:presetRange', preset),
   },
   customers: {
     list: () => ipcRenderer.invoke('customers:list'),

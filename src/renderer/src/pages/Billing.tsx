@@ -1854,40 +1854,15 @@ setQuotationMode(false);
       setDatePreset('custom');
       return;
     }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    let from: Date, to: Date;
-    switch (preset) {
-      case 'today':
-        from = new Date(today);
-        to = new Date(today);
-        break;
-      case 'yesterday':
-        from = new Date(today);
-        from.setDate(from.getDate() - 1);
-        to = new Date(from);
-        break;
-      case 'week':
-        from = new Date(today);
-        from.setDate(from.getDate() - 6);
-        to = new Date(today);
-        break;
-      case 'month':
-        from = new Date(today.getFullYear(), today.getMonth(), 1);
-        to = new Date(today);
-        break;
-      case 'lastmonth':
-        from = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-        to = new Date(today.getFullYear(), today.getMonth(), 0);
-        break;
-      default:
-        from = new Date(today);
-        to = new Date(today);
-    }
-    const next = { ...historyFilters, from: toLocalDateString(from), to: toLocalDateString(to) };
-    setHistoryFilters(next);
-    setDatePreset(preset);
-    void loadHistory(next, 1);
+    // Use the shared IPC helper so the 04:00 business-day anchor works.
+    window.api.history.presetRange(preset).then((range) => {
+      const next = { ...historyFilters, from: range.from, to: range.to };
+      setHistoryFilters(next);
+      setDatePreset(preset);
+      void loadHistory(next, 1);
+    }).catch(() => {
+      setDatePreset(preset);
+    });
   }
 
   /** Clear Filters always means "Today + All events" (never a blank/unfiltered month). */

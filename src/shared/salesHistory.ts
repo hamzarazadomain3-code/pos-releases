@@ -277,7 +277,46 @@ export function defaultHistoryFilters(today: string): HistoryFilters {
   };
 }
 
-/** `[]` or every type both mean "All events". */
+/**
+ * Compute the from/to local calendar dates for a Sales History date preset.
+ * Uses the business-day anchor so a 04:00 shop sees the previous business day
+ * at 02:00 instead of the calendar day.
+ */
+export function presetRange(
+  preset: 'today' | 'yesterday' | 'week' | 'month' | 'lastmonth' | 'custom',
+  startHour = 0,
+  now: Date = new Date()
+): { from: string; to: string } {
+  const today = currentBusinessDate(startHour, now);
+  const [y, m, d] = today.split('-').map(Number);
+
+  switch (preset) {
+    case 'today':
+      return { from: today, to: today };
+    case 'yesterday': {
+      const base = new Date(Date.UTC(y, m - 1, d - 1));
+      const yest = base.toISOString().slice(0, 10);
+      return { from: yest, to: yest };
+    }
+    case 'week': {
+      const base = new Date(Date.UTC(y, m - 1, d - 6));
+      const from = base.toISOString().slice(0, 10);
+      return { from, to: today };
+    }
+    case 'month': {
+      const base = new Date(Date.UTC(y, m - 1, 1));
+      const from = base.toISOString().slice(0, 10);
+      return { from, to: today };
+    }
+    case 'lastmonth': {
+      const from = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 10);
+      const to = new Date(Date.UTC(y, m - 1, 0)).toISOString().slice(0, 10);
+      return { from, to };
+    }
+    default:
+      return { from: today, to: today };
+  }
+}
 export function normalizeHistoryTypes(types?: HistoryEventType[] | null): HistoryEventType[] {
   if (!types || types.length === 0) return [...HISTORY_EVENT_TYPES];
   const valid = types.filter((t) => HISTORY_EVENT_TYPES.includes(t));
