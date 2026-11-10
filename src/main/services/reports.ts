@@ -4,11 +4,7 @@ import { BrowserWindow, dialog } from 'electron';
 import { todayLocal, formatLocalString, daysAgo, toLocalDateString } from '../utils/timezone';
 import { createWriteStream } from 'fs';
 import { reconcilePayments, type SaleRow as ReconciliationSaleRow } from '../../shared/paymentReconciliation';
-import {
-  businessDayBounds,
-  currentBusinessDate,
-  normalizeBusinessDayStart,
-} from '../../shared/salesHistory';
+import { resolveBusinessRange } from '../../shared/salesHistory';
 import type {
   SalesAnalysisResult,
   ProductPerformanceResult,
@@ -133,6 +129,28 @@ export function getExpiryWarningDays(): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 30;
 }
 
+/**
+ * Options mainly for deterministic tests. Production callers omit them and
+ * get the live shop settings + current clock.
+ */
+export interface BusinessRangeOptions {
+  now?: Date;
+  startHour?: number;
+  timezone?: string;
+}
+
+function reportRange(
+  from?: string,
+  to?: string,
+  options: BusinessRangeOptions = {}
+): ReturnType<typeof resolveBusinessRange> {
+  const settings = getAllSettings() as Record<string, string>;
+  const startHour =
+    options.startHour ?? Number(settings.business_day_start_hour ?? 0);
+  const timezone = options.timezone ?? settings.shop_timezone ?? 'Asia/Karachi';
+  return resolveBusinessRange(from, to, startHour, timezone, options.now ?? new Date());
+}
+
 export function listExpiringSoon(days = 30): ExpiringRow[] {
   const db = getDb();
   return (
@@ -151,15 +169,12 @@ export function listExpiringSoon(days = 30): ExpiringRow[] {
   );
 }
 
-export function dashboard(): DashboardData {
+export function dashboard(options: BusinessRangeOptions = {}): DashboardData {
   const db = getDb();
   // PHASE 3d: one local business-day boundary shared with Sales History, so an
   // overnight shop (04:00 anchor) does not see yesterday's late bills as "today".
-  const settings = getAllSettings() as Record<string, string>;
-  const startHour = normalizeBusinessDayStart(settings.business_day_start_hour ?? 0);
-  const tz = settings.shop_timezone ?? 'Asia/Karachi';
-  const businessDate = currentBusinessDate(startHour, new Date(), tz);
-  const { fromUtc, toUtc } = businessDayBounds(businessDate, businessDate, startHour, tz);
+  const range = reportRange(undefined, undefined, options);
+  const { fromUtc, toUtc, businessDate } = range;
   const today = one<{ total: number; count: number }>(
     `SELECT COALESCE(SUM(total_amount - COALESCE(returned_amount,0)),0) AS total, COUNT(*) AS count
      FROM sales WHERE status='completed'
@@ -180,13 +195,24 @@ export function dashboard(): DashboardData {
     `SELECT COALESCE(SUM(amount),0) AS total FROM expenses WHERE expense_date = ?`,
     businessDate
   );
+  const weekStart = new Date(`${businessDate}T00:00:00Z`);
+  weekStart.setUTCDate(weekStart.getUTCDate() - 6);
+  const weekRange = reportRange(
+    weekStart.toISOString().slice(0, 10),
+    businessDate,
+    options
+  );
   const topProducts = all<BestSellerRow>(
     `SELECT p.name AS name, SUM(i.qty) AS qty, SUM(i.line_total) AS revenue
      FROM sale_items i
      JOIN sales s ON s.id = i.sale_id
      JOIN products p ON p.id = i.product_id
-     WHERE s.status='completed' AND date(s.created_at) >= date('now','localtime','-7 days')
-     GROUP BY i.product_id ORDER BY qty DESC LIMIT 5`
+     WHERE s.status='completed'
+       AND datetime(s.created_at) >= datetime(?)
+       AND datetime(s.created_at) < datetime(?)
+     GROUP BY i.product_id ORDER BY qty DESC LIMIT 5`,
+    weekRange.fromUtc,
+    weekRange.toUtc
   );
   const recentSales = all<DashboardData['recent_sales'][number]>(
     `SELECT s.id, s.invoice_no, c.name AS customer_name, s.total_amount, s.created_at
@@ -214,33 +240,43 @@ export function dashboard(): DashboardData {
   };
 }
 
-export function salesReport(from?: string, to?: string): SalesDayRow[] {
+export function salesReport(
+  from?: string,
+  to?: string,
+  options: BusinessRangeOptions = {}
+): SalesDayRow[] {
+  const range = reportRange(from, to, options);
   return all<SalesDayRow>(
-    `SELECT date(created_at) AS day, COUNT(*) AS bills,
+    `SELECT date(datetime(created_at)) AS day, COUNT(*) AS bills,
             COALESCE(SUM(subtotal),0) AS subtotal, COALESCE(SUM(tax_amount),0) AS tax,
             COALESCE(SUM(discount_amount),0) AS discount, COALESCE(SUM(total_amount - COALESCE(returned_amount,0)),0) AS total
      FROM sales
      WHERE status='completed'
-       AND date(created_at) BETWEEN date(COALESCE(?, date('now','localtime','-30 days'))) AND date(COALESCE(?, date('now','localtime')))
+       AND datetime(created_at) >= datetime(?)
+       AND datetime(created_at) < datetime(?)
      GROUP BY day ORDER BY day`,
-    from ?? null,
-    to ?? null
+    range.fromUtc, range.toUtc
   );
 }
 
-export function profitLoss(from?: string, to?: string): ProfitLoss {
-  const fromD = from || daysAgo(30);
-  const toD = to || todayLocal();
+export function profitLoss(
+  from?: string,
+  to?: string,
+  options: BusinessRangeOptions = {}
+): ProfitLoss {
+  const range = reportRange(from ?? daysAgo(30), to, options);
+  const fromD = range.from;
+  const toD = range.to;
   const rev = one<{ total: number }>(
     `SELECT COALESCE(SUM(total_amount - COALESCE(returned_amount,0)),0) AS total FROM sales
-     WHERE status='completed' AND date(created_at) BETWEEN date(?) AND date(?)`,
-    fromD, toD
+     WHERE status='completed' AND datetime(created_at) >= datetime(?) AND datetime(created_at) < datetime(?)`,
+    range.fromUtc, range.toUtc
   );
   const cogs = one<{ total: number }>(
     `SELECT COALESCE(SUM(i.qty * p.cost_price),0) AS total
      FROM sale_items i JOIN sales s ON s.id = i.sale_id JOIN products p ON p.id = i.product_id
-     WHERE s.status='completed' AND date(s.created_at) BETWEEN date(?) AND date(?)`,
-    fromD, toD
+     WHERE s.status='completed' AND datetime(s.created_at) >= datetime(?) AND datetime(s.created_at) < datetime(?)`,
+    range.fromUtc, range.toUtc
   );
   const exp = one<{ total: number }>(
     `SELECT COALESCE(SUM(amount),0) AS total FROM expenses
@@ -416,20 +452,25 @@ export interface DailyStats {
   avg_bill: number;
 }
 
-export function getDailySalesTrend(from?: string, to?: string): HourlyTrendRow[] {
+export function getDailySalesTrend(
+  from?: string,
+  to?: string,
+  options: BusinessRangeOptions = {}
+): HourlyTrendRow[] {
   const db = getDb();
-  const f = from || todayLocal();
-  const t = to || todayLocal();
+  const range = reportRange(from, to, options);
   const rows = db
     .prepare(
       `SELECT strftime('%H:00', created_at) AS hour,
               COALESCE(SUM(total_amount - COALESCE(returned_amount,0)),0) AS amount
        FROM sales
-       WHERE status='completed' AND date(created_at) BETWEEN date(?) AND date(?)
+       WHERE status='completed'
+         AND datetime(created_at) >= datetime(?)
+         AND datetime(created_at) < datetime(?)
        GROUP BY strftime('%H', created_at)
        ORDER BY hour`
     )
-    .all(f, t) as unknown as HourlyTrendRow[];
+    .all(range.fromUtc, range.toUtc) as unknown as HourlyTrendRow[];
   const allHours = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}:00`);
   const map = new Map(rows.map((r) => [r.hour, r.amount]));
   return allHours.map((hour) => ({ hour, amount: map.get(hour) ?? 0 }));
@@ -440,20 +481,27 @@ export interface DailyTrendRow {
   amount: number;
 }
 
-export function getDailySalesTrendDaily(from?: string, to?: string): DailyTrendRowSimple[] {
+export function getDailySalesTrendDaily(
+  from?: string,
+  to?: string,
+  options: BusinessRangeOptions = {}
+): DailyTrendRowSimple[] {
   const db = getDb();
-  const f = from || todayLocal();
-  const t = to || todayLocal();
+  const range = reportRange(from, to, options);
+  const f = range.from;
+  const t = range.to;
   const rows = db
     .prepare(
       `SELECT date(created_at) AS date,
               COALESCE(SUM(total_amount - COALESCE(returned_amount,0)),0) AS amount
        FROM sales
-       WHERE status='completed' AND date(created_at) BETWEEN date(?) AND date(?)
+       WHERE status='completed'
+         AND datetime(created_at) >= datetime(?)
+         AND datetime(created_at) < datetime(?)
        GROUP BY date(created_at)
        ORDER BY date`
     )
-    .all(f, t) as unknown as DailyTrendRow[];
+    .all(range.fromUtc, range.toUtc) as unknown as DailyTrendRow[];
   // Fill in missing dates with 0
   const start = new Date(f);
   const end = new Date(t);
@@ -468,34 +516,43 @@ export function getDailySalesTrendDaily(from?: string, to?: string): DailyTrendR
   return result;
 }
 
-export function getTopProducts(limit = 5, from?: string, to?: string): TopProductRow[] {
-  const f = from || todayLocal();
-  const t = to || todayLocal();
+export function getTopProducts(
+  limit = 5,
+  from?: string,
+  to?: string,
+  options: BusinessRangeOptions = {}
+): TopProductRow[] {
+  const range = reportRange(from, to, options);
   return all<TopProductRow>(
     `SELECT p.id, p.name, SUM(i.qty) AS qty_sold, SUM(i.line_total) AS revenue
      FROM sale_items i
      JOIN sales s ON s.id = i.sale_id
      JOIN products p ON p.id = i.product_id
-     WHERE date(s.created_at) BETWEEN date(?) AND date(?)
+     WHERE datetime(s.created_at) >= datetime(?)
+       AND datetime(s.created_at) < datetime(?)
        AND s.status = 'completed'
      GROUP BY p.id
      ORDER BY qty_sold DESC
      LIMIT ?`,
-    f, t, limit
+    range.fromUtc, range.toUtc, limit
   );
 }
 
-export function getDailyStats(from?: string, to?: string): DailyStats {
-  const f = from || todayLocal();
-  const t = to || todayLocal();
+export function getDailyStats(
+  from?: string,
+  to?: string,
+  options: BusinessRangeOptions = {}
+): DailyStats {
+  const range = reportRange(from, to, options);
   const row = one<{ total_sales: number; bill_count: number; avg_bill: number }>(
     `SELECT COALESCE(SUM(total_amount - COALESCE(returned_amount,0)),0) AS total_sales,
             COUNT(id) AS bill_count,
             COALESCE(AVG(total_amount - COALESCE(returned_amount,0)),0) AS avg_bill
      FROM sales
-     WHERE date(created_at) BETWEEN date(?) AND date(?)
+     WHERE datetime(created_at) >= datetime(?)
+       AND datetime(created_at) < datetime(?)
        AND status = 'completed'`,
-    f, t
+    range.fromUtc, range.toUtc
   );
   return {
     total_sales: row.total_sales,
@@ -527,10 +584,9 @@ export function updateReceiptSetting(key: string, value: string): void {
 // v1.6.0 â€” Professional Reports (7 types) + PDF Export
 // ============================================================
 
-function dateRange(from?: string, to?: string): string[] {
-  const f = from || daysAgo(30);
-  const t = to || todayLocal();
-  return [f, t];
+function dateRange(from?: string, to?: string, options: BusinessRangeOptions = {}): string[] {
+  const range = reportRange(from ?? daysAgo(30), to, options);
+  return [range.from, range.to];
 }
 
 function pct(num: number, denom: number): number {

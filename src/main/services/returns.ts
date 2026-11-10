@@ -6,7 +6,7 @@ import { currentShift } from './shifts';
 import { can, getSessionUserId } from './auth';
 import { getAdminSetting } from './admin';
 import { recordSaleEvent } from './salesHistory';
-import { businessDayBounds } from '../../shared/salesHistory';
+import { resolveBusinessRange } from '../../shared/salesHistory';
 import { getBusinessDayStartHour, getShopTimezone } from './salesHistory';
 import type { CashRefundRow, ReturnItemRow, ReturnRow } from '../../shared/types';
 
@@ -42,6 +42,27 @@ export interface ReturnBillInput {
   restock: boolean;
   /** Optional original invoice the return is being filed against. */
   linked_sale_id?: number | null;
+}
+
+/** Test/production seam: fixed clock + explicit settings for one query. */
+export interface ReturnRangeOptions {
+  now?: Date;
+  startHour?: number;
+  timezone?: string;
+}
+
+function returnRange(
+  from?: string,
+  to?: string,
+  options: ReturnRangeOptions = {}
+) {
+  return resolveBusinessRange(
+    from,
+    to,
+    options.startHour ?? getBusinessDayStartHour(),
+    options.timezone ?? getShopTimezone(),
+    options.now ?? new Date()
+  );
 }
 
 const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
@@ -446,27 +467,20 @@ export function listReturns(
   from?: string,
   to?: string,
   customerId?: number,
-  productId?: number
+  productId?: number,
+  options: ReturnRangeOptions = {}
 ): ReturnRow[] {
   const db = getDb();
+  const range = returnRange(from, to, options);
   let sql = `
     SELECT r.*, s.invoice_no, c.name AS customer_name
     FROM returns r
     JOIN sales s ON s.id = r.sale_id
     LEFT JOIN customers c ON c.id = s.customer_id
-    WHERE 1=1
+    WHERE datetime(r.created_at) >= datetime(?)
+      AND datetime(r.created_at) < datetime(?)
   `;
-  const params: (string | number)[] = [];
-  if (from) {
-    const { fromUtc } = businessDayBounds(from, from, getBusinessDayStartHour(), getShopTimezone());
-    sql += ' AND datetime(r.created_at) >= datetime(?)';
-    params.push(fromUtc);
-  }
-  if (to) {
-    const { toUtc } = businessDayBounds(to, to, getBusinessDayStartHour(), getShopTimezone());
-    sql += ' AND datetime(r.created_at) < datetime(?)';
-    params.push(toUtc);
-  }
+  const params: (string | number)[] = [range.fromUtc, range.toUtc];
   if (customerId) {
     sql += ' AND s.customer_id = ?';
     params.push(customerId);
@@ -538,24 +552,20 @@ export function createCashRefund(amount: number, reason?: string, mode: string =
   return row;
 }
 
-export function listCashRefunds(from?: string, to?: string): CashRefundRow[] {
+export function listCashRefunds(
+  from?: string,
+  to?: string,
+  options: ReturnRangeOptions = {}
+): CashRefundRow[] {
   const db = getDb();
+  const range = returnRange(from, to, options);
   let sql = `
     SELECT r.*, u.username FROM cash_refunds r
     LEFT JOIN users u ON u.id = r.user_id
-    WHERE 1=1
+    WHERE datetime(r.created_at) >= datetime(?)
+      AND datetime(r.created_at) < datetime(?)
   `;
-  const params: (string | number)[] = [];
-  if (from) {
-    const { fromUtc } = businessDayBounds(from, from, getBusinessDayStartHour(), getShopTimezone());
-    sql += ' AND datetime(r.created_at) >= datetime(?)';
-    params.push(fromUtc);
-  }
-  if (to) {
-    const { toUtc } = businessDayBounds(to, to, getBusinessDayStartHour(), getShopTimezone());
-    sql += ' AND datetime(r.created_at) < datetime(?)';
-    params.push(toUtc);
-  }
+  const params: (string | number)[] = [range.fromUtc, range.toUtc];
   sql += ' ORDER BY r.id DESC LIMIT 500';
   return db.prepare(sql).all(...params) as unknown as CashRefundRow[];
 }

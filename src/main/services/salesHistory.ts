@@ -569,21 +569,33 @@ export async function printHistoryReport(filters: HistoryFilters = {}) {
   return printDocument({ html, paper: 'a4', printerKey: 'invoice', jobName: 'Sales History' });
 }
 
-export function historyPresetRange(preset: string): { from: string; to: string } {
-  const startHour = getBusinessDayStartHour();
-  const tz = getShopTimezone();
+export interface HistoryClockOptions {
+  now?: Date;
+  startHour?: number;
+  timezone?: string;
+}
+
+export function historyPresetRange(
+  preset: string,
+  options: HistoryClockOptions = {}
+): { from: string; to: string } {
+  const startHour = options.startHour ?? getBusinessDayStartHour();
+  const tz = options.timezone ?? getShopTimezone();
   const valid = ['today', 'yesterday', 'week', 'month', 'lastmonth', 'custom'] as const;
   const p = valid.includes(preset as any) ? (preset as typeof valid[number]) : 'today';
-  return presetRange(p, startHour, new Date(), tz);
+  return presetRange(p, startHour, options.now ?? new Date(), tz);
 }
 
 /** The default view every caller should open Sales History with. */
-export function historyDefaults(businessDayStartHour?: number): HistoryFilters {
-  const tz = getShopTimezone();
+export function historyDefaults(
+  businessDayStartHour?: number,
+  options: Omit<HistoryClockOptions, 'startHour'> = {}
+): HistoryFilters {
+  const tz = options.timezone ?? getShopTimezone();
   return defaultHistoryFilters(
     currentBusinessDate(
       businessDayStartHour ?? getBusinessDayStartHour(),
-      new Date(),
+      options.now ?? new Date(),
       tz
     )
   );

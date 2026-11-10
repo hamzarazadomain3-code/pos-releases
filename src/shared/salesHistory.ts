@@ -254,11 +254,25 @@ export function localTimeOf(ts: string | null | undefined, timezone: string = DE
   return shifted.toISOString().slice(11, 19);
 }
 
+/**
+ * Convert a local wall-clock date/hour to a UTC instant.
+ *
+ * The offset is resolved at the candidate instant, not at noon: on a DST
+ * transition day noon can be on the other side of the change, which would
+ * shift a midnight boundary by one hour. Two passes converge for every real
+ * zone (and leave an ambiguous fall-back hour on the earlier offset).
+ */
 function localDateToUtcMs(dateStr: string, hour: number, timezone: string = DEFAULT_SHOP_TIMEZONE): number {
   const [y, m, d] = dateStr.split('-').map(Number);
-  const refDate = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12, 0, 0));
-  const offset = getTzOffsetMinutes(timezone, refDate);
-  return Date.UTC(y, (m || 1) - 1, d || 1, hour, 0, 0, 0) - offset * 60_000;
+  const wallMs = Date.UTC(y, (m || 1) - 1, d || 1, hour, 0, 0, 0);
+  let utcMs = wallMs - getTzOffsetMinutes(timezone, new Date(wallMs)) * 60_000;
+  for (let i = 0; i < 2; i++) {
+    const offset = getTzOffsetMinutes(timezone, new Date(utcMs));
+    const next = wallMs - offset * 60_000;
+    if (next === utcMs) break;
+    utcMs = next;
+  }
+  return utcMs;
 }
 
 function toSqlUtc(ms: number): string {
@@ -276,7 +290,10 @@ export function businessDayBounds(
 ): { fromUtc: string; toUtc: string } {
   const hour = normalizeBusinessDayStart(startHour);
   const startMs = localDateToUtcMs(from, hour, timezone);
-  const endMs = localDateToUtcMs(to, hour, timezone) + 24 * 60 * 60 * 1000;
+  // Move to the next CALENDAR date, not +24h: a DST day is 23 or 25 hours.
+  const [ty, tm, td] = to.split('-').map(Number);
+  const next = new Date(Date.UTC(ty, (tm || 1) - 1, (td || 1) + 1));
+  const endMs = localDateToUtcMs(next.toISOString().slice(0, 10), hour, timezone);
   return { fromUtc: toSqlUtc(startMs), toUtc: toSqlUtc(endMs) };
 }
 
@@ -302,6 +319,42 @@ export function currentBusinessDate(startHour = 0, now: Date = new Date(), timez
   const base = new Date(Date.UTC(y, m, d));
   if (localHour < hour) base.setUTCDate(base.getUTCDate() - 1);
   return base.toISOString().slice(0, 10);
+}
+
+export interface ResolvedBusinessRange {
+  /** First local business date (YYYY-MM-DD). */
+  from: string;
+  /** Last local business date (YYYY-MM-DD), inclusive. */
+  to: string;
+  /** Current business date at `now`. */
+  businessDate: string;
+  startHour: number;
+  timezone: string;
+  /** UTC bounds, half-open: fromUtc <= created_at < toUtc. */
+  fromUtc: string;
+  toUtc: string;
+}
+
+/**
+ * The ONE resolver every "today"/range query uses.
+ *
+ * Missing `from`/`to` fall back to the current business day, not the calendar
+ * day. With a 04:00 anchor at 02:00 local, `businessDate` is yesterday, so
+ * Dashboard, Reports, Returns and Sales History all agree.
+ */
+export function resolveBusinessRange(
+  from: string | null | undefined,
+  to: string | null | undefined,
+  startHour = 0,
+  timezone: string = DEFAULT_SHOP_TIMEZONE,
+  now: Date = new Date()
+): ResolvedBusinessRange {
+  const hour = normalizeBusinessDayStart(startHour);
+  const businessDate = currentBusinessDate(hour, now, timezone);
+  const f = from || businessDate;
+  const t = to || f;
+  const { fromUtc, toUtc } = businessDayBounds(f, t, hour, timezone);
+  return { from: f, to: t, businessDate, startHour: hour, timezone, fromUtc, toUtc };
 }
 
 /** Default view: the current business day, every event type. */
