@@ -28,6 +28,7 @@
     "test:dateparse": "npm run build:main && node scripts/test_dateParse.cjs",
     "test:dashboardPeriod": "npm run build:main && node scripts/test_dashboardPeriod.cjs",
     "test:salesHistory": "npm run build:main && node scripts/test_salesHistory.cjs",
+    "check:migrations": "node scripts/check_migrations_on_copy.cjs",
     "test:customerDiscount": "npm run build:main && node scripts/test_customerDiscount.cjs",
     "test:belowCost": "npm run build:main && node scripts/test_belowCost.cjs",
     "test:utf8Export": "npm run build:main && node scripts/test_utf8Export.cjs",
