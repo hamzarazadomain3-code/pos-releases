@@ -28,6 +28,10 @@ export default function QuickSaleGrid() {
   const [selectedCategory, setSelectedCategory] = useState<number | 'all'>('all');
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [customerId, setCustomerId] = useState<number | ''>('');
+  const [billDiscount, setBillDiscount] = useState('');
+  const [autoAppliedDiscount, setAutoAppliedDiscount] = useState(false);
+  const [discountType, setDiscountType] = useState<'percent' | 'amount'>('percent');
   // Apply customer default discount when customer changes
   useEffect(() => {
     if (customerId) {
