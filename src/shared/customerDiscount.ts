@@ -1,42 +1,31 @@
 /**
  * Customer default-discount resolution (pure).
  *
- * Rules:
- *  - Selecting a customer with a discount sets it and marks it autoApplied.
- *  - Changing to Cash/no customer clears ONLY an autoApplied discount, never
- *    one the cashier typed.
- *  - A typed discount is not overwritten when the customer changes.
+ * Supports both percent and fixed-rupee discounts.
  */
 export interface CustomerDiscountLike {
   default_discount_pct?: number | string | null;
+  discount_type?: 'percent' | 'fixed' | null;
+  discount_min_bill?: number | string | null;
 }
 
 export interface ApplyCustomerDiscountInput {
-  /** The customer being selected (null/undefined = walk-in / cash). */
   customer: CustomerDiscountLike | null | undefined;
-  /** The discount currently in the bill-discount field. */
   currentDiscount: string;
-  /** Whether the current discount was auto-applied (not typed by the cashier). */
   autoApplied: boolean;
+  billAmount?: number;
 }
 
 export interface ApplyCustomerDiscountResult {
-  /** The new bill-discount value (empty string = cleared). */
   discount: string;
-  /** The new discount type. */
   type: 'percent' | 'amount';
-  /** Whether the new discount was auto-applied. */
   autoApplied: boolean;
 }
 
-/**
- * Pure function that decides what happens to the bill discount when the
- * customer changes.  Returns the new state.
- */
 export function applyCustomerDiscount(
   input: ApplyCustomerDiscountInput
 ): ApplyCustomerDiscountResult {
-  const { customer, currentDiscount, autoApplied } = input;
+  const { customer, currentDiscount, autoApplied, billAmount } = input;
 
   // No customer selected (walk-in / cash): clear only auto-applied discounts.
   if (!customer) {
@@ -46,37 +35,99 @@ export function applyCustomerDiscount(
     return { discount: currentDiscount, type: 'percent', autoApplied: false };
   }
 
-  // Customer selected: check if they have a default discount.
+  const discountType = customer.discount_type === 'fixed' ? 'fixed' : 'percent';
   const raw = customer.default_discount_pct;
+  const minBill = Number(customer.discount_min_bill ?? 0);
+
   if (raw === null || raw === undefined || raw === '') {
-    // No default discount: clear only auto-applied discounts.
     if (autoApplied) {
       return { discount: '', type: 'percent', autoApplied: false };
     }
     return { discount: currentDiscount, type: 'percent', autoApplied: false };
   }
 
-  const pct = Number(raw);
-  if (!Number.isFinite(pct) || pct <= 0) {
-    // Invalid/zero discount: clear only auto-applied discounts.
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
     if (autoApplied) {
       return { discount: '', type: 'percent', autoApplied: false };
     }
     return { discount: currentDiscount, type: 'percent', autoApplied: false };
   }
 
-  // Customer has a valid default discount.
-  // Apply it only if the current discount was auto-applied (not typed by cashier)
-  // or if there's no current discount.
+  // Check min bill
+  if (minBill > 0 && (billAmount ?? 0) < minBill) {
+    if (autoApplied) {
+      return { discount: '', type: 'percent', autoApplied: false };
+    }
+    return { discount: currentDiscount, type: 'percent', autoApplied: false };
+  }
+
+  // Apply discount only if auto-applied or no current discount
   if (autoApplied || currentDiscount === '') {
-    return { discount: String(raw).trim(), type: 'percent', autoApplied: true };
+    if (discountType === 'fixed') {
+      return { discount: String(value), type: 'amount', autoApplied: true };
+    }
+    return { discount: String(value), type: 'percent', autoApplied: true };
   }
-  // Don't overwrite a typed discount.
   return { discount: currentDiscount, type: 'percent', autoApplied: false };
 }
 
 /**
- * Legacy helper kept for backward compat (used by Billing's useEffect).
+ * Compute customer discount amount.
+ */
+export interface ComputeCustomerDiscountInput {
+  type: 'percent' | 'fixed';
+  value: number;
+  minBill: number;
+  billAmount: number;
+  maxDiscountPercent: number;
+  hasPermission: boolean;
+}
+
+export interface ComputeCustomerDiscountResult {
+  amount: number;
+  percentEquivalent: number;
+  clamped: boolean;
+  reason: string;
+}
+
+export function computeCustomerDiscount(
+  input: ComputeCustomerDiscountInput
+): ComputeCustomerDiscountResult {
+  const { type, value, minBill, billAmount, maxDiscountPercent, hasPermission } = input;
+
+  // Below min bill
+  if (minBill > 0 && billAmount < minBill) {
+    return { amount: 0, percentEquivalent: 0, clamped: false, reason: 'below_min_bill' };
+  }
+
+  let amount = 0;
+  if (type === 'percent') {
+    amount = (billAmount * value) / 100;
+  } else {
+    amount = Math.min(value, billAmount);
+  }
+
+  // Never negative or NaN
+  if (!Number.isFinite(amount) || amount < 0) {
+    amount = 0;
+  }
+
+  // Clamp to max discount percent unless permission
+  const maxAmount = (billAmount * maxDiscountPercent) / 100;
+  let clamped = false;
+  if (!hasPermission && amount > maxAmount && maxDiscountPercent > 0) {
+    amount = maxAmount;
+    clamped = true;
+  }
+
+  const percentEquivalent = billAmount > 0 ? (amount / billAmount) * 100 : 0;
+
+  return { amount, percentEquivalent, clamped, reason: clamped ? 'clamped' : 'ok' };
+}
+
+/**
+ * Legacy helper kept for backward compat.
  */
 export interface CustomerDiscountLike {
   default_discount_pct?: number | string | null;

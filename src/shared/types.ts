@@ -214,6 +214,8 @@ export interface Customer {
   /** retail | wholesale */
   price_level?: string | null;
   default_discount_pct?: number;
+  discount_type?: 'percent' | 'fixed';
+  discount_min_bill?: number;
   /** 0 = no cap */
   max_single_bill?: number;
   /** allow | warn | block — how the credit limit is enforced. */
@@ -259,6 +261,8 @@ export interface CustomerInput {
   credit_days?: number | string | null;
   price_level?: string | null;
   default_discount_pct?: number | string | null;
+  discount_type?: 'percent' | 'fixed' | null;
+  discount_min_bill?: number | string | null;
   credit_action?: string | null;
   max_single_bill?: number | string | null;
   /** Negative = shop owes the customer (Cr); positive = customer owes the shop (Dr). */

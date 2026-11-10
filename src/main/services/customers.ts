@@ -46,11 +46,11 @@ const TEXT_COLS = [
   'customer_code', 'group_name', 'tags', 'phone_alt', 'whatsapp', 'email', 'city', 'area',
   'maps_link', 'message_language', 'cnic', 'ntn', 'drug_licence', 'guarantor',
   'guarantor_phone', 'price_level', 'credit_action', 'opening_balance_as_of', 'notes',
-  'birthday', 'anniversary', 'reminder_freq',
+  'birthday', 'anniversary', 'reminder_freq', 'discount_type',
 ] as const;
 
 /** Numeric columns written straight through (sanitised, never NaN). */
-const NUM_COLS = ['credit_limit', 'credit_days', 'default_discount_pct', 'max_single_bill'] as const;
+const NUM_COLS = ['credit_limit', 'credit_days', 'default_discount_pct', 'max_single_bill', 'discount_min_bill'] as const;
 
 const CUSTOMER_TYPES = ['retail', 'wholesale', 'medical', 'other'] as const;
 const PRICE_LEVELS = ['retail', 'wholesale'] as const;
@@ -127,12 +127,14 @@ function normalise(input: CustomerInput): NormalisedProfile | { error: string } 
     birthday: str(input.birthday),
     anniversary: str(input.anniversary),
     reminder_freq: pick(input.reminder_freq, REMINDERS, 'none'),
+    discount_type: pick(input.discount_type, ['percent', 'fixed'], 'percent'),
   };
   const numeric: Record<string, number> = {
     credit_limit: Math.max(0, round2(num(input.credit_limit, 0))),
     credit_days: Math.max(0, Math.floor(num(input.credit_days, 0))),
     default_discount_pct: clamp(round2(num(input.default_discount_pct, 0)), 0, 100),
     max_single_bill: Math.max(0, round2(num(input.max_single_bill, 0))),
+    discount_min_bill: Math.max(0, round2(num(input.discount_min_bill, 0))),
   };
   return {
     name,
