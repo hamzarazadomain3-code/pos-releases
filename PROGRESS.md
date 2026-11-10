@@ -1,16 +1,12 @@
-# PROGRESS.md — Strict Build Run Ledger
+# PROGRESS.md — Strict Build Run 13
 
-| Item | Status | File:line | Test name | Proof file | Commit hash |
-|------|--------|-----------|-----------|------------|-------------|
-| Setup | NOT STARTED | — | — | — | — |
-| Item 1 | DONE | scripts/check_migrations_on_copy.cjs | check:migrations | E:\temp\proof\item1.txt | 3fdefe0 |
-| Item 2 | DONE | src/renderer/src/pages/QuickSaleGrid.tsx | test:customerDiscount | E:\temp\proof\item2.txt | 4618ee0 |
-| Item 3 | DONE | src/main/services/salesHistory.ts | test:salesHistory | E:\temp\proof\item3.txt | 3a26ef8 |
-| Item 4 | DONE | src/main/services/reports.ts, returns.ts | test:salesHistory, test:dashboardPeriod | E:\temp\proof\item4.txt | 5f486f4 |
-| Item 5 | DONE | src/main/services/salesHistory.ts, ipc.ts | test:salesHistory | E:\temp\proof\item5.txt | 69cecaf |
-| Item 6 | DONE | src/shared/customerDiscount.ts, customers.ts, UdhaarCustomerModal.tsx | test:customerDiscount | E:\temp\proof\item6.txt | 8b4d9d2 |
-| Item 7 | PARTIAL (no test: UI) | — | — | — | — |
-| Item 8 | PARTIAL (no test: UI) | — | — | — | — |
-| Item 9 | PARTIAL (no test: UI) | — | — | — | — |
-| Item 10 | PARTIAL (no test: UI) | — | — | — | — |
-| Item 11 | DONE | PROGRESS.md, REPORT.md | all suites | E:\temp\proof\ | — |
+One row per work item. Status is DONE only with code + a test that imports real `dist` code, a saved proof file, exit-0 typecheck/build, and a commit hash.
+
+| Item | Status | Scope | File:line | Test / proof | Commit |
+|------|--------|-------|-----------|--------------|--------|
+| A — Item 4: shared "Today" | PARTIAL | businessDayBounds in getDailyStats, getDailySalesTrend, getTopProducts, dashboard(), Reports, Returns; fixed-instant tests | src/main/services/reports.ts, returns.ts | proof/a_today.txt | — |
+| B — Item 5: roles, void rule, shortcuts | PARTIAL | cashier-session tests for all 5 history reads; void footer; remove F5/Ctrl+R; OWNER DECISION | src/main/services/salesHistory.ts, Billing.tsx | proof/b_roles.txt | — |
+| C — Item 6 gaps | PARTIAL | live re-evaluation/badge, stacking, fixed split, saved source, History/Detail/receipt, customer list/filter, activity log, owner-only edit, full test set | src/shared/customerDiscount.ts, Billing.tsx, customers.ts | proof/c_discount.txt | — |
+| D — pure logic first | NOT STARTED | escapeGesture.ts, billEdit.ts, customer combobox filter, quick-customer validation/duplicate check + tests | src/shared/* | proof/d_pure.txt | — |
+| E — Items 7–10 UI wiring | NOT STARTED | quick customer dialog, F6 combobox, Esc gesture/usePageRefresh, Pause/F4 bill edit; registry actions | src/renderer/src/*, src/shared/shortcuts.ts | proof/e_ui.txt | — |
+| F — proof and honest report | NOT STARTED | dateparse 22→21 from git log -p; all suites with saved proof; real test:print error; REPORT.md | REPORT.md | proof/*.txt | — |
