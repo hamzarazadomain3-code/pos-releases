@@ -1218,6 +1218,10 @@ useEffect(() => {
         return;
       }
 
+      // Sales History owns the keyboard while open. There is no F5/Ctrl+R
+      // handler in that dialog: only its Refresh button reloads the timeline.
+      if (history) return;
+
       // 2) Enter confirms payment while the Payment modal is open
       if ((e.key === 'Enter' || e.key === '\r' || e.key === '\n') && payOpen) {
         if (payTotal > 0 && !busy) {
@@ -1501,7 +1505,7 @@ useEffect(() => {
     return () => {
       window.removeEventListener('keydown', handler);
     };
-  }, [scanAdd, newBill, doHold, shortcutMap, repeatLastSale, expressCheckout, items, payTotal, shift, payOpen, success, heldModal, expiredConfirm, belowCostConfirm, showShortcutsModal, splitModalOpen, cashDrawerOpen, busy, receiptTemplate, completeSale, openHeld, onNavigate, onLogout, voidTarget, priceEditUnlockOpen, shortcutModalOpen, openShiftModal, closeShiftModal, custModal, searchOpen, quotationMode, openPay, completeQuotation, browseProducts, browseIndex, openQtyDialog, handlePrintInvoice, openReturnFlow, returnConfirmOpen, returnFindOpen]);
+  }, [scanAdd, newBill, doHold, shortcutMap, repeatLastSale, expressCheckout, items, payTotal, shift, payOpen, success, heldModal, expiredConfirm, belowCostConfirm, showShortcutsModal, splitModalOpen, cashDrawerOpen, busy, receiptTemplate, completeSale, openHeld, onNavigate, onLogout, voidTarget, priceEditUnlockOpen, shortcutModalOpen, openShiftModal, closeShiftModal, custModal, searchOpen, quotationMode, openPay, completeQuotation, browseProducts, browseIndex, openQtyDialog, handlePrintInvoice, openReturnFlow, returnConfirmOpen, returnFindOpen, history]);
 
   // Apply round-off
   const applyRoundOff = useCallback(() => {
@@ -3923,7 +3927,7 @@ const handleUnitChange = (newLevel: number) => {
 
             <div className="modal-actions" style={{ justifyContent: 'space-between' }}>
               <span className="muted" style={{ fontSize: '12px' }}>
-                {historyBusy ? 'Loading…' : `${history.length} of ${historyTotal} event${historyTotal === 1 ? '' : 's'} · newest first. Press Esc to close, Refresh to reload.`}
+                {historyBusy ? 'Loading…' : `${history.length} of ${historyTotal} event${historyTotal === 1 ? '' : 's'} · newest first. Press Esc to close, Refresh to reload. Totals count a sale only while it is not voided; voids are listed on the day they happen.`}
               </span>
               <div style={{ display: 'flex', gap: '6px' }}>
                 <button className="btn btn-sm" disabled={historyPage <= 1 || historyBusy} onClick={() => void applyHistoryFilters(historyPage - 1)}>Previous</button>

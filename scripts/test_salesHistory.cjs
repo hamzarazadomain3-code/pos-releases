@@ -254,7 +254,7 @@ async function main() {
   });
 
   // ── void summary: sale yesterday voided today -> yesterday unchanged ──────
-  await test("sale voided next day: previous day summary unchanged", () => {
+  await test("sale voided next day: previous day salesTotal drops (Rule B); void stays on void day", () => {
     const yesterday = shared.currentBusinessDate(0);
     // We can't easily test "yesterday" without knowing the exact date, so we use a fixed old date
     // and verify that voiding it today doesn't affect the old date's summary.

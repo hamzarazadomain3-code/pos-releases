@@ -2,6 +2,7 @@ import { getDb } from '../db';
 import { getSessionUserId, currentUser } from './auth';
 import { getSetting } from './settings';
 import { printDocument } from './printService';
+import { stripCostFields } from '../../shared/historyPrivacy';
 import {
   businessDayBounds,
   currentBusinessDate,
@@ -473,9 +474,10 @@ export function getHistoryDetail(eventId: number): HistoryDetail | null {
     .get(eventId) as unknown as Record<string, unknown> | undefined;
   if (!raw) return null;
   const event = mapRow(raw);
+  const cashier = isCashier();
 
   // Server-side role check: cashier can only view their own events.
-  if (isCashier()) {
+  if (cashier) {
     const uid = getSessionUserId();
     if (Number(raw.user_id) !== uid) {
       return null;
@@ -494,6 +496,10 @@ export function getHistoryDetail(eventId: number): HistoryDetail | null {
         snapshot = snapRow.snapshot_json;
       }
     }
+  }
+  // A cashier never receives cost/profit keys, even inside a hold snapshot.
+  if (cashier && snapshot && typeof snapshot === 'object') {
+    snapshot = stripCostFields(snapshot);
   }
 
   const items = event.sale_id
