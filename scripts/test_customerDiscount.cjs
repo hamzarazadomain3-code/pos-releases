@@ -167,6 +167,19 @@ async function main() {
     assert.equal(found.default_discount_pct, 5, "default_discount_pct returned from list()");
   });
 
+  test("QuickSaleGrid does not hard-code bill_discount: 0", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const src = fs.readFileSync(
+      path.join(__dirname, "..", "src", "renderer", "src", "pages", "QuickSaleGrid.tsx"),
+      "utf8"
+    );
+    assert.ok(
+      !src.includes("bill_discount: 0"),
+      "QuickSaleGrid still contains hard-coded 'bill_discount: 0'"
+    );
+  });
+
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) process.exitCode = 1;
 }

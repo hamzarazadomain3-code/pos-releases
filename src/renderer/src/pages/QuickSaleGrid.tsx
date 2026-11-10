@@ -6,6 +6,7 @@ import { useBarcodeScan } from '../hooks/useBarcodeScan';
 import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
 import { parseNegativeStockPolicy, checkNegativeStock, type NegativeStockPolicy } from '@shared/negativeStock';
+import { applyCustomerDiscount } from '@shared/customerDiscount';
 
 interface CartItem {
   product_id: number;
@@ -27,7 +28,30 @@ export default function QuickSaleGrid() {
   const [selectedCategory, setSelectedCategory] = useState<number | 'all'>('all');
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [customerId, setCustomerId] = useState<number | ''>('');
+  // Apply customer default discount when customer changes
+  useEffect(() => {
+    if (customerId) {
+      const cust = customers.find((c) => c.id === customerId);
+      if (cust) {
+        const result = applyCustomerDiscount({
+          customer: cust,
+          currentDiscount: billDiscount,
+          autoApplied: autoAppliedDiscount,
+        });
+        setBillDiscount(result.discount);
+        setDiscountType(result.type);
+        setAutoAppliedDiscount(result.autoApplied);
+      }
+    } else {
+      const result = applyCustomerDiscount({
+        customer: null,
+        currentDiscount: billDiscount,
+        autoApplied: autoAppliedDiscount,
+      });
+      setBillDiscount(result.discount);
+      setAutoAppliedDiscount(result.autoApplied);
+    }
+  }, [customerId, customers]);
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -222,8 +246,8 @@ export default function QuickSaleGrid() {
       const res = await window.api.sales.create({
         items,
         customer_id: customerId || null,
-        bill_discount: 0,
-        discount_type: 'amount',
+        bill_discount: billDiscount ? Number(billDiscount) : 0,
+        discount_type: discountType,
         payments: [{ mode: 'Cash', amount: cartTotal }],
         notes: notes || null,
       });
@@ -573,7 +597,7 @@ export default function QuickSaleGrid() {
           {success && <div className="card" style={{ marginBottom: 12 }}><p style={{ color: '#16a34a' }}>{success}</p></div>}
 
           <div className="row-btns" style={{ marginTop: 8 }}>
-            <button className="btn" style={{ flex: 1 }} onClick={() => { setCart([]); setCustomerId(''); setNotes(''); }}>
+            <button className="btn" style={{ flex: 1 }} onClick={() => { setCart([]); setCustomerId(''); setNotes(''); setBillDiscount(''); setAutoAppliedDiscount(false); setDiscountType('percent'); }}>
               Clear Cart
             </button>
             <button

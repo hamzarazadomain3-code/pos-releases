@@ -2986,7 +2986,7 @@ const handleUnitChange = (newLevel: number) => {
                   >
                     Return / Refund
                   </button>
-                  <button className="action-btn-reset" onClick={() => { setItems([]); setCustomerId(''); setBillDiscount(''); setDiscountType('amount'); setServiceCharge(''); setFreight(''); }}>
+                  <button className="action-btn-reset" onClick={() => { setItems([]); setCustomerId(''); setBillDiscount(''); setAutoAppliedDiscount(false); setDiscountType('amount'); setServiceCharge(''); setFreight(''); }}>
                     Reset
                   </button>
                 </div>
