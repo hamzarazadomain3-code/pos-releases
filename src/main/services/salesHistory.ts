@@ -416,17 +416,11 @@ export function historySummary(filters: HistoryFilters = {}): HistorySummary {
         break;
       }
 case 'return': {
-        // Skip legacy/backfilled returns: they are already reflected in
-        // sales.returned_amount (which is subtracted from salesTotal above).
-        // Only count NEW runtime returns to avoid double-subtraction.
-        let isLegacy = false;
-        if (r.snapshot_json) {
-          try {
-            const snap = JSON.parse(r.snapshot_json);
-            if (snap.source === 'backfill') isLegacy = true;
-          } catch { /* ignore */ }
-        }
-        if (!isLegacy) {
+        // Legacy invoice returns (createReturn) update sales.returned_amount,
+        // which is already subtracted from salesTotal above. Skip them.
+        // Cart returns (createReturnBill) create a separate negative sale
+        // (status='returned') and are NOT in salesTotal, so count them.
+        if (r.sale_status === 'returned') {
           s.returnsCount++;
           s.returnsTotal += Math.abs(amount);
         }
