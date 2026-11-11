@@ -743,3 +743,235 @@ Manual checklist for owner:
 6. Customer with 0% - manually typed discount preserved.
 7. Change shop timezone - all local-day boundaries update.
 8. Set business day start to 04:00 - at 02:00 shows previous business day.
+
+---
+
+## Strict run 13 (2026-11-11)
+
+Branch `feature/customer-discount`. No release, no version bump, no push, no deploy.
+Every number below is copied from a saved command output in `E:\temp\proof\`.
+
+### DONE / PARTIAL table
+
+| Item | Status | File:line | Test | Proof | Commit |
+|------|--------|-----------|------|-------|--------|
+| **A** One shared "Today" | **DONE** | `src/shared/salesHistory.ts:311` `resolveBusinessRange`; wired into `src/main/services/reports.ts:154` (`dashboard`), `:419` (`getDailySalesTrend`), `:443` (`getDailySalesTrendDaily`), `:471` (`getTopProducts`), `:488` (`getDailyStats`), `:217` (`salesReport`), `:231` (`profitLoss`), `:530` (`dateRange`); `src/main/services/returns.ts:445` (`listReturns`), `:541` (`listCashRefunds`) | `test:businessDay` **13/13**; `test:dashboardPeriod` **11/11**; `test:salesHistory` **22/22** | `a_today.txt`, `suite_test_businessDay.txt` | bf46148 |
+| **B** Roles, void rule, shortcuts | **PARTIAL** — server side DONE, the footer sentence + "no F5/Ctrl+R" are UI (no automated renderer test) | `src/main/services/salesHistory.ts:91` `enforceRoleRules`, `:469` `getHistoryDetail` (null for another user's event), `:485` snapshot privacy; `src/shared/historyPrivacy.ts:26` `stripCostFields`; `src/renderer/src/pages/Billing.tsx:1244` the `history` guard (no F5/Ctrl+R in the dialog), `:3929` the footer sentence | `test:historyRoles` **7/7**; `test:salesHistory` **22/22** | `b_roles.txt`, `suite_test_historyRoles.txt` | b28f7c6 |
+| **C** Customer discount model | **DONE** (the UI parts are driven by the tested pure functions; the rendering itself is "no test: UI") | `src/shared/customerDiscount.ts` (`computeCustomerDiscount`, `applyDiscountStack`, `splitDiscountAcrossLines`, `applyCustomerDiscount`, `minBillHint`, `customerDiscountBadge`, `computeRefundShare`, `formatCustomerDiscount`); `migrations/075_customer_discount_type.js`; `migrations/076_discount_source.js` (sales.bill_discount / discount_type / discount_source / customer_discount_amount / bill_discount_amount); `src/main/services/sales.ts:186` (INSERT), `:346` (event snapshot); `src/main/services/customers.ts:207` (owner/manager-only), `:262` (activity log); `src/main/services/returns.ts:180` (refund = the price actually paid); `src/renderer/src/pages/Billing.tsx:1620` (live re-evaluation), `:2901` (badge + hint); `src/renderer/src/pages/Udhaar.tsx:253` (Discount column), `:201` (Has-discount filter); `src/renderer/src/components/UdhaarCustomerModal.tsx:564` ([% \| Rs] + min bill); `src/main/services/receiptTemplates.ts:388` (receipt row) | `test:customerDiscountModel` **29/29**; `test:customerDiscount` **12/12**; `test:salesHistory` **22/22**; `test:return` **29/29**; `test:receipt` **68/68** | `c_discount.txt`, `suite_test_customerDiscountModel.txt` | 5b1e002, aabb892 |
+| **D** Pure logic (Esc gesture, bill edit, customer search, quick customer) | **DONE** | `src/shared/escapeGesture.ts:96` `decideEscape`; `src/shared/billEdit.ts:180` `billEditReducer`, `:288` `billEditKeyAction`; `src/shared/customerSearch.ts:76` `filterCustomers`; `src/shared/quickCustomer.ts:118` `validateQuickCustomer` | `test:run13Pure` **39/39** | `d_pure.txt`, `suite_test_run13Pure.txt` | 5fa73e4 |
+| **E** Items 7–10 UI wiring | **PARTIAL** — the pure logic and the registry are DONE and tested; the RENDERING of the F6 combobox, the quick "New customer" dialog, the Esc gesture and the Pause bill-edit mode has no automated renderer test | `src/renderer/src/components/CustomerCombobox.tsx`; `src/renderer/src/components/QuickCustomerDialog.tsx`; `src/renderer/src/keyboard/escapeRefresh.ts:120` `usePageRefresh`; `src/renderer/src/keyboard/KeyboardProvider.tsx:104` (the Esc gesture in the global layer); `src/renderer/src/pages/Billing.tsx:1099` (the Pause mode), `:2269` (the combobox); `src/renderer/src/pages/Settings.tsx:278` (Esc toggle + window); `src/shared/shortcuts.ts` (`customer_search` = F6, `bill_focus` = Pause + F4) | `test:shortcuts` **37/37**; `test:run13Pure` **39/39** | `d_shortcuts.txt`, `suite_test_shortcuts.txt` | 5fa73e4, bb330a0 |
+| **F** Honest full run | **DONE** | `REPORT.md` (this section); `scripts/print_smoke.js:304` (the PLU fixture no longer collides) | all 32 suites, see the table below | `suite_*.txt` | (this commit) |
+
+### Item A — the shared "Today" (DONE)
+
+`resolveBusinessRange(from, to, startHour, timezone, now)` in `src/shared/salesHistory.ts:311`
+is now the ONE resolver: a missing `from`/`to` falls back to the current **business**
+date (not the calendar date), and it returns the UTC `[fromUtc, toUtc)` bounds.
+
+The DST bug is fixed too: `localDateToUtcMs` (`src/shared/salesHistory.ts:257`)
+resolves the offset **at the candidate instant** instead of at noon, and
+`businessDayBounds` ends on the next **calendar** date instead of "+24 hours" — so a
+spring-forward day is 23 hours and a fall-back day is 25 hours.
+
+Proof (`E:\temp\proof\suite_test_businessDay.txt`, 13/13):
+- 02:00 PKT with a 04:00 anchor → `dashboard()`, `getDailyStats()`,
+  `getDailySalesTrend()`, `getTopProducts()`, `listReturns()` and the Sales History
+  defaults all resolve **2026-11-09** (the previous business day).
+- 23:50 → 2026-11-10, 00:10 → 2026-11-11 (anchor 0).
+- Asia/Karachi, Asia/Dubai, America/New_York (23-hour and 25-hour DST days).
+- `presetRange` today / yesterday / week / month / lastmonth with a fixed "now".
+
+### Item B — roles, void rule, shortcuts (PARTIAL)
+
+`test:historyRoles` (7/7) drives a **real cashier session** against the real
+services and asserts, for **every** history read with `onlyMySales: false`:
+`listHistoryEvents`, `historySummary`, `historyTypeCounts`, `getHistoryDetail` and
+`printHistoryReport`.
+
+- The cashier sees only their own events (the server forces `onlyMySales=true`).
+- `getHistoryDetail` returns `null` for another user's event.
+- A cashier never receives cost/profit keys — the snapshot is passed through
+  `stripCostFields` (`src/shared/historyPrivacy.ts:26`), which drops
+  `cost_price` / `cost` / `profit` / `margin` recursively and case-insensitively.
+- The printed report contains the cashier's own invoice only.
+
+**OWNER DECISION (recorded):** the void rule stays **"current state"** — a sale
+counts as revenue only while `sales.status = 'completed'`. Voiding a past sale
+removes it from that day's `salesTotal` and the void itself is listed on the day
+it happened. The Sales History footer now says:
+*"Totals count a sale only while it is not voided; voids are listed on the day they happen."*
+
+The Sales History dialog has **no F5 / Ctrl+R handler** any more: the Billing
+key handler returns as soon as the dialog is open, so F5 cannot start a new bill
+and Ctrl+R cannot reload the window behind the dialog. Only the dialog's own
+**Refresh** button reloads the timeline.
+
+### Item C — the customer discount model (DONE)
+
+- **Percent OR fixed rupees.** `customers.discount_type` ('percent' | 'fixed') and
+  `customers.discount_min_bill` (migration 075). `default_discount_pct` keeps
+  holding the VALUE, so old rows stay valid and a fixed discount is NOT clamped
+  to 100 (a Rs 250 discount stays 250 — asserted by the test).
+- **Stacking order** is one pure function, `applyDiscountStack`
+  (`src/shared/customerDiscount.ts:203`): price-level price → promotions →
+  manual line discounts → the customer discount on the **remaining** amount.
+  A 10% promotion plus a 5% customer discount on a 1000 bill gives 90, not 50.
+- **Guards:** `max_discount_percent` clamps the discount, and the price floor
+  clamps it at the cost; both are bypassed only when the manager-PIN /
+  permission rule is met (`hasPermission`).
+- **Fixed split.** `splitDiscountAcrossLines` splits a fixed discount across the
+  lines in proportion with the largest-remainder method, so the parts sum
+  **exactly** to the amount (asserted for 50 across 3 lines and for 0.01).
+- **Live re-evaluation.** The customer discount follows the bill: a fixed
+  discount under the customer's minimum bill is *pending* (not applied, still
+  auto), the hint reads *"Add Rs 100 more to get the Rs 500 discount"*, and the
+  discount applies as soon as the bill is big enough.
+- **The badge** reads "Customer discount 5% applied" / "Customer discount Rs 50
+  applied" with an ✕ that removes it **for this bill only** (a typed discount is
+  never overwritten).
+- **The sale records the source** (`sales.discount_source`):
+  `customer_percent` / `customer_fixed` / `manual` / `promotion`, plus the money
+  value (`customer_discount_amount`). The receipt prints
+  "Customer discount 5%" / "Customer discount Rs 50" with the amount, the Sales
+  History detail shows the same line, and the Sale Detail modal shows it too.
+- **Returns refund the price actually paid** — the refund is the line's
+  proportional share of what was paid (`computeRefundShare`), so a discounted
+  bill refunds proportionally less.
+- **Customer list** shows a Discount column ("5%" / "Rs 50 off") and a
+  "Has discount" filter (All / Has discount / No discount).
+- **Only an owner or manager** may change a customer's saved discount; a cashier
+  gets "Only an owner or manager can change a customer discount" and the stored
+  value is unchanged.
+- **Every discount change writes an activity-log entry** with who, old and new
+  (`customer_discount_changed`).
+
+### Item D / E — pure logic and the UI wiring (DONE / PARTIAL)
+
+`src/shared/escapeGesture.ts` is a pure state machine
+(`decideEscape`): `close-top` when anything is open, `refresh` for a single Esc,
+`go-billing` for two Esc inside the window (300–800 ms, default 400), `ignore`
+during IME / the Urdu keyboard / the lock screen / the designer canvas / a
+running payment, print or save.
+
+`src/shared/billEdit.ts` is the pure bill-edit reducer (move / qty / unit /
+price / discount / note / remove + undo) with the key map, the scanner-burst
+guard and the hint bar text.
+
+`src/shared/customerSearch.ts` filters the F6 combobox (name, phone or customer
+code, case-insensitive, Urdu names included) and describes each row (balance,
+discount, over-limit warning).
+
+`src/shared/quickCustomer.ts` validates the quick "New customer" form (name
+required, Pakistani mobile, duplicate phone/name as a WARNING with "use the
+existing customer", every number guarded).
+
+The registry rows `customer_search` (F6) and `bill_focus` (Pause, second default
+F4) are admin-assignable, allowed on Billing, shown in the Billing footer hint
+and in the F1 help, and `resolveCombos()` fires the action on either default.
+
+**PARTIAL:** the RENDERING of the F6 combobox, the quick "New customer" dialog,
+the Esc gesture and the Pause bill-edit mode has **no automated renderer test** —
+only their pure logic is covered.
+
+### Item F — the honest full run (DONE)
+
+**dateparse 22 → 21 — explained from `git log -p` of `scripts/test_dateParse.cjs`:**
+the file was created in `fb62b9f` with **22** `test()` calls, the last of which was
+`test('Integration: temp DB with migrations has correct schema', …)`. Commit
+`2414287` re-wrote the file and **dropped that integration `test()` call**
+(its diff shows the `-test('Integration: temp DB with migrations has correct schema', …)`
+line) while moving the temp-DB setup into a `makeMigratedDb()` helper — that is
+where 22 became 21. Commit `3de6f57` then added the integration back, but as a
+standalone `runIntegrationTest()` function that increments `passed` itself, so
+**today the suite prints 22 passed, 0 failed** (`suite_test_dateparse.txt`).
+Nothing was lost: the check that "disappeared" is the integration check, and it
+is back. **No restoration was needed.**
+
+**test:print** was failing with `UNIQUE constraint failed: products.barcode`
+(`print_smoke.js:304`). The cause is in the TEST FIXTURE, not in the app: the
+smoke suite hard-coded the PLU barcode `10001`, and `products.barcode` is UNIQUE,
+so the suite crashed on any database that already had a scale item with that
+PLU. The fixture now picks a **free** `1xxxx` PLU instead
+(`scripts/print_smoke.js:303-315`); the expectation itself is unchanged. The
+suite now prints **138/138 checks passed. RESULT: PASS**.
+
+### Every suite, with the counts from the saved output
+
+| Command | Result (from `E:\temp\proof\suite_*.txt`) |
+|---|---|
+| `npm run test:audit` | 48 passed, 0 failed |
+| `npm run test:holdresume` | ALL PASSED: 26/26 checks passed |
+| `npm run test:shortcuts` | ALL PASSED: 37/37 checks passed |
+| `npm run test:licensing` | 55/55 passed |
+| `npm run test:imageupload` | ALL PASSED: 23/23 checks |
+| `npm run test:dateparse` | 22 passed, 0 failed |
+| `npm run test:dashboardPeriod` | 11 passed, 0 failed |
+| `npm run test:businessDay` (new) | 13 passed, 0 failed |
+| `npm run test:run13Pure` (new) | 39 passed, 0 failed |
+| `npm run test:belowCost` | 7 passed, 0 failed |
+| `npm run test:utf8Export` | 2 passed, 0 failed |
+| `npm run test:paymentreconciliation` | 13 passed, 0 failed |
+| `npm run test:promotions` | 11 passed, 0 failed |
+| `npm run test:alerts` | 5 passed, 0 failed |
+| `npm run test:testdata` | 5 passed, 0 failed |
+| `npm run test:invoiceTemplateConfig` | 6 passed, 0 failed |
+| `npm run test:migration071` | 7 passed, 0 failed |
+| `npm run test:migration072` | 6 passed, 0 failed |
+| `npm run test:negstock` | 31/31 checks passed |
+| `npm run test:return` | ALL PASSED: 29/29 checks passed |
+| `npm run test:receipt` | 68/68 checks passed |
+| `npm run test:receiptdesigner` | 73/73 checks passed |
+| `npm run test:recovery` | ALL PASSED: 48/48 checks passed |
+| `npm run test:print` | 138/138 checks passed. RESULT: PASS |
+| `npm run test:keyboard` | ALL PASSED: 93/93 checks passed |
+| `npm run test:recovery:ui` | ALL PASSED: 26/26 checks passed |
+| `npm run test:address` | 42/42 checks passed |
+| `npm run test:purchaseimport` | 34/34 checks passed |
+| `npm run test:salesHistory` | 22 passed, 0 failed |
+| `npm run test:customerDiscount` | 12 passed, 0 failed |
+| `npm run test:customerDiscountModel` (new) | 29 passed, 0 failed |
+| `npm run test:historyRoles` (new) | 7 passed, 0 failed |
+| `npm run check:migrations` | 12 migrations applied on a copy of the real DB (067→078), 216 events (207 sale / 6 return / 3 void), 0 sales without events, integrity `ok`, 073/074 re-run add 0 rows |
+| `npm run typecheck` | exit 0 (`d_typecheck.txt`) |
+| `npm run build` | exit 0 (`d_build.txt`) |
+
+### Honest gaps (still true after this run)
+
+1. The `delete` event type exists in the schema and the UI but **no code path
+   logs it today** — it is still a known gap.
+2. The **Billing Sales History UI** (chips, summary strip, detail, Refresh button)
+   is **PARTIAL — no test: UI**. Only the service layer is covered.
+3. The **F6 combobox**, the **quick "New customer" dialog**, the **Esc gesture**
+   and the **Pause bill-edit mode** are **PARTIAL — no test: UI** as far as their
+   RENDERING goes; their pure logic is fully tested.
+4. The **bill-edit mode** does not yet open a typed qty / price / discount /
+   note field (the keys select the field, the value is still typed by the mouse);
+   the reducer supports it and is tested.
+5. The Esc gesture's "Discard changes?" prompt is produced by the pure
+   decision (`requiresDiscardPrompt`), but the per-page prompt wiring is not
+   implemented for every page.
+
+### Owner manual checklist
+
+1. Void a sale and compare the Dashboard NET with the Sales History NET.
+2. Log in as a cashier — Sales History shows only that cashier's own events, and
+   the detail of another cashier's sale opens as empty.
+3. Press Esc in Sales History — the dialog closes; press it again — nothing else
+   happens (no page refresh behind the dialog).
+4. Give a customer a 5% discount and a "Test Shop 2" a Rs 50 fixed discount;
+   add and remove items in Billing and in Quick Sale and watch the discount and
+   the badge.
+5. Set the customer's minimum bill to Rs 500 and add a Rs 400 bill — the hint
+   "Add Rs 100 more to get the Rs 500 discount" appears and the discount is not
+   applied; add one more item and it applies.
+6. Press Esc on Billing — the cart, the customer, the discount and the typed
+   notes all stay; the products reload and the product search gets the focus.
+7. Press Esc twice on Inventory — the app lands on Billing with the bill intact.
+8. Press Pause with 3 items in the cart: Down, +, -, type 5 and Enter, U (unit),
+   Delete and Undo, then scan a barcode — the scanner still works.
+9. Press F6 and Pause while the payment dialog is open — nothing happens.
+10. Rebind F6 and Pause in Admin → Shortcuts and confirm the Billing footer
+    hint updates.
+11. Run the app as a cashier and try to change a customer's saved discount — the
+    save is refused with "Only an owner or manager can change a customer
+    discount", and the change is written to the activity log by an owner.

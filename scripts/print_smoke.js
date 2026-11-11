@@ -301,7 +301,22 @@ async function run() {
         checkTrue('dates hide when the product has no expiry', !/Mfg \d/.test(looseText), '');
 
         // Scale/PLU fallback: not flagged, but a 5-digit `1xxxx` barcode is weighed.
-        smokeDb.prepare("UPDATE products SET is_loose = 0, barcode = '10001' WHERE id = ?").run(productId);
+        // The PLU must be one no OTHER product already owns — `products.barcode`
+        // is UNIQUE, so a hard-coded '10001' crashed on any shop that already
+        // had a scale item with that PLU. Pick a free one instead.
+        const pluUsed = smokeDb
+          .prepare("SELECT barcode FROM products WHERE barcode LIKE '1%' AND length(barcode) = 5")
+          .all()
+          .map((r) => r.barcode);
+        let plu = '10001';
+        for (let i = 1; i < 1000; i++) {
+          const candidate = String(10000 + i);
+          if (!pluUsed.includes(candidate)) {
+            plu = candidate;
+            break;
+          }
+        }
+        smokeDb.prepare("UPDATE products SET is_loose = 0, barcode = ? WHERE id = ?").run(plu, productId);
         const pluJob = await labelStudio.buildLabelStudioJob([productId], alBagdad, undefined, 1, { priceSource: 'retail' });
         const pluText = (await printService.readJobText(pluJob)).replace(/\s+/g, ' ');
         checkTrue('a scale/PLU product prints the ± marker', pluText.includes('\u00b1100g'), pluText.slice(0, 60));
