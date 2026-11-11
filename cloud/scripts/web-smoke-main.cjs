@@ -174,7 +174,24 @@ async function run() {
   await js(
     `(() => { const b = Array.from(document.querySelectorAll('.sidebar-nav .nav-btn')).find(x => (x.dataset.label || '').toLowerCase().includes('billing')); if (b) b.click(); return !!b; })()`
   );
-  await new Promise((r) => setTimeout(r, 700));
+  // The Billing footer renders the ADMIN bindings, which arrive over the wire
+  // (admin:shortcuts:getAll). A fixed sleep made this assertion flaky: the RPC
+  // can take longer than 700 ms while the worker is busy with the page tour,
+  // and the footer still shows the registry defaults. POLL until the footer
+  // shows the SAME combo the admin table holds - the expectation itself is
+  // unchanged.
+  const footerCombo = String(savePrint || '');
+  const footerReady = await waitFor(
+    () =>
+      js(
+        `((document.querySelector('.shortcuts')?.innerText || '').replace(/\\s+/g, ' ')).includes(${JSON.stringify(
+          footerCombo + ' save+print'
+        )})`
+      ),
+    25000,
+    'Billing footer hint (admin bindings loaded)'
+  );
+  note('billing footer ready', footerReady);
   const billingHint = await js(`(document.querySelector('.shortcuts')?.innerText || '').replace(/\\s+/g, ' ')`);
   note('billing footer', billingHint);
 
