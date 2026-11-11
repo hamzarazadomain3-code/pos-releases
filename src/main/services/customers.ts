@@ -10,6 +10,7 @@
  */
 import { getDb } from '../db';
 import { logActivity } from './activity';
+import { can, currentUser } from './auth';
 import type { Customer, CustomerInput, CustomerDuplicates } from '../../shared/types';
 
 function num(v: unknown, fallback = 0): number {
@@ -98,6 +99,7 @@ function normalise(input: CustomerInput): NormalisedProfile | { error: string } 
   if (!name) return { error: 'Name is required' };
 
   const creditAction = pick(input.credit_action, CREDIT_ACTIONS, 'warn');
+  const discountType = pick(input.discount_type, ['percent', 'fixed'], 'percent');
   const text: Record<string, string | null> = {
     urdu_name: str(input.urdu_name),
     customer_type: pick(input.customer_type, CUSTOMER_TYPES, 'retail'),
@@ -127,12 +129,17 @@ function normalise(input: CustomerInput): NormalisedProfile | { error: string } 
     birthday: str(input.birthday),
     anniversary: str(input.anniversary),
     reminder_freq: pick(input.reminder_freq, REMINDERS, 'none'),
-    discount_type: pick(input.discount_type, ['percent', 'fixed'], 'percent'),
+    discount_type: discountType,
   };
   const numeric: Record<string, number> = {
     credit_limit: Math.max(0, round2(num(input.credit_limit, 0))),
     credit_days: Math.max(0, Math.floor(num(input.credit_days, 0))),
-    default_discount_pct: clamp(round2(num(input.default_discount_pct, 0)), 0, 100),
+    // A PERCENT discount is 0-100; a FIXED discount is rupees (>= 0), so it is
+    // NOT clamped to 100.
+    default_discount_pct:
+      discountType === 'fixed'
+        ? Math.max(0, round2(num(input.default_discount_pct, 0)))
+        : clamp(round2(num(input.default_discount_pct, 0)), 0, 100),
     max_single_bill: Math.max(0, round2(num(input.max_single_bill, 0))),
     discount_min_bill: Math.max(0, round2(num(input.discount_min_bill, 0))),
   };
@@ -200,6 +207,19 @@ export function saveCustomer(
   const existing = getCustomer(id);
   if (!existing) return { ok: false, message: 'Customer not found' };
 
+  // A customer's SAVED discount is a commercial decision: only an owner or a
+  // manager may change it. A cashier can still edit the rest of the profile.
+  const discountChanged =
+    num(existing.default_discount_pct, 0) !== num(norm.numeric.default_discount_pct, 0) ||
+    (existing.discount_type ?? 'percent') !== (norm.text.discount_type ?? 'percent') ||
+    num(existing.discount_min_bill, 0) !== num(norm.numeric.discount_min_bill, 0);
+  if (discountChanged && currentUser() && !can('manager')) {
+    return {
+      ok: false,
+      message: 'Only an owner or manager can change a customer discount',
+    };
+  }
+
   db.exec('BEGIN');
   try {
     const setCols = ['name', 'phone', 'address', 'block_on_exceed', ...TEXT_COLS, ...NUM_COLS];
@@ -245,6 +265,16 @@ export function saveCustomer(
 
     db.exec('COMMIT');
     logActivity('customer_updated', 'customer', id, `name=${norm.name}`);
+    if (discountChanged) {
+      // Who changed it, and what it changed from/to.
+      const who = currentUser()?.username ?? 'system';
+      logActivity(
+        'customer_discount_changed',
+        'customer',
+        id,
+        `by=${who} | old=${existing.discount_type ?? 'percent'} ${num(existing.default_discount_pct, 0)} min ${num(existing.discount_min_bill, 0)} | new=${norm.text.discount_type ?? 'percent'} ${num(norm.numeric.default_discount_pct, 0)} min ${num(norm.numeric.discount_min_bill, 0)}`
+      );
+    }
     return { ok: true, customer: getCustomer(id) ?? undefined };
   } catch (e) {
     db.exec('ROLLBACK');

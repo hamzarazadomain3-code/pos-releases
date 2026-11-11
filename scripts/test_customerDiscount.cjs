@@ -47,7 +47,15 @@ test("customer with 5% discount sets it and marks autoApplied", () => {
     currentDiscount: "",
     autoApplied: false,
   });
-  assert.deepEqual(result, { discount: "5", type: "percent", autoApplied: true });
+  // Run 13: the result gained `source` (saved on the sale) and `pending`
+  // (the customer's minimum bill is not reached yet).
+  assert.deepEqual(result, {
+    discount: "5",
+    type: "percent",
+    autoApplied: true,
+    source: "customer_percent",
+    pending: false,
+  });
 });
 
 test("customer with 0% discount clears auto-applied discount", () => {
@@ -56,7 +64,13 @@ test("customer with 0% discount clears auto-applied discount", () => {
     currentDiscount: "5",
     autoApplied: true,
   });
-  assert.deepEqual(result, { discount: "", type: "percent", autoApplied: false });
+  assert.deepEqual(result, {
+    discount: "",
+    type: "percent",
+    autoApplied: false,
+    source: "none",
+    pending: false,
+  });
 });
 
 test("typed discount is not overwritten by customer change", () => {
@@ -65,7 +79,13 @@ test("typed discount is not overwritten by customer change", () => {
     currentDiscount: "3",
     autoApplied: false,
   });
-  assert.deepEqual(result, { discount: "3", type: "percent", autoApplied: false });
+  assert.deepEqual(result, {
+    discount: "3",
+    type: "percent",
+    autoApplied: false,
+    source: "manual",
+    pending: false,
+  });
 });
 
 test("walk-in clears auto-applied discount", () => {
@@ -74,7 +94,13 @@ test("walk-in clears auto-applied discount", () => {
     currentDiscount: "5",
     autoApplied: true,
   });
-  assert.deepEqual(result, { discount: "", type: "percent", autoApplied: false });
+  assert.deepEqual(result, {
+    discount: "",
+    type: "percent",
+    autoApplied: false,
+    source: "none",
+    pending: false,
+  });
 });
 
 test("walk-in does not clear typed discount", () => {
@@ -83,7 +109,13 @@ test("walk-in does not clear typed discount", () => {
     currentDiscount: "3",
     autoApplied: false,
   });
-  assert.deepEqual(result, { discount: "3", type: "percent", autoApplied: false });
+  assert.deepEqual(result, {
+    discount: "3",
+    type: "percent",
+    autoApplied: false,
+    source: "manual",
+    pending: false,
+  });
 });
 
 test("customer without discount field clears auto-applied", () => {
@@ -92,7 +124,13 @@ test("customer without discount field clears auto-applied", () => {
     currentDiscount: "5",
     autoApplied: true,
   });
-  assert.deepEqual(result, { discount: "", type: "percent", autoApplied: false });
+  assert.deepEqual(result, {
+    discount: "",
+    type: "percent",
+    autoApplied: false,
+    source: "none",
+    pending: false,
+  });
 });
 
 test("customer with NaN discount clears auto-applied", () => {
@@ -101,7 +139,13 @@ test("customer with NaN discount clears auto-applied", () => {
     currentDiscount: "5",
     autoApplied: true,
   });
-  assert.deepEqual(result, { discount: "", type: "percent", autoApplied: false });
+  assert.deepEqual(result, {
+    discount: "",
+    type: "percent",
+    autoApplied: false,
+    source: "none",
+    pending: false,
+  });
 });
 
 test("customer with negative discount clears auto-applied", () => {
@@ -110,7 +154,13 @@ test("customer with negative discount clears auto-applied", () => {
     currentDiscount: "5",
     autoApplied: true,
   });
-  assert.deepEqual(result, { discount: "", type: "percent", autoApplied: false });
+  assert.deepEqual(result, {
+    discount: "",
+    type: "percent",
+    autoApplied: false,
+    source: "none",
+    pending: false,
+  });
 });
 
 test("re-selecting customer with different discount updates auto-applied value", () => {
@@ -119,7 +169,13 @@ test("re-selecting customer with different discount updates auto-applied value",
     currentDiscount: "5",
     autoApplied: true,
   });
-  assert.deepEqual(result, { discount: "10", type: "percent", autoApplied: true });
+  assert.deepEqual(result, {
+    discount: "10",
+    type: "percent",
+    autoApplied: true,
+    source: "customer_percent",
+    pending: false,
+  });
 });
 
 test("string discount is preserved", () => {
@@ -128,7 +184,13 @@ test("string discount is preserved", () => {
     currentDiscount: "",
     autoApplied: false,
   });
-  assert.deepEqual(result, { discount: "7.5", type: "percent", autoApplied: true });
+  assert.deepEqual(result, {
+    discount: "7.5",
+    type: "percent",
+    autoApplied: true,
+    source: "customer_percent",
+    pending: false,
+  });
 });
 
 // ── Real customers service test ───────────────────────────────────────────
@@ -149,16 +211,14 @@ async function main() {
     const customers = require("../dist/main/services/customers.js");
     const sales = require("../dist/main/services/sales.js");
 
-    // Create a customer with default_discount_pct = 5
-    const result = customers.saveCustomer
-      ? customers.saveCustomer({ name: "Test Customer", phone: "03001234567", default_discount_pct: 5 }, null)
-      : null;
-
-    if (!result || !result.ok) {
-      // Fallback: create via sales and set field directly
-      sales.createCustomer("Test Customer", "03001234567", 0);
-      db.prepare("UPDATE customers SET default_discount_pct = 5 WHERE name = 'Test Customer'").run();
-    }
+    // Create a customer with default_discount_pct = 5 through the REAL service.
+    // There is no SQL fallback: if the service does not persist it, the test fails.
+    const result = customers.saveCustomer(
+      { name: "Test Customer", phone: "03001234567", default_discount_pct: 5 },
+      null
+    );
+    assert.ok(result.ok, "saveCustomer returned ok: " + (result.message ?? ""));
+    assert.equal(result.customer.default_discount_pct, 5, "service returned the saved value");
 
     // List customers and check default_discount_pct
     const custList = sales.listCustomers();

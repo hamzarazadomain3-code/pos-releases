@@ -59,7 +59,14 @@ export function computeTotals(
   items: BillLineInput[],
   billDiscount = 0,
   discountType: 'amount' | 'percent' = 'amount'
-): { lines: ComputedLine[]; subtotal: number; tax_amount: number; discount_amount: number; total: number } {
+): {
+  lines: ComputedLine[];
+  subtotal: number;
+  tax_amount: number;
+  discount_amount: number;
+  bill_discount_amount: number;
+  total: number;
+} {
   const lines = computeLines(items);
   const subtotal = lines.reduce((s, l) => s + l.line_total, 0);
   const billDiscountAmount =
@@ -72,6 +79,7 @@ export function computeTotals(
     subtotal,
     tax_amount: taxAmount,
     discount_amount: lineDiscounts + billDiscountAmount,
+    bill_discount_amount: Math.round(billDiscountAmount * 100) / 100,
     total,
   };
 }
@@ -88,7 +96,7 @@ export function createSale(input: SaleInput): SaleCreateResult {
     const promo = promoOf.get(it.product_id);
     return promo ? { ...it, price: promo.effective_price } : it;
   });
-  const { lines, tax_amount, discount_amount, total } = computeTotals(
+  const { lines, tax_amount, discount_amount, bill_discount_amount, total } = computeTotals(
     effectiveItems,
     input.bill_discount ?? 0,
     input.discount_type ?? 'amount'
@@ -183,8 +191,8 @@ export function createSale(input: SaleInput): SaleCreateResult {
     const nowIso = new Date().toISOString();
     const saleInfo = db
       .prepare(
-        `INSERT INTO sales (invoice_no, customer_id, user_id, shift_id, subtotal, tax_amount, discount_amount, total_amount, service_charge, service_charge_type, freight, price_overridden, status, notes, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?)`
+        `INSERT INTO sales (invoice_no, customer_id, user_id, shift_id, subtotal, tax_amount, discount_amount, total_amount, service_charge, service_charge_type, freight, price_overridden, bill_discount, discount_type, discount_source, customer_discount_amount, bill_discount_amount, status, notes, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?)`
       )
       .run(
         invoiceNo,
@@ -199,6 +207,13 @@ export function createSale(input: SaleInput): SaleCreateResult {
         serviceChargeType,
         freight,
         priceOverridden ? 1 : 0,
+        input.bill_discount ?? 0,
+        input.discount_type ?? 'amount',
+        input.discount_source ?? null,
+        input.discount_source === 'customer_percent' || input.discount_source === 'customer_fixed'
+          ? bill_discount_amount
+          : 0,
+        bill_discount_amount,
         input.notes ?? null,
         nowIso
       );
@@ -356,6 +371,13 @@ export function createSale(input: SaleInput): SaleCreateResult {
         discount_amount,
         tax_amount,
         total: finalTotal,
+        bill_discount: input.bill_discount ?? 0,
+        discount_type: input.discount_type ?? 'amount',
+        discount_source: input.discount_source ?? null,
+        customer_discount_amount:
+          input.discount_source === 'customer_percent' || input.discount_source === 'customer_fixed'
+            ? bill_discount_amount
+            : 0,
         lines: lines.map((l) => ({
           product_id: l.product_id,
           qty: l.qty,

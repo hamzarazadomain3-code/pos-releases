@@ -387,8 +387,21 @@ function buildRoll(
 
   const netText = fmt(sale.total_amount);
   const net = `<tr class="net"><td>NET TOTAL</td><td class="r${numCls(netText)}">${netText}</td></tr>`;
+  // A customer discount is named on the receipt: "Customer discount 5%: -Rs X".
+  const custDiscountRow = (() => {
+    const src = String(sale.discount_source ?? '');
+    const value = Number(sale.customer_discount_amount ?? 0);
+    if (src !== 'customer_percent' && src !== 'customer_fixed') return '';
+    if (!Number.isFinite(value) || value <= 0) return '';
+    const pct = Math.round(Number(sale.bill_discount ?? 0) * 100) / 100;
+    const label = src === 'customer_fixed'
+      ? `Customer discount Rs ${pct}`
+      : `Customer discount ${pct}%`;
+    return `<tr><td>${esc(label)}</td><td class="r">-${plain(value)}</td></tr>`;
+  })();
   const totalsBody = `<tr><td>SUB TOTAL</td><td class="r">${plain(sale.subtotal)}</td></tr>
     ${opts.showDiscount && sale.discount_amount > 0 ? `<tr><td>DISCOUNT</td><td class="r">-${plain(sale.discount_amount)}</td></tr>` : ''}
+    ${custDiscountRow}
     ${opts.showTax && sale.tax_amount > 0 ? `<tr><td>TAX</td><td class="r">${plain(sale.tax_amount)}</td></tr>` : ''}
     ${sale.service_charge && sale.service_charge > 0 ? `<tr><td>SERVICE CHARGE</td><td class="r">${plain(sale.service_charge)}</td></tr>` : ''}
     ${sale.freight && sale.freight > 0 ? `<tr><td>FREIGHT</td><td class="r">${plain(sale.freight)}</td></tr>` : ''}

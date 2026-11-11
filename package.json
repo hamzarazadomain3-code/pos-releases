@@ -32,6 +32,7 @@
     "test:historyRoles": "npm run build:main && node scripts/test_historyRoles.cjs",
     "check:migrations": "node scripts/check_migrations_on_copy.cjs",
     "test:customerDiscount": "npm run build:main && node scripts/test_customerDiscount.cjs",
+    "test:customerDiscountModel": "npm run build:main && node scripts/test_customerDiscountModel.cjs",
     "test:belowCost": "npm run build:main && node scripts/test_belowCost.cjs",
     "test:utf8Export": "npm run build:main && node scripts/test_utf8Export.cjs",
     "test:paymentreconciliation": "npm run build:main && node scripts/test_paymentReconciliation.cjs",

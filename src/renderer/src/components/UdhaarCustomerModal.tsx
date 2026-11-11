@@ -211,7 +211,19 @@ export function UdhaarCustomerModal({ customer, onClose, onSaved, onOpenExisting
         if (v.trim() && numOr(v, 0) < 0) return `${label} cannot be negative.`;
       }
       const d = numOr(form.default_discount_pct, 0);
-      if (form.default_discount_pct.trim() && (d < 0 || d > 100)) return 'Default discount must be between 0 and 100.';
+      if (form.default_discount_pct.trim() && d < 0) return 'Default discount cannot be negative.';
+      // A percent discount is 0-100; a fixed discount is rupees (>= 0).
+      if (
+        form.default_discount_pct.trim() &&
+        form.discount_type === 'percent' &&
+        d > 100
+      ) {
+        return 'Default discount must be between 0 and 100.';
+      }
+      const minBill = numOr(form.discount_min_bill, 0);
+      if (form.discount_min_bill.trim() && minBill < 0) {
+        return 'Minimum bill cannot be negative.';
+      }
     }
     return null;
   }
@@ -561,9 +573,33 @@ export function UdhaarCustomerModal({ customer, onClose, onSaved, onOpenExisting
               <option value="wholesale">Wholesale</option>
             </select>
           </label>
+          <div className="field span-2">
+            <span>Default discount</span>
+            <div className="field" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <select
+                value={form.discount_type}
+                onChange={(e) => set('discount_type', e.target.value)}
+                style={{ width: '90px' }}
+                title="Percent or fixed rupees"
+              >
+                <option value="percent">%</option>
+                <option value="fixed">Rs</option>
+              </select>
+              <KeyboardInput
+                value={form.default_discount_pct}
+                onChange={(e) => set('default_discount_pct', e.target.value)}
+                placeholder="0"
+              />
+            </div>
+          </div>
           <label className="field">
-            <span>Default discount (%)</span>
-            <KeyboardInput value={form.default_discount_pct} onChange={(e) => set('default_discount_pct', e.target.value)} placeholder="0" />
+            <span>Apply only if bill is at least ({getCurrencySymbol()})</span>
+            <KeyboardInput
+              value={form.discount_min_bill}
+              onChange={(e) => set('discount_min_bill', e.target.value)}
+              placeholder="0 = always"
+              decimals
+            />
           </label>
           <label className="field">
             <span>Max single bill ({getCurrencySymbol()})</span>

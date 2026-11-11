@@ -32,30 +32,10 @@ export default function QuickSaleGrid() {
   const [billDiscount, setBillDiscount] = useState('');
   const [autoAppliedDiscount, setAutoAppliedDiscount] = useState(false);
   const [discountType, setDiscountType] = useState<'percent' | 'amount'>('percent');
-  // Apply customer default discount when customer changes
-  useEffect(() => {
-    if (customerId) {
-      const cust = customers.find((c) => c.id === customerId);
-      if (cust) {
-        const result = applyCustomerDiscount({
-          customer: cust,
-          currentDiscount: billDiscount,
-          autoApplied: autoAppliedDiscount,
-        });
-        setBillDiscount(result.discount);
-        setDiscountType(result.type);
-        setAutoAppliedDiscount(result.autoApplied);
-      }
-    } else {
-      const result = applyCustomerDiscount({
-        customer: null,
-        currentDiscount: billDiscount,
-        autoApplied: autoAppliedDiscount,
-      });
-      setBillDiscount(result.discount);
-      setAutoAppliedDiscount(result.autoApplied);
-    }
-  }, [customerId, customers]);
+  const [discountSource, setDiscountSource] = useState<
+    'customer_percent' | 'customer_fixed' | 'manual' | 'promotion' | 'none'
+  >('none');
+  const [discountRemoved, setDiscountRemoved] = useState(false);
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -213,6 +193,60 @@ export default function QuickSaleGrid() {
 
   const cartTotal = cart.reduce((s, i) => s + i.line_total, 0);
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
+  // The applied bill discount is shown in the cart total.
+  const discountAmount =
+    discountType === 'percent'
+      ? (cartTotal * (Number(billDiscount) || 0)) / 100
+      : Math.min(Number(billDiscount) || 0, cartTotal);
+  const grandTotal = Math.max(0, cartTotal - discountAmount);
+
+  // Apply customer default discount when customer changes
+  useEffect(() => {
+    if (customerId) {
+      const cust = customers.find((c) => c.id === customerId);
+      if (cust) {
+        setDiscountRemoved(false);
+        const result = applyCustomerDiscount({
+          customer: cust,
+          currentDiscount: billDiscount,
+          autoApplied: autoAppliedDiscount,
+          billAmount: cartTotal,
+        });
+        setBillDiscount(result.discount);
+        setDiscountType(result.type);
+        setAutoAppliedDiscount(result.autoApplied);
+        setDiscountSource(result.source);
+      }
+    } else {
+      const result = applyCustomerDiscount({
+        customer: null,
+        currentDiscount: billDiscount,
+        autoApplied: autoAppliedDiscount,
+      });
+      setBillDiscount(result.discount);
+      setAutoAppliedDiscount(result.autoApplied);
+      setDiscountSource(result.source);
+    }
+  }, [customerId, customers]);
+
+  // Live re-evaluation: a customer discount with a minimum bill follows the
+  // cart total, so it applies as soon as the cart is big enough.
+  useEffect(() => {
+    if (!customerId || discountRemoved || !autoAppliedDiscount) return;
+    const cust = customers.find((c) => c.id === customerId);
+    if (!cust) return;
+    const result = applyCustomerDiscount({
+      customer: cust,
+      currentDiscount: billDiscount,
+      autoApplied: autoAppliedDiscount,
+      billAmount: cartTotal,
+    });
+    if (result.discount === billDiscount && result.type === discountType) return;
+    setBillDiscount(result.discount);
+    setDiscountType(result.type);
+    setAutoAppliedDiscount(result.autoApplied);
+    setDiscountSource(result.source);
+  }, [customerId, customers, cartTotal, autoAppliedDiscount, discountRemoved]);
 
   const handleCheckout = async () => {
     if (cart.length === 0) { setErr('Cart is empty'); return; }
@@ -252,7 +286,8 @@ export default function QuickSaleGrid() {
         customer_id: customerId || null,
         bill_discount: billDiscount ? Number(billDiscount) : 0,
         discount_type: discountType,
-        payments: [{ mode: 'Cash', amount: cartTotal }],
+        discount_source: discountSource === 'none' ? undefined : discountSource,
+        payments: [{ mode: 'Cash', amount: grandTotal }],
         notes: notes || null,
       });
 
@@ -261,6 +296,11 @@ export default function QuickSaleGrid() {
         setCart([]);
         setCustomerId('');
         setNotes('');
+        setBillDiscount('');
+        setAutoAppliedDiscount(false);
+        setDiscountRemoved(false);
+        setDiscountSource('none');
+        setDiscountType('percent');
       } else {
         setErr('Sale failed');
       }
@@ -578,6 +618,16 @@ export default function QuickSaleGrid() {
             <span>Subtotal</span>
             <strong>{formatMoney(cartTotal)}</strong>
           </div>
+          {discountAmount > 0 && (
+            <div className="row-btns" style={{ marginTop: 4, justifyContent: 'space-between' }}>
+              <span>Customer discount{discountType === 'percent' ? ` ${billDiscount}%` : ''}</span>
+              <strong style={{ color: '#0a7a33' }}>-{formatMoney(discountAmount)}</strong>
+            </div>
+          )}
+          <div className="row-btns" style={{ marginTop: 4, justifyContent: 'space-between' }}>
+            <span>Total</span>
+            <strong>{formatMoney(grandTotal)}</strong>
+          </div>
         </div>
 
         {/* Checkout Section */}
@@ -610,7 +660,7 @@ export default function QuickSaleGrid() {
               disabled={cart.length === 0 || saving}
               onClick={handleCheckout}
             >
-              {saving ? 'Processing…' : `Checkout — ${formatMoney(cartTotal)}`}
+              {saving ? 'Processing…' : `Checkout — ${formatMoney(grandTotal)}`}
             </button>
           </div>
         </div>

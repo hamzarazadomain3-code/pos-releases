@@ -10,7 +10,7 @@ import { eventCombo, keyFromEvent, matchesShortcut } from '../utils/shortcutKeys
 import { type CartLine, lineTotals, rehydrateCartLines, serializeCartLine, summarizeHeldBill, type HeldBillSummary } from '@shared/cartMath';
 import { defaultCombo, hintRows, isActionAllowedOn, resolveCombo } from '@shared/shortcuts';
 import { parseNegativeStockPolicy, checkNegativeStock, type NegativeStockPolicy } from '@shared/negativeStock';
-import { applyCustomerDiscount, defaultBillDiscount } from '@shared/customerDiscount';
+import { applyCustomerDiscount, customerDiscountBadge, describeDiscountSource, minBillHint } from '@shared/customerDiscount';
 import {
   HISTORY_EVENT_CLASSES,
   HISTORY_EVENT_LABELS,
@@ -175,6 +175,12 @@ export default function Billing({ onNavigate, onLogout }: BillingProps) {
   const [billDiscount, setBillDiscount] = useState('');
   const [autoAppliedDiscount, setAutoAppliedDiscount] = useState(false);
   const [discountType, setDiscountType] = useState<'amount' | 'percent'>('amount');
+  /** Where the current bill discount came from (saved on the sale). */
+  const [discountSource, setDiscountSource] = useState<
+    'customer_percent' | 'customer_fixed' | 'manual' | 'promotion' | 'none'
+  >('none');
+  /** The cashier removed the customer discount for THIS bill — never re-add it. */
+  const [discountRemoved, setDiscountRemoved] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -834,6 +840,9 @@ const newBill = useCallback(() => {
   setItems([]);
   setSearch('');
   setBillDiscount('');
+  setAutoAppliedDiscount(false);
+  setDiscountRemoved(false);
+  setDiscountSource('none');
   setSuccess(null);
   setQuotationMode(false);
   negStockWarnedRef.current = false; // Phase 1: one negative-stock toast per bill
@@ -1023,6 +1032,7 @@ useEffect(() => {
         }),
         customer_id: customerId ? Number(customerId) : null,
         bill_discount: Number(billDiscount) || 0, discount_type: discountType,
+        discount_source: discountSource === 'none' ? undefined : discountSource,
         price_floor_override: priceFloorOverride, price_mode: priceMode,
         service_charge: Number(serviceCharge) || 0, service_charge_type: serviceChargeType,
         freight: freightAmt, payments: rows,
@@ -1033,6 +1043,9 @@ useEffect(() => {
       if (!opts?.silent) setSuccess(result);
       setItems([]);
       setBillDiscount('');
+      setAutoAppliedDiscount(false);
+      setDiscountRemoved(false);
+      setDiscountSource('none');
       setPriceFloorOverride(false);
       if ((autoPrintReceipt || opts?.forcePrint) && result.sale?.id) {
         window.api.printing.printSale(result.sale.id, receiptTemplate)
@@ -1046,7 +1059,7 @@ useEffect(() => {
     } finally {
       setExpressBusy(false);
     }
-  }, [items, finalTotal, customerId, billDiscount, discountType, priceFloorOverride, priceMode, serviceCharge, serviceChargeType, freightAmt, autoPrintReceipt, expressBusy, priceFloorEnabled, receiptTemplate, warnNegativeStockOnce]);
+  }, [items, finalTotal, customerId, billDiscount, discountType, discountSource, priceFloorOverride, priceMode, serviceCharge, serviceChargeType, freightAmt, autoPrintReceipt, expressBusy, priceFloorEnabled, receiptTemplate, warnNegativeStockOnce]);
 
   // ── Repeat Last Sale (F7) ──
   const repeatLastSale = useCallback(() => {
@@ -1529,6 +1542,12 @@ useEffect(() => {
     }
   }, [roundOffEnabled, applyRoundOff]);
 
+  // The customer currently on the bill (null = walk-in / cash).
+  const selectedCustomer = useMemo(
+    () => (customerId ? customers.find((c) => String(c.id) === String(customerId)) ?? null : null),
+    [customerId, customers]
+  );
+
   // Load customer loyalty & auto-apply default discount when customer changes
   useEffect(() => {
     if (customerId) {
@@ -1538,15 +1557,25 @@ useEffect(() => {
           // Calculate loyalty based on purchase history (mock for now)
           setSelectedCustomerLoyalty({ points: Math.floor(cust.balance / 100), tier: cust.balance > 10000 ? 'Gold' : cust.balance > 5000 ? 'Silver' : 'Bronze' });
 
+          // The customer's price level decides the price of every line.
+          if ((cust.price_level ?? 'retail') === 'wholesale') {
+            switchPriceMode('wholesale');
+          } else if (priceMode === 'wholesale') {
+            switchPriceMode('retail');
+          }
+
           // Apply customer default discount using the pure helper.
+          setDiscountRemoved(false);
           const result = applyCustomerDiscount({
             customer: cust,
             currentDiscount: billDiscount,
             autoApplied: autoAppliedDiscount,
+            billAmount: totals.subtotal,
           });
           setBillDiscount(result.discount);
           setDiscountType(result.type);
           setAutoAppliedDiscount(result.autoApplied);
+          setDiscountSource(result.source);
         }
       }).catch(() => undefined);
     } else {
@@ -1559,8 +1588,78 @@ useEffect(() => {
       });
       setBillDiscount(result.discount);
       setAutoAppliedDiscount(result.autoApplied);
+      setDiscountSource(result.source);
     }
   }, [customerId]);
+
+  // Live re-evaluation: the customer discount follows the bill amount, so a
+  // "Rs 50 off above Rs 500" discount kicks in as soon as the bill is big
+  // enough (and the hint disappears again). A TYPED discount is never touched.
+  useEffect(() => {
+    if (!selectedCustomer || discountRemoved) return;
+    if (!autoAppliedDiscount) return;
+    const result = applyCustomerDiscount({
+      customer: selectedCustomer,
+      currentDiscount: billDiscount,
+      autoApplied: autoAppliedDiscount,
+      billAmount: totals.subtotal,
+    });
+    if (result.discount === billDiscount && result.type === discountType) return;
+    setBillDiscount(result.discount);
+    setDiscountType(result.type);
+    setAutoAppliedDiscount(result.autoApplied);
+    setDiscountSource(result.source);
+  }, [selectedCustomer, totals.subtotal, autoAppliedDiscount, discountRemoved]);
+
+  // "Add Rs X more to get the Rs 50 discount"
+  const customerDiscountHint = useMemo(() => {
+    if (!selectedCustomer || discountRemoved) return '';
+    const minBill = Number(selectedCustomer.discount_min_bill ?? 0);
+    const value = Number(selectedCustomer.default_discount_pct ?? 0);
+    if (!Number.isFinite(minBill) || minBill <= 0) return '';
+    if (!Number.isFinite(value) || value <= 0) return '';
+    return minBillHint(minBill, totals.subtotal);
+  }, [selectedCustomer, totals.subtotal, discountRemoved]);
+
+  // The badge above the discount fields: "Customer discount 5% applied" /
+  // "Customer discount Rs 50 applied", with an x to remove it for this bill.
+  const customerDiscountBadgeText = useMemo(() => {
+    if (!selectedCustomer || discountRemoved || !autoAppliedDiscount) return '';
+    const value = Number(selectedCustomer.default_discount_pct ?? 0);
+    if (!Number.isFinite(value) || value <= 0) return '';
+    const type = selectedCustomer.discount_type === 'fixed' ? 'fixed' : 'percent';
+    return customerDiscountBadge(type, value, getCurrencySymbol());
+  }, [selectedCustomer, autoAppliedDiscount, discountRemoved]);
+
+  // The customer discount recorded on the sale being inspected.
+  const saleDetailDiscountLabel = useMemo(() => {
+    if (!saleDetail) return '';
+    return describeDiscountSource(
+      saleDetail.discount_source,
+      saleDetail.customer_discount_amount,
+      getCurrencySymbol()
+    );
+  }, [saleDetail]);
+
+  // The customer discount recorded on a sale event, if any.
+  const historyDetailSnapshotDiscount = useMemo(() => {
+    if (!historyDetail || historyDetail.snapshot == null || typeof historyDetail.snapshot !== 'object') {
+      return '';
+    }
+    const snap = historyDetail.snapshot as Record<string, unknown>;
+    return describeDiscountSource(
+      snap.discount_source,
+      snap.customer_discount_amount,
+      getCurrencySymbol()
+    );
+  }, [historyDetail]);
+
+  const removeCustomerDiscount = useCallback(() => {
+    setDiscountRemoved(true);
+    setAutoAppliedDiscount(false);
+    setBillDiscount('');
+    setDiscountSource('none');
+  }, []);
 
   // Open shortcut modal
   const openShortcutModal = useCallback(() => {
@@ -1702,6 +1801,7 @@ function openPay() {
           customer_id: customerId ? Number(customerId) : null,
           bill_discount: Number(billDiscount) || 0,
           discount_type: discountType,
+          discount_source: discountSource === 'none' ? undefined : discountSource,
           price_floor_override: priceFloorOverride,
           price_mode: priceMode,
           service_charge: Number(serviceCharge) || 0,
@@ -1716,6 +1816,9 @@ function openPay() {
       setLastSaleCustomer(customerId);
       setItems([]);
       setBillDiscount('');
+      setAutoAppliedDiscount(false);
+      setDiscountRemoved(false);
+      setDiscountSource('none');
       setPriceFloorOverride(false);
       setPriceFloorUserId(null);
       setPriceFloorPin('');
@@ -2803,7 +2906,7 @@ const handleUnitChange = (newLevel: number) => {
                     type="number"
                     value={discountType === 'percent' ? billDiscount : ''}
                     placeholder="0"
-                    onChange={(e) => { setBillDiscount(e.target.value); setDiscountType('percent'); setAutoAppliedDiscount(false); }}
+                    onChange={(e) => { setBillDiscount(e.target.value); setDiscountType('percent'); setAutoAppliedDiscount(false); setDiscountRemoved(true); setDiscountSource('manual'); }}
                   />
                 </label>
                 <label className="bsf-field">
@@ -2815,9 +2918,27 @@ const handleUnitChange = (newLevel: number) => {
                     type="number"
                     value={discountType === 'amount' ? billDiscount : ''}
                     placeholder="0"
-                    onChange={(e) => { setBillDiscount(e.target.value); setDiscountType('amount'); setAutoAppliedDiscount(false); }}
+                    onChange={(e) => { setBillDiscount(e.target.value); setDiscountType('amount'); setAutoAppliedDiscount(false); setDiscountRemoved(true); setDiscountSource('manual'); }}
                   />
                 </label>
+                {customerDiscountBadgeText && (
+                  <div className="bsf-field" style={{ gridColumn: '1 / -1' }}>
+                    <span className="bsf-label">Customer discount</span>
+                    <div className="bsf-input-group" style={{ alignItems: 'center', gap: '6px' }}>
+                      <span className="badge" style={{ background: '#e8f5e9', color: '#0a7a33', border: '1px solid #a5d6a7', padding: '3px 8px', borderRadius: '4px', fontWeight: 700 }}>
+                        {customerDiscountBadgeText}
+                      </span>
+                      <button type="button" className="btn btn-sm" onClick={removeCustomerDiscount} title="Remove the customer discount for this bill">
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {customerDiscountHint && (
+                  <div className="bsf-field" style={{ gridColumn: '1 / -1' }}>
+                    <span className="muted" style={{ fontSize: '12px', color: '#8a5a00' }}>{customerDiscountHint}</span>
+                  </div>
+                )}
                 <label className="bsf-field">
                   <span className="bsf-label">Tax</span>
                   <div className="bsf-input-group">
@@ -2990,7 +3111,7 @@ const handleUnitChange = (newLevel: number) => {
                   >
                     Return / Refund
                   </button>
-                  <button className="action-btn-reset" onClick={() => { setItems([]); setCustomerId(''); setBillDiscount(''); setAutoAppliedDiscount(false); setDiscountType('amount'); setServiceCharge(''); setFreight(''); }}>
+                  <button className="action-btn-reset" onClick={() => { setItems([]); setCustomerId(''); setBillDiscount(''); setAutoAppliedDiscount(false); setDiscountRemoved(false); setDiscountSource('none'); setDiscountType('amount'); setServiceCharge(''); setFreight(''); }}>
                     Reset
                   </button>
                 </div>
@@ -3951,8 +4072,13 @@ const handleUnitChange = (newLevel: number) => {
             <div><strong>Amount:</strong> {formatMoney(historyDetail.event.amount)}</div>
             <div><strong>Payment:</strong> {historyDetail.event.payment_mode ?? '—'}</div>
             <div><strong>Reason:</strong> {historyDetail.event.reason ?? '—'}</div>
-            <div><strong>Reference:</strong> {historyDetail.event.reference_invoice ?? '—'}</div>
+            <div><strong>Reference:</strong> {historyDetail.event.reference_invoice ?? '-'}</div>
           </div>
+          {historyDetailSnapshotDiscount && (
+            <div style={{ marginBottom: '12px' }}>
+              <strong>{historyDetailSnapshotDiscount}</strong>
+            </div>
+          )}
           {historyDetail.items.length > 0 && (
             <div className="table-wrap" style={{ maxHeight: '40vh', overflow: 'auto' }}>
               <table className="data-table">
@@ -4131,6 +4257,9 @@ const handleUnitChange = (newLevel: number) => {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginTop: '16px', padding: '12px', background: '#f8f9fa', borderRadius: '4px' }}>
               <div><strong>Subtotal:</strong> {saleDetail.subtotal.toFixed(2)}</div>
               <div><strong>Discount:</strong> {saleDetail.discount_amount.toFixed(2)}</div>
+              {saleDetailDiscountLabel && (
+                <div><strong>{saleDetailDiscountLabel}</strong></div>
+              )}
               <div><strong>Service Charge:</strong> {(saleDetail.service_charge || 0).toFixed(2)}</div>
               <div><strong>Tax:</strong> {saleDetail.tax_amount.toFixed(2)}</div>
               <div><strong>Freight:</strong> {(saleDetail.freight || 0).toFixed(2)}</div>

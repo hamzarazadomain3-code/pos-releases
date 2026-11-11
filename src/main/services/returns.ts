@@ -7,6 +7,7 @@ import { can, getSessionUserId } from './auth';
 import { getAdminSetting } from './admin';
 import { recordSaleEvent } from './salesHistory';
 import { resolveBusinessRange } from '../../shared/salesHistory';
+import { computeRefundShare } from '../../shared/customerDiscount';
 import { getBusinessDayStartHour, getShopTimezone } from './salesHistory';
 import type { CashRefundRow, ReturnItemRow, ReturnRow } from '../../shared/types';
 
@@ -166,6 +167,12 @@ export function createReturn(input: {
   const valid = input.items.filter((i) => i.qty > 0);
   if (!valid.length) throw new Error('Select at least one item to return');
 
+  // The customer gets back the price they ACTUALLY paid: a bill-level
+  // discount (customer percent / customer fixed / manual) is shared across the
+  // lines in proportion, so a discounted bill refunds proportionally less.
+  const grossTotal = (sale.subtotal ?? 0) + (sale.tax_amount ?? 0);
+  const billDiscountAmount = Number(sale.bill_discount_amount ?? 0);
+
   let refund = 0;
   const lines: ResolvedReturnLine[] = [];
   for (const it of valid) {
@@ -175,15 +182,26 @@ export function createReturn(input: {
     if (it.qty > remaining)
       throw new Error(`Only ${remaining} returnable for this item (already returned ${si.returned_qty ?? 0})`);
     if (it.unit_price < 0) throw new Error('Unit price cannot be negative');
-    refund += it.qty * it.unit_price;
+    // The price actually paid for these units (never more than the list price).
+    const paidUnitPrice = Math.min(
+      it.unit_price,
+      computeRefundShare({
+        unitPrice: si.unit_price,
+        qty: 1,
+        grossTotal,
+        billDiscountAmount,
+      })
+    );
+    refund += it.qty * paidUnitPrice;
     lines.push({
       sale_item_id: si.id,
       product_id: si.product_id,
       qty: it.qty,
-      unit_price: it.unit_price,
+      unit_price: paidUnitPrice,
       batch_id: (si as unknown as { batch_id?: number | null }).batch_id ?? null,
     });
   }
+  refund = round2(refund);
   const unrefunded = sale.total_amount - (sale.returned_amount ?? 0);
   if (refund > unrefunded)
     throw new Error(`Refund (${refund.toFixed(2)}) exceeds unrefunded sale amount (${unrefunded.toFixed(2)})`);

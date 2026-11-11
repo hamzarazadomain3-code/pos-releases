@@ -300,6 +300,16 @@ export interface Sale {
   service_charge?: number;
   service_charge_type?: string;
   freight?: number;
+  /** The bill discount that was applied (0 = none). */
+  bill_discount?: number;
+  /** 'percent' | 'amount' — how `bill_discount` was read. */
+  discount_type?: string;
+  /** Where the bill discount came from (customer percent/fixed, manual, promotion). */
+  discount_source?: string | null;
+  /** Money value of the customer discount on this sale (0 when not a customer discount). */
+  customer_discount_amount?: number;
+  /** Money value of the WHOLE bill-level discount on this sale. */
+  bill_discount_amount?: number;
 }
 
 export interface SaleItem {
@@ -357,6 +367,7 @@ export interface SaleInput {
   customer_id?: number | null;
   bill_discount?: number;
   discount_type?: 'amount' | 'percent';
+  discount_source?: 'customer_percent' | 'customer_fixed' | 'manual' | 'promotion';
   price_floor_override?: boolean;
   price_overridden?: boolean;
   price_mode?: 'retail' | 'wholesale';

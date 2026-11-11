@@ -6,7 +6,8 @@ import { UdhaarEntryModal } from '../components/UdhaarEntryModal';
 import { UdhaarCustomerModal } from '../components/UdhaarCustomerModal';
 import { CustomerProfileModal } from '../components/CustomerProfileModal';
 import { ReceivePaymentModal } from '../components/ReceivePaymentModal';
-import { formatMoney } from '../utils/currency';
+import { formatMoney, getCurrencySymbol } from '../utils/currency';
+import { formatCustomerDiscount, hasCustomerDiscount } from '@shared/customerDiscount';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 
@@ -35,6 +36,8 @@ export default function Udhaar() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [status, setStatus] = useState<'paid' | 'pending' | 'all'>('all');
+  /** 'all' | 'with' (has a discount) | 'without'. */
+  const [discountFilter, setDiscountFilter] = useState<'all' | 'with' | 'without'>('all');
 
   const flash = useCallback((text: string, kind: 'ok' | 'error' = 'ok') => {
     setNotice({ text, kind });
@@ -88,6 +91,11 @@ export default function Udhaar() {
       const d = dateOnly(c.created_at);
       if (from && (!d || d < from)) return false;
       if (to && (!d || d > to)) return false;
+      return true;
+    })
+    .filter((c) => {
+      if (discountFilter === 'with') return hasCustomerDiscount(c);
+      if (discountFilter === 'without') return !hasCustomerDiscount(c);
       return true;
     });
 
@@ -202,6 +210,17 @@ export default function Udhaar() {
               <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
               Show inactive
             </label>
+            <select
+              className="field-select"
+              value={discountFilter}
+              onChange={(e) => setDiscountFilter(e.target.value as 'all' | 'with' | 'without')}
+              style={{ width: '160px' }}
+              title="Filter by saved discount"
+            >
+              <option value="all">All discounts</option>
+              <option value="with">Has discount</option>
+              <option value="without">No discount</option>
+            </select>
           </FilterRow>
           <FilterRow style={{ justifyContent: 'flex-end' }}>
             <span className="badge badge-warn" style={{ marginRight: 'auto' }}>
@@ -252,13 +271,14 @@ export default function Udhaar() {
                 <th>Phone</th>
                 <th className="num">Outstanding</th>
                 <th>Due</th>
+                <th>Discount</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading && customers.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="muted center">Loading…</td>
+                  <td colSpan={6} className="muted center">Loading…</td>
                 </tr>
               )}
               {filtered.map((c, i) => {
@@ -278,6 +298,7 @@ export default function Udhaar() {
                       {c.balance.toFixed(2)}
                     </td>
                     <td>{dueBadge(agingById.get(c.id))}</td>
+                    <td>{formatCustomerDiscount(c, getCurrencySymbol())}</td>
                     <td>
                       <div className="row-actions">
                         <button className="btn btn-sm" onClick={() => setProfileId(c.id)}>
@@ -306,7 +327,7 @@ export default function Udhaar() {
               })}
               {!loading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="muted center">
+                  <td colSpan={6} className="muted center">
                     No customers found. Add a customer to start giving udhaar.
                   </td>
                 </tr>
