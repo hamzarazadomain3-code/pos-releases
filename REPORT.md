@@ -957,6 +957,31 @@ suite now prints **138/138 checks passed. RESULT: PASS**.
    decision (`requiresDiscardPrompt`), but the per-page prompt wiring is not
    implemented for every page.
 
+### Deployment (2026-11-11, after the strict run)
+
+| What | Result |
+|---|---|
+| Desktop build | `npm run build` exit 0 → `dist/` |
+| Desktop installer | `npm run package` exit 0 → `dist_release\RokarPOS-Setup-2.23.0.exe` (115.2 MB) + `dist_release\RokarPOS-Portable-2.23.0.exe`; the version-less alias `dist_release\RokarPOS-Setup.exe` was refreshed with the same file |
+| Web build | `cd cloud; npm run build` exit 0 → `cloud/web-dist/app` |
+| Web deploy | `cd cloud; npx wrangler deploy --config wrangler.toml` exit 0 → `https://rokar-pos.bakery-saas.workers.dev` — **Worker Version ID `bddae95c-afce-4e1f-bb42-d52942fe2e16`** (the `/app` path serves the real renderer) |
+| Live check | `GET /app/` → 200, `GET /` → 200 |
+| Cloud worker suite | `cd cloud; npm test` → **111 passed, 0 failed** (the worker runs the same migrations 075–078) |
+| Web smoke | `cd cloud; npm run smoke:web` → **3/3 PASS** (`final2_smoke_1..3.txt`); the Billing footer now shows the new hints: `… Ctrl+Shift+F return · F6 customer · Pause pause` |
+| Live DB | the desktop app was started once on this PC, so migrations 075–078 applied to `pos.db`; a backup was taken first: `E:\temp\pos-backup-before-run13-20261111-223425.db` |
+
+**A flaky web-smoke assertion was found and fixed.** The first smoke run after a
+fresh build failed with "timeout waiting for app shell (post-restore)", and a
+later one failed because the Billing footer showed the registry default
+`Ctrl+Shift+S` instead of the admin binding `Ctrl+Alt+S`. Bisecting proved it
+was **not** a code defect: the baseline (`c562b7d`) and the new code behave
+identically, and the cause is the harness asserting an ASYNC value after a
+fixed 700 ms sleep — the `admin:shortcuts:getAll` RPC can take longer than that
+while the worker is busy with the 22-page tour, so the footer still showed the
+defaults. `cloud/scripts/web-smoke-main.cjs` now **polls** until the footer
+shows the same combo the admin table holds (the expectation itself is
+unchanged). After the fix: the new code 4/4 PASS, the baseline 3/3 PASS.
+
 ### Owner manual checklist
 
 1. Void a sale and compare the Dashboard NET with the Sales History NET.
