@@ -13,6 +13,11 @@ export interface UdhaarCustomerModalProps {
   onSaved: (customer: Customer) => void;
   /** Duplicate found → jump to that existing customer. */
   onOpenExisting?: (id: number) => void;
+  /**
+   * Pre-filled values for a NEW customer — the quick "New customer" dialog
+   * hands its typed values over when the owner opens the full form.
+   */
+  initial?: Partial<CustomerInput>;
 }
 
 type FormState = Record<keyof CustomerInput, string>;
@@ -152,9 +157,18 @@ function seedFrom(c: Customer): FormState {
  * that jumps to the offending tab, and a duplicate phone/name prompt that offers
  * to open the existing customer instead of creating a second one.
  */
-export function UdhaarCustomerModal({ customer, onClose, onSaved, onOpenExisting }: UdhaarCustomerModalProps) {
+export function UdhaarCustomerModal({ customer, onClose, onSaved, onOpenExisting, initial }: UdhaarCustomerModalProps) {
   const editing = !!customer;
-  const [form, setForm] = useState<FormState>(() => (customer ? seedFrom(customer) : { ...EMPTY }));
+  const [form, setForm] = useState<FormState>(() => {
+    if (customer) return seedFrom(customer);
+    const base: FormState = { ...EMPTY };
+    if (!initial) return base;
+    for (const [key, value] of Object.entries(initial)) {
+      if (value === null || value === undefined) continue;
+      if (key in base) (base as Record<string, string>)[key] = String(value);
+    }
+    return base;
+  });
   const initialRef = useRef(form);
   const [activeId, setActiveId] = useState('basic');
   const [error, setError] = useState<string | null>(null);

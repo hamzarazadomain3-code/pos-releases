@@ -4,6 +4,7 @@ import LiveClock from '../components/LiveClock';
 import { Modal } from '../components/Modal';
 import CustomerCombobox from '../components/CustomerCombobox';
 import QuickCustomerDialog from '../components/QuickCustomerDialog';
+import { UdhaarCustomerModal } from '../components/UdhaarCustomerModal';
 import { DateInput } from '../components/DateInput';
 import { KeyboardInput } from '../components/KeyboardInput';
 import { runEscapeGesture, runPageRefresh } from '../keyboard/escapeRefresh';
@@ -36,6 +37,7 @@ import {
 import type {
   Category,
   Customer,
+  CustomerInput,
   HeldBill,
   NavPage,
   Product,
@@ -183,6 +185,9 @@ export default function Billing({ onNavigate, onLogout }: BillingProps) {
   /** The quick "New customer" dialog (opened from the combobox or F6). */
   const [quickCustomerOpen, setQuickCustomerOpen] = useState(false);
   const [quickCustomerSeed, setQuickCustomerSeed] = useState('');
+  /** The full customer form, opened from the quick dialog's "Open full form". */
+  const [fullCustomerOpen, setFullCustomerOpen] = useState(false);
+  const [fullCustomerSeed, setFullCustomerSeed] = useState<Partial<CustomerInput>>({});
   /** Bumped to open the customer combobox from anywhere (F6). */
   const [customerSearchSignal, setCustomerSearchSignal] = useState(0);
   /** The Pause / F4 bill-edit mode is on. */
@@ -1140,6 +1145,13 @@ useEffect(() => {
   const [billEdit, setBillEdit] = useState<BillEditState>(() =>
     initialBillEditState([], { priceMode })
   );
+  /** Which field the Pause mode is typing into. */
+  const [billEditFocus, setBillEditFocus] = useState<'qty' | 'price' | 'discount' | 'note' | null>(null);
+  /** The last removed row — the 5-second Undo toast. */
+  const [undoRow, setUndoRow] = useState<BillEditRow | null>(null);
+  /** The cart line that was removed, plus its index — the Undo puts it back. */
+  const [undoCartLine, setUndoCartLine] = useState<CartLine | null>(null);
+  const [undoIndex, setUndoIndex] = useState(0);
 
   const startBillEdit = useCallback(() => {
     if (items.length === 0) {
@@ -1206,18 +1218,40 @@ useEffect(() => {
           next = billEditReducer(current, { type: 'qty-step', delta: -1 });
           break;
         case 'qty-edit':
+          // Enter or a digit focuses the quantity field with the text selected.
+          next = billEditReducer(current, { type: 'qty-text', text: current.qtyText });
+          setBillEditFocus('qty');
+          break;
         case 'price-edit':
+          next = billEditReducer(current, { type: 'price-text', text: current.priceText });
+          setBillEditFocus('price');
+          break;
         case 'discount-edit':
+          next = billEditReducer(current, { type: 'discount-text', text: current.discountText });
+          setBillEditFocus('discount');
+          break;
         case 'note-edit':
-          // Typing starts the matching field; the value itself is typed in the
-          // field the component renders.
-          return true;
+          next = billEditReducer(current, { type: 'note-text', text: current.noteText });
+          setBillEditFocus('note');
+          break;
         case 'unit':
           next = billEditReducer(current, { type: 'unit' });
           break;
-        case 'remove':
+        case 'remove': {
+          const removed = current.rows[current.selectedIndex];
           next = billEditReducer(current, { type: 'remove' });
+          if (removed) {
+            // The row leaves the cart too (the reducer keeps the undo entry).
+            const idx = current.selectedIndex;
+            setItems((prev) => prev.filter((_, i) => i !== idx));
+            // 5-second Undo toast.
+            setUndoRow(removed);
+            setUndoCartLine(items[idx] ?? null);
+            setUndoIndex(idx);
+            window.setTimeout(() => setUndoRow((r) => (r && r.id === removed.id ? null : r)), 5000);
+          }
           break;
+        }
         case 'undo':
           next = billEditReducer(current, { type: 'undo' });
           break;
@@ -1229,15 +1263,14 @@ useEffect(() => {
       }
       if (next !== current) {
         setBillEdit(next);
-        applyBillEditRows(next.rows);
+        if (action !== 'remove') applyBillEditRows(next.rows);
         if (next.warning) setNotice(next.warning);
       }
       e.preventDefault();
       return true;
     },
-    [billEdit, applyBillEditRows]
+    [billEdit, applyBillEditRows, items]
   );
-
   // ── Customer phone lookup ──
   const handlePhoneLookup = useCallback(async (query: string) => {
     if (!query || query.length < 3) return;
@@ -2613,6 +2646,31 @@ return (
         </div>
       )}
 
+      {undoRow && (
+        <div className="notice" role="status" aria-live="polite">
+          Removed {undoRow.name}{' '}
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              // Put the row back in the SAME position with the same qty, unit,
+              // discount and note.
+              setBillEdit((s) => billEditReducer(s, { type: 'undo' }));
+              setItems((prev) => {
+                if (!undoCartLine) return prev;
+                const next = [...prev];
+                const at = Math.max(0, Math.min(next.length, undoIndex));
+                next.splice(at, 0, undoCartLine);
+                return next;
+              });
+              setUndoRow(null);
+            }}
+          >
+            Undo
+          </button>
+        </div>
+      )}
+
       <div className="browse-cats-wrapper card">
         <div className="browse-cats">
           <button
@@ -2748,6 +2806,102 @@ return (
               <div className="bill-edit-hint" role="status" aria-live="polite">
                 <span>{BILL_EDIT_HINT}</span>
                 <span className="muted">{billEdit.announcement}</span>
+              </div>
+            )}
+            {billEditMode && billEditFocus && billEdit.selectedIndex >= 0 && (
+              <div className="bill-edit-fields" style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
+                {billEditFocus === 'qty' && (
+                  <input
+                    autoFocus
+                    className="bsf-input"
+                    style={{ width: 110 }}
+                    value={billEdit.qtyText}
+                    onChange={(e) => setBillEdit((s) => billEditReducer(s, { type: 'qty-text', text: e.target.value }))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        setBillEdit((s) => billEditReducer(s, { type: 'commit' }));
+                        applyBillEditRows(billEditReducer(billEdit, { type: 'commit' }).rows);
+                        setBillEditFocus(null);
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setBillEdit((s) => billEditReducer(s, { type: 'cancel' }));
+                        setBillEditFocus(null);
+                      }
+                    }}
+                    placeholder="Qty"
+                    aria-label="Quantity"
+                  />
+                )}
+                {billEditFocus === 'price' && (
+                  <input
+                    autoFocus
+                    className="bsf-input"
+                    style={{ width: 110 }}
+                    value={billEdit.priceText}
+                    onChange={(e) => setBillEdit((s) => billEditReducer(s, { type: 'price-text', text: e.target.value }))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        setBillEdit((s) => billEditReducer(s, { type: 'commit' }));
+                        applyBillEditRows(billEditReducer(billEdit, { type: 'commit' }).rows);
+                        setBillEditFocus(null);
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setBillEdit((s) => billEditReducer(s, { type: 'cancel' }));
+                        setBillEditFocus(null);
+                      }
+                    }}
+                    placeholder="Price"
+                    aria-label="Price"
+                  />
+                )}
+                {billEditFocus === 'discount' && (
+                  <input
+                    autoFocus
+                    className="bsf-input"
+                    style={{ width: 110 }}
+                    value={billEdit.discountText}
+                    onChange={(e) => setBillEdit((s) => billEditReducer(s, { type: 'discount-text', text: e.target.value }))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        setBillEdit((s) => billEditReducer(s, { type: 'commit' }));
+                        applyBillEditRows(billEditReducer(billEdit, { type: 'commit' }).rows);
+                        setBillEditFocus(null);
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setBillEdit((s) => billEditReducer(s, { type: 'cancel' }));
+                        setBillEditFocus(null);
+                      }
+                    }}
+                    placeholder="Discount"
+                    aria-label="Line discount"
+                  />
+                )}
+                {billEditFocus === 'note' && (
+                  <input
+                    autoFocus
+                    className="bsf-input"
+                    style={{ width: 200 }}
+                    value={billEdit.noteText}
+                    onChange={(e) => setBillEdit((s) => billEditReducer(s, { type: 'note-text', text: e.target.value }))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        setBillEdit((s) => billEditReducer(s, { type: 'commit' }));
+                        applyBillEditRows(billEditReducer(billEdit, { type: 'commit' }).rows);
+                        setBillEditFocus(null);
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setBillEdit((s) => billEditReducer(s, { type: 'cancel' }));
+                        setBillEditFocus(null);
+                      }
+                    }}
+                    placeholder="Note"
+                    aria-label="Line note"
+                  />
+                )}
               </div>
             )}
             {items.map((it, idx) => {
@@ -4012,9 +4166,40 @@ const handleUnitChange = (newLevel: number) => {
           existing={customers}
           initialName={quickCustomerSeed}
           onClose={() => setQuickCustomerOpen(false)}
+          onOpenFullForm={(draft) => {
+            setQuickCustomerOpen(false);
+            setFullCustomerSeed({
+              name: draft.name,
+              phone: draft.phone ?? '',
+              customer_type: draft.customer_type,
+              default_discount_pct: draft.discount_value,
+              discount_type: draft.discount_type,
+              discount_min_bill: draft.discount_min_bill,
+              price_level: draft.price_level,
+              credit_limit: draft.credit_limit,
+              credit_days: draft.credit_days,
+              opening_balance: draft.opening_balance,
+              notes: draft.notes ?? '',
+            });
+            setFullCustomerOpen(true);
+          }}
           onCreated={(c) => {
             setCustomerId(String(c.id));
             setCustomers((prev) => [...prev, c]);
+            setNotice(`Customer "${c.name}" added`);
+          }}
+        />
+      )}
+
+      {fullCustomerOpen && (
+        <UdhaarCustomerModal
+          initial={fullCustomerSeed}
+          onClose={() => setFullCustomerOpen(false)}
+          onSaved={(c) => {
+            setFullCustomerOpen(false);
+            setFullCustomerSeed({});
+            setCustomers((prev) => [...prev, c]);
+            setCustomerId(String(c.id));
             setNotice(`Customer "${c.name}" added`);
           }}
         />

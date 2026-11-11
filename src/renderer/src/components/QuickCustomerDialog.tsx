@@ -329,8 +329,7 @@ export default function QuickCustomerDialog({
           >
             Open full form
           </button>
-        )}
-        <button type="button" className="btn" onClick={onClose}>
+        )}        <button type="button" className="btn" onClick={onClose}>
           Cancel
         </button>
         <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void save()}>
