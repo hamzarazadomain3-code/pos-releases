@@ -49,6 +49,12 @@ export interface ShortcutActionDef {
   label: string;
   /** Combo used when the admin shortcut table has no binding for this action. */
   defaultKey: string;
+  /**
+   * Extra default combos for the same action (all admin-assignable). The
+   * action fires on ANY of them. `bill_focus` uses this for its second
+   * default key.
+   */
+  altKeys?: string[];
   /** Screens where the action may run. `global` means everywhere. */
   screens: ScreenId[];
   /** Built-ins cannot be rebound and are always active. */
@@ -82,6 +88,8 @@ export const SHORTCUT_ACTIONS: ShortcutActionDef[] = [
   { id: 'save_print', label: 'Save & print receipt', defaultKey: 'Ctrl+Shift+S', screens: ['billing'], hint: true, short: 'save+print' },
   { id: 'print', label: 'Print last sale', defaultKey: 'Ctrl+P', screens: ['billing', 'quotations'], hint: true, short: 'print' },
   { id: 'new_return', label: 'Return / Refund', defaultKey: 'Ctrl+Shift+F', screens: ['billing'], hint: true, short: 'return' },
+  { id: 'customer_search', label: 'Customer search', defaultKey: 'F6', screens: ['billing'], hint: true, short: 'customer' },
+  { id: 'bill_focus', label: 'Pause — edit the current bill', defaultKey: 'Pause', altKeys: ['F4'], screens: ['billing'], hint: true, short: 'pause' },
   { id: 'search', label: 'Focus search', defaultKey: 'Ctrl+F', screens: ['inventory', 'billing', 'udhaar', 'returns', 'barcode', 'labelStudio', 'purchases', 'expenses', 'transfers', 'promotions', 'commissions', 'branches', 'users', 'customReports', 'quotations', 'audits', 'invoiceAdmin', 'fifoStock', 'reports'] },
   { id: 'duplicate_sale', label: 'Repeat last sale', defaultKey: 'Shift+F2', screens: ['billing'] },
   { id: 'bulk_product', label: 'Bulk add products', defaultKey: 'Shift+F5', screens: ['inventory'] },
@@ -134,6 +142,26 @@ export function isActionAllowedOn(id: string, screen: ScreenId): boolean {
  */
 export function resolveCombo(id: string, shortcutMap: Record<string, string> = {}): string {
   return shortcutMap[id] ?? ACTION_BY_ID[id]?.defaultKey ?? '';
+}
+
+/**
+ * EVERY combo that triggers an action: the admin binding when the owner set
+ * one, otherwise ALL the registry defaults (the primary key plus its extra
+ * defaults). The router fires the action when any of them matches.
+ */
+export function resolveCombos(id: string, shortcutMap: Record<string, string> = {}): string[] {
+  const bound = shortcutMap[id];
+  if (bound) return [bound];
+  const def = ACTION_BY_ID[id];
+  if (!def) return [];
+  return [def.defaultKey, ...(def.altKeys ?? [])];
+}
+
+/** Every default combo of an action (registry only, no admin binding). */
+export function defaultCombos(id: string): string[] {
+  const def = ACTION_BY_ID[id];
+  if (!def) return [];
+  return [def.defaultKey, ...(def.altKeys ?? [])];
 }
 
 /** Registry rows for a screen that should appear in the footer hint strip. */

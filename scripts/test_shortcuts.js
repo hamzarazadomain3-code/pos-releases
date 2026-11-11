@@ -21,6 +21,8 @@ const {
   SHORTCUT_ACTIONS,
   DEFAULT_SHORTCUTS,
   resolveCombo,
+  resolveCombos,
+  defaultCombos,
   isActionAllowedOn,
   hintRows,
   defaultCombo,
@@ -112,6 +114,40 @@ check('hint rows are only actions allowed on billing',
 // ── Registry defaults for the buttons/keys the cashier uses ──────────────────
 check('defaultCombo matches the registry table',
   defaultCombo('billing_held') === 'F12' && defaultCombo('help') === 'F1' && defaultCombo('command_palette') === 'Ctrl+K');
+
+// ── Run 13: customer_search (F6) and bill_focus (Pause + F4) ────────────────
+check('customer_search defaults to F6', defaultCombo('customer_search') === 'F6', defaultCombo('customer_search'));
+check('customer_search is admin-assignable', DEFAULT_SHORTCUTS.customer_search === 'F6', DEFAULT_SHORTCUTS.customer_search);
+check('customer_search is allowed on Billing', isActionAllowedOn('customer_search', 'billing') === true);
+check('customer_search is NOT allowed on other screens', isActionAllowedOn('customer_search', 'inventory') === false);
+check('customer_search appears in the Billing footer hint', hintRows('billing').some((h) => h.id === 'customer_search'),
+  hintRows('billing').map((h) => h.id).join(','));
+check('customer_search is reassignable (an admin binding wins)',
+  resolveCombo('customer_search', { customer_search: 'Ctrl+Alt+C' }) === 'Ctrl+Alt+C' &&
+  resolveCombos('customer_search', { customer_search: 'Ctrl+Alt+C' }).join() === 'Ctrl+Alt+C');
+
+check('bill_focus defaults to Pause with F4 as the second default',
+  defaultCombo('bill_focus') === 'Pause' && defaultCombos('bill_focus').join() === 'Pause,F4',
+  defaultCombos('bill_focus').join());
+check('bill_focus is admin-assignable', DEFAULT_SHORTCUTS.bill_focus === 'Pause', DEFAULT_SHORTCUTS.bill_focus);
+check('bill_focus is allowed on Billing', isActionAllowedOn('bill_focus', 'billing') === true);
+check('bill_focus appears in the Billing footer hint', hintRows('billing').some((h) => h.id === 'bill_focus'),
+  hintRows('billing').map((h) => h.id).join(','));
+check('bill_focus keeps both defaults when no admin binding exists',
+  resolveCombos('bill_focus', {}).join() === 'Pause,F4');
+check('bill_focus uses only the admin binding when one is set',
+  resolveCombos('bill_focus', { bill_focus: 'F9' }).join() === 'F9');
+check('bill_focus does not use F10 or F11',
+  !defaultCombos('bill_focus').includes('F10') && !defaultCombos('bill_focus').includes('F11'));
+check('the new actions do not collide with an existing combo',
+  ['F6', 'Pause', 'F4'].every((combo) => {
+    const users = SHORTCUT_ACTIONS.filter((a) =>
+      [a.defaultKey, ...(a.altKeys ?? [])].map(norm).includes(norm(combo)));
+    return users.length === 1;
+  }));
+check('the new actions are NOT globals (they can be rebound)',
+  SHORTCUT_ACTIONS.find((a) => a.id === 'customer_search')?.global !== true &&
+  SHORTCUT_ACTIONS.find((a) => a.id === 'bill_focus')?.global !== true);
 
 console.log(`\n${failures === 0 ? 'ALL PASSED' : 'FAILURES'}: ${checks - failures}/${checks} checks passed`);
 process.exit(failures === 0 ? 0 : 1);

@@ -28,6 +28,7 @@
     "test:dateparse": "npm run build:main && node scripts/test_dateParse.cjs",
     "test:dashboardPeriod": "npm run build:main && node scripts/test_dashboardPeriod.cjs",
     "test:businessDay": "npm run build:main && node scripts/test_businessDay.cjs",
+    "test:run13Pure": "npm run build:main && node scripts/test_run13Pure.cjs",
     "test:salesHistory": "npm run build:main && node scripts/test_salesHistory.cjs",
     "test:historyRoles": "npm run build:main && node scripts/test_historyRoles.cjs",
     "check:migrations": "node scripts/check_migrations_on_copy.cjs",
