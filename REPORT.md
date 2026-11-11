@@ -896,8 +896,10 @@ PLU. The fixture now picks a **free** `1xxxx` PLU instead
 suite now prints **138/138 checks passed. RESULT: PASS**.
 
 ### Every suite, with the counts from the saved output
+(the final run is in `E:\temp\proof\final_*.txt`; the per-item proofs are in
+`E:\temp\proof\a_*.txt`, `b_*.txt`, `c_*.txt`, `d_*.txt`, `e_*.txt`):
 
-| Command | Result (from `E:\temp\proof\suite_*.txt`) |
+| Command | Result (from `E:\temp\proof\final_*.txt`) |
 |---|---|
 | `npm run test:audit` | 48 passed, 0 failed |
 | `npm run test:holdresume` | ALL PASSED: 26/26 checks passed |
@@ -932,8 +934,10 @@ suite now prints **138/138 checks passed. RESULT: PASS**.
 | `npm run test:customerDiscountModel` (new) | 29 passed, 0 failed |
 | `npm run test:historyRoles` (new) | 7 passed, 0 failed |
 | `npm run check:migrations` | 12 migrations applied on a copy of the real DB (067→078), 216 events (207 sale / 6 return / 3 void), 0 sales without events, integrity `ok`, 073/074 re-run add 0 rows |
-| `npm run typecheck` | exit 0 (`d_typecheck.txt`) |
-| `npm run build` | exit 0 (`d_build.txt`) |
+| `npm run typecheck` | exit 0 (`final_typecheck.txt`) |
+| `npm run build` | exit 0 (`final_build.txt`) |
+
+**32 suites, 32 × exit 0, 0 failures.**
 
 ### Honest gaps (still true after this run)
 
