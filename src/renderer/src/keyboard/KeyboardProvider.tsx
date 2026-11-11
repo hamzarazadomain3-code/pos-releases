@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { eventCombo, normalizeStoredKey } from '../utils/shortcutKeys';
 import { keyboardScopes } from './scopeRegistry';
 import { BUILTIN_DEFAULTS } from './shortcuts';
 import { CommandPalette, type PalettePage } from '../components/CommandPalette';
 import { KeyboardHelp } from '../components/KeyboardHelp';
+import { runEscapeGesture, runPageRefresh, activePageRefresh } from './escapeRefresh';
 
 export interface KeyboardProviderProps {
   /** action -> combo from the admin shortcuts table. */
@@ -18,6 +19,12 @@ export interface KeyboardProviderProps {
   onAction?: (action: string, e: KeyboardEvent) => void;
   /** When false the global layer is inert (e.g. behind the lock screen). */
   enabled?: boolean;
+  /** Settings > Keyboard: the Esc gesture (default ON). */
+  escapeGestureEnabled?: boolean;
+  /** Settings > Keyboard: the double-Esc window in ms. */
+  escapeDoubleTapWindowMs?: number;
+  /** "Go to Billing" (double Esc) — the app shell provides it. */
+  onGoToBilling?: () => void;
   children: ReactNode;
 }
 
@@ -40,10 +47,14 @@ export function KeyboardProvider({
   onNavigate,
   onAction,
   enabled = true,
+  escapeGestureEnabled = true,
+  escapeDoubleTapWindowMs,
+  onGoToBilling,
   children,
 }: KeyboardProviderProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const escapeBusy = useRef(false);
 
   // Close any overlay and stop listening when the layer is disabled.
   useEffect(() => {
@@ -101,10 +112,39 @@ export function KeyboardProvider({
 
       const scope = keyboardScopes.active();
 
-      // ── Escape fallback (scopes that are open but not focused) ───────────
-      if (combo === 'escape' && scope?.onEscape) {
+      // ── The Esc gesture ──────────────────────────────────────────────────
+      // A modal / overlay is open → Esc closes only the topmost one. Nothing
+      // open → Esc refreshes the page; Esc twice → Billing.
+      //
+      // Only pages that REGISTERED a refresh handler take part, so a legacy
+      // screen (which owns its own Escape key) keeps its current behaviour.
+      if (combo === 'escape') {
+        if (scope?.onEscape) {
+          e.preventDefault();
+          scope.onEscape();
+          return;
+        }
+        const refreshHandlers = activePageRefresh();
+        if (!refreshHandlers) return; // no page opted in — leave Escape alone
+        const decision = runEscapeGesture(Date.now(), {
+          enabled: escapeGestureEnabled,
+          windowMs: escapeDoubleTapWindowMs,
+          context: { hasTopLayer: keyboardScopes.hasModal() },
+        });
+        if (decision.action === 'ignore') return;
         e.preventDefault();
-        scope.onEscape();
+        e.stopPropagation();
+        if (decision.action === 'go-billing') {
+          onGoToBilling?.();
+          return;
+        }
+        if (decision.action === 'refresh') {
+          if (escapeBusy.current) return;
+          escapeBusy.current = true;
+          void runPageRefresh(refreshHandlers).finally(() => {
+            escapeBusy.current = false;
+          });
+        }
         return;
       }
 
@@ -132,7 +172,16 @@ export function KeyboardProvider({
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [comboToAction, paletteOpen, helpOpen, onAction, enabled]);
+  }, [
+    comboToAction,
+    paletteOpen,
+    helpOpen,
+    onAction,
+    enabled,
+    escapeGestureEnabled,
+    escapeDoubleTapWindowMs,
+    onGoToBilling,
+  ]);
 
   return (
     <>

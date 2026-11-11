@@ -543,6 +543,10 @@ export default function App() {
   const [recoveryMode, setRecoveryMode] = useState<'self' | 'support' | null>(null);
   const [recoveryPrefill, setRecoveryPrefill] = useState('');
   const [shortcutMap, setShortcutMap] = useState<Record<string, string>>({});
+  /** Settings > Keyboard: the Esc gesture (default ON). */
+  const [escapeGestureEnabled, setEscapeGestureEnabled] = useState(true);
+  /** Settings > Keyboard: the double-Esc window in ms (default 400). */
+  const [escapeDoubleTapWindowMs, setEscapeDoubleTapWindowMs] = useState(400);
   const [showFirstRunWizard, setShowFirstRunWizard] = useState(false);
   const [firstRunChecked, setFirstRunChecked] = useState(false);
  const nav =
@@ -566,6 +570,25 @@ export default function App() {
           if (r.is_active) map[r.action] = r.shortcut_key;
         }
         setShortcutMap(map);
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, [user]);
+
+  // Settings > Keyboard: the Esc gesture toggle and its double-tap window.
+  useEffect(() => {
+    if (!user) return;
+    let mounted = true;
+    window.api.settings
+      .getAll()
+      .then((s) => {
+        if (!mounted) return;
+        const on = s.escape_refresh_enabled;
+        if (on !== undefined) setEscapeGestureEnabled(on !== 'false' && on !== '0');
+        const win = Number(s.escape_double_tap_window_ms);
+        if (Number.isFinite(win) && win > 0) setEscapeDoubleTapWindowMs(win);
       })
       .catch(() => undefined);
     return () => {
@@ -876,6 +899,9 @@ export default function App() {
       pages={activeNav.map((n) => ({ key: n.key, label: n.label }))}
       onNavigate={(key) => setPage(key as NavPage)}
       enabled={!locked && !mustChangePw}
+      escapeGestureEnabled={escapeGestureEnabled}
+      escapeDoubleTapWindowMs={escapeDoubleTapWindowMs}
+      onGoToBilling={() => setPage('billing')}
     >
     <div className="app-shell">
       <button

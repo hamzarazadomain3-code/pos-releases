@@ -275,6 +275,32 @@ export default function Settings() {
                 Change only if the shop is outside Pakistan.
               </span>
             </label>
+            <label className="field">
+              <span>Esc refresh / double-Esc to Billing</span>
+              <select
+                value={settings.escape_refresh_enabled === 'false' || settings.escape_refresh_enabled === '0' ? 'false' : 'true'}
+                onChange={(e) => setSettings({ ...settings, escape_refresh_enabled: e.target.value })}
+              >
+                <option value="true">Enabled (default)</option>
+                <option value="false">Disabled</option>
+              </select>
+              <span className="muted small">
+                With nothing open, Esc reloads the current page (the bill is never touched);
+                pressing Esc twice in a row jumps to Billing and focuses the product search.
+              </span>
+            </label>
+            <label className="field">
+              <span>Double-Esc window (ms)</span>
+              <KeyboardInput
+                type="text"
+                decimals
+                value={settings.escape_double_tap_window_ms ?? '400'}
+                onChange={(e) => setSettings({ ...settings, escape_double_tap_window_ms: e.target.value })}
+              />
+              <span className="muted small">
+                How long the second Esc may follow the first (300-800 ms, default 400).
+              </span>
+            </label>
             <div className="modal-actions">
               <button className="btn btn-primary" onClick={saveShop}>
                 {saved ? 'Saved!' : 'Save'}

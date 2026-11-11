@@ -2,15 +2,26 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CashDrawer from '../components/CashDrawer';
 import LiveClock from '../components/LiveClock';
 import { Modal } from '../components/Modal';
+import CustomerCombobox from '../components/CustomerCombobox';
+import QuickCustomerDialog from '../components/QuickCustomerDialog';
 import { DateInput } from '../components/DateInput';
 import { KeyboardInput } from '../components/KeyboardInput';
+import { runEscapeGesture, runPageRefresh } from '../keyboard/escapeRefresh';
 import { formatDateTimeAdmin, formatTimeAdmin, formatDateAdmin, toLocalDateString } from '../utils/dateUtils';
 import { getCurrencySymbol, formatMoney } from '../utils/currency';
 import { eventCombo, keyFromEvent, matchesShortcut } from '../utils/shortcutKeys';
 import { type CartLine, lineTotals, rehydrateCartLines, serializeCartLine, summarizeHeldBill, type HeldBillSummary } from '@shared/cartMath';
-import { defaultCombo, hintRows, isActionAllowedOn, resolveCombo } from '@shared/shortcuts';
+import { defaultCombo, hintRows, isActionAllowedOn, resolveCombo, resolveCombos } from '@shared/shortcuts';
 import { parseNegativeStockPolicy, checkNegativeStock, type NegativeStockPolicy } from '@shared/negativeStock';
 import { applyCustomerDiscount, customerDiscountBadge, describeDiscountSource, minBillHint } from '@shared/customerDiscount';
+import {
+  billEditReducer,
+  billEditKeyAction,
+  initialBillEditState,
+  BILL_EDIT_HINT,
+  type BillEditRow,
+  type BillEditState,
+} from '@shared/billEdit';
 import {
   HISTORY_EVENT_CLASSES,
   HISTORY_EVENT_LABELS,
@@ -169,6 +180,17 @@ export default function Billing({ onNavigate, onLogout }: BillingProps) {
   const [browseCategory, setBrowseCategory] = useState<number | 'all'>('all');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerId, setCustomerId] = useState<string>('');
+  /** The quick "New customer" dialog (opened from the combobox or F6). */
+  const [quickCustomerOpen, setQuickCustomerOpen] = useState(false);
+  const [quickCustomerSeed, setQuickCustomerSeed] = useState('');
+  /** Bumped to open the customer combobox from anywhere (F6). */
+  const [customerSearchSignal, setCustomerSearchSignal] = useState(0);
+  /** The Pause / F4 bill-edit mode is on. */
+  const [billEditMode, setBillEditMode] = useState(false);
+  /** Settings > Keyboard: the Esc gesture (default ON). */
+  const [escapeGestureEnabled, setEscapeGestureEnabled] = useState(true);
+  /** Settings > Keyboard: the double-Esc window in ms. */
+  const [escapeDoubleTapWindowMs, setEscapeDoubleTapWindowMs] = useState(400);
   const [quotationMode, setQuotationMode] = useState(false);
   const [priceMode, setPriceMode] = useState<'retail' | 'wholesale'>('retail');
   const [userRole, setUserRole] = useState<string | null>(null);
@@ -954,6 +976,10 @@ useEffect(() => {
     window.api.users.list().then(setManagerUsers).catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
     window.api.settings.getAll().then((s) => {
       setPriceFloorEnabled(s['price_floor_enabled'] !== '0');
+      const escOn = s['escape_refresh_enabled'];
+      if (escOn !== undefined) setEscapeGestureEnabled(escOn !== 'false' && escOn !== '0');
+      const escWin = Number(s['escape_double_tap_window_ms']);
+      if (Number.isFinite(escWin) && escWin > 0) setEscapeDoubleTapWindowMs(escWin);
       const v = s['allow_negative_stock'];
       setAllowNegativeStock(parseNegativeStockPolicy(v));
       const maxNeg = Number(s['max_negative_qty'] ?? 0);
@@ -1071,6 +1097,146 @@ useEffect(() => {
     setCustomerId(lastSaleCustomer);
     setNotice('Last sale loaded — press Charge to complete');
   }, [lastSaleItems, lastSaleCustomer]);
+
+  // ── Pause / F4 — edit the current bill from the keyboard ─────────────────
+  // The cart lines are projected onto the PURE reducer rows; every change is
+  // written back through the SAME setItems path the mouse buttons use, so the
+  // totals, discount and profit stay consistent (no duplicate maths).
+  const billEditRows = useMemo<BillEditRow[]>(
+    () =>
+      items.map((it, idx) => {
+        const units = (it.units ?? []).map((u) => ({
+          name: u.name,
+          quantity_in_base_units: u.quantity_in_base_units,
+          price: u.price ?? null,
+        }));
+        const level = it.selected_unit_level ?? -1;
+        const selected = units[level];
+        const multiplier = selected?.quantity_in_base_units || 1;
+        return {
+          id: `${it.product_id}:${idx}`,
+          product_id: it.product_id,
+          name: it.name,
+          // The reducer works in the UNIT the cashier sees.
+          qty: multiplier ? it.qty / multiplier : it.qty,
+          unitName: selected?.name ?? null,
+          units,
+          selectedUnitLevel: level,
+          price: it.price,
+          retail_price: it.retail_price,
+          wholesale_price: it.wholesale_price,
+          cost_price: it.cost_price,
+          line_discount: it.line_discount,
+          tax_rate: it.tax_rate,
+          note: it.note,
+          isScale: it.scale_price != null && it.scale_weight_kg != null,
+          minQty: 1,
+          decimals: 3,
+        };
+      }),
+    [items]
+  );
+
+  const [billEdit, setBillEdit] = useState<BillEditState>(() =>
+    initialBillEditState([], { priceMode })
+  );
+
+  const startBillEdit = useCallback(() => {
+    if (items.length === 0) {
+      setNotice('Bill is empty');
+      return;
+    }
+    if (billEditMode) {
+      setBillEditMode(false);
+      return;
+    }
+    setBillEdit(initialBillEditState(billEditRows, { priceMode }));
+    setBillEditMode(true);
+    setNotice('Bill edit mode — ' + BILL_EDIT_HINT);
+  }, [items.length, billEditMode, billEditRows, priceMode]);
+
+  /** Write the reducer's rows back into the cart (the mouse-button path). */
+  const applyBillEditRows = useCallback((rows: BillEditRow[]) => {
+    setItems((prev) =>
+      prev.map((it, idx) => {
+        const row = rows[idx];
+        if (!row) return it;
+        const units = it.units ?? [];
+        const selected = units[row.selectedUnitLevel];
+        const multiplier = selected?.quantity_in_base_units || 1;
+        const nextQty = row.qty * multiplier;
+        const nextPrice =
+          row.selectedUnitLevel === (it.selected_unit_level ?? -1)
+            ? row.price
+            : row.price;
+        return {
+          ...it,
+          qty: nextQty,
+          price: nextPrice,
+          line_discount: row.line_discount,
+          note: row.note,
+        };
+      })
+    );
+  }, []);
+
+  /** Route one key press into the bill-edit reducer. Returns true when handled. */
+  const handleBillEditKey = useCallback(
+    (e: KeyboardEvent): boolean => {
+      const action = billEditKeyAction({ key: e.key, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey });
+      const current = billEdit;
+      let next: BillEditState = current;
+      switch (action) {
+        case 'move-up':
+          next = billEditReducer(current, { type: 'move', to: 'up' });
+          break;
+        case 'move-down':
+          next = billEditReducer(current, { type: 'move', to: 'down' });
+          break;
+        case 'move-home':
+          next = billEditReducer(current, { type: 'move', to: 'home' });
+          break;
+        case 'move-end':
+          next = billEditReducer(current, { type: 'move', to: 'end' });
+          break;
+        case 'qty-up':
+          next = billEditReducer(current, { type: 'qty-step', delta: 1 });
+          break;
+        case 'qty-down':
+          next = billEditReducer(current, { type: 'qty-step', delta: -1 });
+          break;
+        case 'qty-edit':
+        case 'price-edit':
+        case 'discount-edit':
+        case 'note-edit':
+          // Typing starts the matching field; the value itself is typed in the
+          // field the component renders.
+          return true;
+        case 'unit':
+          next = billEditReducer(current, { type: 'unit' });
+          break;
+        case 'remove':
+          next = billEditReducer(current, { type: 'remove' });
+          break;
+        case 'undo':
+          next = billEditReducer(current, { type: 'undo' });
+          break;
+        case 'exit':
+          setBillEditMode(false);
+          return true;
+        default:
+          return false;
+      }
+      if (next !== current) {
+        setBillEdit(next);
+        applyBillEditRows(next.rows);
+        if (next.warning) setNotice(next.warning);
+      }
+      e.preventDefault();
+      return true;
+    },
+    [billEdit, applyBillEditRows]
+  );
 
   // ── Customer phone lookup ──
   const handlePhoneLookup = useCallback(async (query: string) => {
@@ -1213,6 +1379,14 @@ useEffect(() => {
             setNotice('No completed sale to print');
           }
           break;
+        case 'customer_search':
+          // F6 — open the customer combobox from anywhere on Billing.
+          setCustomerSearchSignal((n) => n + 1);
+          break;
+        case 'bill_focus':
+          // Pause / F4 — edit the current bill from the keyboard.
+          startBillEdit();
+          break;
         default:
           setNotice(`Shortcut "${desc || action}" is not available on the billing screen`);
       }
@@ -1227,6 +1401,38 @@ useEffect(() => {
         if (closeTopModal()) {
           e.preventDefault();
           e.stopPropagation();
+          return;
+        }
+        // The bill-edit mode is the top-most thing open: Esc leaves it.
+        if (billEditMode) {
+          e.preventDefault();
+          e.stopPropagation();
+          setBillEditMode(false);
+          return;
+        }
+        // Nothing is open: Esc refreshes the page (the bill is never touched).
+        const decision = runEscapeGesture(Date.now(), {
+          enabled: escapeGestureEnabled,
+          windowMs: escapeDoubleTapWindowMs,
+          context: { hasTopLayer: false, busy, onBilling: true },
+        });
+        if (decision.action === 'refresh') {
+          e.preventDefault();
+          e.stopPropagation();
+          // The bill (cart, held bills, customer, discounts, notes) is kept:
+          // only products, customers, the shift and the settings are reloaded.
+          setSearch('');
+          setSearchOpen(false);
+          void refreshData();
+          searchRef.current?.focus();
+          setNotice('Refreshed');
+          return;
+        }
+        if (decision.action === 'go-billing') {
+          e.preventDefault();
+          e.stopPropagation();
+          searchRef.current?.focus();
+          return;
         }
         return;
       }
@@ -1234,6 +1440,11 @@ useEffect(() => {
       // Sales History owns the keyboard while open. There is no F5/Ctrl+R
       // handler in that dialog: only its Refresh button reloads the timeline.
       if (history) return;
+
+      // The bill-edit mode owns the keyboard while it is on.
+      if (billEditMode) {
+        if (handleBillEditKey(e)) return;
+      }
 
       // 2) Enter confirms payment while the Payment modal is open
       if ((e.key === 'Enter' || e.key === '\r' || e.key === '\n') && payOpen) {
@@ -1330,9 +1541,17 @@ useEffect(() => {
 
       // 4) Admin-configured shortcuts, scoped to the billing screen so a combo
       //    that means something else elsewhere (e.g. F5 = Add product on
-      //    Inventory) can never fire here.
-      const action = Object.keys(shortcutMap).find(
-        (a) => isActionAllowedOn(a, 'billing') && matchesShortcut(shortcutMap[a], e),
+      //    Inventory) can never fire here. An action with a second default
+      //    (bill_focus: Pause + F4) fires on either of them. The two new
+      //    actions are always candidates, so a shop whose admin table has not
+      //    been seeded yet still gets F6 and Pause.
+      const candidateActions = Array.from(
+        new Set([...Object.keys(shortcutMap), 'customer_search', 'bill_focus']),
+      );
+      const action = candidateActions.find(
+        (a) =>
+          isActionAllowedOn(a, 'billing') &&
+          resolveCombos(a, shortcutMap).some((combo) => matchesShortcut(combo, e)),
       );
       if (action) {
         e.preventDefault();
@@ -2266,14 +2485,16 @@ return (
             </div>
           )}
         </div>
-        <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className="field-select" style={{ maxWidth: 140 }}>
-          <option value="">No customer (Cash)</option>
-          {customers.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}{c.balance > 0 ? ` (due ${c.balance})` : ''}
-            </option>
-          ))}
-        </select>
+        <CustomerCombobox
+          customers={customers}
+          value={customerId}
+          onChange={setCustomerId}
+          onNewCustomer={(q) => {
+            setQuickCustomerSeed(q);
+            setQuickCustomerOpen(true);
+          }}
+          openSignal={customerSearchSignal}
+        />
         <span
           className={`shift-pill ${
             shift
@@ -2518,7 +2739,17 @@ return (
   </button>
 )}
           </div>
-          <div className="cart-list">
+          <div
+            className="cart-list"
+            role={billEditMode ? 'listbox' : undefined}
+            aria-label={billEditMode ? 'Bill items' : undefined}
+          >
+            {billEditMode && (
+              <div className="bill-edit-hint" role="status" aria-live="polite">
+                <span>{BILL_EDIT_HINT}</span>
+                <span className="muted">{billEdit.announcement}</span>
+              </div>
+            )}
             {items.map((it, idx) => {
               const promo = promoMap[it.product_id];
               const isScaleItem = it.scale_price != null;
@@ -2641,9 +2872,11 @@ const handleUnitChange = (newLevel: number) => {
 
               return (
                 <div
-                  className={`cart-row${it.expired ? ' cart-row-expired' : ''}${cartSelIdx === idx ? ' cart-row-selected' : ''}`}
+                  className={`cart-row${it.expired ? ' cart-row-expired' : ''}${cartSelIdx === idx ? ' cart-row-selected' : ''}${billEditMode && billEdit.selectedIndex === idx ? ' cart-row-billedit' : ''}`}
                   data-cart-idx={idx}
                   tabIndex={-1}
+                  role={billEditMode ? 'option' : undefined}
+                  aria-selected={billEditMode ? billEdit.selectedIndex === idx : undefined}
                   ref={(el) => (cartRowRefs.current[idx] = el)}
                   onFocus={() => setCartSelIdx(idx)}
                   key={`${it.product_id}-${idx}`}
@@ -3772,6 +4005,19 @@ const handleUnitChange = (newLevel: number) => {
             )}
           </div>
         </Modal>
+      )}
+
+      {quickCustomerOpen && (
+        <QuickCustomerDialog
+          existing={customers}
+          initialName={quickCustomerSeed}
+          onClose={() => setQuickCustomerOpen(false)}
+          onCreated={(c) => {
+            setCustomerId(String(c.id));
+            setCustomers((prev) => [...prev, c]);
+            setNotice(`Customer "${c.name}" added`);
+          }}
+        />
       )}
 
       {heldModal && (

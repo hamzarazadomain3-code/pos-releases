@@ -3305,6 +3305,25 @@ body:has(.billing-page) {
 
 .cart-list { overflow-y: auto; flex: 1; padding: 8px; }
 
+/* Pause / F4 bill-edit mode — a clear ring on the selected row. */
+.cart-row-billedit {
+  border-left-color: #0b3d91;
+  box-shadow: 0 0 0 2px rgba(11, 61, 145, 0.55) inset;
+  background: #f2f6ff;
+}
+.bill-edit-hint {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  border-radius: 4px;
+  background: #eef3ff;
+  border: 1px solid #c7d7f5;
+  color: #0b3d91;
+}
+
 .cart-row {
   display: flex;
   align-items: center;
