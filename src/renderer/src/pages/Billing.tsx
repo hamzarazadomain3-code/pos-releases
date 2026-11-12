@@ -1770,7 +1770,7 @@ useEffect(() => {
     return () => {
       window.removeEventListener('keydown', handler);
     };
-  }, [scanAdd, newBill, doHold, shortcutMap, repeatLastSale, expressCheckout, items, payTotal, shift, payOpen, success, heldModal, expiredConfirm, belowCostConfirm, showShortcutsModal, splitModalOpen, cashDrawerOpen, busy, receiptTemplate, completeSale, openHeld, onNavigate, onLogout, voidTarget, priceEditUnlockOpen, shortcutModalOpen, openShiftModal, closeShiftModal, custModal, searchOpen, quotationMode, openPay, completeQuotation, browseProducts, browseIndex, openQtyDialog, handlePrintInvoice, openReturnFlow, returnConfirmOpen, returnFindOpen, history]);
+  }, [scanAdd, newBill, doHold, shortcutMap, repeatLastSale, expressCheckout, items, payTotal, shift, payOpen, success, heldModal, expiredConfirm, belowCostConfirm, showShortcutsModal, splitModalOpen, cashDrawerOpen, busy, receiptTemplate, completeSale, openHeld, onNavigate, onLogout, voidTarget, priceEditUnlockOpen, shortcutModalOpen, openShiftModal, closeShiftModal, custModal, searchOpen, quotationMode, openPay, completeQuotation, browseProducts, browseIndex, openQtyDialog, handlePrintInvoice, openReturnFlow, returnConfirmOpen, returnFindOpen, history, handleBillEditKey, billEditMode, customerSearchSignal]);
 
   // Apply round-off
   const applyRoundOff = useCallback(() => {

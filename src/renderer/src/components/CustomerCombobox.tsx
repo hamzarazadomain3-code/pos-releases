@@ -146,8 +146,12 @@ export default function CustomerCombobox({
           setActiveIndex(0);
         }}
         onChange={(e) => {
-          setQuery(e.target.value);
-          setActiveIndex(0);
+          const text = e.target.value;
+          setQuery(text);
+          // The first MATCH is the one the cashier means, so highlight it
+          // (index 1 — index 0 is always "No customer (Cash)").
+          const hits = filterCustomers(customers, text, 50, getCurrencySymbol());
+          setActiveIndex(hits.length > 0 ? 1 : 0);
           setOpen(true);
         }}
         onKeyDown={onKeyDown}

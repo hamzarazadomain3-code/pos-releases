@@ -55,7 +55,8 @@
     "capture:screens": "npm run build && electron scripts/capture_screens.js",
     "seed:demo": "node scripts/seed_demo.js",
     "test:licensing": "npm run build:main && electron scripts/test_licensing.js",
-    "test:keyboard": "npm run build && electron scripts/keyboard_smoke.js"
+    "test:keyboard": "npm run build && electron scripts/keyboard_smoke.js",
+    "test:billingKeys": "npm run build && electron scripts/billing_keys_check.js"
   },
   "dependencies": {
     "bwip-js": "^4.11.2",
