@@ -6,7 +6,8 @@ import { initCurrency } from './utils/currency';
 import { initDateUtils, resetDateUtils } from './utils/dateUtils';
 import { KeyboardProvider } from './keyboard/KeyboardProvider';
 import FirstRunWizard from './components/FirstRunWizard';
-import rokarSidebarIcon from './assets/rokar-sidebar-icon.png';
+import rokarLogoLight from './assets/rokar-pos-logo-light.png';
+import rokarMarkDark from './assets/rokar-pos-mark-dark.png';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Inventory = lazy(() => import('./pages/Inventory'));
 const Billing = lazy(() => import('./pages/Billing'));
@@ -373,7 +374,11 @@ const [capsLock, setCapsLock] = useState(false);
   return (
     <div className="lock-overlay">
       <div className="lock-box">
-        {logo && <img src={logo} alt="Shop logo" className="lock-logo" />}
+        {logo ? (
+          <img src={logo} alt="Shop logo" className="lock-logo" />
+        ) : (
+          <img src={rokarLogoLight} alt="Rokar POS" className="lock-logo lock-brand-logo" />
+        )}
         <h2>{shopName || 'Rokar POS'}</h2>
         <p className="muted">{t('messages.sign_in_to_continue')}</p>
         {!pinMode && (
@@ -473,7 +478,11 @@ function LockScreen({ user, onUnlock, logo }: { user: UserRow; onUnlock: () => v
   return (
     <div className="lock-overlay">
       <div className="lock-box">
-        {logo && <img src={logo} alt="Shop logo" className="lock-logo" />}
+        {logo ? (
+          <img src={logo} alt="Shop logo" className="lock-logo" />
+        ) : (
+          <img src={rokarLogoLight} alt="Rokar POS" className="lock-logo lock-brand-logo" />
+        )}
         <h2>Rokar POS</h2>
         <p className="muted">
           {t('messages.locked')}{' '}— {user.username} ({user.role}). {t('messages.enter_password_or_pin')}
@@ -831,7 +840,8 @@ export default function App() {
       <div className="app-shell">
         <div className="lock-overlay">
           <div className="lock-box" style={{ textAlign: 'center' }}>
-            <div className="spinner" style={{ margin: '0 auto 16px', width: '32px', height: '32px', border: '3px solid #e0e0e0', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+            <img src={rokarLogoLight} alt="Rokar POS" className="lock-logo lock-brand-logo" style={{ marginBottom: 12 }} />
+            <div className="spinner" style={{ margin: '0 auto 16px', width: '32px', height: '32px', border: '3px solid #e0e0e0', borderTopColor: '#0B5D4B', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
             <p className="muted">Restoring session...</p>
             <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           </div>
@@ -920,7 +930,7 @@ export default function App() {
         className={`sidebar bilten-sidebar ${sidebarOpen ? 'open' : ''}`}
       >
         <div className="sidebar-brand">
-          <img src={rokarSidebarIcon} alt="" className="brand-icon" />
+          <img src={rokarMarkDark} alt="" className="brand-icon" />
           <span className="nav-label sidebar-brand-label">Rokar</span>
         </div>
         <nav className="sidebar-nav">

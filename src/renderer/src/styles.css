@@ -3,9 +3,17 @@
    ═══════════════════════════════════════════════════════════════ */
 
 :root {
-  --primary: #4f46e5;
-  --primary-dark: #4338ca;
-  --primary-light: #818cf8;
+  /* Official Rokar POS brand palette.
+     Primary emerald #0B5D4B · gold #F5B301 · white · neutral grey #6B7280 */
+  --brand-emerald: #0b5d4b;
+  --brand-emerald-dark: #094638;
+  --brand-gold: #f5b301;
+  --brand-white: #ffffff;
+  --brand-grey: #6b7280;
+
+  --primary: #0b5d4b;
+  --primary-dark: #094638;
+  --primary-light: #2e8f76;
   --bg: #f8fafc;
   --card-bg: #ffffff;
   --text: #1e293b;
@@ -36,17 +44,17 @@ body.theme-dark {
   --danger: #ef4444;
   --warn: #f59e0b;
   --ok: #22c55e;
-  --primary: #818cf8;
-  --primary-dark: #6366f1;
-  --primary-light: #a5b4fc;
+  --primary: #2e8f76;
+  --primary-dark: #247a64;
+  --primary-light: #46a58c;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.45);
 }
 
 body.theme-dark .sidebar {
-  background: linear-gradient(180deg, #0c0a1d 0%, #1a1744 40%, #0c0a1d 100%);
-  border-right: 1px solid #1a2540;
+  background: linear-gradient(180deg, #052a21 0%, #0b5d4b 40%, #052a21 100%);
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
 }
 
 body.theme-dark .panel,
@@ -296,14 +304,14 @@ body.theme-dark ::-webkit-scrollbar-thumb:hover {
 .sidebar {
   width: 50px;  /* Collapsed by default */
   flex: 0 0 50px;
-  background: linear-gradient(180deg, #1e1b4b 0%, #312e81 40%, #1e1b4b 100%);
+  background: linear-gradient(180deg, #052a21 0%, #0b5d4b 40%, #052a21 100%);
   color: #e2e8f0;
   display: flex;
   flex-direction: column;
   position: sticky;
   top: 0;
   height: 100vh;
-  border-right: 1px solid rgba(129, 140, 248, 0.2);
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
   box-shadow: 2px 0 12px rgba(0, 0, 0, 0.15);
   overflow: hidden;
   transition: width 0.2s ease, flex-basis 0.2s ease;
@@ -326,11 +334,27 @@ body.theme-dark ::-webkit-scrollbar-thumb:hover {
   padding: 20px 16px;
   font-size: 16px;
   font-weight: 700;
-  border-bottom: 1px solid rgba(129, 140, 248, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
   overflow: hidden;
   white-space: nowrap;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(79, 70, 229, 0.1));
+  /* Official brand emerald (#0B5D4B) with a gold hairline. */
+  background: linear-gradient(135deg, rgba(11, 93, 75, 0.55), rgba(11, 93, 75, 0.28));
   letter-spacing: -0.01em;
+}
+
+/* The brand mark on the dark sidebar. */
+.brand-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+/* The brand logo on the light login / lock card. */
+.lock-brand-logo {
+  max-width: 260px;
+  max-height: 62px;
+  margin-bottom: 10px;
 }
 
 .brand-dot {
