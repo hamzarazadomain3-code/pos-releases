@@ -301,6 +301,21 @@ export default function Settings() {
                 How long the second Esc may follow the first (300-800 ms, default 400).
               </span>
             </label>
+            <label className="field">
+              <span>After picking a product, jump to quantity</span>
+              <select
+                value={settings.jump_to_qty_after_pick === 'false' || settings.jump_to_qty_after_pick === '0' ? 'false' : 'true'}
+                onChange={(e) => setSettings({ ...settings, jump_to_qty_after_pick: e.target.value })}
+              >
+                <option value="true">Enabled (default)</option>
+                <option value="false">Disabled</option>
+              </select>
+              <span className="muted small">
+                When ON, picking a product from the search dropdown (Enter or click) focuses its quantity field
+                with the text selected. Type the quantity and press Enter to confirm, Esc to cancel.
+                Scanner/barcode picks keep focus in the search box.
+              </span>
+            </label>
             <div className="modal-actions">
               <button className="btn btn-primary" onClick={saveShop}>
                 {saved ? 'Saved!' : 'Save'}

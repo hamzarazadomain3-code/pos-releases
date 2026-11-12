@@ -1162,3 +1162,42 @@ Clients on any version ≤ 2.23.0 will now auto-update to 2.24.0 (branding + wal
 11. Run the app as a cashier and try to change a customer's saved discount — the
     save is refused with "Only an owner or manager can change a customer
     discount", and the change is written to the activity log by an owner.
+
+
+---
+
+## Jump to Quantity after Product Pick (v2.24.0) — 2026-11-12
+
+### Feature
+After picking a product from the Billing search dropdown (Enter or mouse click),
+the cart line's **quantity field is focused with its text selected**. The cashier
+types the quantity and presses **Enter** to confirm or **Esc** to cancel — focus
+returns to the cleared product search box, ready for the next product.
+
+### Rules (pure function `shouldJumpToQty` in `src/shared/qtyJump.ts`)
+| Source | Setting ON | Setting OFF |
+|---|---|---|
+| Dropdown pick (Enter/click) | **Jump to qty** | No jump |
+| Barcode/scan pick | **Never jump** (keep search focus) | No jump |
+| Scale items | Jump to weight field | No jump |
+| Products with units | Jump to same qty field | No jump |
+
+### Implementation
+| File | Change |
+|---|---|
+| `src/shared/qtyJump.ts` | New pure function `shouldJumpToQty({source, enabled, isScale})` with unit test `test:qtyJump` (7/7). |
+| `src/renderer/src/pages/Billing.tsx` | `addProduct` accepts `source` param; sets `focusQtyFor`; effect focuses qty input; `handleQtyFocusKeyDown` handles Enter/Tab/Esc. |
+| `src/renderer/src/pages/Settings.tsx` | New toggle "After picking a product, jump to quantity" (key `jump_to_qty_after_pick`, default ON). |
+| `migrations/080_jump_to_qty_after_pick.js` | Additive idempotent migration seeds `jump_to_qty_after_pick = true`. |
+
+### Verification
+- **Unit test** (`E:\temp\proof\qtyJump_test.txt`): 7/7 passed (all branches covered).
+- **Keyboard test** (`E:\temp\proof\qty_keyboard.txt`): 93/93 passed.
+- **Shortcuts test**: 37/37 passed.
+- **Billing keys test** (`E:\temp\proof\qty_billingKeys.txt`): 26/26 passed.
+- **Wallpaper test**: 13/13 passed.
+- **Typecheck + build**: exit 0.
+
+### Result
+Cashiers can now type quantities immediately after picking a product — no extra
+click or Tab needed. Scanner workflows are unaffected (focus stays in search).

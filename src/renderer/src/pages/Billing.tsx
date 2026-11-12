@@ -15,6 +15,7 @@ import { type CartLine, lineTotals, rehydrateCartLines, serializeCartLine, summa
 import { defaultCombo, hintRows, isActionAllowedOn, resolveCombo, resolveCombos } from '@shared/shortcuts';
 import { parseNegativeStockPolicy, checkNegativeStock, type NegativeStockPolicy } from '@shared/negativeStock';
 import { applyCustomerDiscount, customerDiscountBadge, describeDiscountSource, minBillHint } from '@shared/customerDiscount';
+import { shouldJumpToQty } from '@shared/qtyJump';
 import {
   billEditReducer,
   billEditKeyAction,
@@ -196,6 +197,8 @@ export default function Billing({ onNavigate, onLogout }: BillingProps) {
   const [escapeGestureEnabled, setEscapeGestureEnabled] = useState(true);
   /** Settings > Keyboard: the double-Esc window in ms. */
   const [escapeDoubleTapWindowMs, setEscapeDoubleTapWindowMs] = useState(400);
+  /** Settings > Billing: after picking a product from dropdown, jump to qty field (default ON). */
+  const [jumpToQtyEnabled, setJumpToQtyEnabled] = useState(true);
   const [quotationMode, setQuotationMode] = useState(false);
   const [priceMode, setPriceMode] = useState<'retail' | 'wholesale'>('retail');
   const [userRole, setUserRole] = useState<string | null>(null);
@@ -311,6 +314,11 @@ export default function Billing({ onNavigate, onLogout }: BillingProps) {
   const [flashingItemId, setFlashingItemId] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [activeSearchIndex, setActiveSearchIndex] = useState(0);
+
+  // Qty focus after dropdown pick
+  const [focusQtyFor, setFocusQtyFor] = useState<number | null>(null);
+  /** The cart line index currently in qty focus mode (for Enter/Esc/Tab handling). */
+  const [focusedQtyLineIdx, setFocusedQtyLineIdx] = useState<number | null>(null);
 
   // Browse-grid keyboard navigation + quick quantity entry
   const [browseIndex, setBrowseIndex] = useState(-1);
@@ -634,78 +642,85 @@ const handleOpenCashDrawer = async () => {
   }, [items]);
 
   const addProduct = useCallback(
-     (p: Product, scaleOpts?: { scale_plu: string; scale_price: number }, qty = 1) => {
-      const expired = isExpired(p.expiry_date);
-      const addQty = Math.max(1, Math.floor(qty) || 1);
-      setItems((prev) => {
-        const units = (p as any).units ?? [];
+     (p: Product, scaleOpts?: { scale_plu: string; scale_price: number }, qty = 1, source: 'dropdown' | 'scan' = 'dropdown') => {
+       const expired = isExpired(p.expiry_date);
+       const addQty = Math.max(1, Math.floor(qty) || 1);
+       setItems((prev) => {
+         const units = (p as any).units ?? [];
 
-        // --- BayLan Label Scale item: decoded price from label, qty=1 ---
-        if (scaleOpts) {
-          // Calculate weight from decoded total price and product's per-unit (per-kg) price
-          const pricePerKg = p.sale_price || 1;
-          const weightKg = pricePerKg > 0 ? scaleOpts.scale_price / pricePerKg : 0;
-          const weightG = Math.round(weightKg * 1000);
-          return [
-            ...prev,
-            {
-              product_id: p.id,
-              name: p.name,
-              qty: 1,
-              price: scaleOpts.scale_price,   // decoded total price from scale label
-              retail_price: p.sale_price,
-              wholesale_price: p.wholesale_price,
-              cost_price: p.cost_price,
-              line_discount: 0,
-              tax_rate: p.tax_rate,
-              expired,
-              shelf_location: p.shelf_location,
-              stock_qty: p.stock_qty,
-              units,
-              selected_unit_level: 0,
-              scale_plu: scaleOpts.scale_plu,
-              scale_price: scaleOpts.scale_price,
-              scale_weight_g: weightG,
-              scale_weight_kg: weightKg,
-            },
-          ];
-        }
+         // --- BayLan Label Scale item: decoded price from label, qty=1 ---
+         if (scaleOpts) {
+           // Calculate weight from decoded total price and product's per-unit (per-kg) price
+           const pricePerKg = p.sale_price || 1;
+           const weightKg = pricePerKg > 0 ? scaleOpts.scale_price / pricePerKg : 0;
+           const weightG = Math.round(weightKg * 1000);
+           const newItem = {
+             product_id: p.id,
+             name: p.name,
+             qty: 1,
+             price: scaleOpts.scale_price,
+             retail_price: p.sale_price,
+             wholesale_price: p.wholesale_price,
+             cost_price: p.cost_price,
+             line_discount: 0,
+             tax_rate: p.tax_rate,
+             expired,
+             shelf_location: p.shelf_location,
+             stock_qty: p.stock_qty,
+             units,
+             selected_unit_level: 0,
+             scale_plu: scaleOpts.scale_plu,
+             scale_price: scaleOpts.scale_price,
+             scale_weight_g: weightG,
+             scale_weight_kg: weightKg,
+           };
+           const next = [...prev, newItem];
+           if (jumpToQtyEnabled && shouldJumpToQty({ source, enabled: jumpToQtyEnabled, isScale: true }).shouldJump) {
+             setFocusQtyFor(next.length - 1);
+           }
+           return next;
+         }
 
-        // --- Normal item ---
-        const found = prev.find((i) => i.product_id === p.id && !i.scale_price);
-        if (found) {
-          return prev.map((i) =>
-            i.product_id === p.id && !i.scale_weight_kg
-              ? { ...i, qty: i.qty + addQty, expired: expired || i.expired }
-              : i
-          );
-        }
-        const price = (p as any).sale_price;
-        return [
-          ...prev,
-          {
-            product_id: p.id,
-            name: p.name,
-            qty: addQty,
-            price,
-            retail_price: p.sale_price,
-            wholesale_price: p.wholesale_price,
-            cost_price: p.cost_price,
-            line_discount: 0,
-            tax_rate: p.tax_rate,
-            expired,
-            shelf_location: p.shelf_location,
-            stock_qty: p.stock_qty,
-            units,
-            selected_unit_level: (p as any).selected_unit_level ?? 0,
-          },
-        ];
-      });
-    },
-    []
-  );
+         // --- Normal item ---
+         const foundIdx = prev.findIndex((i) => i.product_id === p.id && !i.scale_price);
+         if (foundIdx >= 0) {
+           const next = prev.map((i, idx) =>
+             idx === foundIdx
+               ? { ...i, qty: i.qty + addQty, expired: expired || i.expired }
+               : i
+           );
+           if (jumpToQtyEnabled && shouldJumpToQty({ source, enabled: jumpToQtyEnabled, isScale: false }).shouldJump) {
+             setFocusQtyFor(foundIdx);
+           }
+           return next;
+         }
+         const price = (p as any).sale_price;
+         const newItem = {
+           product_id: p.id,
+           name: p.name,
+           qty: addQty,
+           price,
+           retail_price: p.sale_price,
+           wholesale_price: p.wholesale_price,
+           cost_price: p.cost_price,
+           line_discount: 0,
+           tax_rate: p.tax_rate,
+           expired,
+           shelf_location: p.shelf_location,
+           stock_qty: p.stock_qty,
+           units,
+           selected_unit_level: (p as any).selected_unit_level ?? 0,
+         };
+         const next = [...prev, newItem];
+         if (jumpToQtyEnabled && shouldJumpToQty({ source, enabled: jumpToQtyEnabled, isScale: false }).shouldJump) {
+           setFocusQtyFor(next.length - 1);
+         }
+         return next;
+       });
+     },
+     [jumpToQtyEnabled]);
 
-  const openQtyDialog = useCallback((p: Product) => {
+const openQtyDialog = useCallback((p: Product) => {
     setQtyDialogValue(String(pendingQtyRef.current));
     setQtyDialog({ product: p });
   }, []);
@@ -714,7 +729,7 @@ const handleOpenCashDrawer = async () => {
     if (!qtyDialog) return;
     const n = parseInt(qtyDialogValue, 10);
     const q = Number.isFinite(n) && n > 0 ? n : 1;
-    addProduct(qtyDialog.product, undefined, q);
+    addProduct(qtyDialog.product, undefined, q, "dropdown");
     setQtyDialog(null);
   }, [qtyDialog, qtyDialogValue, addProduct]);
 
@@ -725,6 +740,27 @@ const handleOpenCashDrawer = async () => {
       setBrowseIndex(browseProducts.length - 1);
     }
   }, [browseProducts, browseIndex]);
+
+  // Focus qty field after product is added via dropdown (manual pick)
+  useEffect(() => {
+    if (focusQtyFor !== null && focusQtyFor >= 0 && focusQtyFor < items.length) {
+      // Small delay to allow the cart to re-render with the new item
+      const timer = window.setTimeout(() => {
+        // Find the qty input for the target line
+        const row = cartRowRefs.current[focusQtyFor];
+        if (row) {
+          const qtyInput = row.querySelector<HTMLInputElement>('.qty-val, .line-qty-input, input[type="number"]');
+          if (qtyInput) {
+            setFocusedQtyLineIdx(focusQtyFor);
+            qtyInput.focus();
+            qtyInput.select();
+          }
+        }
+        setFocusQtyFor(null);
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, [focusQtyFor, items.length]);
 
   const switchPriceMode = useCallback((mode: 'retail' | 'wholesale') => {
     setPriceMode(mode);
@@ -792,7 +828,7 @@ const handleOpenCashDrawer = async () => {
             addProduct(byPlu, {
               scale_plu: scaleData.plu,
               scale_price: scaleData.price,
-            });
+            }, 1, "scan");
             setScannerLastSeen(Date.now());
             return;
           }
@@ -819,7 +855,7 @@ const handleOpenCashDrawer = async () => {
               break;
             }
           }
-          addProduct({ ...p, selected_unit_level: selectedUnitLevel } as any);
+          addProduct({ ...p, selected_unit_level: selectedUnitLevel } as any, undefined, 1, "scan");
           setScannerLastSeen(Date.now());
           return;
         } catch (e) {
@@ -989,6 +1025,8 @@ useEffect(() => {
       setAllowNegativeStock(parseNegativeStockPolicy(v));
       const maxNeg = Number(s['max_negative_qty'] ?? 0);
       setMaxNegativeQty(Number.isFinite(maxNeg) ? maxNeg : 0);
+      const jumpOn = s['jump_to_qty_after_pick'];
+      if (jumpOn !== undefined) setJumpToQtyEnabled(jumpOn !== 'false' && jumpOn !== '0');
     }).catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
   }, []);
 
@@ -1615,7 +1653,7 @@ useEffect(() => {
         if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'Enter' || e.key === '\r' || e.key === '\n')) {
           if (browseIndex >= 0 && browseIndex < bpCount) {
             e.preventDefault();
-            openQtyDialog(browseProducts[browseIndex]);
+            addProduct(browseProducts[browseIndex], undefined, 1, "dropdown");
             return;
           }
         }
@@ -1947,7 +1985,7 @@ useEffect(() => {
     if (!q) return;
     const exact = results.find((r) => r.barcode === q || r.sku === q);
     if (exact) {
-      addProduct(exact);
+      addProduct(exact, undefined, 1, "dropdown");
       setSearch('');
       setActiveSearchIndex(0);
       return;
@@ -1955,7 +1993,7 @@ useEffect(() => {
     try {
       const byBarcode = await window.api.inventory.getByBarcode(q);
       if (byBarcode) {
-        addProduct(byBarcode);
+        addProduct(byBarcode, undefined, 1, "dropdown");
         setSearch('');
         setActiveSearchIndex(0);
         return;
@@ -1965,7 +2003,7 @@ useEffect(() => {
     }
     const target = results.length > 0 ? results[Math.min(Math.max(0, index), results.length - 1)] : undefined;
     if (target) {
-      addProduct(target);
+      addProduct(target, undefined, 1, "dropdown");
       setSearch('');
       setActiveSearchIndex(0);
     } else {
@@ -2497,7 +2535,7 @@ return (
                     key={r.id}
                     className={`product-search-result${i === activeSearchIndex ? ' active' : ''}`}
                     onMouseEnter={() => setActiveSearchIndex(i)}
-                    onClick={() => { addProduct(r); setSearch(''); setActiveSearchIndex(0); }}
+                    onClick={() => { addProduct(r, undefined, 1, "dropdown"); setSearch(''); setActiveSearchIndex(0); }}
                   >
                     <span className="psr-name">{r.name}</span>
                     <span className="psr-meta">
@@ -2997,6 +3035,22 @@ const handleUnitChange = (newLevel: number) => {
                 }
               };
 
+              // Handler for qty focus mode (after dropdown pick): Enter/Tab = confirm, Esc = cancel
+              const handleQtyFocusKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                  e.preventDefault();
+                  e.currentTarget.blur();
+                  // Return focus to search box, cleared for next product
+                  searchRef.current?.focus();
+                  setSearch('');
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  e.currentTarget.blur();
+                  // Return focus to search box (keep current search text)
+                  searchRef.current?.focus();
+                }
+              };
+
               // --- Scale item 2-way sync (v1.8.6): weight <-> price via per-kg rate ---
               const scaleRatePerKg = it.retail_price; // per-kg rate captured at scan time
               const handleScaleWeightChange = (newWeightKg: number) => {
@@ -3214,8 +3268,9 @@ const handleUnitChange = (newLevel: number) => {
                           onBlur={() => {
                             const v = commitDraft(`${draftKey}:wt`);
                             if (v != null) handleScaleWeightChange(v);
+                            if (focusedQtyLineIdx === idx) setFocusedQtyLineIdx(null);
                           }}
-                          onKeyDown={blurOnEnter}
+                          onKeyDown={focusedQtyLineIdx === idx ? handleQtyFocusKeyDown : blurOnEnter}
                         />
                         <span className="muted small">kg</span>
                         <button
@@ -3242,8 +3297,9 @@ const handleUnitChange = (newLevel: number) => {
                           onBlur={() => {
                             const v = commitDraft(`${draftKey}:qty`);
                             if (v != null && v > 0) handleQtyChange(Math.round(v * 1e6) / 1e6);
+                            if (focusedQtyLineIdx === idx) setFocusedQtyLineIdx(null);
                           }}
-                          onKeyDown={blurOnEnter}
+                          onKeyDown={focusedQtyLineIdx === idx ? handleQtyFocusKeyDown : blurOnEnter}
                         />
                         <button className="btn btn-sm" onClick={() => handleQtyChange(displayQty + 1)}>
                           +
