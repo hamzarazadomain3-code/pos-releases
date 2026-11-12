@@ -1,6 +1,6 @@
 import { Component, Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { NavPage, UserRow } from '../../shared/types';
+import type { AdminSettingsMap, NavPage, UserRow } from '../../shared/types';
 import { resetFormatCache } from './utils/formatters';
 import { initCurrency } from './utils/currency';
 import { initDateUtils, resetDateUtils } from './utils/dateUtils';
@@ -8,6 +8,7 @@ import { KeyboardProvider } from './keyboard/KeyboardProvider';
 import FirstRunWizard from './components/FirstRunWizard';
 import rokarLogoLight from './assets/rokar-pos-logo-light.png';
 import rokarMarkDark from './assets/rokar-pos-mark-dark.png';
+import defaultWallpaper from './assets/wallpaper-default.webp';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Inventory = lazy(() => import('./pages/Inventory'));
 const Billing = lazy(() => import('./pages/Billing'));
@@ -537,6 +538,51 @@ function ChangePasswordModal({ user, onDone }: { user: UserRow; onDone: () => vo
   );
 }
 
+/**
+ * The wallpaper every screen shows.
+ *
+ * The shop's own wallpaper when they have set one, otherwise the supplied
+ * Rokar POS artwork - the app's DEFAULT wallpaper. Module scope (not inside
+ * the component) so the admin-settings change listener can re-apply it
+ * without re-mounting the whole app.
+ */
+function applyWallpaper(settings: AdminSettingsMap) {
+  const wallpaper = settings.wallpaper_image || defaultWallpaper;
+  const blur = parseInt(settings.wallpaper_blur || '0', 10);
+  const brightness = parseInt(settings.wallpaper_brightness || '100', 10);
+  const saturation = parseInt(settings.wallpaper_saturation || '100', 10);
+  const grayscale = settings.wallpaper_grayscale === 'true' || settings.wallpaper_grayscale === '1' ? 1 : 0;
+  const pos = settings.wallpaper_position || 'center';
+  const scale = settings.wallpaper_scale || 'cover';
+  const posMap: Record<string, string> = { center: 'center', top: 'top center', bottom: 'bottom center', left: 'center left', right: 'center right' };
+  const scaleMap: Record<string, string> = { cover: 'cover', contain: 'contain', stretch: '100% 100%', tile: 'repeat' };
+  const filters = `blur(${blur}px) brightness(${brightness}%) saturate(${saturation}%) grayscale(${grayscale})`;
+
+  document.body.style.backgroundImage = `url(${wallpaper})`;
+  document.body.style.backgroundSize = scaleMap[scale] || 'cover';
+  document.body.style.backgroundPosition = posMap[pos] || 'center';
+  document.body.style.backgroundRepeat = scale === 'tile' ? 'repeat' : 'no-repeat';
+  document.body.style.backgroundAttachment = 'fixed';
+  (document.body.style as any).filter = blur > 0 || brightness !== 100 || saturation !== 100 || grayscale ? filters : '';
+
+  // Tint overlay — optional color tint over wallpaper, NEVER touch body.opacity
+  const tintColor = settings.wallpaper_tint_color;
+  const tintOpacity = parseInt(settings.wallpaper_tint_opacity || '0', 10) / 100;
+  let tintEl = document.getElementById('wallpaper-tint-overlay') as HTMLElement;
+  if (tintColor && tintOpacity > 0) {
+    if (!tintEl) {
+      tintEl = document.createElement('div');
+      tintEl.id = 'wallpaper-tint-overlay';
+      tintEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:0;';
+      document.body.appendChild(tintEl);
+    }
+    tintEl.style.backgroundColor = tintColor;
+    tintEl.style.opacity = String(tintOpacity);
+  } else if (tintEl) {
+    tintEl.style.opacity = '0';
+  }
+}
+
 export default function App() {
   const { t, i18n } = useTranslation();
   const [user, setUser] = useState<UserRow | null>(null);
@@ -742,53 +788,13 @@ export default function App() {
         initCurrency().catch(() => undefined);
 
         // Wallpaper
-        const wallpaper = settings.wallpaper_image;
+        // The supplied brand artwork is the app's DEFAULT wallpaper: it shows on
+        // every screen until the owner picks their own in Admin -> System
+        // Settings -> Background Wallpaper.
         // Always reset body opacity (old bug set it to 0, making body invisible)
         document.body.style.opacity = '1';
-        if (wallpaper) {
-          const blur = parseInt(settings.wallpaper_blur || '0', 10);
-          const brightness = parseInt(settings.wallpaper_brightness || '100', 10);
-          const saturation = parseInt(settings.wallpaper_saturation || '100', 10);
-          const grayscale = settings.wallpaper_grayscale === 'true' || settings.wallpaper_grayscale === '1' ? 1 : 0;
-          const pos = settings.wallpaper_position || 'center';
-          const scale = settings.wallpaper_scale || 'cover';
-          const posMap: Record<string, string> = { center: 'center', top: 'top center', bottom: 'bottom center', left: 'center left', right: 'center right' };
-          const scaleMap: Record<string, string> = { cover: 'cover', contain: 'contain', stretch: '100% 100%', tile: 'repeat' };
-          const filters = `blur(${blur}px) brightness(${brightness}%) saturate(${saturation}%) grayscale(${grayscale})`;
-
-          document.body.style.backgroundImage = `url(${wallpaper})`;
-          document.body.style.backgroundSize = scaleMap[scale] || 'cover';
-          document.body.style.backgroundPosition = posMap[pos] || 'center';
-          document.body.style.backgroundRepeat = scale === 'tile' ? 'repeat' : 'no-repeat';
-          document.body.style.backgroundAttachment = 'fixed';
-          (document.body.style as any).filter = blur > 0 || brightness !== 100 || saturation !== 100 || grayscale ? filters : '';
-
-          // Tint overlay — optional color tint over wallpaper, NEVER touch body.opacity
-          const tintColor = settings.wallpaper_tint_color;
-          const tintOpacity = parseInt(settings.wallpaper_tint_opacity || '0', 10) / 100;
-          let tintEl = document.getElementById('wallpaper-tint-overlay') as HTMLElement;
-          if (tintColor && tintOpacity > 0) {
-            if (!tintEl) {
-              tintEl = document.createElement('div');
-              tintEl.id = 'wallpaper-tint-overlay';
-              tintEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:0;';
-              document.body.appendChild(tintEl);
-            }
-            tintEl.style.backgroundColor = tintColor;
-            tintEl.style.opacity = String(tintOpacity);
-          } else if (tintEl) {
-            tintEl.style.opacity = '0';
-          }
-        } else {
-          document.body.style.backgroundImage = '';
-          document.body.style.backgroundSize = '';
-          document.body.style.backgroundPosition = '';
-          document.body.style.backgroundRepeat = '';
-          document.body.style.backgroundAttachment = '';
-          (document.body.style as any).filter = '';
-          const tintEl = document.getElementById('wallpaper-tint-overlay');
-          if (tintEl) tintEl.style.opacity = '0';
-        }
+        // The wallpaper: the shop's own one, or the app's default artwork.
+        applyWallpaper(settings);
       } catch {
         // Admin settings may not exist yet on first run
       }
@@ -804,6 +810,11 @@ export default function App() {
       resetFormatCache();
       resetDateUtils();
       initDateUtils(); // Re-read date format settings
+      // The wallpaper may have changed (upload / reset to default).
+      window.api.admin.settings
+        .getAll()
+        .then((settings) => { if (settings) applyWallpaper(settings); })
+        .catch(() => undefined);
     });
     return () => { if (off) off(); };
   }, []);

@@ -1071,8 +1071,45 @@ still pass after the re-theme.
 **Deliberately NOT changed:** the app's remaining indigo accent shadows/glows
 (100+ rules) and the Billing page's own red/blue palette — re-painting them
 would be a redesign, not a branding swap, and the brief asks not to redesign or
-touch unrelated UI. The default wallpaper was left exactly as it was, on every
-screen.
+touch unrelated UI.
+
+### The default wallpaper (2026-11-12)
+
+The supplied artwork (`Isometric Fintech Workspace with POS Terminal.png`,
+a portrait 1086×1448 isometric illustration) is now the app's **default
+wallpaper** — it shows on **every** screen (the login card included) until the
+owner picks their own.
+
+| File | What it is |
+|---|---|
+| `assets/wallpaper/source/Isometric Fintech Workspace with POS Terminal.png` | the supplied artwork, untouched |
+| `build/build_wallpaper.py` | the reproducible build step |
+| `src/renderer/src/assets/wallpaper-default.webp` | the 1920×1080 default wallpaper (64 KB) |
+| `src/renderer/src/App.tsx` `applyWallpaper()` | module-scope helper: the shop's own wallpaper when set, otherwise the default |
+| `src/renderer/src/pages/AdminPanel/SystemSettings.tsx` | the preview now shows the default; the button reads **"Reset to default"** (it falls back to the default instead of leaving a blank background) |
+
+**Why the artwork is not used as-is:** it is portrait and a till screen is
+landscape, so `cover` cropped both focal points (the laptop *and* the POS
+terminal) out of view. The default is therefore a 1920×1080 canvas painted in
+the artwork's own edge colour with the illustration scaled to the full canvas
+height and centred — **nothing is cropped, nothing is redrawn, the colours are
+the artwork's own**. The owner can still change the scale/position/blur in
+Admin → System Settings → Background Wallpaper.
+
+**One real defect fixed on the way:** the app only applied the wallpaper when it
+mounted, so a wallpaper change made outside the Admin screen never reached the
+body. `applyWallpaper()` is now module scope and the admin-settings change
+listener re-applies it live.
+
+**Verified by running the real renderer** (`npm run test:wallpaper`, 13 checks,
+`E:\temp\proof\wp_test4.txt`): the built renderer ships the asset, the login
+screen shows it, the app screens show it, it really loads (1920×1080), a shop
+wallpaper **overrides** it, and clearing the shop wallpaper **falls back** to it.
+
+**Also fixed:** `scripts/billing_keys_check.js` had a race — it typed into the
+Billing search while the quick-customer dialog was still unmounting, so the
+search was wiped and the product never reached the cart (1 failure in 2 runs).
+It now waits for the dialog to be gone first: **3/3 runs green, 26/26**.
 
 ### Owner manual checklist
 

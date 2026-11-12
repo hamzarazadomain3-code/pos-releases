@@ -369,10 +369,14 @@ async function run() {
   );
   check('the quick customer dialog opens', /new customer/i.test(dialogText), dialogText.slice(0, 100));
   await js('window.__k.press("Escape")');
-  await sleep(300);
+  // Wait for the dialog to be really gone: typing into the Billing search
+  // while the dialog is still unmounting would race the re-render.
+  await waitUntil("!document.querySelector('.modal')", 'the quick customer dialog to close', 10000);
+  await sleep(400);
 
   // ── Put a line in the cart ────────────────────────────────────────────────
   section('Cart + Esc refresh');
+  await waitUntil("!!document.querySelector('.billing-search')", 'the billing search box', 10000);
   await js('window.__k.focusSearch()');
   await js('window.__k.setSearch("DEMO-1")');
   await sleep(600);

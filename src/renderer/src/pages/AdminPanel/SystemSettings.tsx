@@ -3,6 +3,7 @@ import type { AdminSettingsMap, TestDataPreview } from '../../../../shared/types
 import { validateImageUpload } from '@shared/imageMath';
 import WallpaperEditor from '../../components/WallpaperEditor';
 import WallpaperPresets from '../../components/WallpaperPresets';
+import defaultWallpaper from '../../assets/wallpaper-default.webp';
 
 interface Section {
   key: string;
@@ -365,14 +366,16 @@ export default function SystemSettings({ onNavigate }: { onNavigate?: (key: stri
       const sizeMap: Record<string, string> = { small: '12px', normal: '14px', large: '16px' };
       document.documentElement.style.fontSize = sizeMap[settings.font_size] || '14px';
     }
-    if (settings.wallpaper_image) {
-      applyWallpaperEffects(settings);
-    }
+    // Always re-apply: with no custom wallpaper this shows the default one.
+    applyWallpaperEffects(settings);
     setTimeout(() => setPreviewing(false), 3000);
   };
 
   const applyWallpaperEffects = (s: AdminSettingsMap) => {
-    if (!s.wallpaper_image) {
+    // The app's DEFAULT wallpaper is the supplied brand artwork: it shows until
+    // the owner picks their own (or removes theirs, which falls back to it).
+    const image = s.wallpaper_image || defaultWallpaper;
+    if (!image) {
       document.body.style.backgroundImage = '';
       document.body.style.backgroundSize = '';
       document.body.style.backgroundPosition = '';
@@ -391,7 +394,7 @@ export default function SystemSettings({ onNavigate }: { onNavigate?: (key: stri
 
     const filters = `blur(${blur}px) brightness(${brightness}%) saturate(${saturation}%) grayscale(${grayscale})`;
 
-    document.body.style.backgroundImage = `url(${s.wallpaper_image})`;
+    document.body.style.backgroundImage = `url(${image})`;
     document.body.style.backgroundSize = scaleMap[scale] || 'cover';
     document.body.style.backgroundPosition = posMap[pos] || 'center';
     document.body.style.backgroundRepeat = scale === 'tile' ? 'repeat' : 'no-repeat';
@@ -436,6 +439,7 @@ export default function SystemSettings({ onNavigate }: { onNavigate?: (key: stri
   };
 
   const removeWallpaper = () => {
+    // "Remove" means "go back to the default wallpaper", not "no wallpaper".
     updateSetting('wallpaper_image', '');
     updateSetting('wallpaper_opacity', '100');
     updateSetting('wallpaper_blur', '0');
@@ -446,11 +450,12 @@ export default function SystemSettings({ onNavigate }: { onNavigate?: (key: stri
     updateSetting('wallpaper_scale', 'cover');
     updateSetting('wallpaper_tint_color', '#000000');
     updateSetting('wallpaper_tint_opacity', '0');
-    document.body.style.backgroundImage = '';
-    document.body.style.backgroundSize = '';
-    document.body.style.backgroundPosition = '';
-    document.body.style.backgroundRepeat = '';
-    document.body.style.opacity = '';
+    document.body.style.backgroundImage = `url(${defaultWallpaper})`;
+    document.body.style.backgroundSize = 'cover';
+    document.body.style.backgroundPosition = 'center';
+    document.body.style.backgroundRepeat = 'no-repeat';
+    document.body.style.backgroundAttachment = 'fixed';
+    document.body.style.opacity = '1';
     (document.body.style as any).filter = '';
     const tintEl = document.getElementById('wallpaper-tint-overlay');
     if (tintEl) tintEl.style.opacity = '0';
@@ -563,22 +568,30 @@ export default function SystemSettings({ onNavigate }: { onNavigate?: (key: stri
                 </div>
               ) : s.type === 'wallpaper' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {settings.wallpaper_image && (
-                    <div style={{ position: 'relative', width: '100%', maxHeight: 120, overflow: 'hidden', borderRadius: 8, border: '1px solid var(--border)' }}>
-                      <img src={settings.wallpaper_image} alt="Wallpaper preview" style={{ width: '100%', height: 120, objectFit: 'cover' }} />
-                      <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 4 }}>
+                  <div style={{ position: 'relative', width: '100%', maxHeight: 120, overflow: 'hidden', borderRadius: 8, border: '1px solid var(--border)' }}>
+                    <img
+                      src={settings.wallpaper_image || defaultWallpaper}
+                      alt="Wallpaper preview"
+                      style={{ width: '100%', height: 120, objectFit: 'cover' }}
+                    />
+                    <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 4 }}>
+                      {settings.wallpaper_image && (
                         <button className="btn btn-sm btn-primary" onClick={() => setCropEditor({ src: settings.wallpaper_image! })}>Crop</button>
-                        <button className="btn btn-danger btn-sm" onClick={removeWallpaper}>Remove</button>
-                      </div>
+                      )}
+                      {settings.wallpaper_image && (
+                        <button className="btn btn-danger btn-sm" onClick={removeWallpaper}>Reset to default</button>
+                      )}
                     </div>
-                  )}
+                  </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn btn-sm" onClick={() => wallpaperInputRef.current?.click()}>
                       {settings.wallpaper_image ? 'Change Wallpaper' : 'Upload Wallpaper'}
                     </button>
                     <input ref={wallpaperInputRef} type="file" accept="image/*" onChange={handleWallpaperUpload} style={{ display: 'none' }} />
                   </div>
-                  <span className="muted small">Max 5MB. Supports JPG, PNG, WebP. Opens crop editor after upload.</span>
+                  <span className="muted small">
+                    The default wallpaper is the Rokar POS artwork. Max 5MB. Supports JPG, PNG, WebP. Opens crop editor after upload.
+                  </span>
                 </div>
               ) : s.type === 'textarea' ? (
                 <textarea
