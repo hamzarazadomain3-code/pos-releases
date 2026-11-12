@@ -1031,6 +1031,49 @@ defaults. `cloud/scripts/web-smoke-main.cjs` now **polls** until the footer
 shows the same combo the admin table holds (the expectation itself is
 unchanged). After the fix: the new code 4/4 PASS, the baseline 3/3 PASS.
 
+### The official branding (2026-11-12)
+
+The supplied brand artwork (`RokarPOS-Brand-Assets.zip`) is integrated as the
+**official** design — the artwork is never redrawn, recoloured or substituted.
+
+`build/build_branding.py` is the reproducible build step (it crops the supplied
+PNGs, floods the near-white page background out to transparency and writes every
+format). The three source PNGs live in `assets/branding/source/`.
+
+| File | What it is |
+|---|---|
+| `build/icon-source.png` | the 1024 square app icon (source of truth) |
+| `build/icon.ico` | **multi-resolution Windows icon: 16, 24, 32, 48, 64, 128, 256** — the window/taskbar icon AND the installer icon (`package.json build.win.icon`) |
+| `src/renderer/src/assets/rokar-sidebar-icon.png` | the square mark (256px) |
+| `src/renderer/src/assets/rokar-pos-logo-light.png` | horizontal lockup for **light** surfaces (login card) |
+| `src/renderer/src/assets/rokar-pos-logo-dark.png` | the **white** lockup for **dark green** surfaces |
+| `src/renderer/src/assets/rokar-pos-mark-dark.png` | the white R mark for the dark sidebar |
+| `src/renderer/public/favicon.ico` + `favicon-16/32/48.png` | the renderer favicon (linked from `index.html`, theme colour `#0B5D4B`) |
+| `migrations/079_brand_primary_color.js` | the accent colour setting re-seeded to the brand emerald `#0B5D4B` **only when the shop never changed it** |
+| site `public/logo.png`, `logo-80/160.png`, `favicon.ico`, `favicon.svg`, `icon-192/512.png`, `apple-touch-icon.png` | the website branding (the SVG favicon **embeds the supplied PNG** rather than redrawing it as vectors) |
+
+Where the branding now shows in the app: the window + taskbar icon, the
+installer icon, the login card (the official horizontal logo), the lock screen,
+the "Restoring session…" splash, the sidebar (emerald strip + the white mark),
+the collapsed sidebar icon and the renderer favicon.
+
+**Brand colours:** primary emerald `#0B5D4B`, gold `#F5B301`, white, neutral
+grey `#6B7280`. The app's `--primary` tokens, the sidebar gradients and the
+default accent setting now use the brand emerald; the shop can still override
+the accent in Settings (that setting was left intact).
+
+**Verified by running the app, not by reading the code:** the login screen shows
+the official horizontal logo and an emerald Login button, the Billing screen shows
+the emerald sidebar with the white mark and the footer hint
+`F6 customer · Pause pause`. `test:keyboard` 93/93 and `test:billingKeys` 26/26
+still pass after the re-theme.
+
+**Deliberately NOT changed:** the app's remaining indigo accent shadows/glows
+(100+ rules) and the Billing page's own red/blue palette — re-painting them
+would be a redesign, not a branding swap, and the brief asks not to redesign or
+touch unrelated UI. The default wallpaper was left exactly as it was, on every
+screen.
+
 ### Owner manual checklist
 
 1. Void a sale and compare the Dashboard NET with the Sales History NET.
