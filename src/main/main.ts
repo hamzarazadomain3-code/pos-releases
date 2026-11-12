@@ -8,7 +8,7 @@ import { runBackup } from './services/backup';
 import { getAllSettings } from './services/settings';
 import { getAllAdminSettings } from './services/admin';
 import { closeLogger, initLogger, log, logError } from './logger';
-import { initUpdater, checkForUpdates } from './updater';
+import { initUpdater, checkForUpdates, stopUpdater } from './updater';
 import { initWhatsAppGateway, shutdownWhatsAppGateway } from './whatsapp-gateway';
 import { getInventoryReports } from './services/inventoryReports';
 import { getAlertService } from './services/alertService';
@@ -103,6 +103,7 @@ app.on('before-quit', (e) => {
   shutdownWhatsAppGateway()
     .catch(() => {})
     .finally(() => {
+      stopUpdater();
       if (dailySnapshotInterval) clearInterval(dailySnapshotInterval);
       if (hourlyAlertInterval) clearInterval(hourlyAlertInterval);
       closeLogger();

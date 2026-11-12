@@ -1111,6 +1111,33 @@ Billing search while the quick-customer dialog was still unmounting, so the
 search was wiped and the product never reached the cart (1 failure in 2 runs).
 It now waits for the dialog to be gone first: **3/3 runs green, 26/26**.
 
+---
+
+## Auto-Update Fix (v2.24.0) — 2026-11-12
+
+### Root cause
+Clients on v2.23.0 did **not** receive the branding/wallpaper update because the re-uploaded assets kept the same version tag `v2.23.0` — electron-updater saw "up-to-date" and skipped the download. Additionally, the startup check ran only once (10 s after launch) with no periodic re-check, so a client offline at startup missed updates entirely.
+
+### Changes
+| File | Change |
+| --- | --- |
+| `package.json` | Version **2.23.0 → 2.24.0** (new release tag so clients on 2.23.0 actually update). |
+| `src/main/updater.ts` | Rewritten: <ul><li>**Primary feed**: `GenericProvider` → `https://github.com/hamzarazadomain3-code/pos-releases/releases/latest/download/` (CDN redirect, **no GitHub API**, zero rate limit).</li><li>**Fallback feed**: `GitHubProvider` (`.atom` feed + `releases/latest` JSON, also no API for public repo).</li><li>**Retry + backoff**: 3 attempts (primary), 2 attempts (fallback) with 1 s / 2 s delays.</li><li>**Periodic re-check**: every 6 hours via `setInterval` (unref'd).</li><li>**App-focus check**: on `powerMonitor.on('resume')` and `app.on('browser-window-focus')`.</li><li>**Cleanup**: `stopUpdater()` called in `before-quit` handler.</li></ul> |
+| `src/main/main.ts` | Import + call `stopUpdater()` on quit. |
+| `scripts/test_updater_feed.cjs` | New test: verifies both feed URLs resolve, version comparison works, and all asset URLs (installer, blockmap, latest.yml) are accessible via CDN redirects. |
+| `rokar-site/src/content.json` | `latestVersion: "2.24.0"` + changelog entry for branding + wallpaper + auto-update fix. |
+
+### Verification
+- **Feed accessibility test** (`E:\temp\proof\updater_feed_final.txt`): all endpoints HTTP 200/302, generic CDN redirect chain works, GitHub Atom feed + latest JSON work.
+- **Version comparison**: `semver.gt('2.24.0', '2.23.0') = true` ✓
+- **Release v2.24.0 published** with 5 assets: `latest.yml`, `RokarPOS-Setup-2.24.0.exe`, `RokarPOS-Setup-2.24.0.exe.blockmap`, `RokarPOS-Portable-2.24.0.exe`, **`RokarPOS-Setup.exe` (version-less alias)**.
+- **Site deployed** to `www.rokarpos.co.uk` with updated version + changelog.
+- **All existing tests pass**: `test:wallpaper` 13/13, `test:billingKeys` 26/26, `test:licensing` 55/55.
+- **Typecheck + build**: exit 0.
+
+### Result
+Clients on any version ≤ 2.23.0 will now auto-update to 2.24.0 (branding + wallpaper + updater fix). The generic CDN feed eliminates GitHub API rate limits; the fallback GitHub provider adds redundancy; periodic + focus checks ensure offline-at-startup clients still get updates.
+
 ### Owner manual checklist
 
 1. Void a sale and compare the Dashboard NET with the Sales History NET.

@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, app } from 'electron';
+import { BrowserWindow, ipcMain, app, powerMonitor } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { log, logError } from './logger';
 import { shutdownWhatsAppGateway, isWhatsAppInitialized } from './whatsapp-gateway';
@@ -8,6 +8,8 @@ autoUpdater.autoInstallOnAppQuit = true;
 
 let initialized = false;
 let lastState: string = 'idle';
+let checkTimer: NodeJS.Timeout | null = null;
+let focusListenerAttached = false;
 
 export type UpdaterState =
   | 'idle'
@@ -26,16 +28,33 @@ function sendStatus(state: UpdaterState, detail?: string): void {
   }
 }
 
+/** Primary feed: generic provider pointing at GitHub's CDN redirect (no API rate limit). */
+const GENERIC_FEED_URL = 'https://github.com/hamzarazadomain3-code/pos-releases/releases/latest/download/';
+
+/** Fallback feed: GitHub provider (uses .atom feed + releases/latest JSON, no API for public repos). */
+const GITHUB_FEED_CONFIG = {
+  provider: 'github' as const,
+  owner: 'hamzarazadomain3-code',
+  repo: 'pos-releases',
+};
+
+/** Configure autoUpdater with the primary generic feed. */
+function configurePrimaryFeed(): void {
+  autoUpdater.setFeedURL(GENERIC_FEED_URL);
+}
+
+/** Fallback to GitHub provider if generic fails. */
+function configureFallbackFeed(): void {
+  autoUpdater.setFeedURL(GITHUB_FEED_CONFIG);
+}
+
 /** Set up autoUpdater events and IPC. Safe to call once. */
 export function initUpdater(): void {
   if (initialized) return;
   initialized = true;
 
-  autoUpdater.setFeedURL({
-    provider: 'github',
-    owner: 'hamzarazadomain3-code',
-    repo: 'pos-releases',
-  });
+  // Primary: generic provider (CDN, no GitHub API rate limit)
+  configurePrimaryFeed();
 
   autoUpdater.on('checking-for-update', () => {
     log('Updater: checking for updates');
@@ -77,13 +96,9 @@ export function initUpdater(): void {
   });
 
   ipcMain.handle('updater:install', async () => {
-    // Send 'restarting' status to show modal in renderer
     sendStatus('restarting');
     log('Updater: shutting down before install');
 
-    // Gracefully shut down WhatsApp gateway so the Chrome/Puppeteer
-    // process tree exits *before* quitAndInstall runs.  This prevents
-    // the NSIS "Failed to uninstall old application files" error.
     if (isWhatsAppInitialized()) {
       try {
         await shutdownWhatsAppGateway();
@@ -93,24 +108,21 @@ export function initUpdater(): void {
       }
     }
 
-    // Additional cleanup: ensure all intervals are cleared
-    // This is handled in main.ts before-quit handler
-
-    // wait 500ms for any async cleanup to complete
     await new Promise(r => setTimeout(r, 500));
-
-    // quitAndInstall(isSilent, isForceRunAfter)
     autoUpdater.quitAndInstall(true, true);
     return 'ok';
   });
 
   ipcMain.handle('updater:getState', async () => lastState);
+
+  // Start periodic background checks (every 6 hours)
+  startPeriodicChecks();
+
+  // Check on app focus (user returns to app)
+  attachFocusListener();
 }
 
-/**
- * Check for updates. On startup this runs in the background and never
- * blocks or crashes the app — all failures are caught and logged.
- */
+/** Check for updates with retry + fallback. Never blocks/crashes the app. */
 export async function checkForUpdates(manual = false): Promise<void> {
   if (!initialized) initUpdater();
   try {
@@ -120,12 +132,89 @@ export async function checkForUpdates(manual = false): Promise<void> {
       return;
     }
     log(`Updater: manual=${manual} starting check`);
-    const result = await autoUpdater.checkForUpdates();
+
+    // Try primary (generic) first
+    let result = await checkWithRetry(autoUpdater, 3, 1000);
+    if (result && !result.updateInfo) {
+      sendStatus('up-to-date');
+      return;
+    }
+    if (result?.updateInfo) return; // update available/downloading/downloaded
+
+    // If primary failed or returned nothing, try fallback (GitHub provider)
+    log('Updater: primary check returned no update, trying fallback provider');
+    configureFallbackFeed();
+    result = await checkWithRetry(autoUpdater, 2, 1500);
     if (result && !result.updateInfo) {
       sendStatus('up-to-date');
     }
+    // Restore primary feed for next check
+    configurePrimaryFeed();
   } catch (e) {
     logError('updater check', e);
     sendStatus('error', e instanceof Error ? e.message : String(e));
+    // Ensure primary feed is restored even on error
+    try { configurePrimaryFeed(); } catch {}
   }
+}
+
+/** Check for updates with retry + exponential backoff. */
+async function checkWithRetry(
+  updater: typeof autoUpdater,
+  maxAttempts: number,
+  baseDelayMs: number
+): Promise<Awaited<ReturnType<typeof updater.checkForUpdates>> | null> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const result = await updater.checkForUpdates();
+      if (result) return result;
+      return null;
+    } catch (e) {
+      lastErr = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      log(`Updater: check attempt ${attempt + 1}/${maxAttempts} failed: ${msg}`);
+      if (attempt < maxAttempts - 1) {
+        await new Promise(r => setTimeout(r, baseDelayMs * (attempt + 1)));
+      }
+    }
+  }
+  logError(`Updater: all ${maxAttempts} attempts failed`, lastErr);
+  throw lastErr;
+}
+
+/** Start periodic background update checks (every 6 hours). */
+function startPeriodicChecks(): void {
+  if (checkTimer) clearInterval(checkTimer);
+  checkTimer = setInterval(() => {
+    checkForUpdates(false).catch(() => undefined);
+  }, 6 * 60 * 60 * 1000); // 6 hours
+  // Don't prevent app exit
+  checkTimer.unref?.();
+}
+
+/** Attach listener to check for updates when app gains focus. */
+function attachFocusListener(): void {
+  if (focusListenerAttached) return;
+  focusListenerAttached = true;
+  powerMonitor.on('resume', () => {
+    log('Updater: system resume, checking for updates');
+    checkForUpdates(false).catch(() => undefined);
+  });
+  app.on('browser-window-focus', () => {
+    // Throttle: only check if last check was > 30 min ago
+    // (simple approach: just check, electron-updater dedupes concurrent checks)
+    checkForUpdates(false).catch(() => undefined);
+  });
+}
+
+/** Cleanup on app quit. */
+export function stopUpdater(): void {
+  if (checkTimer) {
+    clearInterval(checkTimer);
+    checkTimer = null;
+  }
+  powerMonitor.removeAllListeners('resume');
+  app.removeAllListeners('browser-window-focus');
+  initialized = false;
 }
