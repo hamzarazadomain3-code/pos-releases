@@ -957,6 +957,52 @@ suite now prints **138/138 checks passed. RESULT: PASS**.
    decision (`requiresDiscardPrompt`), but the per-page prompt wiring is not
    implemented for every page.
 
+### The site audit (2026-11-12) — every claim checked against the app
+
+`E:\antigravty\rokar-site` was read end to end and every claim was checked
+against the real `pos-app` source (the repo's own `verify:claims` guard does
+this mechanically). Findings and fixes:
+
+| Finding | Fix |
+|---|---|
+| **19 false claims** in `src/content/blog.ts` (the site's own guard failed on the committed HEAD) | Rewritten honestly: the "15-day free trial" (the desktop app has NO trial — only the browser version has a 7-day one), "cloud backup" (the app copies to a local folder), "everything without a single byte of internet", "Urdu + English interface" (only the sidebar + login strings are translated), the BayLan weighing-scale integration (there is NO hardware integration — the app has manual weight entry in PLU mode), "real-time central sync" between branches (the app has no network path for stock), and the invented "45-60 seconds → 3 seconds" / "4-6 hours → 30 minutes" / "8+ hour outage" numbers. The whole invented "Real Numbers from Pakistani Shopkeepers" table was replaced with what actually changes day to day. |
+| **The browser-version block rendered EMPTY on the live site** — `content-types.ts` and `Download.tsx` declared `webTitle` / `webNote` / `webButtonLabel`, but `content.json` never had those keys, so the button had no label | Added the three keys plus a new `webSteps` list, rendered as a 3-step guide under the browser CTA |
+| Installer size said **114 MB**, the real file is 115.2 MB | Updated in `stats` and in the steps + download lead |
+| The site claimed the PC version is the only way, and the mobile/tablet FAQ said "Windows PC ke liye hai" | Both now mention the browser version (and the FAQ states the browser shop is a SEPARATE data store — the two never share one bill) |
+| No web-app content beyond the download block | Added a **Browser Version** feature card, **3 FAQ answers** (signup + 7-day trial, PC vs browser, print/WhatsApp receipts), a **browser step** in the "How it works" list, a hero chip, 3 new ticker items, and the download block's 3-step guide |
+| `verify:claims` | **ALL CLAIM CHECKS PASSED** for the first time (28 banned patterns, changelog ordering verified) — it failed on the site's own HEAD before this audit |
+
+All nine site verify steps are green (`typecheck`, `verify:content`,
+`verify:claims`, `verify:industries`, `verify:contrast`, `verify:ssr`,
+`verify:fonts`, `build`, `verify:bundle`).
+
+### The demo run (2026-11-12) — the app checked BY HAND, not just by unit test
+
+`scripts/billing_keys_check.js` (`npm run test:billingKeys`) boots the REAL
+renderer with the real preload and the real IPC handlers and drives the DOM
+with synthetic key presses: **26/26 checks passed, three runs in a row.**
+
+It found **two real bugs** that the unit tests could not:
+
+1. **The Billing key handler closed over a stale `billEdit` state** — the
+   keydown effect's dependency list did not include the bill-edit handler, so
+   the Pause mode's `+` / `-` / unit / remove actions ran against the FIRST
+   snapshot (an empty row list) and did nothing. Fixed by adding
+   `handleBillEditKey`, `billEditMode` and `customerSearchSignal` to the
+   effect's deps (`src/renderer/src/pages/Billing.tsx:1773`).
+2. **The customer combobox highlighted the wrong row** — typing left
+   "No customer (Cash)" (index 0) active, so Enter cleared the customer
+   instead of selecting it. Now the first MATCH is highlighted
+   (`src/renderer/src/components/CustomerCombobox.tsx:88`).
+
+What the demo proved working: F6 opens the combobox and filters
+("Ali Khan no due · 5%"), Enter selects the customer, the 5% lands in the
+Discount % field, the badge reads "Customer discount 5% applied", "+ New
+customer" opens the quick dialog, F4 opens the bill-edit mode with the hint
+bar and the highlighted row, "+" takes the quantity 1 → 2, Escape leaves the
+mode, Escape with nothing open refreshes the page and **keeps the cart**,
+and the Sales History footer carries the void-rule sentence.
+
 ### Deployment (2026-11-11, after the strict run)
 
 | What | Result |
