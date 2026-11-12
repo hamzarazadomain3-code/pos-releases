@@ -135,8 +135,8 @@ check('bill_focus appears in the Billing footer hint', hintRows('billing').some(
   hintRows('billing').map((h) => h.id).join(','));
 check('bill_focus keeps both defaults when no admin binding exists',
   resolveCombos('bill_focus', {}).join() === 'Pause,F4');
-check('bill_focus uses only the admin binding when one is set',
-  resolveCombos('bill_focus', { bill_focus: 'F9' }).join() === 'F9');
+check('bill_focus keeps its fallback key when the owner rebinds the primary',
+  resolveCombos('bill_focus', { bill_focus: 'F9' }).join() === 'F9,F4');
 check('bill_focus does not use F10 or F11',
   !defaultCombos('bill_focus').includes('F10') && !defaultCombos('bill_focus').includes('F11'));
 check('the new actions do not collide with an existing combo',

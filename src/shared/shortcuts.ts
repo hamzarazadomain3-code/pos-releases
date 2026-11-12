@@ -145,16 +145,19 @@ export function resolveCombo(id: string, shortcutMap: Record<string, string> = {
 }
 
 /**
- * EVERY combo that triggers an action: the admin binding when the owner set
- * one, otherwise ALL the registry defaults (the primary key plus its extra
- * defaults). The router fires the action when any of them matches.
+ * EVERY combo that triggers an action: the admin binding (or the registry
+ * default) PLUS the action's extra default keys.
+ *
+ * The extra defaults are the "fallback" keys of an action with two defaults
+ * (bill_focus = Pause, and F4). They always fire, so an owner who never
+ * touches the setting still gets both keys, and the action keeps working even
+ * if the admin table has no row for it yet.
  */
 export function resolveCombos(id: string, shortcutMap: Record<string, string> = {}): string[] {
-  const bound = shortcutMap[id];
-  if (bound) return [bound];
   const def = ACTION_BY_ID[id];
   if (!def) return [];
-  return [def.defaultKey, ...(def.altKeys ?? [])];
+  const primary = shortcutMap[id] ?? def.defaultKey;
+  return [primary, ...(def.altKeys ?? [])];
 }
 
 /** Every default combo of an action (registry only, no admin binding). */
