@@ -1316,3 +1316,66 @@ A WhatsApp Web reload no longer breaks receipts. The gateway re-links itself in
 the background, a send that hits the wiped injection reconnects and retries on
 the spot, and if the re-link really fails the owner gets a sentence that says
 what to press — not a JavaScript stack trace.
+
+
+---
+
+## Send the bill on WhatsApp after a sale (v2.27.0) — 2026-11-13
+
+### Request
+"Email aur SMS se bill bhejne jaisa hi, sale complete hone ke baad direct
+WhatsApp ka option bhi ho us number pe."
+
+### What it was
+A **"WhatsApp Receipt"** button existed in the "Sale Completed" modal, but it was
+not usable as a peer of Email/SMS:
+
+- it only appeared **when the customer record already had a phone** — a
+  walk-in sale had no WhatsApp option at all;
+- it had **no number box**, so the cashier could not send to any other number;
+- it sat above the Email/SMS rows as an odd one-off button.
+
+### What it is now
+A **third row in the same input+button style as Email and SMS**, right below
+them:
+
+| Row | Input | Button |
+|---|---|---|
+| Email | Customer email | Email |
+| SMS | Customer phone | SMS |
+| **WhatsApp** | **WhatsApp number (customer phone)** — pre-filled from the customer | **WhatsApp** (WhatsApp green) |
+
+- The number box is **pre-filled with the customer's phone** when the sale
+  completes, so the cashier only presses the button.
+- It stays editable — any other number can be typed.
+- The old one-off "WhatsApp Receipt" button was removed so there is exactly one
+  WhatsApp option, next to Email and SMS.
+
+### Changes
+| File | Change |
+|---|---|
+| `src/renderer/src/pages/Billing.tsx` | New `whatsappPhoneToSend` state; a `useEffect` pre-fills it from the customer (or the sale's `customer_phone`) when a sale completes; a new WhatsApp `.modal-action-row` (input + `btn-whatsapp` button) next to the Email and SMS rows; the old conditional "WhatsApp Receipt" button removed. |
+| `src/renderer/src/styles.css` | New `.btn-whatsapp` — the WhatsApp green (`#1f9d55`), so the cashier spots it straight after a sale. |
+| `scripts/test_whatsapp_receipt_ui.js` (new) | End-to-end suite: boots the real renderer, completes a real sale, and inspects the "Sale Completed" modal. |
+| `package.json` | New script `test:whatsappReceipt`; version **2.26.0 → 2.27.0**. |
+| `rokar-site/src/content.json` | `latestVersion: "2.27.0"` + changelog entry. |
+
+### Verification
+- **`npm run test:whatsappReceipt`**: **16/16 passed** — the WhatsApp button
+  exists, it sits in an input row like Email/SMS, the Email and SMS rows are
+  untouched, the number is **pre-filled with the customer's phone**, the button
+  is enabled, and the number can be edited to any other number.
+  Proof: `E:\temp\proof\wa_receipt_ui.txt`.
+- **Regression**: `test:keyboard` 93/93, `test:billingKeys` 26/26 (3/3 green runs),
+  `test:shortcuts` 37/37, `test:qtyJump` 7/7, `test:whatsappRecovery` 15/15 —
+  all exit 0.
+- **Typecheck + build**: exit 0.
+- **Release v2.27.0**: 5 assets, `npm run verify:release -- v2.27.0` **9/9 passed**
+  (manifest sha512 == the downloaded installer, byte for byte).
+  Proof: `E:\temp\proof\release_verify_2.27.0.txt`.
+- **Deployed**: GitHub release v2.27.0, `www.rokarpos.co.uk`, Cloudflare Worker.
+
+### Result
+After a sale, the cashier sees **Email | SMS | WhatsApp** as three equal rows.
+WhatsApp is pre-filled with the customer's number, so "send the bill on WhatsApp"
+is one click.

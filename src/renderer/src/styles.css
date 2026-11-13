@@ -3014,6 +3014,25 @@ body:has(.billing-page) {
   min-width: 0;
 }
 
+/* WhatsApp receipt button — the WhatsApp green, so the cashier spots the
+   bill-on-WhatsApp button straight after a sale. */
+.btn-whatsapp {
+  background: #1f9d55;
+  border-color: #1f9d55;
+  color: #fff;
+  font-weight: 600;
+}
+
+.btn-whatsapp:hover:not(:disabled) {
+  background: #188247;
+  border-color: #188247;
+}
+
+.btn-whatsapp:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 /* ═══════════════════════════════════════════
    FORMS
    ═══════════════════════════════════════════ */

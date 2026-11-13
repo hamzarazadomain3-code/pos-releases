@@ -382,6 +382,8 @@ export default function Billing({ onNavigate, onLogout }: BillingProps) {
   // Receipt sending
   const [emailToSend, setEmailToSend] = useState('');
   const [smsToSend, setSmsToSend] = useState('');
+  /** WhatsApp: the number the receipt goes to (pre-filled from the customer). */
+  const [whatsappPhoneToSend, setWhatsappPhoneToSend] = useState('');
 
   // Enhancement: Favorites/pinned products
   const [favorites, setFavorites] = useState<number[]>([]);
@@ -1837,6 +1839,15 @@ useEffect(() => {
     () => (customerId ? customers.find((c) => String(c.id) === String(customerId)) ?? null : null),
     [customerId, customers]
   );
+
+  // When a sale completes, pre-fill the WhatsApp phone box with the customer's
+  // number so the cashier only has to press the button (same one-tap feel as
+  // "Print Invoice"). The box stays editable: any number can be typed.
+  useEffect(() => {
+    if (!success?.sale?.id) return;
+    const phone = selectedCustomer?.phone || success.sale.customer_phone || '';
+    setWhatsappPhoneToSend(phone);
+  }, [success?.sale?.id, selectedCustomer?.phone, success?.sale?.customer_phone]);
 
   // Load customer loyalty & auto-apply default discount when customer changes
   useEffect(() => {
@@ -3846,26 +3857,6 @@ const handleUnitChange = (newLevel: number) => {
                 >
                   Print Invoice
                 </button>
-                {(() => {
-                  const cust = customers.find((c) => String(c.id) === customerId);
-                  if (!cust?.phone) return null;
-                  return (
-                    <button
-                      className="btn"
-                      title={`Send receipt to ${cust.name} (${cust.phone}) on WhatsApp`}
-                      onClick={async () => {
-                        try {
-                          const r = await window.api.whatsapp.sendSaleReceipt(success.sale.id, cust.phone ?? undefined);
-                          setNotice(r.message);
-                        } catch (e) {
-                          setNotice(e instanceof Error ? e.message : String(e));
-                        }
-                      }}
-                    >
-                      WhatsApp Receipt
-                    </button>
-                  );
-                })()}
                 <div className="modal-action-row">
                   <input
                     type="email"
@@ -3893,6 +3884,32 @@ const handleUnitChange = (newLevel: number) => {
                     const res = await window.api.receipt.sendSms(success.sale.id, smsToSend);
                     alert(res.message);
                   }}>SMS</button>
+                </div>
+                <div className="modal-action-row">
+                  <input
+                    type="tel"
+                    placeholder="WhatsApp number (customer phone)"
+                    value={whatsappPhoneToSend}
+                    onChange={e => setWhatsappPhoneToSend(e.target.value)}
+                    style={{ flex: 1, padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 13 }}
+                  />
+                  <button
+                    className="btn btn-sm btn-whatsapp"
+                    disabled={!whatsappPhoneToSend.trim() || !success?.sale?.id}
+                    title="Send the bill to this number on WhatsApp"
+                    onClick={async () => {
+                      const to = whatsappPhoneToSend.trim();
+                      if (!to || !success?.sale?.id) return;
+                      try {
+                        const r = await window.api.whatsapp.sendSaleReceipt(success.sale.id, to);
+                        setNotice(r.message);
+                      } catch (e) {
+                        setNotice(e instanceof Error ? e.message : String(e));
+                      }
+                    }}
+                  >
+                    WhatsApp
+                  </button>
                 </div>
               <button className="btn btn-primary" onClick={newBill}>
                 New Bill
