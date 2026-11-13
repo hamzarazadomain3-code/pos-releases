@@ -4,12 +4,76 @@ import fs from 'node:fs';
 import { logError } from './logger';
 import { getSale } from './services/sales';
 import { buildReceiptText } from './services/printing';
+import { isWWebJsLost, describeWhatsAppFailure } from '../shared/whatsappRecovery';
 
 let whatsappClient: any = null;
 let qrDataUrl: string | null = null;
 let readyPhone: string | null = null;
 let connecting = false;
 let lastError: string | null = null;
+let healthTimer: NodeJS.Timeout | null = null;
+
+/**
+ * WhatsApp Web reloads its own page now and then, and a page reload wipes the
+ * `window.WWebJS` object that whatsapp-web.js injects once at startup. Every
+ * later call that needs it then dies with
+ *   "Cannot read properties of undefined (reading 'getChat')".
+ *
+ * The session itself is fine — it lives in the LocalAuth folder — so the fix
+ * is to re-inject (reconnect) rather than to ask the shop owner to scan again.
+ * The detection and the owner-facing wording live in
+ * `src/shared/whatsappRecovery.ts` (pure, unit-tested).
+ */
+
+/** Is the WhatsApp Web page still injected (window.WWebJS present)? */
+async function isInjected(client: any): Promise<boolean> {
+  try {
+    return !!(await client.pupPage.evaluate('typeof window.WWebJS !== "undefined"'));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Make sure the page is injected. If it is not (WhatsApp Web reloaded),
+ * reconnect once — the saved session comes straight back, so the owner never
+ * has to scan the QR a second time.
+ */
+async function ensureInjected(): Promise<boolean> {
+  const client = whatsappClient;
+  if (!client) return false;
+  if (await isInjected(client)) return true;
+  console.log('[WhatsApp] window.WWebJS is gone (WhatsApp Web reloaded) — reconnecting…');
+  await restartWhatsAppGateway();
+  return !!whatsappClient && (await isInjected(whatsappClient));
+}
+
+/**
+ * Watch the injection in the background so the shop owner never hits the
+ * error at all: the moment WhatsApp Web reloads, the gateway reconnects by
+ * itself and the session comes back silently.
+ */
+function startHealthCheck(): void {
+  if (healthTimer) return;
+  healthTimer = setInterval(() => {
+    if (!whatsappClient || connecting) return;
+    void (async () => {
+      try {
+        await ensureInjected();
+      } catch {
+        // ignore transient failures; the next tick tries again
+      }
+    })();
+  }, 60_000); // once a minute
+  healthTimer.unref?.();
+}
+
+function stopHealthCheck(): void {
+  if (healthTimer) {
+    clearInterval(healthTimer);
+    healthTimer = null;
+  }
+}
 
 function broadcast(channel: string, payload: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -31,6 +95,29 @@ function bundledCacheDir(): string | null {
   if (!app.isPackaged) return null;
   const dir = path.join(process.resourcesPath, 'puppeteer-cache');
   return fs.existsSync(dir) ? dir : null;
+}
+
+/**
+ * Wait until the client is really usable (the page is injected and the
+ * session is live). `client.initialize()` returns before the 'ready' event
+ * fires, so sending immediately after a reconnect would race the injection.
+ */
+async function waitForReady(client: any, timeoutMs = 45_000): Promise<boolean> {
+  if (!client || typeof client.on !== 'function') return false;
+  if (client.info?.wid?.user || client.info?.me?.user) return true; // already ready
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { client.off?.('ready', onReady); } catch { /* ignore */ }
+      resolve(ok);
+    };
+    const onReady = () => done(true);
+    const timer = setTimeout(() => done(false), timeoutMs);
+    client.on('ready', onReady);
+  });
 }
 
 /**
@@ -82,6 +169,10 @@ export async function initWhatsAppGateway(): Promise<boolean> {
     });
 
     client.on('disconnected', (reason: string) => {
+      // Only the CURRENT client may clear the state. A teardown of the OLD
+      // client (during a reconnect) fires this too, and it must not wipe the
+      // fresh client that has already replaced it.
+      if (whatsappClient !== client) return;
       whatsappClient = null;
       connecting = false;
       lastError = reason;
@@ -89,7 +180,13 @@ export async function initWhatsAppGateway(): Promise<boolean> {
     });
 
     await client.initialize();
+    // The page must be injected before anything can be sent through it.
+    const ready = await waitForReady(client);
+    if (!ready) {
+      console.warn('[WhatsApp] client did not become ready in time');
+    }
     connecting = false;
+    startHealthCheck();
     return true;
   } catch (e) {
     whatsappClient = null;
@@ -150,12 +247,32 @@ export async function sendWhatsAppReceipt(phoneNumber: string, text: string): Pr
   if (!formatted) {
     return { ok: false, message: 'Invalid phone number.' };
   }
+  const target = formatted + '@c.us';
   try {
-    await whatsappClient.sendMessage(formatted + '@c.us', text);
+    await whatsappClient.sendMessage(target, text);
     return { ok: true, message: `WhatsApp receipt sent to ${phoneNumber}` };
   } catch (e) {
+    const raw = e instanceof Error ? e.message : String(e);
     console.error('WhatsApp send error:', e);
-    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+
+    // The page reloaded and window.WWebJS is gone: reconnect once (the saved
+    // session comes straight back — no new QR scan) and retry the send.
+    if (isWWebJsLost(raw)) {
+      console.log('[WhatsApp] send failed because the page was reloaded — reconnecting and retrying…');
+      try {
+        await restartWhatsAppGateway();
+        if (whatsappClient) {
+          await whatsappClient.sendMessage(target, text);
+          return { ok: true, message: `WhatsApp receipt sent to ${phoneNumber}` };
+        }
+      } catch (retryErr) {
+        const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+        console.error('WhatsApp send retry error:', retryErr);
+        return { ok: false, message: describeWhatsAppFailure(retryMsg) };
+      }
+    }
+
+    return { ok: false, message: describeWhatsAppFailure(raw) };
   }
 }
 
@@ -237,6 +354,7 @@ function killProcessTree(pid: number): void {
  * immediately.
  */
 export async function shutdownWhatsAppGateway(): Promise<void> {
+  stopHealthCheck();
   if (!whatsappClient) return;
 
   const pid = getBrowserProcessId();

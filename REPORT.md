@@ -1263,3 +1263,56 @@ needed for the updater to offer it).
 Clients on 2.24.0 now get 2.25.0: the WhatsApp QR code stays on screen long
 enough to scan, and the update itself can no longer break on a missing or stale
 manifest.
+
+
+---
+
+## WhatsApp "getChat" crash on send (v2.26.0) — 2026-11-13
+
+### Symptom
+The shop owner reported, from **Settings → WhatsApp Receipt Alerts**, while
+WhatsApp was shown as **connected**:
+
+```
+Cannot read properties of undefined (reading 'getChat')
+```
+
+### Root cause
+whatsapp-web.js injects the `window.WWebJS` object into the WhatsApp Web page
+**once**, at startup. **WhatsApp Web reloads its own page now and then**, and a
+page reload wipes that injected object. Every later call that needs it dies —
+`sendMessage()` evaluates `window.WWebJS.getChat(chatId, …)` inside the page,
+so with `window.WWebJS` gone it throws exactly
+`Cannot read properties of undefined (reading 'getChat')`.
+
+The **session was never broken** (it lives in the `.wwebjs_auth` folder), which
+is why the panel still said "Connected" while sending failed. The fix is to
+re-inject, i.e. reconnect — the shop owner does **not** have to scan the QR again.
+
+### Changes
+| File | Change |
+|---|---|
+| `src/shared/whatsappRecovery.ts` (new) | Pure helpers: `isWWebJsLost(message)` recognises the wiped-injection errors; `describeWhatsAppFailure(message)` turns them into an actionable sentence instead of a raw JS stack. Unit-tested (`test:whatsappRecovery`, 15/15). |
+| `src/main/whatsapp-gateway.ts` | <ul><li>`isInjected()` — checks `typeof window.WWebJS !== "undefined"` in the live page.</li><li>`ensureInjected()` — reconnects when the injection is gone (the saved session comes straight back).</li><li>**Background health check** (every 60 s): if WhatsApp Web reloaded, the gateway reconnects by itself, so the owner never hits the error.</li><li>**Send retry**: a send that fails with the wiped-injection error reconnects once and retries — silently successful.</li><li>`waitForReady()` — a reconnect now waits for the page to be injected before anything is sent through it.</li><li>The `disconnected` handler now only clears state for the **current** client, so tearing down an old client during a reconnect can no longer wipe the fresh one.</li><li>Owner-facing errors go through `describeWhatsAppFailure`.</li></ul> |
+| `package.json` | New script `test:whatsappRecovery`. |
+| `package.json` | Version **2.25.0 → 2.26.0**. |
+| `rokar-site/src/content.json` | `latestVersion: "2.26.0"` + changelog entry. |
+
+### Verification
+- **Unit test** (`E:\temp\proof\whatsapp_recovery.txt`): **15/15 passed** — the reported
+  `getChat` error, the `getChatId`/`getMessages`/WWebJS variants and the generic
+  "undefined property" error are all recognised; unrelated errors are not; every
+  owner-facing message is plain English.
+- **Regression**: `test:keyboard` 93/93, `test:billingKeys` 26/26, `test:shortcuts` 37/37,
+  `test:qtyJump` 7/7 — all exit 0.
+- **Typecheck + build**: exit 0.
+- **Release v2.26.0**: 5 assets, `npm run verify:release -- v2.26.0` **9/9 passed**
+  (manifest sha512 == the downloaded installer, byte for byte).
+  Proof: `E:\temp\proof\release_verify_2.26.0.txt`.
+- **Deployed**: GitHub release v2.26.0, `www.rokarpos.co.uk`, Cloudflare Worker.
+
+### Result
+A WhatsApp Web reload no longer breaks receipts. The gateway re-links itself in
+the background, a send that hits the wiped injection reconnects and retries on
+the spot, and if the re-link really fails the owner gets a sentence that says
+what to press — not a JavaScript stack trace.

@@ -653,6 +653,43 @@ panel persists onto the active template (cloning a built-in to a `custom-*` firs
   rows), per-run price/date/weight resolution, `start-at-column-2` filling, the `±`
   marker, date hiding, and a PNG of the exact roll for eyeballing.
 
+### WhatsApp gateway (the `getChat` crash)
+
+`whatsapp-web.js` injects the `window.WWebJS` object into the WhatsApp Web page
+**once**, at startup. **WhatsApp Web reloads its own page now and then**, and a
+reload wipes that object. Every later call that needs it dies — `sendMessage()`
+evaluates `window.WWebJS.getChat(chatId, …)` inside the page, so with
+`window.WWebJS` gone it throws:
+
+```
+Cannot read properties of undefined (reading 'getChat')
+```
+
+The **session is never broken** (it lives in `.wwebjs_auth` under `userData`),
+which is why Settings still said "Connected" while every send failed. The cure is
+to **re-inject, not to re-scan**: the shop owner must NOT have to scan the QR a
+second time.
+
+`src/main/whatsapp-gateway.ts` handles this:
+
+- `isInjected(client)` — `typeof window.WWebJS !== "undefined"` in the live page.
+- `ensureInjected()` — reconnects when the injection is gone (the saved session
+  comes straight back, no QR).
+- A **background health check** every 60 s re-links by itself after a reload, so
+  the owner never hits the error at all.
+- A **send retry**: a send that fails with the wiped-injection error reconnects
+  once and retries — silently successful.
+- `waitForReady(client)` — a reconnect waits for the page to be injected before
+  anything is sent through it (`client.initialize()` returns *before* the
+  `ready` event, so sending straight after a reconnect races the injection).
+- The `disconnected` handler only clears state for the **current** client, so
+  tearing down an old client during a reconnect cannot wipe the fresh one.
+- Owner-facing errors go through `describeWhatsAppFailure()` in
+  `src/shared/whatsappRecovery.ts` (pure, unit-tested by
+  `npm run test:whatsappRecovery`).
+
+Do **not** "fix" this by asking the owner to scan again — the session is fine.
+
 ### Receipt typography (thermal darkness / readability)
 
 Thermal receipts were printing faint and smaller than competing POS receipts. The
