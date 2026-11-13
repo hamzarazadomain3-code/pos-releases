@@ -389,6 +389,46 @@ curl.exe -sL -r 0-1 "https://github.com/hamzarazadomain3-code/pos-releases/relea
 ```
 This costs ~120 MB of extra release storage per release. It is the price of never editing the website again; do not "optimise" it away without also pinning the site back to a versioned URL.
 
+### `latest.yml` — the asset that silently breaks every update
+
+**A release without a correct `latest.yml` breaks EVERY client**, and the error
+the shop owner sees is:
+
+```
+Update check failed: Cannot find channel "latest.yml" update info: HttpError: 404
+"method: GET url: https://github.com/hamzarazadomain3-code/pos-releases/releases/download/v2.25.0/latest.yml"
+```
+
+Two ways it happens, both seen in the wild on v2.25.0:
+
+1. **It was never uploaded.** `electron-builder --publish always` was interrupted
+   mid-upload (the 120 MB installer over a slow link), so the release went out
+   with the `.exe` but without the manifest. The finalize step then found the
+   release "already published" and skipped the upload.
+2. **It describes the WRONG build.** NSIS embeds a build timestamp, so every
+   rebuild produces different bytes. `latest.yml` written by an earlier run now
+   carries a stale `sha512`/`size`; electron-updater downloads the file and then
+   rejects it with a checksum error. The local `dist_release/latest.yml` can be
+   stale even when the release's copy is fine — always derive it from the file
+   you are shipping.
+
+`scripts/finalize-release.js` now prevents both: it **rebuilds `latest.yml` from
+the installer's actual bytes** (sha512 + size computed from the file), deletes any
+stale copy already on the release, uploads the fresh one, and then **verifies the
+release carries every asset the updater needs** (`latest.yml`, the versioned
+installer, its `.blockmap`, and the version-less alias) — failing loudly instead
+of shipping a broken release.
+
+Verify a published release the way the updater sees it (downloads the installer
+and checks the sha512 byte for byte):
+
+```powershell
+$env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; npm run verify:release -- v2.25.0
+```
+
+If the publish step is ever interrupted, re-run `node scripts/finalize-release.js`
+(it is idempotent) or `node scripts/publish-latest-yml.cjs` (manifest only).
+
 ### App icon (why `signAndEditExecutable` is false)
 
 `build.win.signAndEditExecutable` is `false` on purpose. electron-builder's built-in

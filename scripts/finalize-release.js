@@ -7,6 +7,7 @@
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const TOKEN = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
 const { version } = require('../package.json');
@@ -80,6 +81,61 @@ function uploadAsset(releaseId, filePath, assetName) {
   });
 }
 
+/**
+ * Build the update manifest from the installer's ACTUAL bytes.
+ *
+ * electron-builder writes `latest.yml` while it packages, but the installer
+ * can be rebuilt afterwards (NSIS embeds a build timestamp, so the bytes and
+ * the sha512 change). A manifest that describes the PREVIOUS build makes every
+ * client fail the checksum check, and a manifest that was never uploaded makes
+ * them fail with "Cannot find channel latest.yml update info: 404". Deriving
+ * it here from the file we are actually shipping removes both failure modes.
+ */
+function buildManifest(installerPath) {
+  const sha512 = crypto.createHash('sha512').update(fs.readFileSync(installerPath)).digest('base64');
+  const size = fs.statSync(installerPath).size;
+  const releaseDate = new Date().toISOString();
+  return (
+    `version: ${version}\n` +
+    `files:\n` +
+    `  - url: RokarPOS-Setup-${version}.exe\n` +
+    `    sha512: ${sha512}\n` +
+    `    size: ${size}\n` +
+    `path: RokarPOS-Setup-${version}.exe\n` +
+    `sha512: ${sha512}\n` +
+    `releaseDate: '${releaseDate}'\n`
+  );
+}
+
+/** Remove an asset so a fresh copy can be uploaded in its place. */
+function deleteAsset(assetId) {
+  return new Promise((resolve) => {
+    const req = https.request(
+      {
+        hostname: 'api.github.com',
+        path: `/repos/${OWNER}/${REPO}/releases/assets/${assetId}`,
+        method: 'DELETE',
+        headers: {
+          Authorization: `token ${TOKEN}`,
+          'User-Agent': 'pos-app-release',
+          Accept: 'application/vnd.github+json',
+        },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          if (res.statusCode === 204) console.log('Deleted the stale latest.yml asset.');
+          else console.log(`Delete returned HTTP ${res.statusCode} (continuing).`);
+          resolve();
+        });
+      }
+    );
+    req.on('error', () => resolve());
+    req.end();
+  });
+}
+
 function api(method, path, body) {
   return new Promise((resolve, reject) => {
     const req = https.request(
@@ -148,17 +204,63 @@ function api(method, path, body) {
   // 4. Mirror the installer under a version-less name so the website's download
   //    button can point at /releases/latest/download/... forever. Without this the
   //    site would serve the previous version after every release.
-  const assets = (published.body.assets || []).map((a) => a.name);
+  const outDir = (build && build.directories && build.directories.output) || 'dist_release';
+  const installer = path.join(__dirname, '..', outDir, `RokarPOS-Setup-${version}.exe`);
+
+  let assets = (published.body.assets || []).map((a) => a.name);
   if (assets.includes(STABLE_ASSET)) {
     console.log(`Stable asset already present: ${STABLE_ASSET}`);
+  } else if (!fs.existsSync(installer)) {
+    console.log(`WARN: installer not found at ${installer} -- ${STABLE_ASSET} not uploaded.`);
+    console.log('      The website download button will keep serving the previous release.');
   } else {
-    const outDir = (build && build.directories && build.directories.output) || 'dist_release';
-    const installer = path.join(__dirname, '..', outDir, `RokarPOS-Setup-${version}.exe`);
-    if (!fs.existsSync(installer)) {
-      console.log(`WARN: installer not found at ${installer} -- ${STABLE_ASSET} not uploaded.`);
-      console.log('      The website download button will keep serving the previous release.');
-    } else {
-      await uploadAsset(release.id, installer, STABLE_ASSET);
-    }
+    await uploadAsset(release.id, installer, STABLE_ASSET);
   }
+
+  // 5. ALWAYS (re)write latest.yml from the installer's ACTUAL bytes.
+  //
+  //    Two ways a release ships without a usable manifest, both of which break
+  //    EVERY client ("Cannot find channel latest.yml update info: 404" or a
+  //    checksum error):
+  //      a) electron-builder's publish step was interrupted before it uploaded
+  //         latest.yml;
+  //      b) the installer was rebuilt afterwards (NSIS embeds a build timestamp,
+  //         so the bytes and the sha512 change) while the local latest.yml kept
+  //         describing the PREVIOUS build.
+  //    Writing the manifest here -- from the file we are about to ship -- makes
+  //    both impossible.
+  if (fs.existsSync(installer)) {
+    const manifest = buildManifest(installer);
+    const manifestPath = path.join(__dirname, '..', outDir, 'latest.yml');
+    fs.writeFileSync(manifestPath, manifest);
+    console.log('latest.yml written from the installer bytes:');
+    console.log(manifest.trim());
+    // Replace any stale copy already on the release.
+    const existing = (published.body.assets || []).find((a) => a.name === 'latest.yml');
+    if (existing) {
+      await deleteAsset(existing.id);
+    }
+    await uploadAsset(release.id, manifestPath, 'latest.yml');
+  } else {
+    console.log('WARN: installer not found -- latest.yml NOT regenerated.');
+  }
+
+  // 6. Verify the release is complete. A half-published release is worse than
+  //    no release at all: clients would download a broken update.
+  const final = await api('GET', `/repos/${OWNER}/${REPO}/releases/tags/${tag}`);
+  const names = (final.body.assets || []).map((a) => a.name);
+  const required = [
+    'latest.yml',
+    `RokarPOS-Setup-${version}.exe`,
+    `RokarPOS-Setup-${version}.exe.blockmap`,
+    STABLE_ASSET,
+  ];
+  const missing = required.filter((n) => !names.includes(n));
+  console.log(`Release assets: ${names.join(', ')}`);
+  if (missing.length) {
+    console.error(`FINALIZE_FAIL: release ${tag} is missing: ${missing.join(', ')}`);
+    console.error('              clients would fail to update -- fix before shipping.');
+    process.exit(1);
+  }
+  console.log(`OK: release ${tag} has every asset the updater needs.`);
 })();

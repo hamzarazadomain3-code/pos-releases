@@ -1201,3 +1201,65 @@ returns to the cleared product search box, ready for the next product.
 ### Result
 Cashiers can now type quantities immediately after picking a product — no extra
 click or Tab needed. Scanner workflows are unaffected (focus stays in search).
+
+
+---
+
+## Release v2.25.0 — WhatsApp QR fix + release repair (2026-11-13)
+
+### Two bugs found and fixed
+
+**1. The WhatsApp QR code disappeared after 1-3 seconds.**
+`Settings.tsx` polled `whatsapp.getStatus()` every 2.5 s and wrote the result
+straight into the QR state. `getStatus()` returns `qr: null` as soon as the QR
+has been consumed, so the poll wiped the picture off the screen while the shop
+owner was still lining up their phone. The QR now stays put until it is actually
+scanned (`connected`), or the owner presses **Reconnect / Rescan QR**. The poll
+was slowed to 10 s so it cannot outrun a human.
+
+| File | Change |
+|---|---|
+| `src/renderer/src/pages/Settings.tsx:60-69` | Poll 2.5 s -> 10 s; the QR is only replaced when a NEW one arrives, never cleared by a `null` poll. |
+
+**2. Release v2.25.0 shipped WITHOUT `latest.yml` — every client failed to update.**
+The shop owner saw:
+
+```
+Update check failed: Cannot find channel "latest.yml" update info: HttpError: 404
+"method: GET url: https://github.com/hamzarazadomain3-code/pos-releases/releases/download/v2.25.0/latest.yml"
+```
+
+Two independent causes, both fixed:
+
+| Cause | Fix |
+|---|---|
+| `electron-builder --publish always` was interrupted mid-upload (120 MB installer over a slow link), so the release went out with the installer but never with the manifest. | `finalize-release.js` now always (re)writes and uploads `latest.yml`. |
+| The local `dist_release/latest.yml` was **stale**: NSIS embeds a build timestamp, so the rebuilt installer had different bytes (121574443) than the manifest described (121574442) — a checksum mismatch waiting to happen. | The manifest is now **derived from the installer's actual bytes** (sha512 + size computed from the file), so it can never describe a different build. |
+
+| File | Change |
+|---|---|
+| `scripts/finalize-release.js` | New `buildManifest()` (sha512/size from the real file), `deleteAsset()` (replace a stale copy), and a **final completeness check** — the release must carry `latest.yml`, the versioned installer, its `.blockmap` and the version-less alias, or the script exits non-zero. |
+| `scripts/publish-latest-yml.cjs` | Standalone manifest-only publisher (for when the publish step was interrupted). |
+| `scripts/verify_release.cjs` | New verifier (`npm run verify:release -- <tag>`): fetches the manifest, **downloads the installer and checks the sha512 byte for byte**, checks the blockmap and the alias, and checks the generic CDN feed serves the same version. |
+| `package.json` | New script `verify:release`. |
+
+### Version bump
+2.24.0 -> **2.25.0** (the owner already had 2.24.0 installed, so a new tag was
+needed for the updater to offer it).
+
+### Verification
+- **`npm run verify:release -- v2.25.0`**: **9/9 passed** — the manifest's
+  sha512 matches the downloaded installer **exactly**, the blockmap and the alias
+  download, and the CDN feed serves 2.25.0.
+  Proof: `E:\temp\proof\release_verify_2.25.0.txt`.
+- **`npm run finalize-release`** re-run: idempotent, rewrites the manifest from
+  the installer bytes and confirms all 5 assets are present.
+- **Typecheck + build**: exit 0.
+- **Release assets (5)**: `latest.yml`, `RokarPOS-Setup-2.25.0.exe`,
+  `RokarPOS-Setup-2.25.0.exe.blockmap`, `RokarPOS-Portable-2.25.0.exe`,
+  `RokarPOS-Setup.exe`.
+
+### Result
+Clients on 2.24.0 now get 2.25.0: the WhatsApp QR code stays on screen long
+enough to scan, and the update itself can no longer break on a missing or stale
+manifest.

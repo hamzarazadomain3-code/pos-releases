@@ -1,6 +1,6 @@
 {
   "name": "pos-app",
-  "version": "2.24.0",
+  "version": "2.25.0",
   "description": "Local Billing & Inventory POS System",
   "main": "dist/main/main.js",
   "author": "Rokar POS",
@@ -57,7 +57,8 @@
     "test:licensing": "npm run build:main && electron scripts/test_licensing.js",
     "test:keyboard": "npm run build && electron scripts/keyboard_smoke.js",
     "test:billingKeys": "npm run build && electron scripts/billing_keys_check.js",
-    "test:wallpaper": "npm run build && electron scripts/test_default_wallpaper.js"
+    "test:wallpaper": "npm run build && electron scripts/test_default_wallpaper.js",
+    "verify:release": "node scripts/verify_release.cjs"
   },
   "dependencies": {
     "bwip-js": "^4.11.2",

@@ -61,12 +61,13 @@ export default function Settings() {
       try {
         const s = await window.api.whatsapp.getStatus();
         setWaStatus(s);
+        // Only set QR if a NEW one is received; don't clear existing QR on null
         if (s.qr) setWaQr(s.qr);
         if (s.connected) setWaQr(null);
       } catch {
         // ignore transient failures
       }
-    }, 2500);
+    }, 10000); // Less frequent polling (10s) to reduce noise
     return () => {
       clearInterval(poll);
       off();
