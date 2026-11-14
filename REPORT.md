@@ -1643,3 +1643,84 @@ word, not mine.
   test:shortcuts` → 37/37 (`sidebar_s1_shortcuts.txt`), `npm run test:billingKeys`
   → 26/26, web smoke → PASS (21 nav buttons, 21 pages toured).
 - Typecheck + build: exit 0.
+
+---
+
+## Item 2 — the menu hides links, the GUARD refuses the page
+
+### The hole that was found
+The old guard was a **post-render redirect**:
+
+```jsx
+// App.tsx:829 (before)
+useEffect(() => {
+  if (user && !nav.some((n) => n.key === page)) setPage('billing');
+  ...
+}, [user, nav, page, i18n.language]);
+```
+
+A cashier who reached `settings` (Alt+S, the command palette, a deep link)
+got the page **rendered first** and was bounced to Billing afterwards — so the
+Setup page could mount, run its own effects and fetch its data before the
+redirect landed. A redirect is not a refusal.
+
+### The fix — the guard refuses, it does not bounce
+`src/shared/sidebarMenu.ts:192-212` adds **`canOpenRoute(role, route, features,
+permissions)`** — the single answer to "may this role open this page?". It reads
+the **same** `minRole`, the same feature toggle and the same narrowing map as
+`buildSidebar()`, so the menu and the guard cannot drift apart.
+
+`src/renderer/src/App.tsx:809-824` wraps every page switch in `navigate()`:
+
+```jsx
+const navigate = useCallback((next: NavPage) => {
+  if (!canOpenRoute(user?.role, next, { multi_branch: multiBranch })) {
+    setGuardNotice('You do not have access to that page.');
+    window.setTimeout(() => setGuardNotice(null), 2500);
+    return false;          // <-- the page never opens
+  }
+  setPage(next);
+  return true;
+}, [user?.role, multiBranch]);
+```
+
+Every user-driven path now goes through it: the sidebar buttons, the keyboard
+layer (`KeyboardProvider.onNavigate`), the command palette, the Billing page's
+own `onNavigate` and the Admin Panel's `onNavigate`. The old effect stays only
+as a safety net for a page that is **already open** when the role changes or a
+feature toggle is switched off.
+
+The refusal is visible: a small `.guard-notice` toast (2.5 s) says *"You do not
+have access to that page."* instead of the app silently doing nothing.
+
+### What did NOT change
+No permission was widened or narrowed. The rules are exactly the ones the menu
+already used: cashier → Billing + Quick Sale; manager → the four content groups
++ Invoice Designer; owner → everything. `can()` in the main process is
+untouched in behaviour — it now reads the same shared rank map.
+
+### A second finding (recorded, not changed)
+`udhaar:*` and `returns:*` have **no `can()` guard** in the main process
+(`src/main/ipc.ts:336-354` and `836-838`), so a cashier may already use those
+features over IPC. The manager-only rule for them is a **menu** restriction, not
+a security boundary. This is the same finding as Item 1's owner decision, and
+it is why the cashier's phone bottom bar cannot show Udhaar and Returns without a
+permission change.
+
+### OWNER DECISION — the manager's Setup group
+The brief's manager default lists four content groups, but **Invoice Designer
+keeps its existing manager permission** (the brief also says not to change who
+may do what). A manager therefore sees **Setup → Invoice Designer** and nothing
+else in Setup. Say the word if Invoice Designer should become owner-only.
+
+### Verification
+- `npm run test:sidebarGuard` → **50/50 passed** (`E:\temp\proof\sidebar_s2.txt`):
+  for **6 roles × 2 feature states × 24 routes** the menu and the guard agree
+  (no mismatch), every route hidden from the menu is refused, the Setup routes
+  are refused for a cashier, the `settings` / `admin_panel` / `reports`
+  shortcut actions are covered by the same guard, the feature-gated routes are
+  refused without the feature, `barcode` is not openable, the permission map
+  narrows only, and an unknown role opens nothing.
+- `npm run test:keyboard` → 93/93, `npm run test:billingKeys` → 26/26, `npm run
+  test:shortcuts` → 37/37, web smoke → PASS (21 nav buttons).
+- Typecheck + build: exit 0.

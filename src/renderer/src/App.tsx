@@ -5,7 +5,7 @@ import { resetFormatCache } from './utils/formatters';
 import { initCurrency } from './utils/currency';
 import { initDateUtils, resetDateUtils } from './utils/dateUtils';
 import { KeyboardProvider } from './keyboard/KeyboardProvider';
-import { buildSidebar, SIDEBAR_GROUPS, SIDEBAR_ITEMS } from '@shared/sidebarMenu';
+import { buildSidebar, canOpenRoute, SIDEBAR_GROUPS, SIDEBAR_ITEMS } from '@shared/sidebarMenu';
 import FirstRunWizard from './components/FirstRunWizard';
 import rokarLogoLight from './assets/rokar-pos-logo-light.png';
 import rokarMarkDark from './assets/rokar-pos-mark-dark.png';
@@ -577,6 +577,8 @@ export default function App() {
   const [escapeDoubleTapWindowMs, setEscapeDoubleTapWindowMs] = useState(400);
   const [showFirstRunWizard, setShowFirstRunWizard] = useState(false);
   const [firstRunChecked, setFirstRunChecked] = useState(false);
+  /** The refusal message when the route guard blocks a page. */
+  const [guardNotice, setGuardNotice] = useState<string | null>(null);
  // The ONE menu: built for this role, this feature set and this language.
  const navGroups = useMemo(() => {
    const labels: Record<string, string> = {};
@@ -806,6 +808,24 @@ export default function App() {
     return () => { if (off) off(); };
   }, []);
 
+  // ── The route guard ──────────────────────────────────────────────────────
+  // The MENU hides a link; this REFUSES the page. Both read the same rules
+  // (`canOpenRoute` -> the one menu definition), so a route hidden from the
+  // menu can never be opened — not by the keyboard layer, not by the command
+  // palette, not by a shortcut, not by a deep link.
+  const navigate = useCallback(
+    (next: NavPage) => {
+      if (!canOpenRoute(user?.role, next, { multi_branch: multiBranch })) {
+        setGuardNotice('You do not have access to that page.');
+        window.setTimeout(() => setGuardNotice(null), 2500);
+        return false;
+      }
+      setPage(next);
+      return true;
+    },
+    [user?.role, multiBranch]
+  );
+
   const handleLogin = useCallback(async (u: UserRow, rememberMe: boolean) => {
     setUser(u);
     setPage('billing');
@@ -826,12 +846,15 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
-    if (user && !activeNav.some((n) => n.key === page)) setPage('billing');
+    // Safety net for a page that is no longer permitted (a role change, a
+    // feature toggle being switched off). The guard above refuses the route
+    // in the first place; this catches the page that was already open.
+    if (user && !canOpenRoute(user.role, page, { multi_branch: multiBranch })) setPage('billing');
     const savedLang = localStorage.getItem('language') || 'en';
     if (i18n.language !== savedLang) {
       i18n.changeLanguage(savedLang);
     }
-  }, [user, activeNav, page, i18n.language]);
+  }, [user, page, multiBranch, i18n.language]);
 
   if (sessionRestoring) {
     return (
@@ -900,13 +923,18 @@ export default function App() {
     <KeyboardProvider
       shortcutMap={shortcutMap}
       pages={activeNav.map((n) => ({ key: n.key, label: n.label }))}
-      onNavigate={(key) => setPage(key as NavPage)}
+      onNavigate={(key) => navigate(key as NavPage)}
       enabled={!locked && !mustChangePw}
       escapeGestureEnabled={escapeGestureEnabled}
       escapeDoubleTapWindowMs={escapeDoubleTapWindowMs}
       onGoToBilling={() => setPage('billing')}
     >
     <div className="app-shell">
+      {guardNotice && (
+        <div className="guard-notice" role="status" aria-live="polite">
+          {guardNotice}
+        </div>
+      )}
       <button
         className="sidebar-toggle"
         onClick={() => setSidebarOpen(true)}
@@ -934,7 +962,7 @@ export default function App() {
                 <button
                   key={item.id}
                   className={page === item.route ? 'nav-btn active' : 'nav-btn'}
-                  onClick={() => { setPage(item.route); }}
+                  onClick={() => { navigate(item.route); }}
                   aria-label={item.label}
                   data-label={item.label}
                 >
@@ -978,7 +1006,7 @@ export default function App() {
       <main className="content">
         <ErrorBoundary>
           <Suspense fallback={<div className="page"><div className="muted center pad">Loading…</div></div>}>
-          {page === 'billing' && <Billing onNavigate={setPage} onLogout={handleLogout} />}
+          {page === 'billing' && <Billing onNavigate={(key) => navigate(key as NavPage)} onLogout={handleLogout} />}
           {page === 'dashboard' && <Dashboard />}
           {page === 'inventory' && <Inventory />}
           {page === 'branches' && <Branches />}
@@ -1002,7 +1030,7 @@ export default function App() {
           {page === 'fifoStock' && <FIFOStockReport />}
           {page === 'settings' && <Settings />}
           {page === 'users' && <Users />}
-          {page === 'admin' && <AdminPanel onNavigate={(key) => setPage(key as NavPage)} />}
+          {page === 'admin' && <AdminPanel onNavigate={(key) => navigate(key as NavPage)} />}
           </Suspense>
         </ErrorBoundary>
       </main>

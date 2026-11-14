@@ -186,6 +186,31 @@ export function sidebarRoutes(): NavPage[] {
   return SIDEBAR_ITEMS.map((i) => i.route);
 }
 
+/**
+ * THE route guard — the single answer to "may this role open this page?".
+ *
+ * The menu HIDES a link; this REFUSES the page. They read the same rules
+ * (the same `minRole`, the same feature toggle, the same narrowing map), so a
+ * route that is hidden from the menu is also refused here. There is no second
+ * permission model and no way for the two to drift apart.
+ *
+ * A route that is not in the menu at all (`ROUTES_NOT_IN_SIDEBAR`) is not
+ * openable through the navigation.
+ */
+export function canOpenRoute(
+  role: string | null | undefined,
+  route: string,
+  features?: Record<string, boolean>,
+  permissions?: Record<string, boolean>,
+): boolean {
+  const item = sidebarItemFor(route);
+  if (!item) return false;
+  if (!roleAtLeast(role, item.minRole)) return false;
+  if (item.feature && !(features && features[item.feature] === true)) return false;
+  if (permissions && permissions[route] === false) return false;
+  return true;
+}
+
 /** The item for a route, or undefined. */
 export function sidebarItemFor(route: string): SidebarItem | undefined {
   return SIDEBAR_ITEMS.find((i) => i.route === route);
