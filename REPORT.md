@@ -1898,6 +1898,11 @@ The changes:
   **trap** that throws with the reason, so the stub can never be wired back up.
 - **The desktop is untouched**: it still uses the native save dialog, writes the file and
   answers `true`; the native open dialog path still reads the file into a Buffer.
+- **The report PDF now fails cleanly in the browser** (W6): a Worker cannot build a PDF
+  with pdfkit (the library reads its font metrics from disk), so instead of downloading a
+  corrupt empty file the web app says "Report PDF export needs the Windows app — the
+  browser version cannot build a PDF file. Use "Excel (Full)" instead." The desktop keeps
+  the real pdfkit.
 
 ### Status (from PROGRESS.md)
 
@@ -1908,6 +1913,7 @@ The changes:
 | W3 — Udhaar catalog import/export in the browser | DONE | 784e1b8, 50cb885 |
 | W4 — the file bytes survive the JSON transport (the reported error) | DONE | 38a5e24, 71396e2 |
 | W5 — the Worker bundles the REAL SheetJS (the second root cause) | DONE | 7c24ecf, 01c9c1d |
+| W6 — the report PDF fails cleanly in the browser (no corrupt file) | DONE | b5f1a9a |
 
 ### Verification
 - `npm run test:binaryTransfer` — **35/35** (the real `dist/shared/binaryTransfer.js`: the
@@ -1931,7 +1937,7 @@ The changes:
   sidebarBadges 37/37, sidebarKeyboardNav 24/24, sidebarSearch 12/12, sidebarBrand 16/16,
   layoutMode 18/18, sidebarDrawer 8/8).
 - Deployed: `https://rokar-pos.bakery-saas.workers.dev` — Worker version
-  `c145d6e6-23b6-4094-8a48-d69dc7e6b131` (2.85 MiB raw / 611 KiB gzipped).
+  `fd16ab81-834b-4ad0-921b-ce88e32f209b` (2.85 MiB raw / 611 KiB gzipped).
 
 ### Owner action required
 1. **Nothing for the web app** — the Worker is redeployed. Hard-refresh the browser tab
