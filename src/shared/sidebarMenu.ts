@@ -217,6 +217,73 @@ export function sidebarItemFor(route: string): SidebarItem | undefined {
 }
 
 /**
+ * The page a role lands on after logging in, when no Setting overrides it.
+ *
+ * A cashier bills, so Billing. An owner or a manager starts the day on the
+ * Dashboard. The shop can override this with the "Page to open after login"
+ * setting.
+ */
+export const ROLE_LANDING: Record<UserRole, NavPage> = {
+  cashier: 'billing',
+  manager: 'dashboard',
+  owner: 'dashboard',
+};
+
+/** The setting key (the `settings` table) and its accepted values. */
+export const PAGE_AFTER_LOGIN_KEY = 'page_after_login';
+export type PageAfterLogin = 'auto' | 'billing' | 'dashboard' | 'last';
+
+export interface LandingDecision {
+  /** The page to open, or null when the role may open nothing at all. */
+  page: NavPage | null;
+  /** Where the decision came from — useful for the settings hint text. */
+  source: 'setting' | 'role' | 'last';
+}
+
+/**
+ * Which page opens after login.
+ *
+ * The Setting wins when it names a page the role may open; otherwise the role
+ * rule applies; a role that may open nothing lands on nothing.
+ */
+export function landingPageFor(params: {
+  role: string | null | undefined;
+  /** The raw setting value. Anything unknown means "follow the role". */
+  setting?: string | null;
+  /** The page the user was last on — for the "Last page" choice. */
+  lastPage?: string | null;
+  /** The routes this role may open. */
+  allowedRoutes?: string[];
+}): LandingDecision {
+  const { role, setting, lastPage } = params;
+  const allowed = params.allowedRoutes ?? [];
+  const canOpen = (r: string) => allowed.includes(r);
+
+  const raw = String(setting ?? '').trim().toLowerCase();
+  const mode: PageAfterLogin =
+    raw === 'billing' || raw === 'dashboard' || raw === 'last' ? (raw as PageAfterLogin) : 'auto';
+
+  if (mode === 'last' && lastPage && canOpen(lastPage)) {
+    return { page: lastPage as NavPage, source: 'last' };
+  }
+  if (mode === 'billing' && canOpen('billing')) {
+    return { page: 'billing', source: 'setting' };
+  }
+  if (mode === 'dashboard' && canOpen('dashboard')) {
+    return { page: 'dashboard', source: 'setting' };
+  }
+
+  // The role rule.
+  const rolePage = ROLE_LANDING[role as UserRole] ?? 'billing';
+  if (canOpen(rolePage)) {
+    return { page: rolePage, source: 'role' };
+  }
+  // A role that may not open its own landing page opens the first page it may.
+  const first = (allowed[0] ?? null) as NavPage | null;
+  return { page: first, source: 'role' };
+}
+
+/**
  * The phone bottom bar for a role: the pinned items, in slot order.
  *
  * The slots come from `mobilePinned` in the menu above — there is no second

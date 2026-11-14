@@ -5,7 +5,7 @@ import { resetFormatCache } from './utils/formatters';
 import { initCurrency } from './utils/currency';
 import { initDateUtils, resetDateUtils } from './utils/dateUtils';
 import { KeyboardProvider } from './keyboard/KeyboardProvider';
-import { buildSidebar, canOpenRoute, SIDEBAR_GROUPS, SIDEBAR_ITEMS } from '@shared/sidebarMenu';
+import { buildSidebar, canOpenRoute, landingPageFor, SIDEBAR_GROUPS, SIDEBAR_ITEMS } from '@shared/sidebarMenu';
 import FirstRunWizard from './components/FirstRunWizard';
 import rokarLogoLight from './assets/rokar-pos-logo-light.png';
 import rokarMarkDark from './assets/rokar-pos-mark-dark.png';
@@ -39,6 +39,25 @@ const Labels = lazy(() => import('./pages/Labels'));
 
 const SESSION_KEY = 'pos_session';
 const SESSION_MAX_AGE = 24 * 60 * 60 * 1000;
+/** The page the user was last on — for the "Last page" landing choice. */
+const LAST_PAGE_KEY = 'pos_last_page';
+
+/** localStorage can be blocked (private mode); never let it break the app. */
+function readLastPage(): string | null {
+  try {
+    return localStorage.getItem(LAST_PAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeLastPage(page: string): void {
+  try {
+    localStorage.setItem(LAST_PAGE_KEY, page);
+  } catch {
+    /* storage blocked — the landing choice simply falls back */
+  }
+}
 
 const NAV_ICONS: Record<string, JSX.Element> = {
   billing: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="18" rx="2"/><line x1="8" y1="3" x2="8" y2="21"/><line x1="2" y1="9" x2="22" y2="9"/></svg>,
@@ -702,7 +721,7 @@ export default function App() {
         const refreshed = await window.api.auth.refreshSession();
         if (refreshed) {
           setUser(refreshed);
-          setPage('billing');
+          setPage(await resolveLanding(refreshed.role));
         } else {
           localStorage.removeItem(SESSION_KEY);
         }
@@ -826,9 +845,40 @@ export default function App() {
     [user?.role, multiBranch]
   );
 
+  // ── The landing page after a login ───────────────────────────────────────
+  // The Setting wins when it names a page this role may open; otherwise the
+  // role's own page (cashier -> Billing, owner/manager -> Dashboard).
+  // The setting and the feature toggle are read HERE, not from state, because
+  // the session restore runs on mount — before either has arrived.
+  const resolveLanding = useCallback(async (role: string): Promise<NavPage> => {
+    let setting = '';
+    let multiBranch = false;
+    try {
+      const s = await window.api.settings.getAll();
+      setting = s.page_after_login ?? '';
+    } catch {
+      /* the setting is optional */
+    }
+    try {
+      multiBranch = await window.api.admin.features.isEnabled('multi_branch');
+    } catch {
+      multiBranch = false;
+    }
+    const allowed = buildSidebar({ role, features: { multi_branch: multiBranch } }).flatMap((g) =>
+      g.items.map((i) => i.route)
+    );
+    const decision = landingPageFor({
+      role,
+      setting,
+      lastPage: readLastPage(),
+      allowedRoutes: allowed,
+    });
+    return decision.page ?? 'billing';
+  }, []);
+
   const handleLogin = useCallback(async (u: UserRow, rememberMe: boolean) => {
     setUser(u);
-    setPage('billing');
+    setPage(await resolveLanding(u.role));
     if (rememberMe) {
       localStorage.setItem(SESSION_KEY, JSON.stringify({ user: u, savedAt: Date.now() }));
     }
@@ -855,6 +905,12 @@ export default function App() {
       i18n.changeLanguage(savedLang);
     }
   }, [user, page, multiBranch, i18n.language]);
+
+  // Remember the last page — the "Last page" landing choice needs it.
+  useEffect(() => {
+    if (!user) return;
+    writeLastPage(page);
+  }, [user, page]);
 
   if (sessionRestoring) {
     return (

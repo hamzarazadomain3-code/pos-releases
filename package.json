@@ -63,7 +63,8 @@
     "test:whatsappReceipt": "npm run build && electron scripts/test_whatsapp_receipt_ui.js",
     "test:qtyJump": "npm run build:main && node scripts/test_qtyJump.cjs",
     "test:sidebarMenu": "npm run build:main && node scripts/test_sidebarMenu.cjs",
-    "test:sidebarGuard": "npm run build:main && node scripts/test_sidebarGuard.cjs"
+    "test:sidebarGuard": "npm run build:main && node scripts/test_sidebarGuard.cjs",
+    "test:sidebarLanding": "npm run build:main && node scripts/test_sidebarLanding.cjs"
   },
   "dependencies": {
     "bwip-js": "^4.11.2",

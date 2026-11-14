@@ -303,6 +303,28 @@ export default function Settings() {
               </span>
             </label>
             <label className="field">
+              <span>Page to open after login</span>
+              <select
+                value={
+                  settings.page_after_login === 'dashboard' ||
+                  settings.page_after_login === 'last' ||
+                  settings.page_after_login === 'auto'
+                    ? settings.page_after_login
+                    : 'billing'
+                }
+                onChange={(e) => setSettings({ ...settings, page_after_login: e.target.value })}
+              >
+                <option value="billing">Billing (default)</option>
+                <option value="dashboard">Dashboard</option>
+                <option value="last">Last page</option>
+                <option value="auto">Follow the role (cashier: Billing, owner/manager: Dashboard)</option>
+              </select>
+              <span className="muted small">
+                Which page opens after signing in. A page the signed-in role may not open is never
+                shown — the choice falls back to the role's own page.
+              </span>
+            </label>
+            <label className="field">
               <span>After picking a product, jump to quantity</span>
               <select
                 value={settings.jump_to_qty_after_pick === 'false' || settings.jump_to_qty_after_pick === '0' ? 'false' : 'true'}

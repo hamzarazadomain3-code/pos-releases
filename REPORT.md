@@ -1724,3 +1724,78 @@ else in Setup. Say the word if Invoice Designer should become owner-only.
 - `npm run test:keyboard` → 93/93, `npm run test:billingKeys` → 26/26, `npm run
   test:shortcuts` → 37/37, web smoke → PASS (21 nav buttons).
 - Typecheck + build: exit 0.
+
+---
+
+## Item 3 — the landing page after a login
+
+### The rule
+`src/shared/sidebarMenu.ts:246-249` — the role's own landing page:
+
+| Role | Lands on |
+|---|---|
+| cashier | Billing |
+| manager | Dashboard |
+| owner | Dashboard |
+
+`src/shared/sidebarMenu.ts:262-296` — `landingPageFor({role, setting, lastPage, allowedRoutes})`
+decides, in this order:
+
+1. the Setting says **Last page** and that page is one the role may open → that page;
+2. the Setting names **Billing** or **Dashboard** and the role may open it → that page;
+3. otherwise the **role rule**;
+4. a role that may open nothing lands on nothing.
+
+### The Setting
+**Settings → Billing → "Page to open after login"**:
+
+| Value | Effect |
+|---|---|
+| Billing | Billing, whoever signs in |
+| Dashboard | Dashboard, whoever may open it |
+| Last page | the page the user was last on (if the role may open it) |
+| Follow the role | cashier → Billing, owner/manager → Dashboard |
+
+The setting is a **shop** setting (`settings` table, key `page_after_login`).
+
+### OWNER DECISION — the default
+The brief asks for two things that pull in opposite directions: *"cashier ->
+Billing; owner and manager -> Dashboard"* (the role rule) and *"default
+unchanged for existing installs"*. Today **every** role lands on Billing, so a
+seeded role default would silently move every owner and manager to the
+Dashboard on upgrade.
+
+**Implemented so both hold**: migration `081_page_after_login.js` seeds
+**`page_after_login = 'billing'`** — an existing install notices nothing — and
+the role rule is reachable through the **"Follow the role"** choice. The decision
+function implements the role rule as the fallback whenever the setting is
+absent, empty or unknown.
+
+**Decide**: if you would rather every install follow the role from the start,
+change the one seeded value in `migrations/081_page_after_login.js` from
+`'billing'` to `'auto'`.
+
+### "Last page" needs the last page
+The renderer remembers it in `localStorage` under `pos_last_page`
+(`App.tsx:39-58`). Every read and write is wrapped in try/catch: a browser
+with storage blocked must not break the app, and the landing choice then falls
+back to the role rule.
+
+### The setting is read where it is needed
+`resolveLanding()` (`App.tsx:833-861`) reads the setting and the feature toggle
+**itself** instead of from component state, because the session restore runs on
+mount — before either has arrived. Both the login and the session-restore path
+use it.
+
+### Verification
+- `npm run test:sidebarLanding` → **22/22 passed** (`E:\temp\proof\sidebar_s3.txt`):
+  the role rule for all three roles, the Setting winning, a Setting naming a
+  page the role may not open falling back, "Last page" working and falling
+  back, "auto"/empty/missing/nonsense all following the role, an unknown role
+  landing on the first page it may open, and the seeded default keeping every
+  role on Billing.
+- Migration 081 ran in the keyboard test: `[migration 081] Added page_after_login
+  = billing (unchanged behaviour)`.
+- `npm run test:keyboard` → 93/93, `npm run test:billingKeys` → 26/26, `npm run
+  test:shortcuts` → 37/37, `test:sidebarMenu` → 42/42, `test:sidebarGuard` → 50/50.
+- Typecheck + build: exit 0.
