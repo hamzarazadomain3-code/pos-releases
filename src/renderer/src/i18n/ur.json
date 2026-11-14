@@ -34,6 +34,18 @@
     "money": "پیسے اور رپورٹس",
     "setup": "ترتیبات"
   },
+  "sidebar": {
+    "switchToEnglish": "English",
+    "switchToUrdu": "اردو",
+    "roleOwner": "مالک",
+    "roleManager": "منیجر",
+    "roleCashier": "کیشیئر",
+    "roleUser": "صارف",
+    "signOut": "سائن آؤٹ",
+    "collapse": "مینو بند کریں",
+    "expand": "مینو کھولیں",
+    "signedInAs": "سائن اِن: {{name}} — {{role}}"
+  },
   "buttons": {
     "save": "محفوظ کریں",
     "cancel": "منسوخ کریں",

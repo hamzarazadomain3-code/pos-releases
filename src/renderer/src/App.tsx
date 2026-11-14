@@ -7,6 +7,7 @@ import { initDateUtils, resetDateUtils } from './utils/dateUtils';
 import { KeyboardProvider } from './keyboard/KeyboardProvider';
 import { buildSidebar, canOpenRoute, landingPageFor, SIDEBAR_GROUPS, SIDEBAR_ITEMS } from '@shared/sidebarMenu';
 import { sidebarIconShapes } from '@shared/sidebarIcons';
+import { languageToggleLabelKey, languageToggleTarget, roleLabelKey, userDisplayName, userInitials } from '@shared/sidebarFooter';
 import {
   DEFAULT_GROUP_STATE,
   groupStateKey,
@@ -622,6 +623,10 @@ export default function App() {
  }, [user?.role, multiBranch, i18n.language, t]);
 
  // The flat list the keyboard layer and the page search use — the SAME items.
+ // The footer: the name and the letters in the little avatar.
+ const footerName = userDisplayName(user?.username);
+ const footerInitials = userInitials(user?.username);
+
  const activeNav = useMemo(
    () => navGroups.flatMap((g) => g.items.map((i) => ({ key: i.route, label: i.label }))),
    [navGroups]
@@ -1088,30 +1093,67 @@ export default function App() {
           })}
         </nav>
 
+        {/* ── The footer: who is signed in, the language, the sign-out, the
+            collapse. The old 🚪 emoji button is gone — an emoji is not a
+            button (it rendered as a picture on some systems and as a broken
+            box on others); the sign-out is a real button with a drawn icon. */}
         <div className="sidebar-bottom">
-          <button
-            className="sidebar-collapse-btn"
-            onClick={() => setSidebarOpen((o) => !o)}
-            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-            title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+          <div
+            className="sidebar-user"
+            aria-label={t('sidebar.signedInAs', {
+              name: footerName,
+              role: t(roleLabelKey(user?.role)),
+            })}
           >
-            <span className="collapse-glyph">{sidebarOpen ? '◀' : '▶'}</span>
-            <span className="nav-label collapse-label">Collapse</span>
-          </button>
-          <button
-            onClick={() => handleLanguageChange(i18n.language === 'en' ? 'ur' : 'en')}
-            aria-label={i18n.language === 'en' ? 'اردو (Urdu)' : 'English'}
-            className="urdu-btn-icon-only"
-          >
-            <span role="img" aria-label="urdu">اردو</span>
-          </button>
-          <button
-            onClick={handleLogout}
-            aria-label="Logout"
-            className="urdu-btn-icon-only"
-          >
-            🚪
-          </button>
+            <span className="sidebar-user-avatar" aria-hidden="true">{footerInitials}</span>
+            <span className="sidebar-user-info">
+              <span className="sidebar-user-name">{footerName}</span>
+              <span className="sidebar-user-role">{t(roleLabelKey(user?.role))}</span>
+            </span>
+          </div>
+
+          <div className="sidebar-bottom-actions">
+            <button
+              type="button"
+              className="sidebar-footer-btn"
+              onClick={() => handleLanguageChange(languageToggleTarget(i18n.language))}
+              aria-label={t(languageToggleLabelKey(i18n.language))}
+              title={t(languageToggleLabelKey(i18n.language))}
+            >
+              <span className="nav-label collapse-label">{t(languageToggleLabelKey(i18n.language))}</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M3 12h18" />
+                <path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18" />
+              </svg>
+            </button>
+
+            <button
+              type="button"
+              className="sidebar-footer-btn"
+              onClick={handleLogout}
+              aria-label={t('sidebar.signOut')}
+              title={t('sidebar.signOut')}
+            >
+              <span className="nav-label collapse-label">{t('sidebar.signOut')}</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+            </button>
+
+            <button
+              type="button"
+              className="sidebar-collapse-btn"
+              onClick={() => setSidebarOpen((o) => !o)}
+              aria-label={sidebarOpen ? t('sidebar.collapse') : t('sidebar.expand')}
+              title={sidebarOpen ? t('sidebar.collapse') : t('sidebar.expand')}
+            >
+              <span className="collapse-glyph" aria-hidden="true">{sidebarOpen ? '◀' : '▶'}</span>
+              <span className="nav-label collapse-label">{t('sidebar.collapse')}</span>
+            </button>
+          </div>
         </div>
       </aside>
 

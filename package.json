@@ -66,7 +66,8 @@
     "test:sidebarGuard": "npm run build:main && node scripts/test_sidebarGuard.cjs",
     "test:sidebarLanding": "npm run build:main && node scripts/test_sidebarLanding.cjs",
     "test:sidebarGroups": "npm run build:main && node scripts/test_sidebarGroups.cjs",
-    "test:sidebarIcons": "npm run build:main && node scripts/test_sidebarIcons.cjs"
+    "test:sidebarIcons": "npm run build:main && node scripts/test_sidebarIcons.cjs",
+    "test:sidebarFooter": "npm run build:main && node scripts/test_sidebarFooter.cjs"
   },
   "dependencies": {
     "bwip-js": "^4.11.2",

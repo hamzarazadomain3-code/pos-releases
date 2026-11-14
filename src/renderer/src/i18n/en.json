@@ -34,6 +34,18 @@
     "money": "Money and reports",
     "setup": "Setup"
   },
+  "sidebar": {
+    "switchToEnglish": "English",
+    "switchToUrdu": "اردو",
+    "roleOwner": "Owner",
+    "roleManager": "Manager",
+    "roleCashier": "Cashier",
+    "roleUser": "User",
+    "signOut": "Sign out",
+    "collapse": "Collapse the menu",
+    "expand": "Open the menu",
+    "signedInAs": "Signed in as {{name}} — {{role}}"
+  },
   "buttons": {
     "save": "Save",
     "cancel": "Cancel",
