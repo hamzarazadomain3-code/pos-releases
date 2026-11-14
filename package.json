@@ -73,7 +73,9 @@
     "test:sidebarSearch": "npm run build:main && node scripts/test_sidebarSearch.cjs",
     "test:sidebarBrand": "npm run build:main && node scripts/test_sidebarBrand.cjs",
     "test:layoutMode": "npm run build:main && node scripts/test_layoutMode.cjs",
-    "test:sidebarDrawer": "npm run build:main && node scripts/test_sidebarDrawer.cjs"
+    "test:sidebarDrawer": "npm run build:main && node scripts/test_sidebarDrawer.cjs",
+    "test:binaryTransfer": "npm run build:main && node scripts/test_binaryTransfer.cjs",
+    "test:webImport": "npm run build:main && electron scripts/test_webImport.js"
   },
   "dependencies": {
     "bwip-js": "^4.11.2",
