@@ -79,3 +79,21 @@ export function navAriaCurrent(item: SidebarItem | null | undefined, page: strin
 export function navCount(items: SidebarItem[] | null | undefined): number {
   return items?.length ?? 0;
 }
+
+/**
+ * The Ctrl+K palette filter — the pure rule.
+ *
+ * Matches the query against the page label and the page key, case-insensitive.
+ * An empty query returns every page unchanged (so the palette shows everything
+ * on open).
+ */
+export function filterPalettePages<T extends { key: string; label: string }>(
+  pages: T[] | null | undefined,
+  query: string | null | undefined
+): T[] {
+  const q = String(query ?? '').trim().toLowerCase();
+  if (!q) return (pages ?? []).slice();
+  return (pages ?? []).filter(
+    (p) => p.label.toLowerCase().includes(q) || p.key.toLowerCase().includes(q)
+  );
+}

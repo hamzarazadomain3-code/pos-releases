@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { Modal } from './Modal';
 import { useListKeyboard } from '../hooks/useListKeyboard';
+import { filterPalettePages } from '@shared/sidebarKeyboardNav';
 
 export interface PalettePage {
   key: string;
@@ -19,11 +20,7 @@ export function CommandPalette({
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return pages;
-    return pages.filter((p) => p.label.toLowerCase().includes(q) || p.key.toLowerCase().includes(q));
-  }, [pages, query]);
+  const filtered = useMemo(() => filterPalettePages(pages, query), [pages, query]);
 
   const list = useListKeyboard({
     count: filtered.length,
