@@ -384,6 +384,13 @@ export default function Billing({ onNavigate, onLogout }: BillingProps) {
   const [smsToSend, setSmsToSend] = useState('');
   /** WhatsApp: the number the receipt goes to (pre-filled from the customer). */
   const [whatsappPhoneToSend, setWhatsappPhoneToSend] = useState('');
+  /**
+   * Is WhatsApp usable at all HERE? The desktop app can always run the
+   * WhatsApp Web session; the browser build cannot (a browser and a Worker have
+   * no Chrome to pair), so it answers `available: false` and the send row is
+   * hidden instead of offering a button that cannot work.
+   */
+  const [whatsappAvailable, setWhatsappAvailable] = useState(true);
 
   // Enhancement: Favorites/pinned products
   const [favorites, setFavorites] = useState<number[]>([]);
@@ -1848,6 +1855,14 @@ useEffect(() => {
     const phone = selectedCustomer?.phone || success.sale.customer_phone || '';
     setWhatsappPhoneToSend(phone);
   }, [success?.sale?.id, selectedCustomer?.phone, success?.sale?.customer_phone]);
+
+  // Ask once whether WhatsApp can work here at all.
+  useEffect(() => {
+    window.api.whatsapp
+      .getStatus()
+      .then((s) => setWhatsappAvailable(s.available !== false))
+      .catch(() => setWhatsappAvailable(true));
+  }, []);
 
   // Load customer loyalty & auto-apply default discount when customer changes
   useEffect(() => {
@@ -3885,6 +3900,7 @@ const handleUnitChange = (newLevel: number) => {
                     alert(res.message);
                   }}>SMS</button>
                 </div>
+                {whatsappAvailable && (
                 <div className="modal-action-row">
                   <input
                     type="tel"
@@ -3911,6 +3927,7 @@ const handleUnitChange = (newLevel: number) => {
                     WhatsApp
                   </button>
                 </div>
+                )}
               <button className="btn btn-primary" onClick={newBill}>
                 New Bill
               </button>

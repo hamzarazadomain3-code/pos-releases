@@ -160,6 +160,30 @@ async function run() {
   }
   note('pages toured', toured);
 
+  // 5b. The web build must KNOW it is the web. WhatsApp is a Windows-app-only
+  //     feature (it needs a headless WhatsApp Web session, which neither a
+  //     browser nor a Worker can run), so the browser build hides the send row
+  //     and Settings says so instead of offering a QR code that can never
+  //     appear. Both sides read the same IS_WEB flag, so this proves the flag
+  //     is true at RUNTIME in the browser bundle.
+  await js(
+    `(() => { const b = Array.from(document.querySelectorAll('.sidebar-nav .nav-btn')).find(x => (x.dataset.label || '').toLowerCase().includes('settings')); if (b) b.click(); return !!b; })()`
+  );
+  await new Promise((r) => setTimeout(r, 1200));
+  const settingsText = await js(`(document.body.innerText || '').replace(/\\s+/g, ' ')`);
+  // innerText reflects the CSS text-transform, so the panel text arrives
+  // UPPERCASE — compare case-insensitively.
+  const lower = settingsText.toLowerCase();
+  const browserOnlyText = lower.includes('not available in the browser');
+  const windowsAppText = lower.includes('windows app');
+  const desktopOnlyText = lower.includes('connect your shop');
+  note('settings: WhatsApp needs the Windows app', browserOnlyText && windowsAppText);
+  note('settings: the desktop WhatsApp panel is NOT shown', !desktopOnlyText);
+  const whatsappRowInBundle = await js(`!!document.querySelector('.btn-whatsapp')`);
+  note('no WhatsApp send button rendered', !whatsappRowInBundle);
+  const waStatus = await js(`window.api.whatsapp.getStatus().then(s => JSON.stringify(s)).catch(e => 'ERR:' + e.message)`);
+  note('whatsapp status', waStatus);
+
   // 6. Web keyboard. A browser cannot receive Ctrl+Shift+S (Edge claims it for
   //    "Web capture", Firefox for "Take screenshot") — the keydown never reaches
   //    the page, so the bridge serves save+print as the browser-safe Ctrl+Alt+S.
@@ -221,6 +245,9 @@ async function run() {
   ok = ok && savePrint === 'Ctrl+Alt+S';
   ok = ok && /Ctrl\+Alt\+S save\+print/i.test(billingHint);
   ok = ok && ctrlAltS === true && ctrlShiftS === true && urduS === true;
+  ok = ok && browserOnlyText === true && windowsAppText === true;
+  ok = ok && desktopOnlyText === false;
+  ok = ok && whatsappRowInBundle === false;
   ok = ok && fatal.length === 0 && bootErrors.length === 0 && tdz.length === 0;
 
   if (fatal.length || bootErrors.length || tdz.length) {

@@ -698,6 +698,14 @@ export interface WhatsAppStatus {
   phone: string | null;
   qr: string | null;
   error: string | null;
+  /**
+   * False only where WhatsApp CANNOT work at all (the browser/web build:
+   * linking WhatsApp needs a headless WhatsApp Web session, which neither a
+   * browser nor a Worker can run). The desktop always reports true — even
+   * before the owner has linked their number — so the send button is still
+   * offered and the QR flow in Settings still makes sense.
+   */
+  available?: boolean;
 }
 
 export interface WhatsAppSendResult {

@@ -124,6 +124,15 @@ export function seedRendererSession(): void {
 
 const noop = (): void => {};
 
+/**
+ * WhatsApp receipts need a headless WhatsApp Web session, and only the WINDOWS
+ * app can run one (the Worker has no browser to drive and the browser version
+ * has no local Chrome to pair). Say so plainly instead of letting the desktop
+ * handler answer "scan the QR code" — there is no QR to scan in a browser.
+ */
+const WEB_WHATSAPP_MESSAGE =
+  'WhatsApp receipts need the Windows app — the browser version cannot link WhatsApp.';
+
 // ── Printing ────────────────────────────────────────────────────────────────
 // A browser cannot do Electron's hidden-print-window trick, but it can print an
 // HTML document. These channels are handled here: the worker builds the exact
@@ -346,6 +355,16 @@ async function webInvoke(channel: string, ...args: unknown[]): Promise<unknown> 
     case 'auth:refreshSession':
     case 'auth:currentUser':
       return currentUser();
+    // WhatsApp is a Windows-app-only feature (see WEB_WHATSAPP_MESSAGE).
+    // `available: false` is the RUNTIME truth the renderer reads: it hides the
+    // "send the bill on WhatsApp" row and tells the owner in Settings that the
+    // feature needs the Windows app. No build flag, nothing that can drift.
+    case 'whatsapp:status':
+    case 'whatsapp:start':
+      return { connected: false, phone: null, qr: null, error: WEB_WHATSAPP_MESSAGE, available: false };
+    case 'whatsapp:send':
+    case 'whatsapp:sendSaleReceipt':
+      return { ok: false, message: WEB_WHATSAPP_MESSAGE };
     // A browser cannot receive Ctrl+Shift+S (Edge claims it for "Web capture",
     // Firefox for "Take screenshot") — the keydown never reaches the page, so no
     // script can rescue it. Serve the browser-safe chord instead, keeping the

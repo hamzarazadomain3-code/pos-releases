@@ -1186,6 +1186,25 @@ export default function Settings() {
     <div className="panel" style={{ marginTop: 14 }}>
       <div className="panel-title">WhatsApp Receipt Alerts</div>
       <div className="settings-form">
+        {waStatus?.available === false ? (
+          <>
+            <p className="muted small">
+              WhatsApp receipts need the <strong>Windows app</strong>. The browser version cannot link
+              WhatsApp, because linking it requires running a WhatsApp Web session that a web browser
+              (or a web server) cannot do. Install the Windows app on the till PC to send receipts on
+              WhatsApp — everything else works the same here.
+            </p>
+            <div className="field">
+              <span>Status</span>
+              <div>
+                <span className="text-warn">
+                  <strong>Not available in the browser</strong> — use the Windows app for WhatsApp.
+                </span>
+              </div>
+            </div>
+          </>
+        ) : (
+        <>
         <p className="muted small">
           Connect your shop's WhatsApp to send receipts to customers as messages. Scan the QR below with
           WhatsApp (Menu → Linked Devices) once; the session stays logged in afterwards.
@@ -1264,6 +1283,8 @@ export default function Settings() {
             {waBusy ? 'Sending…' : 'Send Test Message'}
           </button>
         </div>
+        </>
+        )}
       </div>
     </div>
 

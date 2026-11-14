@@ -221,12 +221,16 @@ export function getWhatsAppStatus(): {
   phone: string | null;
   qr: string | null;
   error: string | null;
+  available: boolean;
 } {
   return {
     connected: !!whatsappClient,
     phone: readyPhone,
     qr: qrDataUrl,
     error: lastError,
+    // The desktop app can always run the WhatsApp Web session, so the feature
+    // is available even before the owner has linked their number.
+    available: true,
   };
 }
 

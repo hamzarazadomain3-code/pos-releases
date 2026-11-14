@@ -1379,3 +1379,86 @@ them:
 After a sale, the cashier sees **Email | SMS | WhatsApp** as three equal rows.
 WhatsApp is pre-filled with the customer's number, so "send the bill on WhatsApp"
 is one click.
+
+
+---
+
+## Same code on the web app (v2.27.0 on the Worker) — 2026-11-14
+
+### Request
+"ye version ka code rokar web app pe bhi update karo" — the Windows app's code
+should be on the **web app** (the browser build the Cloudflare Worker serves)
+too.
+
+### How the web build works
+The web app is **the same renderer**: `cloud/web-dist/app` is the desktop
+`src/renderer` built by `cloud/web/vite.config.mjs`, with ONE substitution —
+`electron` is aliased to `cloud/web/electron-browser.ts`, the browser stand-in
+that installs the real desktop preload's `window.api` and turns every
+`ipcRenderer.invoke(channel, …)` into a call to the Worker's `/api/rpc`, where
+the **identical desktop handler** runs in the shop's Durable Object.
+
+So the WhatsApp-on-a-sale feature, the jump-to-quantity, the branding and the
+wallpaper all reach the web app by rebuilding `cloud/web-dist`.
+
+### The one thing that does NOT work in a browser
+**WhatsApp.** Linking a shop's WhatsApp means running a headless WhatsApp Web
+session — `whatsapp-web.js` drives a real Chrome. A browser has no local
+Chrome to pair, and a Worker cannot drive a browser at all. The Worker even
+aliases `whatsapp-web.js` to an inert shim (`cloud/src/shims/whatsapp-web.ts`).
+
+Left alone, the web app would have offered a **"Send Test Message"** button and
+a **"scan the QR code"** panel that could never work — and the desktop handler
+would have answered *"scan the QR code first"*, which is nonsense in a browser.
+
+### Fix — the RUNTIME truth, not a build flag
+The web adapter now answers the WhatsApp channels itself:
+
+| Channel | Web answer |
+|---|---|
+| `whatsapp:status` / `whatsapp:start` | `{ connected:false, available:false, error:'WhatsApp receipts need the Windows app — the browser version cannot link WhatsApp.' }` |
+| `whatsapp:send` / `whatsapp:sendSaleReceipt` | `{ ok:false, message:<the same sentence> }` |
+
+`available: false` is the flag the renderer reads (`WhatsAppStatus.available`):
+
+- **Billing** — the WhatsApp row next to Email and SMS is **hidden** in the web
+  build (the desktop always reports `available: true`, so the row is still there
+  before the owner has even linked their number).
+- **Settings → WhatsApp Receipt Alerts** — instead of a QR code that can never
+  appear, the panel says plainly that the feature needs the Windows app.
+
+**Why not a build flag?** A `__IS_WEB__` define was tried first and rejected:
+Vite's `define` does **not** substitute an identifier inside a `typeof`
+expression, so the `typeof __IS_WEB__ !== 'undefined'` guard silently evaluated
+to `false` in the WEB build too — the browser would have shown the desktop
+WhatsApp panel. The runtime answer has no such trap: it is whatever the backend
+actually says, and the desktop and the web can never disagree about it.
+
+### Changes
+| File | Change |
+|---|---|
+| `cloud/web/electron-browser.ts` | The WhatsApp channels are answered in the browser with `available: false` and a plain-English message. |
+| `src/shared/types.ts` | `WhatsAppStatus.available?: boolean` — "WhatsApp cannot work here at all". |
+| `src/main/whatsapp-gateway.ts` | The desktop's `getWhatsAppStatus()` reports `available: true` (the app can always run the session). |
+| `src/renderer/src/pages/Billing.tsx` | Reads the status once; hides the WhatsApp row when `available === false`. |
+| `src/renderer/src/pages/Settings.tsx` | Shows the "needs the Windows app" panel instead of the QR panel when `available === false`. |
+| `cloud/scripts/web-smoke-main.cjs` | New web assertions: Settings shows the browser message, the desktop WhatsApp panel is NOT shown, and no WhatsApp button is rendered. |
+
+### Verification
+- **Web smoke** (`npm run smoke:web` in `cloud/`): **PASS** — including the new
+  checks: `settings: WhatsApp needs the Windows app: true`,
+  `settings: the desktop WhatsApp panel is NOT shown: true`,
+  `no WhatsApp send button rendered: true`, and
+  `whatsapp status: {… "available":false}`.
+- **Cloud unit suite**: **111/111 passed**.
+- **Desktop** (unchanged behaviour): `test:whatsappReceipt` 16/16,
+  `test:keyboard` 93/93, `test:billingKeys` 26/26, `test:wallpaper` 13/13.
+- **Typecheck + build**: exit 0.
+- **Deployed**: `https://rokar-pos.bakery-saas.workers.dev` (live bundle reports
+  version **2.27.0** and carries the browser-only WhatsApp text).
+
+### Result
+The web app now runs the same v2.27.0 code as the Windows app — the branding,
+the wallpaper, jump-to-quantity and the WhatsApp-on-a-sale row are all there —
+except that the WhatsApp parts say plainly *"this needs the Windows app"*
+instead of offering a button that cannot work.
