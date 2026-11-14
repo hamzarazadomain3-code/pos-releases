@@ -1462,3 +1462,102 @@ The web app now runs the same v2.27.0 code as the Windows app — the branding,
 the wallpaper, jump-to-quantity and the WhatsApp-on-a-sale row are all there —
 except that the WhatsApp parts say plainly *"this needs the Windows app"*
 instead of offering a button that cannot work.
+
+---
+
+# Sidebar + mobile run (2026-11-14) — STRICT BUILD
+
+Branch: `feature/sidebar` (cut from `feature/customer-discount` @ `b3be927`).
+No release, no version bump, no push, no deploy.
+
+## STEP 0 — the sidebar as it is today
+
+### Where the menu lives
+| What | Where |
+|---|---|
+| The nav item list | `src/renderer/src/App.tsx:176-200` (`ALL_NAV`) |
+| The role filter | `src/renderer/src/App.tsx:202` (`ROLE_RANK`), `App.tsx:214-216` (`navFor`) |
+| The feature filter | `App.tsx:607-610` (Branches only when `multi_branch` is on) |
+| The icons | `App.tsx:42-67` (`NAV_ICONS`, inline SVG) |
+| The markup | `App.tsx:940-987` (`.sidebar` -> `.sidebar-brand` / `.sidebar-nav` / `.sidebar-bottom`) |
+| The CSS | `src/renderer/src/styles.css:304-560` (main block) and `5487-5502` (a second `.sidebar.collapsed` block) |
+| The i18n labels | `src/renderer/src/i18n/en.json` and `ur.json` -> `navigation.*` |
+
+### The permission model that exists today (NOT to be duplicated)
+| Where | What |
+|---|---|
+| `src/main/services/auth.ts:21` | `RANK = { cashier: 1, manager: 2, owner: 3 }` |
+| `src/main/services/auth.ts:58-61` | `can(required: UserRole)` — the **security guard**, used by every owner-gated IPC handler |
+| `src/renderer/src/App.tsx:202` | `ROLE_RANK` — a **second copy** of the same rank map, used only to hide menu links |
+| `src/shared/types.ts:137` | `UserRole = 'owner' \| 'manager' \| 'cashier'` — **only three roles exist**; there is no "inventory manager" role |
+| `src/main/services/admin.ts:113` | `isFeatureEnabled(name)` -> `feature_toggles` table (`multi_branch`) |
+
+`admin_roles` / `admin_role_permissions` (`src/main/services/admin.ts:138-200`) are a
+**separate** concept: custom roles for the Admin Panel's own role editor. They are
+not the POS user's role and are not a sidebar permission source.
+
+### Every current sidebar item, its route and who can open it today
+`ALL_NAV` order is exactly the order the buttons render.
+
+| # | Route (`NavPage`) | i18n key | EN label | UR label | Icon id | Min role today | Who sees it today |
+|---|---|---|---|---|---|---|---|
+| 1 | `billing` | `navigation.billing` | Billing | بلنگ | `billing` | cashier | owner, manager, cashier |
+| 2 | `dashboard` | `navigation.dashboard` | Dashboard | ڈیشبورڈ | `dashboard` | manager | owner, manager |
+| 3 | `inventory` | `navigation.inventory` | Inventory | انوینٹری | `inventory` | manager | owner, manager |
+| 4 | `branches` | `navigation.branches` | Branches | برانچیز | `branches` | owner | owner **only with `multi_branch` enabled** |
+| 5 | `quickSale` | `navigation.quickSale` | Quick Sale | فوری فروخت | `quickSale` | cashier | owner, manager, cashier |
+| 6 | `transfers` | `navigation.transfers` | Transfers | ٹرانسفر | `transfers` | manager | owner, manager |
+| 7 | `quotations` | `navigation.quotations` | Quotations | کوٹیشنز | `quotations` | manager | owner, manager |
+| 8 | `invoiceAdmin` | `navigation.invoiceAdmin` | Invoice Designer | انوائس ڈیزائنر | `invoiceAdmin` | manager | owner, manager |
+| 9 | `labelStudio` | `navigation.labelStudio` | Label Studio | (missing in ur.json) | `labelStudio` | manager | owner, manager |
+| 10 | `audits` | `navigation.audits` | Audits | آڈٹ | `audits` | manager | owner, manager |
+| 11 | `promotions` | `navigation.promotions` | Promotions | پروموشنز | `promotions` | manager | owner, manager |
+| 12 | `purchases` | `navigation.purchases` | Purchases | خرییدے | `purchases` | manager | owner, manager |
+| 13 | `udhaar` | `navigation.udhaar` | Udhaar | ادھار | `udhaar` | manager | owner, manager |
+| 14 | `returns` | `navigation.returns` | Returns | ریٹرنز | `returns` | manager | owner, manager |
+| 15 | `shifts` | `navigation.shifts` | Shifts | شفٹس | `shifts` | manager | owner, manager |
+| 16 | `reports` | `navigation.reports` | Reports | ریپورٹس | `reports` | manager | owner, manager |
+| 17 | `expenses` | `navigation.expenses` | Expenses | اخراجات | `expenses` | manager | owner, manager |
+| 18 | `commissions` | `navigation.commissions` | Commissions | کمیشن | `commissions` | manager | owner, manager |
+| 19 | `customReports` | `navigation.customReports` | Custom Reports | حسب ضرورت ریپورٹس | `customReports` | manager | owner, manager |
+| 20 | `fifoStock` | `navigation.fifoStock` | FIFO Stock Report | FIFO اسٹاک رپورٹ | `fifoStock` | manager | owner, manager |
+| 21 | `settings` | `navigation.settings` | Settings | ترتیبات | `settings` | owner | owner |
+| 22 | `users` | `navigation.users` | Users | صارفین | `users` | owner | owner |
+| 23 | `admin` | `navigation.admin` | Admin Panel | ایڈمن پینل | `admin` | owner | owner |
+
+Counts today: **cashier 2**, **manager 19**, **owner 22** (23 with `multi_branch` on).
+
+### Routes in the type that are NOT in the sidebar
+| Route | Why |
+|---|---|
+| `barcode` | The former Barcode Labels page now lives inside Label Studio as its "Quick" mode (`src/renderer/src/pages/Labels.tsx`); the route stays in `NavPage` for the deep link. |
+
+### Findings that the redesign must not paper over
+1. **No renderer-side route guard.** The menu hides links, but `setPage(key)`
+   (`App.tsx:951-952`) is reachable from the keyboard layer, the command palette
+   and any other path, and the page renders regardless of role. The **main**
+   process guards the *actions* with `can()`, so a cashier cannot change a
+   setting — but the cashier CAN open the Settings / Users / Admin Panel page.
+   -> Item 2 must close this in the guard, not in the menu.
+2. **Duplicate icons.** `quotations` and `invoiceAdmin` use the *same* document
+   SVG (`App.tsx:50` and `App.tsx:66`); `commissions` and `users` use the *same*
+   people SVG (`App.tsx:60` and `App.tsx:64`); `customReports` uses an
+   upload/download arrow (`App.tsx:61`).
+3. **Broken footer button.** `.sidebar-bottom` (`App.tsx:962-986`) holds three
+   buttons: Collapse, an Urdu text button, and a **logout button whose only
+   content is the door emoji** (`App.tsx:984`) — that emoji is the "second purple
+   button with a broken orange mark and no label" (the emoji renders in colour
+   on the purple/emerald footer).
+4. **Hardcoded brand text.** `App.tsx:945` renders the literal `Rokar` instead
+   of the shop profile name.
+5. **Two CSS blocks** for the same sidebar (`styles.css:304-560` and
+   `5487-5502`); the second one styles a `.sidebar.collapsed` class that the
+   markup never uses (the markup uses `.sidebar.open` / `.sidebar.expanded`).
+6. **The web `index.html` viewport** (`cloud/web/index.html:4`) is
+   `width=device-width, initial-scale=1.0` — it is **missing
+   `viewport-fit=cover`** (needed for the phone safe-area inset, Item 10b.4).
+   It correctly has no `maximum-scale` and no `user-scalable=no`.
+7. **`Ctrl+K` already exists** as the global `command_palette` action
+   (`src/shared/shortcuts.ts:72`) with a real `CommandPalette` component
+   (`src/renderer/src/components/CommandPalette.tsx`) fed by the pages the
+   KeyboardProvider already has. Item 9 must **reuse** it, not add a second one.

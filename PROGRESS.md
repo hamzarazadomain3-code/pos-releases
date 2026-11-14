@@ -23,3 +23,23 @@ One row per work item. Status is DONE only with code + a test that imports real 
 | M — WhatsApp bill after a sale (v2.27.0) | DONE | `Billing.tsx` new whatsappPhoneToSend state + pre-fill effect (customer phone / sale.customer_phone) + a WhatsApp `.modal-action-row` (input + btn-whatsapp) next to the Email and SMS rows; the old one-off "WhatsApp Receipt" button removed; `styles.css` `.btn-whatsapp` (#1f9d55); new `scripts/test_whatsapp_receipt_ui.js`; `package.json` version 2.26.0 -> 2.27.0 + script `test:whatsappReceipt`; site `content.json` 2.27.0 + changelog | `test:whatsappReceipt` **16/16** (button exists, sits in an input row like Email/SMS, Email + SMS rows intact, number pre-filled with the customer phone, button enabled, number editable); `test:keyboard` 93/93; `test:billingKeys` 26/26 (3/3 green); `test:shortcuts` 37/37; `test:qtyJump` 7/7; `test:whatsappRecovery` 15/15; typecheck+build exit 0; `npm run verify:release -- v2.27.0` 9/9 | E:\temp\proof\wa_receipt_ui.txt, release_verify_2.27.0.txt | <commit-hash-after-push> |
 
 | N — web app on the same code (v2.27.0 on the Worker) | DONE (UI PARTIAL) | `cloud/web/electron-browser.ts` answers the whatsapp channels in the browser with `available:false` + a plain-English message; `shared/types.ts` `WhatsAppStatus.available?`; `src/main/whatsapp-gateway.ts` reports `available:true` on the desktop; `Billing.tsx` hides the WhatsApp row when unavailable; `Settings.tsx` shows "needs the Windows app" instead of the QR panel; `cloud/scripts/web-smoke-main.cjs` new web assertions | web smoke **PASS** (settings says "Windows app": true, desktop WhatsApp panel NOT shown: true, no WhatsApp button: true, status available:false); cloud suite **111/111**; desktop test:whatsappReceipt 16/16, test:keyboard 93/93, test:billingKeys 26/26, test:wallpaper 13/13; typecheck+build exit 0; live bundle = 2.27.0 | E:\temp\proof\wa_receipt_ui.txt | <commit-hash-after-push> |
+
+---
+
+# Sidebar + mobile run (branch `feature/sidebar`, from `b3be927`)
+
+| Item | Status | File:line | Test | Proof | Commit |
+|---|---|---|---|---|---|
+| S0 — record the sidebar as it is today | DONE | `REPORT.md` "Sidebar + mobile run / STEP 0"; sources `App.tsx:42-67,176-216,607-610,940-987`, `auth.ts:21,58-61`, `admin.ts:113,138-200`, `styles.css:304-560,5487-5502`, `shortcuts.ts:72`, `cloud/web/index.html:4` | report only (no behaviour) | E:\temp\proof\sidebar_s0.txt | (this commit) |
+| S1 — single menu definition + groups | NOT STARTED | `src/shared/sidebarMenu.ts` (to create) | test:sidebarMenu | E:\temp\proof\sidebar_s1.txt | — |
+| S2 — role-aware menu, route guards stay | NOT STARTED | — | test:sidebarGuard | E:\temp\proof\sidebar_s2.txt | — |
+| S3 — landing page per role | NOT STARTED | — | test:sidebarLanding | E:\temp\proof\sidebar_s3.txt | — |
+| S4 — collapsible groups + remembered state | NOT STARTED | — | test:sidebarGroups | E:\temp\proof\sidebar_s4.txt | — |
+| S5 — visual redesign | NOT STARTED | — | (pure fn only; UI = PARTIAL) | E:\temp\proof\sidebar_s5.txt | — |
+| S6 — footer fix (broken button) | NOT STARTED | `App.tsx:962-986` | test:sidebarFooter | E:\temp\proof\sidebar_s6.txt | — |
+| S7 — badges (live counts) | NOT STARTED | — | test:sidebarBadges | E:\temp\proof\sidebar_s7.txt | — |
+| S8 — shortcut hints + keyboard navigation | NOT STARTED | — | test:sidebarKeys | E:\temp\proof\sidebar_s8.txt | — |
+| S9 — quick page search (Ctrl+K) | NOT STARTED | `shortcuts.ts:72` (command_palette exists) | test:sidebarSearch | E:\temp\proof\sidebar_s9.txt | — |
+| S10 — brand header and polish | NOT STARTED | `App.tsx:943-946` | test:sidebarBrand | E:\temp\proof\sidebar_s10.txt | — |
+| S10b — mobile and tablet friendly | NOT STARTED | `cloud/web/index.html:4` | test:sidebarMobile | E:\temp\proof\sidebar_s10b.txt | — |
+| S11 — proof (every suite) | NOT STARTED | — | all suites | E:\temp\proof\final_* | — |
