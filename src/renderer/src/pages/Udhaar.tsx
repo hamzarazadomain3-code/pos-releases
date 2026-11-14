@@ -104,12 +104,18 @@ export default function Udhaar() {
 
   async function exportCustomers() {
     try {
-      const ok = await window.api.excel.exportCustomers({
+      const res = await window.api.excel.exportCustomers({
         status: status === 'all' ? undefined : status,
         from: from || undefined,
         to: to || undefined,
       });
-      if (ok) flash('Customer list exported to Excel.');
+      if (res instanceof Uint8Array) {
+        const { downloadBytes } = await import('../utils/download');
+        downloadBytes(res, 'customers.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        flash('Customer list exported to Excel.');
+      } else if (res) {
+        flash('Customer list exported to Excel.');
+      }
     } catch (e) {
       fail(e);
     }

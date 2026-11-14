@@ -1594,13 +1594,13 @@ export interface PosBridge {
     ) => Promise<boolean>;
   };
   excel: {
-    exportProducts: (filters?: { search?: string; includeInactive?: boolean; categoryId?: number; stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock'; supplierId?: number; expiryFrom?: string; expiryTo?: string }) => Promise<boolean>;
-    exportSales: (from?: string, to?: string) => Promise<boolean>;
-    exportCustomers: (filters?: { status?: 'paid' | 'pending' | 'all'; from?: string; to?: string }) => Promise<boolean>;
-    exportUdhaarStatement: (customerId: number, from?: string, to?: string) => Promise<boolean>;
-    exportPurchaseOrders: (filters?: { status?: string; from?: string; to?: string; supplierId?: number }) => Promise<boolean>;
-    exportExpenses: (from?: string, to?: string) => Promise<boolean>;
-    downloadTemplate: () => Promise<boolean>;
+    exportProducts: (filters?: { search?: string; includeInactive?: boolean; categoryId?: number; stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock'; supplierId?: number; expiryFrom?: string; expiryTo?: string }) => Promise<boolean | Uint8Array>;
+    exportSales: (from?: string, to?: string) => Promise<boolean | Uint8Array>;
+    exportCustomers: (filters?: { status?: 'paid' | 'pending' | 'all'; from?: string; to?: string }) => Promise<boolean | Uint8Array>;
+    exportUdhaarStatement: (customerId: number, from?: string, to?: string) => Promise<boolean | Uint8Array>;
+    exportPurchaseOrders: (filters?: { status?: string; from?: string; to?: string; supplierId?: number }) => Promise<boolean | Uint8Array>;
+    exportExpenses: (from?: string, to?: string) => Promise<boolean | Uint8Array>;
+    downloadTemplate: () => Promise<boolean | Uint8Array>;
     importProducts: () => Promise<ProductImportResult | null>;
     importProductsFromData: (data: Uint8Array) => Promise<ProductImportResult>;
   };

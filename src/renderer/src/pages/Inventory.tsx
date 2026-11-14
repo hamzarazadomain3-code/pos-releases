@@ -10,6 +10,7 @@ import { ImageField } from '../components/ImageField';
 import { DateInput } from '../components/DateInput';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
+import { downloadBytes } from '../utils/download';
 
 interface ProductBatch {
   id: number;
@@ -438,7 +439,7 @@ export default function Inventory() {
 
   async function handleExport() {
     try {
-      const ok = await window.api.excel.exportProducts({
+      const res = await window.api.excel.exportProducts({
         search: search || undefined,
         includeInactive: false,
         categoryId: categoryId || undefined,
@@ -447,7 +448,12 @@ export default function Inventory() {
         expiryFrom: expiryFrom || undefined,
         expiryTo: expiryTo || undefined,
       });
-      if (ok) setNotice('Inventory exported to Excel.');
+      if (res instanceof Uint8Array) {
+        downloadBytes(res, 'products.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        setNotice('Inventory exported to Excel.');
+      } else if (res) {
+        setNotice('Inventory exported to Excel.');
+      }
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
     }
@@ -455,7 +461,12 @@ export default function Inventory() {
 
   async function handleTemplate() {
     try {
-      await window.api.excel.downloadTemplate();
+      const res = await window.api.excel.downloadTemplate();
+      if (res instanceof Uint8Array) {
+        downloadBytes(res, 'product-template.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      } else if (res) {
+        setNotice('Template downloaded.');
+      }
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
     }

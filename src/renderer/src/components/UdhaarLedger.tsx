@@ -179,8 +179,14 @@ export function UdhaarLedgerModal({ customerId, onClose, onChanged }: UdhaarLedg
   async function exportExcel() {
     if (!data) return;
     try {
-      const ok = await window.api.excel.exportUdhaarStatement(data.customer.id, from || undefined, to || undefined);
-      if (ok) setNotice('Statement exported to Excel.');
+      const res = await window.api.excel.exportUdhaarStatement(data.customer.id, from || undefined, to || undefined);
+      if (res instanceof Uint8Array) {
+        const { downloadBytes } = await import('../utils/download');
+        downloadBytes(res, 'udhaar-statement.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        setNotice('Statement exported to Excel.');
+      } else if (res) {
+        setNotice('Statement exported to Excel.');
+      }
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
     }

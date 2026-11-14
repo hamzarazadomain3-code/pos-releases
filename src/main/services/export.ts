@@ -32,13 +32,15 @@ export async function saveCsv(
   defaultName: string,
   headers: string[],
   rows: (string | number)[][]
-): Promise<boolean> {
-  const { canceled, filePath } = await dialog.showSaveDialog(win ?? undefined!, {
+): Promise<boolean | Uint8Array> {
+  const buffer = buildCsvBuffer(headers, rows);
+  // Web build: no native save dialog — hand the bytes back so the browser can download them.
+  if (!win) return new Uint8Array(buffer);
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
     defaultPath: defaultName,
     filters: [{ name: 'CSV', extensions: ['csv'] }],
   });
   if (canceled || !filePath) return false;
-  const buffer = buildCsvBuffer(headers, rows);
   fs.writeFileSync(filePath, buffer);
   return true;
 }
@@ -59,20 +61,23 @@ function toDateValue(v: unknown): string | null {
   return isNaN(d.getTime()) ? null : formatDateYMD(d);
 }
 
-export function saveXlsx(win: BrowserWindow | null, defaultName: string, sheets: XlsxSheet[]): Promise<boolean> {
+export function saveXlsx(win: BrowserWindow | null, defaultName: string, sheets: XlsxSheet[]): Promise<boolean | Uint8Array> {
   return (async () => {
-    const { canceled, filePath } = await dialog.showSaveDialog(win ?? undefined!, {
-      defaultPath: defaultName,
-      filters: [{ name: 'Excel Workbook', extensions: ['xlsx'] }],
-    });
-    if (canceled || !filePath) return false;
     const wb = XLSX.utils.book_new();
     for (const s of sheets) {
       const ws = XLSX.utils.aoa_to_sheet([s.headers, ...s.rows]);
       ws['!cols'] = s.headers.map((h) => ({ wch: Math.max(10, Math.min(40, h.length + 6)) }));
       XLSX.utils.book_append_sheet(wb, ws, s.name.slice(0, 31));
     }
-    XLSX.writeFile(wb, filePath);
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+    // Web build: no native save dialog — hand the bytes back so the browser can download them.
+    if (!win) return new Uint8Array(buffer);
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+      defaultPath: defaultName,
+      filters: [{ name: 'Excel Workbook', extensions: ['xlsx'] }],
+    });
+    if (canceled || !filePath) return false;
+    fs.writeFileSync(filePath, buffer);
     return true;
   })();
 }
@@ -86,7 +91,7 @@ export function exportProductsXlsx(
   supplierId?: number,
   expiryFrom?: string,
   expiryTo?: string
-): Promise<boolean> {
+): Promise<boolean | Uint8Array> {
   const products = listProducts(search, includeInactive, categoryId, stockStatus, supplierId, expiryFrom, expiryTo);
   return saveXlsx(win, 'products.xlsx', [
     {
@@ -114,7 +119,7 @@ export function exportProductsXlsx(
   ]);
 }
 
-export function exportSalesXlsx(win: BrowserWindow | null, from?: string, to?: string): Promise<boolean> {
+export function exportSalesXlsx(win: BrowserWindow | null, from?: string, to?: string): Promise<boolean | Uint8Array> {
   const sales = listSales(from, to);
   return saveXlsx(win, 'sales-report.xlsx', [
     {
@@ -139,7 +144,7 @@ export function exportSalesXlsx(win: BrowserWindow | null, from?: string, to?: s
   ]);
 }
 
-export function exportCustomersXlsx(win: BrowserWindow | null, status?: 'paid' | 'pending' | 'all', from?: string, to?: string): Promise<boolean> {
+export function exportCustomersXlsx(win: BrowserWindow | null, status?: 'paid' | 'pending' | 'all', from?: string, to?: string): Promise<boolean | Uint8Array> {
   const customers = listCustomers(status, from, to);
   return saveXlsx(win, 'customers.xlsx', [
     {
@@ -156,7 +161,7 @@ export function exportUdhaarStatementXlsx(
   customerId: number,
   from?: string,
   to?: string
-): Promise<boolean> {
+): Promise<boolean | Uint8Array> {
   const { ledger, statement } = getUdhaarStatement(customerId, from, to);
   const particulars = (type: string, amount: number, saleId: number | null, invoice: string | null, note: string | null): string => {
     if (amount < 0) return `Payment (${type.split(':')[1] || 'Cash'})${note ? ` — ${note}` : ''}`;
@@ -199,7 +204,7 @@ export function exportUdhaarStatementXlsx(
 }
 
 /** Export the Udhaar item catalog as `barcode,name,price,unit` CSV. */
-export function exportUdhaarCatalogCsv(win: BrowserWindow | null): Promise<boolean> {
+export function exportUdhaarCatalogCsv(win: BrowserWindow | null): Promise<boolean | Uint8Array> {
   const rows = listUdhaarCatalog().map((c) => [c.barcode ?? '', c.name, c.price, c.unit ?? '']);
   return saveCsv(win, 'udhaar-catalog.csv', ['barcode', 'name', 'price', 'unit'], rows);
 }
@@ -224,7 +229,7 @@ export function importUdhaarCatalogCsv(win: BrowserWindow | null): Promise<{ ok:
   })();
 }
 
-export function exportPurchaseOrdersXlsx(win: BrowserWindow | null, status?: string, from?: string, to?: string, supplierId?: number): Promise<boolean> {
+export function exportPurchaseOrdersXlsx(win: BrowserWindow | null, status?: string, from?: string, to?: string, supplierId?: number): Promise<boolean | Uint8Array> {
   const orders = listPurchaseOrders(status, from, to, supplierId);
   const orderRows = orders.map((o) => [o.id, o.created_at ?? '', o.supplier_name ?? '', o.status, o.total_amount]);
   const itemRows: (string | number | null)[][] = [];
@@ -241,7 +246,7 @@ export function exportPurchaseOrdersXlsx(win: BrowserWindow | null, status?: str
   ]);
 }
 
-export function exportExpensesXlsx(win: BrowserWindow | null, from?: string, to?: string): Promise<boolean> {
+export function exportExpensesXlsx(win: BrowserWindow | null, from?: string, to?: string): Promise<boolean | Uint8Array> {
   const expenses = listExpenses(from, to);
   return saveXlsx(win, 'expenses.xlsx', [
     {
@@ -252,7 +257,7 @@ export function exportExpensesXlsx(win: BrowserWindow | null, from?: string, to?
   ]);
 }
 
-export function downloadProductTemplate(win: BrowserWindow | null): Promise<boolean> {
+export function downloadProductTemplate(win: BrowserWindow | null): Promise<boolean | Uint8Array> {
   const categories = listCategories().map((c) => c.name).join(', ');
   const units = listUnits().map((u) => u.name).join(', ');
   return saveXlsx(win, 'product-import-template.xlsx', [

@@ -399,7 +399,20 @@ export default function Purchases() {
               </select>
             </FilterRow>
             <FilterRow style={{ justifyContent: 'flex-end' }}>
-              <button className="btn btn-sm" onClick={() => window.api.excel.exportPurchaseOrders({ status: status || undefined, from: from || undefined, to: to || undefined, supplierId: supplierId || undefined }).catch((e) => setErr(String(e)))}>
+              <button
+  className="btn btn-sm"
+  onClick={async () => {
+    try {
+      const res = await window.api.excel.exportPurchaseOrders({ status: status || undefined, from: from || undefined, to: to || undefined, supplierId: supplierId || undefined });
+      if (res instanceof Uint8Array) {
+        const { downloadBytes } = await import('../utils/download');
+        downloadBytes(res, 'purchase-orders.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      }
+    } catch (e) {
+      setErr(String(e));
+    }
+  }}
+>
                 Export Excel
               </button>
               {undoInfo && (

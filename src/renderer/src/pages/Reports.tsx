@@ -1317,7 +1317,20 @@ export default function Reports() {
           <div className="panel">
             <div className="panel-title">
               Expenses ({from} → {to})
-              <button className="btn btn-sm" onClick={() => window.api.excel.exportExpenses(from, to)}>
+              <button
+  className="btn btn-sm"
+  onClick={async () => {
+    try {
+      const res = await window.api.excel.exportExpenses(from, to);
+      if (res instanceof Uint8Array) {
+        const { downloadBytes } = await import('../utils/download');
+        downloadBytes(res, 'expenses.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }}
+>
                 Export Excel
              </button>
            </div>
