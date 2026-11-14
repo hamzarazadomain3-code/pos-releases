@@ -407,6 +407,55 @@ body.theme-dark ::-webkit-scrollbar-thumb:hover {
   overflow-y: auto;
 }
 
+/* ── Sidebar groups ────────────────────────────────────────────────────────
+   A group is a heading plus its items. The heading is small, muted and
+   upper-case in English; Urdu stays in its natural case (the app switches
+   `text-transform` off for RTL below). */
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.nav-group-separated {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.nav-group-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  padding: 8px 12px 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Urdu reads right-to-left: keep the natural case and the reading order. */
+[dir='rtl'] .nav-group-title {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Collapsed (icon-only) mode: the headings are not shown at all — an empty
+   label row would only take space. */
+.sidebar.collapsed .nav-group-title,
+.sidebar:not(.open):not(.expanded) .nav-group-title {
+  display: none;
+}
+
+.sidebar.collapsed .nav-group,
+.sidebar:not(.open):not(.expanded) .nav-group {
+  margin-bottom: 0;
+}
+
 .nav-btn {
   display: flex;
   align-items: center;

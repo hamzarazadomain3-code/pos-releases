@@ -61,7 +61,8 @@
     "verify:release": "node scripts/verify_release.cjs",
     "test:whatsappRecovery": "npm run build:main && node scripts/test_whatsappRecovery.cjs",
     "test:whatsappReceipt": "npm run build && electron scripts/test_whatsapp_receipt_ui.js",
-    "test:qtyJump": "npm run build:main && node scripts/test_qtyJump.cjs"
+    "test:qtyJump": "npm run build:main && node scripts/test_qtyJump.cjs",
+    "test:sidebarMenu": "npm run build:main && node scripts/test_sidebarMenu.cjs"
   },
   "dependencies": {
     "bwip-js": "^4.11.2",

@@ -24,7 +24,15 @@
     "quickSale": "فوری فروخت",
     "transfers": "ٹرانسفر",
     "fifoStock": "FIFO اسٹاک رپورٹ",
+    "labelStudio": "لیبل اسٹوڈیو",
     "admin": "ایڈمن پینل"
+  },
+  "sidebarGroups": {
+    "daily": "روزمرہ کام",
+    "stock": "اسٹاک",
+    "sales": "فروخت اور مارکیٹنگ",
+    "money": "پیسے اور رپورٹس",
+    "setup": "ترتیبات"
   },
   "buttons": {
     "save": "محفوظ کریں",

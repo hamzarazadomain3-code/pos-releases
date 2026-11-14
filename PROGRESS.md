@@ -31,7 +31,7 @@ One row per work item. Status is DONE only with code + a test that imports real 
 | Item | Status | File:line | Test | Proof | Commit |
 |---|---|---|---|---|---|
 | S0 — record the sidebar as it is today | DONE | `REPORT.md` "Sidebar + mobile run / STEP 0"; sources `App.tsx:42-67,176-216,607-610,940-987`, `auth.ts:21,58-61`, `admin.ts:113,138-200`, `styles.css:304-560,5487-5502`, `shortcuts.ts:72`, `cloud/web/index.html:4` | report only (no behaviour) | E:\temp\proof\sidebar_s0.txt | (this commit) |
-| S1 — single menu definition + groups | NOT STARTED | `src/shared/sidebarMenu.ts` (to create) | test:sidebarMenu | E:\temp\proof\sidebar_s1.txt | — |
+| S1 — single menu definition + groups | DONE | `src/shared/sidebarMenu.ts` (the ONE menu: 5 groups, 24 items, `buildSidebar()`, `mobilePinnedFor()`, `ROUTES_NOT_IN_SIDEBAR`); `src/shared/roles.ts` (the ONE rank map, now shared by the main guard and the renderer); `src/main/services/auth.ts:58` `can()` now reads the shared rank; `src/renderer/src/App.tsx` renders the groups from `buildSidebar()`; `src/renderer/src/i18n/en.json` + `ur.json` gained `sidebarGroups.*` | `test:sidebarMenu` **42/42** (per-role items, no duplicates, route coverage, feature gating, narrowing-only permissions, unknown roles, bottom-bar picker) | E:\temp\proof\sidebar_s1.txt, sidebar_s1_keyboard.txt, sidebar_s1_shortcuts.txt | (next commit) |
 | S2 — role-aware menu, route guards stay | NOT STARTED | — | test:sidebarGuard | E:\temp\proof\sidebar_s2.txt | — |
 | S3 — landing page per role | NOT STARTED | — | test:sidebarLanding | E:\temp\proof\sidebar_s3.txt | — |
 | S4 — collapsible groups + remembered state | NOT STARTED | — | test:sidebarGroups | E:\temp\proof\sidebar_s4.txt | — |

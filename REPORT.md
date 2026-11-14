@@ -1561,3 +1561,85 @@ Counts today: **cashier 2**, **manager 19**, **owner 22** (23 with `multi_branch
    (`src/shared/shortcuts.ts:72`) with a real `CommandPalette` component
    (`src/renderer/src/components/CommandPalette.tsx`) fed by the pages the
    KeyboardProvider already has. Item 9 must **reuse** it, not add a second one.
+
+---
+
+## Item 1 — the single menu definition + groups
+
+### What was built
+`src/shared/sidebarMenu.ts` is now the **only** list of pages in the app.
+
+| Piece | Where |
+|---|---|
+| The menu (5 groups, 24 items) | `src/shared/sidebarMenu.ts:36-108` (`SIDEBAR_GROUPS`) |
+| Every item, flattened | `src/shared/sidebarMenu.ts:113` (`SIDEBAR_ITEMS`) |
+| The routes deliberately NOT in the sidebar | `src/shared/sidebarMenu.ts:117` (`ROUTES_NOT_IN_SIDEBAR` = `['barcode']`) |
+| The builder | `src/shared/sidebarMenu.ts:168-190` (`buildSidebar`) |
+| The phone bottom-bar picker | `src/shared/sidebarMenu.ts:207-219` (`mobilePinnedFor`) |
+| The ONE role rank | `src/shared/roles.ts` (`ROLE_RANK`, `roleAtLeast`) |
+
+Each item carries `id`, `route`, `i18nKey`, `iconId`, `minRole`,
+`shortcutAction`, `badgeId`, `mobilePinned` and `feature`.
+
+### The groups (in render order)
+1. **Daily work** — Billing, Quick Sale, Returns, Udhaar, Shifts
+2. **Stock** — Inventory, Purchases, Transfers, Audits, FIFO Stock Report, Label Studio, Branches
+3. **Sales and marketing** — Quotations, Promotions, Commissions
+4. **Money and reports** — Dashboard, Reports, Custom Reports, Expenses
+5. **Setup** (bottom, separated by a divider) — Invoice Designer, Settings, Users, Admin Panel
+
+### The permission model is now shared, not copied
+`src/main/services/auth.ts:24` used to hold `RANK` and
+`src/renderer/src/App.tsx:202` held a second copy, `ROLE_RANK`. Two copies of a
+security rule is one copy too many, so **both now read `src/shared/roles.ts`**:
+`can()` (`auth.ts:58`) calls `roleAtLeast()`, and the renderer menu is built by
+`buildSidebar()`, which calls the same function. An **unknown role ranks 0** and
+therefore opens nothing — a role this build cannot rank must not inherit owner
+rights.
+
+### One permission model, not two
+`buildSidebar()` accepts an optional `permissions` map, but it can only
+**narrow**: `permissions[route] === false` hides an item; nothing can widen
+past the role rule. The `admin_roles` / `admin_role_permissions` tables
+(`src/main/services/admin.ts:138-200`) are a different concept — custom roles
+for the Admin Panel's own role editor — and are **not** used as a sidebar
+permission source.
+
+### Feature gating
+`Branches` was already `multi_branch`-gated. **`Transfers` is now gated too** —
+a transfer between branches is meaningless in a single-branch shop, and the
+brief lists Transfers with Branches as the feature-gated pair. The web smoke
+confirms it: the nav went from 22 to 21 buttons in the test shop (which has
+`multi_branch` off).
+
+### OWNER DECISION — the cashier's phone bottom bar
+The brief asks for a cashier bottom bar of **Billing, Quick Sale, Udhaar,
+Returns**. **Udhaar and Returns are manager-only in the menu today**, and Item 2
+says not to change who may do what — so the bar can only carry what the cashier
+may OPEN.
+
+Two facts worth recording:
+- The **main process does not guard** `udhaar:*` or `returns:*` (`src/main/ipc.ts:336-354`,
+  `836-838` have no `can()` call), so a cashier may already use those features
+  over IPC; the menu's manager-only rule is a **menu** restriction, not a
+  security boundary.
+- The `mobilePinned` data **does** record the brief's four for a cashier
+  (`billing:1, quickSale:2, udhaar:3, returns:4`), so the moment the owner
+  widens the rule the bar fills itself up with no further change.
+
+**Decide**: (a) leave the rule as it is (the cashier bar shows Billing +
+Quick Sale + More), or (b) drop `udhaar`/`returns` to `cashier` in
+`SIDEBAR_GROUPS` so the bar matches the brief. Option (b) is a one-line change
+in the menu definition, but it *is* a permission change, so it is the owner's
+word, not mine.
+
+### Verification
+- `npm run test:sidebarMenu` → **42/42 passed** (`E:\temp\proof\sidebar_s1.txt`):
+  per-role item lists, group order and membership, no duplicate ids or routes,
+  every `NavPage` route either in the menu or in `ROUTES_NOT_IN_SIDEBAR`, the
+  feature gating disappearing and reappearing, the permission map narrowing only,
+  unknown roles seeing nothing, and the bottom-bar picker.
+- `npm run test:keyboard` → 93/93 (`sidebar_s1_keyboard.txt`), `npm run
+  test:shortcuts` → 37/37 (`sidebar_s1_shortcuts.txt`), `npm run test:billingKeys`
+  → 26/26, web smoke → PASS (21 nav buttons, 21 pages toured).
+- Typecheck + build: exit 0.

@@ -27,6 +27,13 @@
     "labelStudio": "Label Studio",
     "admin": "Admin Panel"
   },
+  "sidebarGroups": {
+    "daily": "Daily work",
+    "stock": "Stock",
+    "sales": "Sales and marketing",
+    "money": "Money and reports",
+    "setup": "Setup"
+  },
   "buttons": {
     "save": "Save",
     "cancel": "Cancel",

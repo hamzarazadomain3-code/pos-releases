@@ -1,10 +1,11 @@
-import { Component, Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Component, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AdminSettingsMap, NavPage, UserRow } from '../../shared/types';
 import { resetFormatCache } from './utils/formatters';
 import { initCurrency } from './utils/currency';
 import { initDateUtils, resetDateUtils } from './utils/dateUtils';
 import { KeyboardProvider } from './keyboard/KeyboardProvider';
+import { buildSidebar, SIDEBAR_GROUPS, SIDEBAR_ITEMS } from '@shared/sidebarMenu';
 import FirstRunWizard from './components/FirstRunWizard';
 import rokarLogoLight from './assets/rokar-pos-logo-light.png';
 import rokarMarkDark from './assets/rokar-pos-mark-dark.png';
@@ -173,33 +174,9 @@ function UpdateBanner() {
   return null;
 }
 
-const ALL_NAV: { key: NavPage; labelKey: string; minRole: 'cashier' | 'manager' | 'owner' }[] = [
-  { key: 'billing', labelKey: 'navigation.billing', minRole: 'cashier' },
-  { key: 'dashboard', labelKey: 'navigation.dashboard', minRole: 'manager' },
-  { key: 'inventory', labelKey: 'navigation.inventory', minRole: 'manager' },
-  { key: 'branches', labelKey: 'navigation.branches', minRole: 'owner' },
-  { key: 'quickSale', labelKey: 'navigation.quickSale', minRole: 'cashier' },
-  { key: 'transfers', labelKey: 'navigation.transfers', minRole: 'manager' },
-  { key: 'quotations', labelKey: 'navigation.quotations', minRole: 'manager' },
-  { key: 'invoiceAdmin', labelKey: 'navigation.invoiceAdmin', minRole: 'manager' },
-  { key: 'labelStudio', labelKey: 'navigation.labelStudio', minRole: 'manager' },
-  { key: 'audits', labelKey: 'navigation.audits', minRole: 'manager' },
-  { key: 'promotions', labelKey: 'navigation.promotions', minRole: 'manager' },
-  { key: 'purchases', labelKey: 'navigation.purchases', minRole: 'manager' },
-  { key: 'udhaar', labelKey: 'navigation.udhaar', minRole: 'manager' },
-  { key: 'returns', labelKey: 'navigation.returns', minRole: 'manager' },
-  { key: 'shifts', labelKey: 'navigation.shifts', minRole: 'manager' },
-  { key: 'reports', labelKey: 'navigation.reports', minRole: 'manager' },
-  { key: 'expenses', labelKey: 'navigation.expenses', minRole: 'manager' },
-  { key: 'commissions', labelKey: 'navigation.commissions', minRole: 'manager' },
-  { key: 'customReports', labelKey: 'navigation.customReports', minRole: 'manager' },
-  { key: 'fifoStock', labelKey: 'navigation.fifoStock', minRole: 'manager' },
-  { key: 'settings', labelKey: 'navigation.settings', minRole: 'owner' },
-  { key: 'users', labelKey: 'navigation.users', minRole: 'owner' },
-  { key: 'admin', labelKey: 'navigation.admin', minRole: 'owner' },
-];
-
-const ROLE_RANK: Record<string, number> = { cashier: 1, manager: 2, owner: 3 };
+// The menu itself lives in ONE place: `src/shared/sidebarMenu.ts`. Every layout
+// (desktop sidebar, tablet rail, phone drawer, phone bottom bar, Ctrl+K search)
+// is fed by `buildSidebar()` — there is no second list of pages.
 
 function adjustColor(hex: string, amount: number): string {
   hex = hex.replace('#', '');
@@ -209,10 +186,6 @@ function adjustColor(hex: string, amount: number): string {
   let g = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amount));
   let b = Math.min(255, Math.max(0, (num & 0x0000FF) + amount));
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
-}
-
-function navFor(role: string): { key: NavPage; label: string }[] {
-  return ALL_NAV.filter((n) => ROLE_RANK[role] >= ROLE_RANK[n.minRole]).map(({ key, labelKey }) => ({ key, label: key }));
 }
 
 function BranchSelector() {
@@ -604,10 +577,24 @@ export default function App() {
   const [escapeDoubleTapWindowMs, setEscapeDoubleTapWindowMs] = useState(400);
   const [showFirstRunWizard, setShowFirstRunWizard] = useState(false);
   const [firstRunChecked, setFirstRunChecked] = useState(false);
- const nav =
-   user
-     ? navFor(user.role).filter((item) => item.key !== 'branches' || multiBranch)
-     : [];
+ // The ONE menu: built for this role, this feature set and this language.
+ const navGroups = useMemo(() => {
+   const labels: Record<string, string> = {};
+   for (const item of SIDEBAR_ITEMS) labels[item.route] = t(item.i18nKey, item.i18nKey);
+   for (const group of SIDEBAR_GROUPS) labels[group.i18nKey] = t(group.i18nKey, group.i18nKey);
+   return buildSidebar({
+     role: user?.role,
+     features: { multi_branch: multiBranch },
+     language: i18n.language === 'ur' ? 'ur' : 'en',
+     labels,
+   });
+ }, [user?.role, multiBranch, i18n.language, t]);
+
+ // The flat list the keyboard layer and the page search use — the SAME items.
+ const activeNav = useMemo(
+   () => navGroups.flatMap((g) => g.items.map((i) => ({ key: i.route, label: i.label }))),
+   [navGroups]
+ );
 
   // Load the admin shortcut bindings for the global keyboard layer.
   useEffect(() => {
@@ -839,12 +826,12 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
-    if (user && !nav.some((n) => n.key === page)) setPage('billing');
+    if (user && !activeNav.some((n) => n.key === page)) setPage('billing');
     const savedLang = localStorage.getItem('language') || 'en';
     if (i18n.language !== savedLang) {
       i18n.changeLanguage(savedLang);
     }
-  }, [user, nav, page, i18n.language]);
+  }, [user, activeNav, page, i18n.language]);
 
   if (sessionRestoring) {
     return (
@@ -909,11 +896,6 @@ export default function App() {
     );
   }
 
-  const activeNav = nav.map((item) => ({
-    ...item,
-    label: t(`navigation.${item.key}`, item.label),
-  }));
-
   return (
     <KeyboardProvider
       shortcutMap={shortcutMap}
@@ -945,17 +927,22 @@ export default function App() {
           <span className="nav-label sidebar-brand-label">Rokar</span>
         </div>
         <nav className="sidebar-nav">
-          {activeNav.map((item) => (
-            <button
-              key={item.key}
-              className={page === item.key ? 'nav-btn active' : 'nav-btn'}
-              onClick={() => { setPage(item.key); }}
-              aria-label={item.label}
-              data-label={item.label}
-            >
-              <span className="nav-icon">{NAV_ICONS[item.key] || null}</span>
-              <span className="nav-label">{item.label}</span>
-            </button>
+          {navGroups.map((group) => (
+            <div key={group.id} className={`nav-group${group.separated ? ' nav-group-separated' : ''}`}>
+              <div className="nav-group-title">{group.label}</div>
+              {group.items.map((item) => (
+                <button
+                  key={item.id}
+                  className={page === item.route ? 'nav-btn active' : 'nav-btn'}
+                  onClick={() => { setPage(item.route); }}
+                  aria-label={item.label}
+                  data-label={item.label}
+                >
+                  <span className="nav-icon">{NAV_ICONS[item.iconId] || null}</span>
+                  <span className="nav-label">{item.label}</span>
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
 

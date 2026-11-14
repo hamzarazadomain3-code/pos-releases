@@ -1,5 +1,6 @@
 import { scryptSync, timingSafeEqual } from 'node:crypto';
 import { getDb } from '../db';
+import { roleAtLeast, ROLE_RANK } from '../../shared/roles';
 
 const SALT = 'pos-salt';
 
@@ -18,7 +19,9 @@ interface UserRecord extends UserRow {
   pin: string | null;
 }
 
-const RANK: Record<UserRole, number> = { cashier: 1, manager: 2, owner: 3 };
+// The rank map lives in ONE place — `src/shared/roles.ts` — and the renderer
+// reads the same one, so the menu can never disagree with the guard.
+const RANK = ROLE_RANK;
 
 let sessionUserId: number | null = null;
 
@@ -58,7 +61,7 @@ export function currentUser(): UserRow | null {
 export function can(required: UserRole): boolean {
   const u = currentUser();
   if (!u) return false;
-  return RANK[u.role] >= RANK[required];
+  return roleAtLeast(u.role, required);
 }
 
 export function verifyCredentials(username: string, password: string): boolean {
