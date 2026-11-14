@@ -5,8 +5,9 @@ import { resetFormatCache } from './utils/formatters';
 import { initCurrency } from './utils/currency';
 import { initDateUtils, resetDateUtils } from './utils/dateUtils';
 import { KeyboardProvider } from './keyboard/KeyboardProvider';
-import { buildSidebar, canOpenRoute, landingPageFor, SIDEBAR_GROUPS, SIDEBAR_ITEMS } from '@shared/sidebarMenu';
+import { buildSidebar, canOpenRoute, landingPageFor, SIDEBAR_GROUPS, SIDEBAR_ITEMS, mobilePinnedFor } from '@shared/sidebarMenu';
 import { resolveCombo } from '@shared/shortcuts';
+import { layoutModeFor } from '@shared/layoutMode';
 import { shortcutHintLabel } from '@shared/sidebarKeyboardNav';
 import { brandDisplayName, brandSubtitle, brandInitials, PRODUCT_NAME } from '@shared/sidebarBrand';
 import { sidebarIconShapes } from '@shared/sidebarIcons';
@@ -661,6 +662,58 @@ export default function App() {
    };
  }, [user?.id]);
 
+ // ── Phone drawer: scroll lock, focus trap, one history entry ──────────────
+ useEffect(() => {
+   if (!sidebarOpen) return;
+   if (layoutModeFor(window.innerWidth) !== 'phone') return;
+   const previousFocus = document.activeElement as HTMLElement | null;
+   const previousOverflow = document.body.style.overflow;
+   document.body.style.overflow = 'hidden';
+
+   // One history entry so the Back button closes the drawer instead of
+   // leaving the app.
+   try {
+     window.history.pushState({ sidebarDrawer: true }, '');
+   } catch {
+     /* history blocked — the drawer still closes on overlay click */
+   }
+   const onPopState = () => setSidebarOpen(false);
+   window.addEventListener('popstate', onPopState);
+
+   // Focus trap: move focus into the drawer.
+   const sidebar = document.querySelector('.bilten-sidebar') as HTMLElement | null;
+   const focusables = sidebar
+     ? Array.from(sidebar.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+     : [];
+   if (focusables.length) focusables[0].focus();
+
+   const onKeyDown = (e: KeyboardEvent) => {
+     if (e.key === 'Escape') {
+       e.preventDefault();
+       setSidebarOpen(false);
+       return;
+     }
+     if (e.key !== 'Tab' || focusables.length === 0) return;
+     const first = focusables[0];
+     const last = focusables[focusables.length - 1];
+     if (e.shiftKey && document.activeElement === first) {
+       e.preventDefault();
+       last.focus();
+     } else if (!e.shiftKey && document.activeElement === last) {
+       e.preventDefault();
+       first.focus();
+     }
+   };
+   document.addEventListener('keydown', onKeyDown);
+
+   return () => {
+     document.body.style.overflow = previousOverflow;
+     window.removeEventListener('popstate', onPopState);
+     document.removeEventListener('keydown', onKeyDown);
+     if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
+   };
+ }, [sidebarOpen]);
+
  const activeNav = useMemo(
    () => navGroups.flatMap((g) => g.items.map((i) => ({ key: i.route, label: i.label }))),
    [navGroups]
@@ -901,6 +954,8 @@ export default function App() {
         return false;
       }
       setPage(next);
+      // A navigation closes the phone drawer.
+      setSidebarOpen(false);
       return true;
     },
     [user?.role, multiBranch]
@@ -1260,6 +1315,40 @@ export default function App() {
       </aside>
 
       <div className={`sidebar-overlay ${sidebarOpen ? 'open' : ''}`} onClick={() => setSidebarOpen(false)} />
+
+      {/* Phone bottom bar — the pinned pages, plus "More" for the rest. */}
+      <nav className="sidebar-bottom-bar" aria-label="Quick navigation">
+        {mobilePinnedFor(user?.role, navGroups).map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={page === item.route ? 'bottom-bar-btn active' : 'bottom-bar-btn'}
+            onClick={() => navigate(item.route)}
+            aria-label={item.label}
+          >
+            <span className="bottom-bar-icon"><NavIcon iconId={item.iconId} /></span>
+            <span className="bottom-bar-label">{item.label}</span>
+            {item.badgeId && badgeFor(badges, item.badgeId) && (
+              <span className="bottom-bar-badge" aria-hidden="true" />
+            )}
+          </button>
+        ))}
+        <button
+          type="button"
+          className="bottom-bar-btn"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="More"
+        >
+          <span className="bottom-bar-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="5" cy="12" r="1.5" />
+              <circle cx="12" cy="12" r="1.5" />
+              <circle cx="19" cy="12" r="1.5" />
+            </svg>
+          </span>
+          <span className="bottom-bar-label">More</span>
+        </button>
+      </nav>
 
       <main className="content">
         <ErrorBoundary>

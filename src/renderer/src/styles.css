@@ -322,6 +322,7 @@ body.theme-dark ::-webkit-scrollbar-thumb:hover {
   position: sticky;
   top: 0;
   height: 100vh;
+  height: 100dvh;
   border-right: 1px solid var(--sidebar-divider);
   box-shadow: 2px 0 12px rgba(0, 0, 0, 0.15);
   overflow: hidden;
@@ -645,6 +646,14 @@ body.theme-dark ::-webkit-scrollbar-thumb:hover {
   outline-offset: -2px;
 }
 
+/* ── The phone bottom bar ───────────────────────────────────────────────────
+   Hidden on desktop and tablet; shown on phones. The four pinned pages come
+   from `mobilePinnedFor()` (the ONE menu), plus a "More" button that opens
+   the drawer. */
+.sidebar-bottom-bar {
+  display: none;
+}
+
 /* ── The badge next to a page ───────────────────────────────────────────────
    A count is a small pill; a dot is a small circle. Both sit at the far end
    of the item, so every label stays in one column. */
@@ -938,6 +947,93 @@ body.theme-dark ::-webkit-scrollbar-thumb:hover {
 
   .sidebar-overlay.open {
     display: block;
+  }
+
+  /* The bottom bar: the pinned pages + "More". */
+  .sidebar-bottom-bar {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 90;
+    background: #0b5d4b;
+    border-top: 1px solid var(--sidebar-divider, rgba(255, 255, 255, 0.16));
+    padding: 0.25rem 0.25rem calc(0.25rem + env(safe-area-inset-bottom));
+    gap: 0.125rem;
+  }
+
+  .bottom-bar-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.125rem;
+    min-height: 3.5rem;
+    border: none;
+    background: none;
+    color: var(--sidebar-text, #eef4f1);
+    font-size: 0.625rem;
+    font-weight: 500;
+    cursor: pointer;
+    position: relative;
+    border-radius: 0.5rem;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+
+  .bottom-bar-btn:active {
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .bottom-bar-btn.active {
+    color: var(--sidebar-accent, #6ee7b7);
+  }
+
+  .bottom-bar-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .bottom-bar-icon svg {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  .bottom-bar-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  .bottom-bar-badge {
+    position: absolute;
+    top: 0.375rem;
+    right: 50%;
+    transform: translateX(0.625rem);
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: #f97316;
+  }
+
+  /* The main content must not hide behind the bottom bar. */
+  .content {
+    padding-bottom: calc(4rem + env(safe-area-inset-bottom));
+  }
+
+  /* Touch targets: at least 44x44 on coarse pointers. */
+  @media (pointer: coarse) {
+    .nav-btn,
+    .bottom-bar-btn,
+    .sidebar-footer-btn,
+    .sidebar-collapse-btn {
+      min-height: 2.75rem;
+    }
   }
 }
 
