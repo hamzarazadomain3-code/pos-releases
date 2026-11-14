@@ -1837,3 +1837,76 @@ pm run build — exit 0 (E:\temp\proof\final_build.txt).
 1. Rebuild the desktop app and reinstall it (version stays 2.27.0; no release, no version bump).
 2. Redeploy the web app (rebuild cloud/web-dist and redeploy the Worker) so the mobile/tablet changes and the brand header reach the browser build.
 3. The menu is now one definition (src/shared/sidebarMenu.ts); any future page must be added there only.
+
+
+## Web app fix run (feature/sidebar) — 2026-11-14
+
+Branch: `feature/sidebar`. The web app is the **same renderer** running in a browser, so a feature that needs a native dialog, a file path or a raw byte buffer has to work without one.
+
+### The bug the owner reported
+
+Inventory → Import Excel died with:
+
+```
+The first argument must be of type string or an instance of Buffer, TypedArray,
+ArrayBuffer, SharedArrayBuffer, or Array or an Array-like Object.
+Received an instance of Object
+```
+
+**Root cause.** The web transport is JSON. `cloud/web/electron-browser.ts` posts
+`JSON.stringify({ channel, args })` to `/api/rpc`, so the picked workbook — sent as a
+`Uint8Array` — reached the main process as a **plain object** (`{"0":72,"1":105,…}`).
+`Buffer.from(plainObject)` is exactly the error above. The same flattening hit every
+export in the other direction: the main process returned a `Uint8Array`, the browser got
+a plain object, `res instanceof Uint8Array` was false, and **nothing downloaded**.
+
+### The fix
+
+- **`src/shared/binaryTransfer.ts`** (new, pure, shared by both processes): the base64
+  codec plus `normalizeBinaryPayload()`, which accepts every shape a payload can arrive
+  as — a `Uint8Array`/`Buffer` (desktop), an `ArrayBuffer`, a base64 string with the
+  `base64:` prefix, a number array, a `{ type: 'Buffer', data: [...] }` and a plain
+  object with numeric keys (the web shape). `fileBytesFromResult()` reads the result of
+  a file export without mistaking a desktop file path for bytes.
+- **The renderer sends base64** (`toBase64Payload`) — a JSON string survives every
+  transport unchanged — and every byte result is read through
+  `fileBytesFromResult()` / `normalizeBinaryPayload()`.
+- **The main process hands back a base64 payload** instead of raw bytes when there is no
+  window (`saveCsv`, `saveXlsx`, `exportReportPDF`, `exportReportExcel`).
+- **The desktop is untouched**: it still uses the native save dialog, writes the file and
+  answers `true`; the native open dialog path still reads the file into a Buffer.
+
+### Status (from PROGRESS.md)
+
+| Item | Status | Commit |
+|---|---|---|
+| W1 — Inventory file import channel (the browser file input) | DONE (superseded by W4) | 94bc874 |
+| W2 — every Excel export downloads in the browser | DONE | 7f5f1d6, 2a517c4, 4b805f0 |
+| W3 — Udhaar catalog import/export in the browser | DONE | 784e1b8, 50cb885 |
+| W4 — the file bytes survive the JSON transport (the reported error) | DONE | 38a5e24, 71396e2 |
+
+### Verification
+- `npm run test:binaryTransfer` — **35/35** (the real `dist/shared/binaryTransfer.js`: the
+  base64 codec, the plain-object web payload, the `{type:'Buffer'}` payload, and a real
+  .xlsx round-tripped through JSON and parsed again).
+- `npm run test:webImport` — **18/18** (the real `dist/main/services/export.js` against a
+  throwaway database: the web plain-object payload imports 2 rows, the base64 payload 1,
+  the desktop Buffer 1, and a broken file is reported instead of thrown).
+- `npm run typecheck` — exit 0 (E:\temp\proof\webimport_typecheck.txt).
+- `npm run build` — exit 0 (E:\temp\proof\webimport_build.txt).
+- Cloud build — exit 0 (E:\temp\proof\cloud_build_webimport.txt).
+- Web smoke — **PASS**, 21 nav pages (E:\temp\proof\websmoke_webimport.txt).
+- Every sidebar/mobile suite re-run and green (sidebarMenu 42/42, sidebarGuard 50/50,
+  sidebarLanding 22/22, sidebarGroups 35/35, sidebarIcons 21/21, sidebarFooter 30/30,
+  sidebarBadges 37/37, sidebarKeyboardNav 24/24, sidebarSearch 12/12, sidebarBrand 16/16,
+  layoutMode 18/18, sidebarDrawer 8/8).
+- Deployed: `https://rokar-pos.bakery-saas.workers.dev` — Worker version
+  `f0c44746-0ce4-41f1-803a-0324464d029d`.
+
+### Owner action required
+1. **Nothing for the web app** — the Worker is redeployed. Hard-refresh the browser tab
+   (Ctrl+F5) so the new bundle is loaded.
+2. **Nothing for the desktop app** — the desktop path is unchanged and still green. A
+   desktop rebuild/reinstall is optional (the next release picks these changes up).
+3. Verify by hand: web → Inventory → Import Excel → pick an `.xlsx` → the rows land in
+   the list.
