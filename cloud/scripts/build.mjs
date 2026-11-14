@@ -117,7 +117,14 @@ const resolveAliases = [
   { filter: /^(node:)?child_process$/, path: shim('child_process.ts') },
   { filter: /^node:sqlite$/, path: shim('node-sqlite.ts') },
   { filter: /^nodemailer$/, path: shim('nodemailer.ts') },
-  { filter: /^xlsx$/, path: shim('xlsx.ts') },
+  // SheetJS asks for Node's `stream` at load time; a Worker has none, but the
+  // library only stores the class for helpers the POS never calls.
+  { filter: /^(node:)?stream$/, path: shim('stream.ts') },
+  // `xlsx` is NOT shimmed: the real SheetJS library is bundled, because the
+  // Inventory file import (XLSX.read) and every Excel export (XLSX.write) need
+  // it. The old inert shim made the web import throw
+  // "Cannot read properties of undefined (reading '0')" and every web export
+  // produce an EMPTY file.
   { filter: /^bwip-js$/, path: shim('bwip-js.ts') },
   { filter: /^pdfkit$/, path: shim('pdfkit.ts') },
   { filter: /^whatsapp-web\.js$/, path: shim('whatsapp-web.ts') },
@@ -134,6 +141,10 @@ const result = await build({
   format: 'esm',
   platform: 'neutral',
   target: 'es2022',
+  // `platform: 'neutral'` leaves mainFields empty, so a package that only
+  // publishes `main` (SheetJS's `xlsx`) cannot be resolved. The real library
+  // has to be bundled — the Inventory import and every Excel export need it.
+  mainFields: ['main', 'module'],
   define: { __APP_VERSION__: JSON.stringify(appVersion) },
   sourcemap: false,
   logLevel: 'info',
