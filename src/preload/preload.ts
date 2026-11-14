@@ -356,6 +356,9 @@ const bridge: PosBridge = {
     breakEven: () => ipcRenderer.invoke('profitability:breakEven'),
     computePeriod: (date: string) => ipcRenderer.invoke('profitability:computePeriod', date),
   },
+  sidebar: {
+    badges: () => ipcRenderer.invoke('sidebar:badges'),
+  },
   alerts: {
     getAll: () => ipcRenderer.invoke('alerts:getAll'),
     getUnread: () => ipcRenderer.invoke('alerts:getUnread'),

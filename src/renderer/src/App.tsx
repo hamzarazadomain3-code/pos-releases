@@ -8,6 +8,7 @@ import { KeyboardProvider } from './keyboard/KeyboardProvider';
 import { buildSidebar, canOpenRoute, landingPageFor, SIDEBAR_GROUPS, SIDEBAR_ITEMS } from '@shared/sidebarMenu';
 import { sidebarIconShapes } from '@shared/sidebarIcons';
 import { languageToggleLabelKey, languageToggleTarget, roleLabelKey, userDisplayName, userInitials } from '@shared/sidebarFooter';
+import { badgeFor, BADGE_REFRESH_MS, type SidebarBadge } from '@shared/sidebarBadges';
 import {
   DEFAULT_GROUP_STATE,
   groupStateKey,
@@ -627,6 +628,35 @@ export default function App() {
  const footerName = userDisplayName(user?.username);
  const footerInitials = userInitials(user?.username);
 
+ // The badges next to the menu items. The numbers come from the main process
+ // (the same tables the Dashboard and the Alerts read) and are refreshed at
+ // most once a minute — the service keeps them for a minute on its side too.
+ const [badges, setBadges] = useState<SidebarBadge[]>([]);
+
+ useEffect(() => {
+   if (!user) {
+     setBadges([]);
+     return;
+   }
+   let alive = true;
+   const load = () => {
+     Promise.resolve(window.api.sidebar?.badges?.())
+       .then((list) => {
+         if (alive && Array.isArray(list)) setBadges(list as SidebarBadge[]);
+       })
+       .catch(() => {
+         // A missing badge must never break the menu.
+         if (alive) setBadges([]);
+       });
+   };
+   load();
+   const timer = setInterval(load, BADGE_REFRESH_MS);
+   return () => {
+     alive = false;
+     clearInterval(timer);
+   };
+ }, [user?.id]);
+
  const activeNav = useMemo(
    () => navGroups.flatMap((g) => g.items.map((i) => ({ key: i.route, label: i.label }))),
    [navGroups]
@@ -1076,18 +1106,33 @@ export default function App() {
                   <span className="nav-group-chevron" aria-hidden="true">▾</span>
                 </button>
                 {expanded &&
-                  group.items.map((item) => (
-                    <button
-                      key={item.id}
-                      className={page === item.route ? 'nav-btn active' : 'nav-btn'}
-                      onClick={() => { navigate(item.route); }}
-                      aria-label={item.label}
-                      data-label={item.label}
-                    >
-                      <span className="nav-icon"><NavIcon iconId={item.iconId} /></span>
-                      <span className="nav-label">{item.label}</span>
-                    </button>
-                  ))}
+                  group.items.map((item) => {
+                    // The badge of this page (the menu definition says which
+                    // page carries which badge; the numbers come from the main
+                    // process and the role filter already ran there).
+                    const badge = item.badgeId ? badgeFor(badges, item.badgeId) : undefined;
+                    return (
+                      <button
+                        key={item.id}
+                        className={page === item.route ? 'nav-btn active' : 'nav-btn'}
+                        onClick={() => { navigate(item.route); }}
+                        aria-label={item.label}
+                        data-label={item.label}
+                      >
+                        <span className="nav-icon"><NavIcon iconId={item.iconId} /></span>
+                        <span className="nav-label">{item.label}</span>
+                        {badge && (
+                          <span
+                            className={badge.kind === 'dot' ? 'nav-badge nav-badge-dot' : 'nav-badge'}
+                            title={badge.kind === 'dot' ? item.label : `${item.label}: ${badge.display}`}
+                            aria-label={badge.kind === 'dot' ? `${item.label}: new` : `${item.label}: ${badge.display}`}
+                          >
+                            {badge.kind === 'dot' ? '' : badge.display}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
               </div>
             );
           })}

@@ -26,6 +26,7 @@ import { parseBayLanBarcode, isScaleBarcode, listPluMappings } from './services/
 import { getInventoryReports } from './services/inventoryReports';
 import { getProfitabilityService } from './services/profitability';
 import { getAlertService } from './services/alertService';
+import { getSidebarBadges } from './services/sidebarBadges';
 import {
   createCustomer,
   createSale,
@@ -883,6 +884,12 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('profitability:worstPerforming', (_e, limit?: number, days?: number) => profitabilityService.getWorstPerformingProducts(limit, days));
   ipcMain.handle('profitability:breakEven', () => profitabilityService.getBreakEvenAnalysis());
   ipcMain.handle('profitability:computePeriod', (_e, date: string) => profitabilityService.computePeriodProfitability(date));
+
+  // The sidebar badges — the small numbers next to a page in the menu.
+  // The role is taken from the SESSION (never from the renderer), so a cashier
+  // can never ask for the owner's numbers. The service keeps the numbers for
+  // a minute, so a shop that opens the menu often does not query again.
+  ipcMain.handle('sidebar:badges', () => getSidebarBadges(currentUser()?.role));
 
   // Alerts
   const alertService = getAlertService();

@@ -1,4 +1,5 @@
 ﻿import type { ReceiptDesign, ReceiptLibrary } from './receiptDesign';
+import type { SidebarBadge } from './sidebarBadges';
 import type {
   HistoryDetail,
   HistoryFilters,
@@ -1689,6 +1690,9 @@ export interface PosBridge {
     worstPerforming: (limit?: number, days?: number) => Promise<WorstProductRow[]>;
     breakEven: () => Promise<BreakEvenRow[]>;
     computePeriod: (date: string) => Promise<void>;
+  };
+  sidebar: {
+    badges: () => Promise<SidebarBadge[]>;
   };
   alerts: {
     getAll: () => Promise<AlertRow[]>;
