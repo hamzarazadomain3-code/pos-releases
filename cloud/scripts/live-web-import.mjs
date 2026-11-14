@@ -133,6 +133,21 @@ async function main() {
     check('the exported workbook carries the imported product', rows.some((r) => r[1] === 'Live Apple'));
   }
 
+  // ── the purchase import from a file ───────────────────────────────────────
+  const purchaseCsv = [
+    'barcode,sku,product name,qty,unit,cost rate,sale price',
+    '1110001110001,SKU-1,Rice 5kg,10,Bag,100,120',
+    ',SKU-2,Cooking Oil,6,pcs,50,60',
+  ].join('\r\n');
+  const purchasePayload = toBase64Payload(new Uint8Array(Buffer.from(purchaseCsv, 'utf8')));
+  const parsed = await rpc(session.token, 'purchases:importParseData', ['purchases.csv', purchasePayload]);
+  check('the purchase import call succeeded', parsed && parsed.ok === true, JSON.stringify(parsed && parsed.error));
+  const purchase = parsed && parsed.data ? parsed.data : {};
+  check('the purchase file name is kept', purchase.file_name === 'purchases.csv', purchase.file_name);
+  check('the purchase header row was found', purchase.header_row === 1, String(purchase.header_row));
+  check('both purchase rows were read', Array.isArray(purchase.rows) && purchase.rows.length === 2, JSON.stringify((purchase.rows || []).length));
+  check('the purchase row keeps its product name', !!(purchase.rows && purchase.rows[0] && purchase.rows[0].values['product name'] === 'Rice 5kg'), JSON.stringify(purchase.rows && purchase.rows[0]));
+
   console.log(`\n${checks - failures}/${checks} checks passed.`);
   if (failures > 0) {
     console.error(`${failures} check(s) FAILED`);
