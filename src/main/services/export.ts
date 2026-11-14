@@ -210,6 +210,17 @@ export function exportUdhaarCatalogCsv(win: BrowserWindow | null): Promise<boole
 }
 
 /** Import a Udhaar item catalog CSV. Rows with a bad shape are skipped. */
+export function importUdhaarCatalogCsvFromData(text: string): { ok: boolean; message: string; imported?: number } {
+  try {
+    const items = parseCatalogCsv(text);
+    if (!items.length) return { ok: false, message: 'No usable rows found. Expected: barcode,name,price,unit' };
+    const imported = bulkUpsertCatalog(items);
+    return { ok: true, message: `Imported ${imported} item${imported === 1 ? '' : 's'}.`, imported };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export function importUdhaarCatalogCsv(win: BrowserWindow | null): Promise<{ ok: boolean; message: string; imported?: number }> {
   return (async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(win ?? undefined!, {
@@ -219,10 +230,7 @@ export function importUdhaarCatalogCsv(win: BrowserWindow | null): Promise<{ ok:
     if (canceled || !filePaths.length) return { ok: false, message: 'Import cancelled.' };
     try {
       const text = fs.readFileSync(filePaths[0], 'utf8');
-      const items = parseCatalogCsv(text);
-      if (!items.length) return { ok: false, message: 'No usable rows found. Expected: barcode,name,price,unit' };
-      const imported = bulkUpsertCatalog(items);
-      return { ok: true, message: `Imported ${imported} item${imported === 1 ? '' : 's'}.`, imported };
+      return importUdhaarCatalogCsvFromData(text);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }

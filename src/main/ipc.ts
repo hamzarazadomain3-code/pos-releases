@@ -168,7 +168,7 @@ import {
 } from './services/recovery';
 import { runBackup, restoreBackup } from './services/backup';
 import { openShift, closeShift, forceCloseShift, currentShift, listShifts, getShift } from './services/shifts';
-import { saveCsv, saveXlsx, exportProductsXlsx, exportSalesXlsx, exportCustomersXlsx, exportUdhaarStatementXlsx, exportPurchaseOrdersXlsx, exportExpensesXlsx, downloadProductTemplate, importProductsFromExcel, importProductsFromBuffer, exportUdhaarCatalogCsv, importUdhaarCatalogCsv } from './services/export';
+import { saveCsv, saveXlsx, exportProductsXlsx, exportSalesXlsx, exportCustomersXlsx, exportUdhaarStatementXlsx, exportPurchaseOrdersXlsx, exportExpensesXlsx, downloadProductTemplate, importProductsFromExcel, importProductsFromBuffer, exportUdhaarCatalogCsv, importUdhaarCatalogCsv, importUdhaarCatalogCsvFromData } from './services/export';
 import { getUdhaarLedger, getUdhaarAging, writeOffUdhaar, lookupUdhaarItem, searchUdhaarItems, createUdhaarEntry, getUdhaarEntry, listUdhaarCatalog, upsertUdhaarCatalog, deleteUdhaarCatalog } from './services/udhaar';
 import { printStatement, previewStatement, exportStatementPdf, statementText, printEntrySlip, entrySlipText, reminderText } from './services/udhaarPrinting';
 import { getCustomer, saveCustomer, findCustomerDuplicates, setCustomerStatus, deleteCustomer, mergeCustomers } from './services/customers';
@@ -378,6 +378,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('udhaar:catalogDelete', (_e, id: number) => deleteUdhaarCatalog(id));
   ipcMain.handle('udhaar:catalogExport', () => exportUdhaarCatalogCsv(BrowserWindow.getFocusedWindow()));
   ipcMain.handle('udhaar:catalogImport', () => importUdhaarCatalogCsv(BrowserWindow.getFocusedWindow()));
+  ipcMain.handle('udhaar:catalogImportFromData', (_e, text: string) => importUdhaarCatalogCsvFromData(text));
+  ipcMain.handle('udhaar:catalogExportData', () => exportUdhaarCatalogCsv(null));
   ipcMain.handle('udhaar:printEntrySlip', (_e, transactionId: number, paper?: 'thermal80' | 'thermal58') =>
     printEntrySlip(transactionId, paper)
   );

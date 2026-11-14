@@ -99,6 +99,8 @@ const bridge: PosBridge = {
     catalogDelete: (id: number) => ipcRenderer.invoke('udhaar:catalogDelete', id),
     catalogExport: () => ipcRenderer.invoke('udhaar:catalogExport'),
     catalogImport: () => ipcRenderer.invoke('udhaar:catalogImport'),
+    catalogExportData: () => ipcRenderer.invoke('udhaar:catalogExportData'),
+    catalogImportFromData: (text: string) => ipcRenderer.invoke('udhaar:catalogImportFromData', text),
     printEntrySlip: (transactionId: number, paper?: 'thermal80' | 'thermal58') =>
       ipcRenderer.invoke('udhaar:printEntrySlip', transactionId, paper),
     shareEntrySlip: (transactionId: number, phone?: string) =>
