@@ -11,6 +11,7 @@
     "dev": "npm run build && wrangler dev --config wrangler.toml",
     "test": "npm run build && node scripts/run-tests.mjs",
     "smoke:web": "node scripts/run-web-smoke.mjs",
+    "smoke:import:live": "node scripts/live-web-import.mjs",
     "typecheck": "npm run build:worker && tsc -p tsconfig.json --noEmit",
     "deploy": "npm run build && wrangler deploy --config wrangler.toml",
     "fix-workerd": "node scripts/fix-workerd.mjs"
