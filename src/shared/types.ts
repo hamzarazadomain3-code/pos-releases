@@ -1602,6 +1602,7 @@ export interface PosBridge {
     exportExpenses: (from?: string, to?: string) => Promise<boolean>;
     downloadTemplate: () => Promise<boolean>;
     importProducts: () => Promise<ProductImportResult | null>;
+    importProductsFromData: (data: Uint8Array) => Promise<ProductImportResult>;
   };
   purchases: {
     suppliers: () => Promise<Supplier[]>;

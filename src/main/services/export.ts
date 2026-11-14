@@ -334,16 +334,9 @@ function findUnitId(db: ReturnType<typeof getDb>, name: string): number | null {
   return unit ? unit.id : null;
 }
 
-export function importProductsFromExcel(win: BrowserWindow | null): Promise<ProductImportResult | null> {
-  return (async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog(win ?? undefined!, {
-      filters: [{ name: 'Excel Workbook', extensions: ['xlsx', 'xls'] }],
-      properties: ['openFile'],
-    });
-    if (canceled || !filePaths.length) return null;
-
-    const wb = XLSX.readFile(filePaths[0], { cellDates: true });
-    const sheetName = wb.SheetNames[0];
+export function importProductsFromBuffer(buffer: Buffer | Uint8Array): ProductImportResult {
+  const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+  const sheetName = wb.SheetNames[0];
     if (!sheetName) return { inserted: 0, errors: [{ row: 0, message: 'Workbook has no sheets' }] };
     const aoa = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName], { header: 1, raw: true });
     if (aoa.length < 2) return { inserted: 0, errors: [{ row: 0, message: 'Sheet is empty (needs a header row and at least one data row)' }] };
@@ -444,5 +437,15 @@ export function importProductsFromExcel(win: BrowserWindow | null): Promise<Prod
     }
 
     return result;
+}
+export function importProductsFromExcel(win: BrowserWindow | null): Promise<ProductImportResult | null> {
+  return (async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(win ?? undefined!, {
+      filters: [{ name: 'Excel Workbook', extensions: ['xlsx', 'xls'] }],
+      properties: ['openFile'],
+    });
+    if (canceled || !filePaths.length) return null;
+    const buffer = fs.readFileSync(filePaths[0]);
+    return importProductsFromBuffer(buffer);
   })();
 }

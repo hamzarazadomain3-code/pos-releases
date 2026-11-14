@@ -413,12 +413,26 @@ export default function Inventory() {
     }
   }
 
+  const importFileRef = useRef<HTMLInputElement | null>(null);
+
   async function handleImport() {
+    // Use a file input so the import works in the browser build too (where
+    // there is no native file dialog). On the desktop the same path runs.
+    importFileRef.current?.click();
+  }
+
+  async function handleImportFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
     try {
-      const res = await window.api.excel.importProducts();
+      const buf = await file.arrayBuffer();
+      const res = await window.api.excel.importProductsFromData(new Uint8Array(buf));
       if (res) setImportResult(res);
-    } catch (e) {
-      setNotice(e instanceof Error ? e.message : String(e));
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err));
+    } finally {
+      // Reset so the same file can be picked again.
+      if (importFileRef.current) importFileRef.current.value = '';
     }
   }
 
@@ -674,6 +688,13 @@ export default function Inventory() {
               <option value="expiry_desc">Sort: expiry farthest</option>
             </select>
           </FilterRow>
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".xlsx,.xls"
+            style={{ display: 'none' }}
+            onChange={handleImportFileChange}
+          />
           <FilterRow style={{ justifyContent: 'flex-end' }}>
             <button className="btn btn-sm" onClick={handleTemplate}>
               Template

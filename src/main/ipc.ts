@@ -168,7 +168,7 @@ import {
 } from './services/recovery';
 import { runBackup, restoreBackup } from './services/backup';
 import { openShift, closeShift, forceCloseShift, currentShift, listShifts, getShift } from './services/shifts';
-import { saveCsv, saveXlsx, exportProductsXlsx, exportSalesXlsx, exportCustomersXlsx, exportUdhaarStatementXlsx, exportPurchaseOrdersXlsx, exportExpensesXlsx, downloadProductTemplate, importProductsFromExcel, exportUdhaarCatalogCsv, importUdhaarCatalogCsv } from './services/export';
+import { saveCsv, saveXlsx, exportProductsXlsx, exportSalesXlsx, exportCustomersXlsx, exportUdhaarStatementXlsx, exportPurchaseOrdersXlsx, exportExpensesXlsx, downloadProductTemplate, importProductsFromExcel, importProductsFromBuffer, exportUdhaarCatalogCsv, importUdhaarCatalogCsv } from './services/export';
 import { getUdhaarLedger, getUdhaarAging, writeOffUdhaar, lookupUdhaarItem, searchUdhaarItems, createUdhaarEntry, getUdhaarEntry, listUdhaarCatalog, upsertUdhaarCatalog, deleteUdhaarCatalog } from './services/udhaar';
 import { printStatement, previewStatement, exportStatementPdf, statementText, printEntrySlip, entrySlipText, reminderText } from './services/udhaarPrinting';
 import { getCustomer, saveCustomer, findCustomerDuplicates, setCustomerStatus, deleteCustomer, mergeCustomers } from './services/customers';
@@ -803,6 +803,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('excel:exportExpenses', (_e, from?: string, to?: string) => exportExpensesXlsx(BrowserWindow.getFocusedWindow(), from, to));
   ipcMain.handle('excel:downloadTemplate', () => downloadProductTemplate(BrowserWindow.getFocusedWindow()));
   ipcMain.handle('excel:importProducts', () => importProductsFromExcel(BrowserWindow.getFocusedWindow()));
+  ipcMain.handle('excel:importProductsFromData', (_e, data: Uint8Array) => importProductsFromBuffer(Buffer.from(data)));
 
   ipcMain.handle('purchases:suppliers', () => listSuppliers());
   ipcMain.handle('purchases:createSupplier', (_e, name: string, phone?: string, address?: string) =>
