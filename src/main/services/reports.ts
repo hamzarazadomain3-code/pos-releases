@@ -970,15 +970,8 @@ export async function exportReportPDF(reportType: string, data: unknown): Promis
 
   const PDFDocumentMod = require('pdfkit');
   const doc = new PDFDocumentMod({ margin: 50, size: 'A4' });
-  const { PassThrough } = require('stream');
-  const pt = new PassThrough();
   const chunks: Buffer[] = [];
-  pt.on('data', (c: Buffer) => chunks.push(c));
-  doc.pipe(pt);
-  if (!isWeb && filePath) {
-    const { createWriteStream } = require('fs');
-    pt.pipe(createWriteStream(filePath));
-  }
+  doc.on('data', (c: Buffer) => chunks.push(Buffer.from(c)));
 
   const d = data as any;
   switch (reportType) {
@@ -1075,8 +1068,13 @@ export async function exportReportPDF(reportType: string, data: unknown): Promis
   }
 
   doc.end();
-  await new Promise((resolve) => pt.on('end', resolve));
-  if (isWeb) return new Uint8Array(Buffer.concat(chunks));
+  await new Promise((resolve) => doc.on('end', resolve));
+  const buf = Buffer.concat(chunks);
+  if (isWeb) return new Uint8Array(buf);
+  if (filePath) {
+    const fs = require('fs');
+    fs.writeFileSync(filePath, buf);
+  }
   return filePath ?? null;
 }
 
