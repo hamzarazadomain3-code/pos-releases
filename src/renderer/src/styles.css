@@ -693,6 +693,35 @@ body.theme-dark ::-webkit-scrollbar-thumb:hover {
   padding: 0;
 }
 
+/* ── The shortcut hint next to a page ──────────────────────────────────────
+   A small, quiet key combo (e.g. "Ctrl+N"). It is hidden on touch devices,
+   where there is no keyboard to press. */
+.nav-shortcut-hint {
+  margin-inline-start: auto;
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--sidebar-text-muted, #c3d3cd);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.25rem;
+  padding: 0.0625rem 0.3125rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* On a touch device there is no keyboard, so the hint is noise. */
+@media (pointer: coarse) {
+  .nav-shortcut-hint {
+    display: none;
+  }
+}
+
+/* In the icon-only mode the hint is hidden (the tooltip carries the label). */
+.bilten-sidebar:not(.open) .nav-shortcut-hint {
+  display: none;
+}
+
 /* Sidebar branch selector */
 .sidebar-branch {
   padding: 12px;

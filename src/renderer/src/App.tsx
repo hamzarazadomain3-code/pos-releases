@@ -6,6 +6,8 @@ import { initCurrency } from './utils/currency';
 import { initDateUtils, resetDateUtils } from './utils/dateUtils';
 import { KeyboardProvider } from './keyboard/KeyboardProvider';
 import { buildSidebar, canOpenRoute, landingPageFor, SIDEBAR_GROUPS, SIDEBAR_ITEMS } from '@shared/sidebarMenu';
+import { resolveCombo } from '@shared/shortcuts';
+import { shortcutHintLabel } from '@shared/sidebarKeyboardNav';
 import { sidebarIconShapes } from '@shared/sidebarIcons';
 import { languageToggleLabelKey, languageToggleTarget, roleLabelKey, userDisplayName, userInitials } from '@shared/sidebarFooter';
 import { badgeFor, BADGE_REFRESH_MS, type SidebarBadge } from '@shared/sidebarBadges';
@@ -1118,9 +1120,16 @@ export default function App() {
                         onClick={() => { navigate(item.route); }}
                         aria-label={item.label}
                         data-label={item.label}
+                        title={item.label}
+                        aria-current={page === item.route ? 'page' : undefined}
                       >
                         <span className="nav-icon"><NavIcon iconId={item.iconId} /></span>
                         <span className="nav-label">{item.label}</span>
+                        {item.shortcutAction && shortcutHintLabel(resolveCombo(item.shortcutAction, shortcutMap)) && (
+                          <span className="nav-shortcut-hint" aria-hidden="true">
+                            {shortcutHintLabel(resolveCombo(item.shortcutAction, shortcutMap))}
+                          </span>
+                        )}
                         {badge && (
                           <span
                             className={badge.kind === 'dot' ? 'nav-badge nav-badge-dot' : 'nav-badge'}
