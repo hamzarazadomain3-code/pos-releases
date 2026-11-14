@@ -1436,6 +1436,8 @@ export interface PosBridge {
     catalogDelete: (id: number) => Promise<boolean>;
     catalogExport: () => Promise<boolean>;
     catalogImport: () => Promise<{ ok: boolean; message: string; imported?: number }>;
+    catalogExportData: () => Promise<boolean | Uint8Array>;
+    catalogImportFromData: (text: string) => Promise<{ ok: boolean; message: string; imported?: number }>;
     /** Print a slip for one manual entry (thermal roll only). */
     printEntrySlip: (transactionId: number, paper?: 'thermal80' | 'thermal58') => Promise<PrintResult>;
     /** WhatsApp a slip for one manual entry. */
