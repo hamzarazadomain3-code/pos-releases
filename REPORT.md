@@ -1946,3 +1946,89 @@ The changes:
    desktop rebuild/reinstall is optional (the next release picks these changes up).
 3. Verify by hand: web → Inventory → Import Excel → pick an `.xlsx` → the rows land in
    the list. The same page's "Export Excel" now downloads a real workbook.
+
+---
+
+## Web app fix run — W7 "Import purchases from file" (feature/sidebar) — 2026-11-15
+
+The owner's second report: **"Import purchases from file work ni kar raha"** (Purchases →
+Import from file).
+
+### What was actually broken
+
+Three separate breaks stacked on top of each other, and one of them hit the **desktop**
+app too:
+
+1. **The wizard only knew a file PATH.** `handleFile(filePath)` called
+   `purchases:importParse(filePath)` and the main process read the file from disk with
+   `fs`/`XLSX.readFile`. A browser has no file system and no path — there is nothing to
+   read. The "Choose file…" button went through Electron's native open dialog, whose
+   browser shim always answers "cancelled", so in the web the button did **nothing at
+   all**.
+2. **The hidden file input and the drop zone were dead in BOTH builds.** They read
+   `f.path` — the non-standard Electron property that was **removed in Electron 32**
+   (this app runs 43.4.0). So the drag & drop on the Purchases screen and the file input
+   inside the wizard both failed with "Could not read the dropped file path."
+3. **Even a working file pick could not have worked over the web transport** — the bytes
+   have to survive JSON (the W4 lesson).
+
+### The fix
+
+- **`src/main/services/purchaseImport.ts`**
+  - `parsePurchaseData(fileName, payload)` — parses a file whose **content is already in
+    memory**. `normalizeBinaryPayload()` (the W4 codec) decodes it and SheetJS detects
+    the format from the content, so `.xlsx`, `.xls` and `.csv` all work.
+  - The grid → rows rule (header detect, value map, preview cap) was extracted into
+    `parsePurchaseWorkbook()`, so the desktop disk path and the web data path cannot
+    drift apart. `parsePurchaseFile()` (the old desktop path) is untouched.
+  - `savePurchaseImportTemplate()` now goes through the shared `saveXlsx()` helper: the
+    desktop still shows the native save dialog, the web gets the template **bytes** back
+    and the browser downloads them.
+- **New IPC channel** `purchases:importParseData(fileName, payload)` (main → preload →
+  `shared/types.ts`).
+- **`src/renderer/src/components/PurchaseImportWizard.tsx`**
+  - The picked **file content** is read in the renderer (`file.arrayBuffer()`) and sent as
+    a base64 payload — one code path for desktop and web.
+  - "Choose file…" opens the browser's own picker (the hidden `<input type="file">`); on
+    the desktop that is the same Windows file picker, so the native dialog shim is no
+    longer needed.
+  - "Download sample template" downloads the bytes through the shared `downloadBytes()`
+    helper.
+- **`src/renderer/src/pages/Purchases.tsx`** — the drop zone passes the **File** to the
+    wizard instead of a path (`data-purchase-drop` marks the zone for the UI test).
+
+### Verification
+
+| Check | Result |
+|---|---|
+| `npm run test:purchaseimportdata` (the real `dist` service, the web transport) | **24/24** |
+| `npm run test:purchaseimportui` (the REAL renderer in a real BrowserWindow) | **20/20** |
+| `npm run test:purchaseimport` (the pre-existing suite) | green |
+| `npm run test:keyboard` | **93/93** |
+| `npm run test:binaryTransfer` / `npm run test:webImport` | 35/35 · 18/18 |
+| `npm run typecheck` / `npm run build` | exit 0 · exit 0 |
+| cloud build + deploy | exit 0 — Worker `6b69a010-a9ae-4b55-aec4-9279134d1bb2` |
+| **LIVE Worker check** (`npm run smoke:import:live`) | **19/19** (the purchase import parses on the deployed Worker) |
+| local web smoke | **PASS** (21 pages) |
+
+The UI suite drives the real DOM: a CSV **dropped on the Purchases screen** and a CSV
+**picked inside the wizard** are both parsed, and the wizard lands on the "3 · Columns"
+step with the file's own columns and values (`qty = 10`, `product name = Rice 5kg`).
+
+Proof files: `E:\temp\proof\test_purchaseImportData.txt`, `test_purchaseImportUi.txt`,
+`purch2_purchaseimport.txt`, `purch2_keyboard.txt`, `purch2_typecheck.txt`,
+`purch2_build.txt`, `purch2_cloud_build.txt`, `purch2_deploy.txt`,
+`purch2_live_import.txt`, `purch2_websmoke.txt`.
+
+Commits: `fbd5dd4` (the service + the wizard), `2be2654` (the permanent service suite),
+`1f272b7` (the drop zone + the file-content path), `4d49474` (the end-to-end UI suite).
+
+### Owner action required
+
+1. **Web:** hard-refresh the tab (Ctrl+F5) and open **Purchases → Purchase Orders → Import
+   from file**. Drop an `.xlsx`/`.csv` on the page, or use "Choose file…" inside the
+   wizard — the wizard now opens on the column-mapping step with your file's columns.
+   "Download sample template" downloads a real workbook.
+2. **Desktop:** the fix also repairs the desktop's drag & drop (Electron 43 removed
+   `File.path`). The desktop build has to be rebuilt/reinstalled to get it; the released
+   v2.28.0 installer does **not** contain this fix yet.
