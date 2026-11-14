@@ -7,6 +7,8 @@ import type {
 } from '../../../shared/types';
 import { ModalShell } from './ModalShell';
 import { DateInput } from './DateInput';
+import { downloadBytes } from '../utils/download';
+import { fileBytesFromResult } from '../../../shared/binaryTransfer';
 
 /**
  * Phase 3 — Purchase import wizard (Excel / CSV).
@@ -489,11 +491,13 @@ export default function PurchaseImportWizard({
   const downloadErrors = useCallback(async () => {
     if (!summary?.errors?.length) return;
     try {
-      await window.api.exportData.saveCsv(
+      const res = await window.api.exportData.saveCsv(
         'purchase-import-errors.csv',
         ['Row', 'Problem'],
         summary.errors.map((e) => [e.row, e.message])
       );
+      const bytes = fileBytesFromResult(res);
+      if (bytes) downloadBytes(bytes, 'purchase-import-errors.csv', 'text/csv;charset=utf-8');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }

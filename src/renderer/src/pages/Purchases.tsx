@@ -9,6 +9,8 @@ import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useLineItemKeyboard } from '../hooks/useLineItemKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 import PurchaseImportWizard from '../components/PurchaseImportWizard';
+import { downloadBytes } from '../utils/download';
+import { fileBytesFromResult } from '../../../shared/binaryTransfer';
 
 type Tab = 'suppliers' | 'orders';
 
@@ -404,9 +406,9 @@ export default function Purchases() {
   onClick={async () => {
     try {
       const res = await window.api.excel.exportPurchaseOrders({ status: status || undefined, from: from || undefined, to: to || undefined, supplierId: supplierId || undefined });
-      if (res instanceof Uint8Array) {
-        const { downloadBytes } = await import('../utils/download');
-        downloadBytes(res, 'purchase-orders.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      const bytes = fileBytesFromResult(res);
+      if (bytes) {
+        downloadBytes(bytes, 'purchase-orders.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       }
     } catch (e) {
       setErr(String(e));

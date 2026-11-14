@@ -12,6 +12,8 @@ import { SearchInput, DateRangePicker } from './filters';
 import { formatDateTimeAdmin, formatDateAdmin } from '../utils/dateUtils';
 import { formatMoney, getCurrencySymbol } from '../utils/currency';
 import { useListKeyboard } from '../hooks/useListKeyboard';
+import { downloadBytes } from '../utils/download';
+import { fileBytesFromResult, normalizeBinaryPayload } from '../../../shared/binaryTransfer';
 
 type Tab = 'transactions' | 'items' | 'payments';
 
@@ -180,9 +182,9 @@ export function UdhaarLedgerModal({ customerId, onClose, onChanged }: UdhaarLedg
     if (!data) return;
     try {
       const res = await window.api.excel.exportUdhaarStatement(data.customer.id, from || undefined, to || undefined);
-      if (res instanceof Uint8Array) {
-        const { downloadBytes } = await import('../utils/download');
-        downloadBytes(res, 'udhaar-statement.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      const bytes = fileBytesFromResult(res);
+      if (bytes) {
+        downloadBytes(bytes, 'udhaar-statement.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         setNotice('Statement exported to Excel.');
       } else if (res) {
         setNotice('Statement exported to Excel.');
@@ -201,7 +203,14 @@ export function UdhaarLedgerModal({ customerId, onClose, onChanged }: UdhaarLedg
         setNotice(res.message || 'Export failed');
         return;
       }
-      const blob = res.data instanceof Blob ? res.data : new Blob([new Uint8Array(res.data)], { type: 'application/pdf' });
+      // The bytes can arrive as a Blob (desktop) or as raw bytes (web, where the
+      // JSON transport flattens them) — normalise both.
+      const pdfBytes = res.data instanceof Blob ? null : normalizeBinaryPayload(res.data);
+      const blob = res.data instanceof Blob ? res.data : pdfBytes ? new Blob([pdfBytes as BlobPart], { type: 'application/pdf' }) : null;
+      if (!blob) {
+        setNotice(res.message || 'Export failed');
+        return;
+      }
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

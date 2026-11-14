@@ -10,6 +10,8 @@ import { formatMoney, getCurrencySymbol } from '../utils/currency';
 import { formatCustomerDiscount, hasCustomerDiscount } from '@shared/customerDiscount';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
+import { downloadBytes } from '../utils/download';
+import { fileBytesFromResult } from '../../../shared/binaryTransfer';
 
 type Notice = { text: string; kind: 'ok' | 'error' };
 type View = 'list' | 'aging';
@@ -109,9 +111,9 @@ export default function Udhaar() {
         from: from || undefined,
         to: to || undefined,
       });
-      if (res instanceof Uint8Array) {
-        const { downloadBytes } = await import('../utils/download');
-        downloadBytes(res, 'customers.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      const bytes = fileBytesFromResult(res);
+      if (bytes) {
+        downloadBytes(bytes, 'customers.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         flash('Customer list exported to Excel.');
       } else if (res) {
         flash('Customer list exported to Excel.');

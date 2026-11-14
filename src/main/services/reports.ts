@@ -5,6 +5,7 @@ import { todayLocal, formatLocalString, daysAgo, toLocalDateString } from '../ut
 import { createWriteStream } from 'fs';
 import { reconcilePayments, type SaleRow as ReconciliationSaleRow } from '../../shared/paymentReconciliation';
 import { resolveBusinessRange } from '../../shared/salesHistory';
+import { toBase64Payload } from '../../shared/binaryTransfer';
 import type {
   SalesAnalysisResult,
   ProductPerformanceResult,
@@ -953,7 +954,7 @@ function fmt(n: number): string {
   return (n || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
-export async function exportReportPDF(reportType: string, data: unknown): Promise<string | null | Uint8Array> {
+export async function exportReportPDF(reportType: string, data: unknown): Promise<string | null> {
   const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
   const isWeb = !win;
   const defaultName = `${reportType}-report-${todayLocal()}.pdf`;
@@ -1070,7 +1071,7 @@ export async function exportReportPDF(reportType: string, data: unknown): Promis
   doc.end();
   await new Promise((resolve) => doc.on('end', resolve));
   const buf = Buffer.concat(chunks);
-  if (isWeb) return new Uint8Array(buf);
+  if (isWeb) return toBase64Payload(new Uint8Array(buf));
   if (filePath) {
     const fs = require('fs');
     fs.writeFileSync(filePath, buf);
@@ -1078,7 +1079,7 @@ export async function exportReportPDF(reportType: string, data: unknown): Promis
   return filePath ?? null;
 }
 
-export async function exportReportExcel(reportType: string, data: unknown): Promise<string | null | Uint8Array> {
+export async function exportReportExcel(reportType: string, data: unknown): Promise<string | null> {
   const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
   const isWeb = !win;
   const XLSX = require('xlsx');
@@ -1174,7 +1175,7 @@ export async function exportReportExcel(reportType: string, data: unknown): Prom
   }
 
   const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
-  if (isWeb) return new Uint8Array(buffer);
+  if (isWeb) return toBase64Payload(new Uint8Array(buffer));
   if (!win) return null;
   const defaultName = `${reportType}-report-${todayLocal()}.xlsx`;
   const result = await dialog.showSaveDialog(win, {

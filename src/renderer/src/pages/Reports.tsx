@@ -45,6 +45,8 @@ import { KeyboardInput } from '../components/KeyboardInput';
 import { DateInput } from '../components/DateInput';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
+import { downloadBytes } from '../utils/download';
+import { fileBytesFromResult } from '../../../shared/binaryTransfer';
 
 type Tab =
   | 'sales'
@@ -226,9 +228,9 @@ export default function Reports() {
 
   async function exportPdf(reportType: string, data: unknown) {
     const res = await window.api.reports.exportReportPDF(reportType, data);
-    if (res instanceof Uint8Array) {
-      const { downloadBytes } = await import('../utils/download');
-      downloadBytes(res, `${reportType}-report.pdf`, 'application/pdf');
+    const bytes = fileBytesFromResult(res);
+    if (bytes) {
+      downloadBytes(bytes, `${reportType}-report.pdf`, 'application/pdf');
       setNotice('PDF downloaded.');
     } else if (res) {
       setNotice(`PDF saved: ${res}`);
@@ -237,9 +239,9 @@ export default function Reports() {
 
   async function exportFullExcel(reportType: string, data: unknown) {
     const res = await window.api.reports.exportReportExcel(reportType, data);
-    if (res instanceof Uint8Array) {
-      const { downloadBytes } = await import('../utils/download');
-      downloadBytes(res, `${reportType}-report.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    const bytes = fileBytesFromResult(res);
+    if (bytes) {
+      downloadBytes(bytes, `${reportType}-report.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       setNotice('Excel downloaded.');
     } else if (res) {
       setNotice(`Excel saved: ${res}`);
@@ -247,7 +249,11 @@ export default function Reports() {
   }
 
   async function exportXlsx(name: string, headers: string[], rows: (string | number | null)[][]) {
-    await window.api.exportData.saveXlsx(`${name}-${to}.xlsx`, [{ name: name.slice(0, 31), headers, rows }]);
+    const res = await window.api.exportData.saveXlsx(`${name}-${to}.xlsx`, [{ name: name.slice(0, 31), headers, rows }]);
+    const bytes = fileBytesFromResult(res);
+    if (bytes) {
+      downloadBytes(bytes, `${name}-${to}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    }
   }
 
   function ExportButtons(props: {
@@ -1334,9 +1340,9 @@ export default function Reports() {
   onClick={async () => {
     try {
       const res = await window.api.excel.exportExpenses(from, to);
-      if (res instanceof Uint8Array) {
-        const { downloadBytes } = await import('../utils/download');
-        downloadBytes(res, 'expenses.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      const bytes = fileBytesFromResult(res);
+      if (bytes) {
+        downloadBytes(bytes, 'expenses.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       }
     } catch (e) {
       console.error(e);

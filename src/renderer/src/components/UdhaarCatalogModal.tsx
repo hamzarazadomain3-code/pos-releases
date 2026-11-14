@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { UdhaarCatalogItem } from '../../../shared/types';
 import { Modal } from './Modal';
 import { KeyboardInput } from './KeyboardInput';
 import { formatMoney } from '../utils/currency';
+import { downloadBytes } from '../utils/download';
+import { fileBytesFromResult } from '../../../shared/binaryTransfer';
 
 /**
  * Udhaar item catalog — the barcode → name/price memory the Add Udhaar dialog
@@ -30,6 +32,7 @@ export function UdhaarCatalogModal({ onClose }: UdhaarCatalogModalProps) {
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const catalogFileRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
     setItems(await window.api.udhaar.catalogList());
@@ -79,8 +82,12 @@ export function UdhaarCatalogModal({ onClose }: UdhaarCatalogModalProps) {
   async function exportCsv() {
     setBusy(true);
     try {
-      const ok = await window.api.udhaar.catalogExport();
-      if (ok) setNotice('Catalog exported to CSV.');
+      const res = await window.api.udhaar.catalogExport();
+      // The browser build has no save dialog — the main process hands the CSV
+      // back as bytes and the page downloads it.
+      const bytes = fileBytesFromResult(res);
+      if (bytes) downloadBytes(bytes, 'udhaar-catalog.csv', 'text/csv;charset=utf-8');
+      if (res) setNotice('Catalog exported to CSV.');
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
     } finally {
@@ -89,15 +96,26 @@ export function UdhaarCatalogModal({ onClose }: UdhaarCatalogModalProps) {
   }
 
   async function importCsv() {
+    // Use a file input so the import works in the browser build too (where
+    // there is no native file dialog). On the desktop the same path runs.
+    catalogFileRef.current?.click();
+  }
+
+  async function handleCatalogFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
     setBusy(true);
     try {
-      const res = await window.api.udhaar.catalogImport();
+      const text = await file.text();
+      const res = await window.api.udhaar.catalogImportFromData(text);
       setNotice(res.message);
       if (res.ok) await load();
-    } catch (e) {
-      setNotice(e instanceof Error ? e.message : String(e));
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
+      // Reset so the same file can be picked again.
+      if (catalogFileRef.current) catalogFileRef.current.value = '';
     }
   }
 
@@ -168,6 +186,14 @@ export function UdhaarCatalogModal({ onClose }: UdhaarCatalogModalProps) {
         </button>
         <span className="muted small">{filtered.length} item(s)</span>
       </div>
+
+      <input
+        ref={catalogFileRef}
+        type="file"
+        accept=".csv,text/csv"
+        style={{ display: 'none' }}
+        onChange={handleCatalogFile}
+      />
 
       <div className="table-wrap">
         <table className="data-table">

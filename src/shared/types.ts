@@ -1434,9 +1434,9 @@ export interface PosBridge {
     catalogList: () => Promise<UdhaarCatalogItem[]>;
     catalogUpsert: (item: { id?: number; barcode?: string | null; name: string; price: number; unit?: string | null }) => Promise<UdhaarCatalogItem>;
     catalogDelete: (id: number) => Promise<boolean>;
-    catalogExport: () => Promise<boolean>;
+    catalogExport: () => Promise<boolean | string>;
     catalogImport: () => Promise<{ ok: boolean; message: string; imported?: number }>;
-    catalogExportData: () => Promise<boolean | Uint8Array>;
+    catalogExportData: () => Promise<boolean | string>;
     catalogImportFromData: (text: string) => Promise<{ ok: boolean; message: string; imported?: number }>;
     /** Print a slip for one manual entry (thermal roll only). */
     printEntrySlip: (transactionId: number, paper?: 'thermal80' | 'thermal58') => Promise<PrintResult>;
@@ -1517,8 +1517,8 @@ export interface PosBridge {
     getFinancialReport: (from?: string, to?: string) => Promise<FinancialReportResult>;
     getTaxReport: (from?: string, to?: string) => Promise<TaxReportResult>;
     getDailyClosing: (date: string) => Promise<DailyClosingResult>;
-    exportReportPDF: (reportType: string, data: unknown) => Promise<string | null | Uint8Array>;
-    exportReportExcel: (reportType: string, data: unknown) => Promise<string | null | Uint8Array>;
+    exportReportPDF: (reportType: string, data: unknown) => Promise<string | null>;
+    exportReportExcel: (reportType: string, data: unknown) => Promise<string | null>;
   };
   whatsapp: {
     getStatus: () => Promise<WhatsAppStatus>;
@@ -1596,15 +1596,15 @@ export interface PosBridge {
     ) => Promise<boolean>;
   };
   excel: {
-    exportProducts: (filters?: { search?: string; includeInactive?: boolean; categoryId?: number; stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock'; supplierId?: number; expiryFrom?: string; expiryTo?: string }) => Promise<boolean | Uint8Array>;
-    exportSales: (from?: string, to?: string) => Promise<boolean | Uint8Array>;
-    exportCustomers: (filters?: { status?: 'paid' | 'pending' | 'all'; from?: string; to?: string }) => Promise<boolean | Uint8Array>;
-    exportUdhaarStatement: (customerId: number, from?: string, to?: string) => Promise<boolean | Uint8Array>;
-    exportPurchaseOrders: (filters?: { status?: string; from?: string; to?: string; supplierId?: number }) => Promise<boolean | Uint8Array>;
-    exportExpenses: (from?: string, to?: string) => Promise<boolean | Uint8Array>;
-    downloadTemplate: () => Promise<boolean | Uint8Array>;
+    exportProducts: (filters?: { search?: string; includeInactive?: boolean; categoryId?: number; stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock'; supplierId?: number; expiryFrom?: string; expiryTo?: string }) => Promise<boolean | string>;
+    exportSales: (from?: string, to?: string) => Promise<boolean | string>;
+    exportCustomers: (filters?: { status?: 'paid' | 'pending' | 'all'; from?: string; to?: string }) => Promise<boolean | string>;
+    exportUdhaarStatement: (customerId: number, from?: string, to?: string) => Promise<boolean | string>;
+    exportPurchaseOrders: (filters?: { status?: string; from?: string; to?: string; supplierId?: number }) => Promise<boolean | string>;
+    exportExpenses: (from?: string, to?: string) => Promise<boolean | string>;
+    downloadTemplate: () => Promise<boolean | string>;
     importProducts: () => Promise<ProductImportResult | null>;
-    importProductsFromData: (data: Uint8Array) => Promise<ProductImportResult>;
+    importProductsFromData: (data: string) => Promise<ProductImportResult>;
   };
   purchases: {
     suppliers: () => Promise<Supplier[]>;

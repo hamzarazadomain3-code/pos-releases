@@ -11,6 +11,7 @@ import { DateInput } from '../components/DateInput';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 import { downloadBytes } from '../utils/download';
+import { toBase64Payload, fileBytesFromResult } from '../../../shared/binaryTransfer';
 
 interface ProductBatch {
   id: number;
@@ -427,7 +428,9 @@ export default function Inventory() {
     if (!file) return;
     try {
       const buf = await file.arrayBuffer();
-      const res = await window.api.excel.importProductsFromData(new Uint8Array(buf));
+      // Base64, not raw bytes: the web transport is JSON, where a Uint8Array
+      // would arrive as a plain object and break the parser.
+      const res = await window.api.excel.importProductsFromData(toBase64Payload(new Uint8Array(buf)));
       if (res) setImportResult(res);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err));
@@ -448,8 +451,9 @@ export default function Inventory() {
         expiryFrom: expiryFrom || undefined,
         expiryTo: expiryTo || undefined,
       });
-      if (res instanceof Uint8Array) {
-        downloadBytes(res, 'products.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      const bytes = fileBytesFromResult(res);
+      if (bytes) {
+        downloadBytes(bytes, 'products.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         setNotice('Inventory exported to Excel.');
       } else if (res) {
         setNotice('Inventory exported to Excel.');
@@ -462,8 +466,9 @@ export default function Inventory() {
   async function handleTemplate() {
     try {
       const res = await window.api.excel.downloadTemplate();
-      if (res instanceof Uint8Array) {
-        downloadBytes(res, 'product-template.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      const bytes = fileBytesFromResult(res);
+      if (bytes) {
+        downloadBytes(bytes, 'product-template.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       } else if (res) {
         setNotice('Template downloaded.');
       }

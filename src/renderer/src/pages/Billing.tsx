@@ -16,6 +16,8 @@ import { defaultCombo, hintRows, isActionAllowedOn, resolveCombo, resolveCombos 
 import { parseNegativeStockPolicy, checkNegativeStock, type NegativeStockPolicy } from '@shared/negativeStock';
 import { applyCustomerDiscount, customerDiscountBadge, describeDiscountSource, minBillHint } from '@shared/customerDiscount';
 import { shouldJumpToQty } from '@shared/qtyJump';
+import { fileBytesFromResult } from '@shared/binaryTransfer';
+import { downloadBytes } from '@utils/download';
 import {
   billEditReducer,
   billEditKeyAction,
@@ -2377,18 +2379,28 @@ setQuotationMode(false);
 
   async function exportHistoryCsv() {
     const headers = ['Time', 'Type', 'Invoice', 'Customer', 'Cashier', 'Payment', 'Amount', 'Reason', 'Reference'];
-    await window.api.exportData.saveCsv(
+    const res = await window.api.exportData.saveCsv(
       `sales-history-${historyFilters.from || 'all'}.csv`,
       headers,
       historyExportRows()
     );
+    const bytes = fileBytesFromResult(res);
+    if (bytes) downloadBytes(bytes, `sales-history-${historyFilters.from || 'all'}.csv`, 'text/csv;charset=utf-8');
   }
 
   async function exportHistoryExcel() {
     const headers = ['Time', 'Type', 'Invoice', 'Customer', 'Cashier', 'Payment', 'Amount', 'Reason', 'Reference'];
-    await window.api.exportData.saveXlsx(`sales-history-${historyFilters.from || 'all'}.xlsx`, [
+    const res = await window.api.exportData.saveXlsx(`sales-history-${historyFilters.from || 'all'}.xlsx`, [
       { name: 'Sales History', headers, rows: historyExportRows() },
     ]);
+    const bytes = fileBytesFromResult(res);
+    if (bytes) {
+      downloadBytes(
+        bytes,
+        `sales-history-${historyFilters.from || 'all'}.xlsx`,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      );
+    }
   }
 
   async function openSaleDetail(saleId: number) {

@@ -277,7 +277,7 @@ const bridge: PosBridge = {
     exportExpenses: (from?: string, to?: string) => ipcRenderer.invoke('excel:exportExpenses', from, to),
     downloadTemplate: () => ipcRenderer.invoke('excel:downloadTemplate'),
     importProducts: () => ipcRenderer.invoke('excel:importProducts'),
-    importProductsFromData: (data: Uint8Array) => ipcRenderer.invoke('excel:importProductsFromData', data),
+    importProductsFromData: (data: string) => ipcRenderer.invoke('excel:importProductsFromData', data),
   },
   purchases: {
     suppliers: () => ipcRenderer.invoke('purchases:suppliers'),

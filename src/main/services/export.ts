@@ -11,6 +11,7 @@ import { listPurchaseOrders, getPurchaseOrder } from './purchases';
 import { listExpenses } from './reports';
 import { listCategories, listUnits } from './inventory';
 import type { ProductImportError, ProductImportResult } from '../../shared/types';
+import { normalizeBinaryPayload, toBase64Payload } from '../../shared/binaryTransfer';
 
 function csvCell(v: string | number): string {
   const s = String(v ?? '');
@@ -32,10 +33,12 @@ export async function saveCsv(
   defaultName: string,
   headers: string[],
   rows: (string | number)[][]
-): Promise<boolean | Uint8Array> {
+): Promise<boolean | string> {
   const buffer = buildCsvBuffer(headers, rows);
-  // Web build: no native save dialog — hand the bytes back so the browser can download them.
-  if (!win) return new Uint8Array(buffer);
+  // Web build: no native save dialog — hand the bytes back as a base64 payload
+  // so the browser can download them (the web transport is JSON, where raw
+  // bytes would arrive as a plain object).
+  if (!win) return toBase64Payload(new Uint8Array(buffer));
   const { canceled, filePath } = await dialog.showSaveDialog(win, {
     defaultPath: defaultName,
     filters: [{ name: 'CSV', extensions: ['csv'] }],
@@ -61,7 +64,7 @@ function toDateValue(v: unknown): string | null {
   return isNaN(d.getTime()) ? null : formatDateYMD(d);
 }
 
-export function saveXlsx(win: BrowserWindow | null, defaultName: string, sheets: XlsxSheet[]): Promise<boolean | Uint8Array> {
+export function saveXlsx(win: BrowserWindow | null, defaultName: string, sheets: XlsxSheet[]): Promise<boolean | string> {
   return (async () => {
     const wb = XLSX.utils.book_new();
     for (const s of sheets) {
@@ -70,8 +73,10 @@ export function saveXlsx(win: BrowserWindow | null, defaultName: string, sheets:
       XLSX.utils.book_append_sheet(wb, ws, s.name.slice(0, 31));
     }
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
-    // Web build: no native save dialog — hand the bytes back so the browser can download them.
-    if (!win) return new Uint8Array(buffer);
+    // Web build: no native save dialog — hand the bytes back as a base64 payload
+    // so the browser can download them (the web transport is JSON, where raw
+    // bytes would arrive as a plain object).
+    if (!win) return toBase64Payload(new Uint8Array(buffer));
     const { canceled, filePath } = await dialog.showSaveDialog(win, {
       defaultPath: defaultName,
       filters: [{ name: 'Excel Workbook', extensions: ['xlsx'] }],
@@ -91,7 +96,7 @@ export function exportProductsXlsx(
   supplierId?: number,
   expiryFrom?: string,
   expiryTo?: string
-): Promise<boolean | Uint8Array> {
+): Promise<boolean | string> {
   const products = listProducts(search, includeInactive, categoryId, stockStatus, supplierId, expiryFrom, expiryTo);
   return saveXlsx(win, 'products.xlsx', [
     {
@@ -119,7 +124,7 @@ export function exportProductsXlsx(
   ]);
 }
 
-export function exportSalesXlsx(win: BrowserWindow | null, from?: string, to?: string): Promise<boolean | Uint8Array> {
+export function exportSalesXlsx(win: BrowserWindow | null, from?: string, to?: string): Promise<boolean | string> {
   const sales = listSales(from, to);
   return saveXlsx(win, 'sales-report.xlsx', [
     {
@@ -144,7 +149,7 @@ export function exportSalesXlsx(win: BrowserWindow | null, from?: string, to?: s
   ]);
 }
 
-export function exportCustomersXlsx(win: BrowserWindow | null, status?: 'paid' | 'pending' | 'all', from?: string, to?: string): Promise<boolean | Uint8Array> {
+export function exportCustomersXlsx(win: BrowserWindow | null, status?: 'paid' | 'pending' | 'all', from?: string, to?: string): Promise<boolean | string> {
   const customers = listCustomers(status, from, to);
   return saveXlsx(win, 'customers.xlsx', [
     {
@@ -161,7 +166,7 @@ export function exportUdhaarStatementXlsx(
   customerId: number,
   from?: string,
   to?: string
-): Promise<boolean | Uint8Array> {
+): Promise<boolean | string> {
   const { ledger, statement } = getUdhaarStatement(customerId, from, to);
   const particulars = (type: string, amount: number, saleId: number | null, invoice: string | null, note: string | null): string => {
     if (amount < 0) return `Payment (${type.split(':')[1] || 'Cash'})${note ? ` — ${note}` : ''}`;
@@ -204,7 +209,7 @@ export function exportUdhaarStatementXlsx(
 }
 
 /** Export the Udhaar item catalog as `barcode,name,price,unit` CSV. */
-export function exportUdhaarCatalogCsv(win: BrowserWindow | null): Promise<boolean | Uint8Array> {
+export function exportUdhaarCatalogCsv(win: BrowserWindow | null): Promise<boolean | string> {
   const rows = listUdhaarCatalog().map((c) => [c.barcode ?? '', c.name, c.price, c.unit ?? '']);
   return saveCsv(win, 'udhaar-catalog.csv', ['barcode', 'name', 'price', 'unit'], rows);
 }
@@ -237,7 +242,7 @@ export function importUdhaarCatalogCsv(win: BrowserWindow | null): Promise<{ ok:
   })();
 }
 
-export function exportPurchaseOrdersXlsx(win: BrowserWindow | null, status?: string, from?: string, to?: string, supplierId?: number): Promise<boolean | Uint8Array> {
+export function exportPurchaseOrdersXlsx(win: BrowserWindow | null, status?: string, from?: string, to?: string, supplierId?: number): Promise<boolean | string> {
   const orders = listPurchaseOrders(status, from, to, supplierId);
   const orderRows = orders.map((o) => [o.id, o.created_at ?? '', o.supplier_name ?? '', o.status, o.total_amount]);
   const itemRows: (string | number | null)[][] = [];
@@ -254,7 +259,7 @@ export function exportPurchaseOrdersXlsx(win: BrowserWindow | null, status?: str
   ]);
 }
 
-export function exportExpensesXlsx(win: BrowserWindow | null, from?: string, to?: string): Promise<boolean | Uint8Array> {
+export function exportExpensesXlsx(win: BrowserWindow | null, from?: string, to?: string): Promise<boolean | string> {
   const expenses = listExpenses(from, to);
   return saveXlsx(win, 'expenses.xlsx', [
     {
@@ -265,7 +270,7 @@ export function exportExpensesXlsx(win: BrowserWindow | null, from?: string, to?
   ]);
 }
 
-export function downloadProductTemplate(win: BrowserWindow | null): Promise<boolean | Uint8Array> {
+export function downloadProductTemplate(win: BrowserWindow | null): Promise<boolean | string> {
   const categories = listCategories().map((c) => c.name).join(', ');
   const units = listUnits().map((u) => u.name).join(', ');
   return saveXlsx(win, 'product-import-template.xlsx', [
@@ -347,8 +352,15 @@ function findUnitId(db: ReturnType<typeof getDb>, name: string): number | null {
   return unit ? unit.id : null;
 }
 
-export function importProductsFromBuffer(buffer: Buffer | Uint8Array): ProductImportResult {
-  const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+export function importProductsFromBuffer(payload: unknown): ProductImportResult {
+  // The desktop app hands us a Buffer over Electron IPC; the web app sends the
+  // file as a base64 string (its transport is JSON, where a Uint8Array would
+  // arrive as a plain object). `normalizeBinaryPayload` accepts every shape.
+  const bytes = normalizeBinaryPayload(payload);
+  if (!bytes) {
+    return { inserted: 0, errors: [{ row: 0, message: 'Invalid file data' }] };
+  }
+  const wb = XLSX.read(bytes, { type: 'array', cellDates: true });
   const sheetName = wb.SheetNames[0];
     if (!sheetName) return { inserted: 0, errors: [{ row: 0, message: 'Workbook has no sheets' }] };
     const aoa = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName], { header: 1, raw: true });

@@ -805,7 +805,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('excel:exportExpenses', (_e, from?: string, to?: string) => exportExpensesXlsx(BrowserWindow.getFocusedWindow(), from, to));
   ipcMain.handle('excel:downloadTemplate', () => downloadProductTemplate(BrowserWindow.getFocusedWindow()));
   ipcMain.handle('excel:importProducts', () => importProductsFromExcel(BrowserWindow.getFocusedWindow()));
-  ipcMain.handle('excel:importProductsFromData', (_e, data: Uint8Array) => importProductsFromBuffer(Buffer.from(data)));
+  ipcMain.handle('excel:importProductsFromData', (_e, data: unknown) => importProductsFromBuffer(data));
 
   ipcMain.handle('purchases:suppliers', () => listSuppliers());
   ipcMain.handle('purchases:createSupplier', (_e, name: string, phone?: string, address?: string) =>

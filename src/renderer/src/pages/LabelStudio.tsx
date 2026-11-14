@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import JsBarcode from 'jsbarcode';
 import type { Product } from '@shared/types';
+import { normalizeBinaryPayload } from '@shared/binaryTransfer';
 import { LabelTemplate, LabelLayout, ProductOverride, LabelRunOptions, PRESET_SIZES, BUILTIN_TEMPLATES, DEFAULT_TEMPLATE_ID, defaultTemplate, parseSavedTemplates, normalizeTemplate, isKnownTemplateId, resolveSizeSpec } from '@pages/LabelStudio/types';
 import { formatMoney } from '@utils/currency';
 import { KeyboardInput } from '@components/KeyboardInput';
@@ -357,7 +358,12 @@ export default function LabelStudio() {
         setNotice(result.message || 'Export failed');
         return;
       }
-      const blob = result.data instanceof Blob ? result.data : new Blob([new Uint8Array(result.data)]);
+      const pdfBytes = result.data instanceof Blob ? null : normalizeBinaryPayload(result.data);
+      const blob = result.data instanceof Blob ? result.data : pdfBytes ? new Blob([pdfBytes as BlobPart]) : null;
+      if (!blob) {
+        setNotice(result.message || 'Export failed');
+        return;
+      }
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -383,7 +389,12 @@ export default function LabelStudio() {
         setNotice(result.message || 'Export failed');
         return;
       }
-      const blob = result.data instanceof Blob ? result.data : new Blob([new Uint8Array(result.data)]);
+      const pngBytes = result.data instanceof Blob ? null : normalizeBinaryPayload(result.data);
+      const blob = result.data instanceof Blob ? result.data : pngBytes ? new Blob([pngBytes as BlobPart]) : null;
+      if (!blob) {
+        setNotice(result.message || 'Export failed');
+        return;
+      }
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
