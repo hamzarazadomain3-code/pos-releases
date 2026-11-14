@@ -5903,6 +5903,55 @@ input[type="range"]::-moz-range-thumb {
   width: 32px;
   height: 32px;
 }
+
+/* ── The brand header ───────────────────────────────────────────────────────
+   The shop's own name (from the Shop Profile) and, for a multi-branch shop,
+   the branch it is sitting in. The status dot is green while a shift is open. */
+.bilten-sidebar .sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.bilten-sidebar .sidebar-brand-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.bilten-sidebar .sidebar-brand-label {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bilten-sidebar .sidebar-brand-branch {
+  font-size: 0.6875rem;
+  color: var(--sidebar-text-muted, #c3d3cd);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bilten-sidebar .sidebar-brand-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--sidebar-accent, #6ee7b7);
+  flex-shrink: 0;
+  margin-inline-start: auto;
+  box-shadow: 0 0 0 2px rgba(110, 231, 183, 0.25);
+}
+
+.bilten-sidebar:not(.open) .sidebar-brand-info,
+.bilten-sidebar:not(.open) .sidebar-brand-branch,
+.bilten-sidebar:not(.open) .sidebar-brand-dot {
+  display: none;
+}
 .bilten-sidebar .sidebar-nav {
   padding: 6px 6px;
   gap: 2px;

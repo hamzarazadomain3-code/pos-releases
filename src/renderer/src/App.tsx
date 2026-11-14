@@ -8,6 +8,7 @@ import { KeyboardProvider } from './keyboard/KeyboardProvider';
 import { buildSidebar, canOpenRoute, landingPageFor, SIDEBAR_GROUPS, SIDEBAR_ITEMS } from '@shared/sidebarMenu';
 import { resolveCombo } from '@shared/shortcuts';
 import { shortcutHintLabel } from '@shared/sidebarKeyboardNav';
+import { brandDisplayName, brandSubtitle, brandInitials, PRODUCT_NAME } from '@shared/sidebarBrand';
 import { sidebarIconShapes } from '@shared/sidebarIcons';
 import { languageToggleLabelKey, languageToggleTarget, roleLabelKey, userDisplayName, userInitials } from '@shared/sidebarFooter';
 import { badgeFor, BADGE_REFRESH_MS, type SidebarBadge } from '@shared/sidebarBadges';
@@ -595,6 +596,7 @@ export default function App() {
   const [mustChangePw, setMustChangePw] = useState(false);
   const [shopLogo, setShopLogo] = useState<string | null>(null);
   const [shopName, setShopName] = useState<string | null>(null);
+  const [branchName, setBranchName] = useState<string | null>(null);
   const [sessionRestoring, setSessionRestoring] = useState(true);
   const [multiBranch, setMultiBranch] = useState(false);
   const [sessionTimeoutMinutes, setSessionTimeoutMinutes] = useState(0);
@@ -715,6 +717,18 @@ export default function App() {
       })
       .catch(() => undefined);
   }, []);
+
+  // The branch the shop is sitting in (only meaningful for a multi-branch shop).
+  useEffect(() => {
+    if (!multiBranch) {
+      setBranchName(null);
+      return;
+    }
+    window.api.branches
+      .getCurrent()
+      .then((b) => setBranchName(b?.name ?? null))
+      .catch(() => setBranchName(null));
+  }, [multiBranch]);
 
   useEffect(() => {
     if (!user) {
@@ -1106,8 +1120,21 @@ export default function App() {
         className={`sidebar bilten-sidebar ${sidebarOpen ? 'open' : ''}`}
       >
         <div className="sidebar-brand">
-          <img src={rokarMarkDark} alt="" className="brand-icon" />
-          <span className="nav-label sidebar-brand-label">Rokar</span>
+          {shopLogo ? (
+            <img src={shopLogo} alt="" className="brand-icon brand-logo" />
+          ) : (
+            <img src={rokarMarkDark} alt="" className="brand-icon" />
+          )}
+          <span className="nav-label sidebar-brand-info">
+            <span className="sidebar-brand-label">{brandDisplayName(shopName)}</span>
+            {brandSubtitle(multiBranch, branchName) && (
+              <span className="sidebar-brand-branch">{brandSubtitle(multiBranch, branchName)}</span>
+            )}
+          </span>
+          {/* The status dot: green while a shift is open. */}
+          {badges.some((b) => b.id === 'shifts') && (
+            <span className="sidebar-brand-dot" aria-hidden="true" />
+          )}
         </div>
         <nav className="sidebar-nav" aria-label={t('navigation.billing', 'Menu')}>
           {navGroups.map((group) => {

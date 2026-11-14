@@ -70,7 +70,8 @@
     "test:sidebarFooter": "npm run build:main && node scripts/test_sidebarFooter.cjs",
     "test:sidebarBadges": "npm run build:main && node scripts/test_sidebarBadges.cjs",
     "test:sidebarKeyboardNav": "npm run build:main && node scripts/test_sidebarKeyboardNav.cjs",
-    "test:sidebarSearch": "npm run build:main && node scripts/test_sidebarSearch.cjs"
+    "test:sidebarSearch": "npm run build:main && node scripts/test_sidebarSearch.cjs",
+    "test:sidebarBrand": "npm run build:main && node scripts/test_sidebarBrand.cjs"
   },
   "dependencies": {
     "bwip-js": "^4.11.2",
