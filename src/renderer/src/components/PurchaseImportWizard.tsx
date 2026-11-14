@@ -167,14 +167,14 @@ function runChunked<T>(
 export default function PurchaseImportWizard({
   suppliers,
   products,
-  initialFilePath,
+  initialFile,
   onClose,
   onDone,
 }: {
   suppliers: Supplier[];
   products: Product[];
   /** Set when the file was dropped on the Purchases screen. */
-  initialFilePath?: string | null;
+  initialFile?: File | null;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -213,29 +213,6 @@ export default function PurchaseImportWizard({
   const [summary, setSummary] = useState<PurchaseImportSummary | null>(null);
   const [notice, setNotice] = useState('');
   const [undoable, setUndoable] = useState<{ id: number; imported_count: number } | null>(null);
-
-  // A file dropped on the Purchases screen arrives here already parsed.
-  useEffect(() => {
-    if (!initialFilePath) return;
-    let alive = true;
-    (async () => {
-      setBusy(true);
-      try {
-        const parsed = await window.api.purchases.importParse(initialFilePath);
-        if (!alive) return;
-        setFile(parsed);
-        setStep(3);
-      } catch (e) {
-        if (alive) setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        if (alive) setBusy(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialFilePath]);
 
   const productById = useMemo(() => {
     const m = new Map<number, Product>();
@@ -391,6 +368,13 @@ export default function PurchaseImportWizard({
     // dialog, so there is one code path for both builds.
     fileInputRef.current?.click();
   }, []);
+
+  // A file dropped on the Purchases screen arrives here already picked: it is
+  // parsed the same way as a file chosen inside the wizard.
+  useEffect(() => {
+    if (!initialFile) return;
+    void handleFile(initialFile);
+  }, [initialFile, handleFile]);
 
   const downloadTemplate = useCallback(async () => {
     try {

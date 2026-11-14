@@ -41,7 +41,7 @@ export default function Purchases() {
 
   // ── Phase 3: import wizard, partial receive, undo ──
   const [importOpen, setImportOpen] = useState(false);
-  const [importFilePath, setImportFilePath] = useState<string | null>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
   const [importDragOver, setImportDragOver] = useState(false);
   const [receiveQty, setReceiveQty] = useState<Record<number, string>>({});
   const [undoInfo, setUndoInfo] = useState<{ id: number; imported_count: number } | null>(null);
@@ -422,7 +422,7 @@ export default function Purchases() {
                   Undo last import
                 </button>
               )}
-              <button className="btn btn-sm" onClick={() => { setImportFilePath(null); setImportOpen(true); }}>
+              <button className="btn btn-sm" onClick={() => { setImportFile(null); setImportOpen(true); }}>
                 Import from file
               </button>
               <button className="btn btn-primary" onClick={() => { resetStagedSearch(); setPoModal(true); }}>
@@ -431,18 +431,21 @@ export default function Purchases() {
             </FilterRow>
           </FilterBar>
           <div
+            data-purchase-drop="true"
             onDragOver={(e) => { e.preventDefault(); setImportDragOver(true); }}
             onDragLeave={() => setImportDragOver(false)}
             onDrop={(e) => {
               e.preventDefault();
               setImportDragOver(false);
-              const f = e.dataTransfer.files?.[0] as (File & { path?: string }) | undefined;
-              if (f?.path) {
-                // The wizard parses it on mount and jumps to the column mapping.
-                setImportFilePath(f.path);
+              // The file itself is passed on (not a path): the browser has no
+              // file system, and the wizard reads the content.
+              const f = e.dataTransfer.files?.[0];
+              if (f) {
+                // The wizard parses it and jumps to the column mapping.
+                setImportFile(f);
                 setImportOpen(true);
               } else {
-                setErr('Could not read the dropped file path.');
+                setErr('Could not read the dropped file.');
               }
             }}
             style={
@@ -844,8 +847,8 @@ export default function Purchases() {
         <PurchaseImportWizard
           suppliers={suppliers}
           products={products}
-          initialFilePath={importFilePath}
-          onClose={() => { setImportOpen(false); setImportFilePath(null); }}
+          initialFile={importFile}
+          onClose={() => { setImportOpen(false); setImportFile(null); }}
           onDone={() => { void load(); refreshUndo(); }}
         />
       )}
