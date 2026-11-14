@@ -296,6 +296,7 @@ const bridge: PosBridge = {
     // Phase 3 — import (Excel / CSV)
     importPickFile: () => ipcRenderer.invoke('purchases:importPickFile'),
     importParse: (filePath: string) => ipcRenderer.invoke('purchases:importParse', filePath),
+    importParseData: (fileName: string, payload: string) => ipcRenderer.invoke('purchases:importParseData', fileName, payload),
     importTemplate: () => ipcRenderer.invoke('purchases:importTemplate'),
     importConfirm: (payload) => ipcRenderer.invoke('purchases:importConfirm', payload),
     importUndo: (importId?: number) => ipcRenderer.invoke('purchases:importUndo', importId),

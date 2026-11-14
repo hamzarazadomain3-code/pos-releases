@@ -191,6 +191,7 @@ import {
   lastUndoableImport,
   listPurchaseImports,
   parsePurchaseFile,
+  parsePurchaseData,
   pickPurchaseImportFile,
   previewPurchaseOrder,
   printPurchaseOrder,
@@ -827,6 +828,9 @@ export function registerIpcHandlers(): void {
   // ── Phase 3: purchase import (Excel / CSV) ──
   ipcMain.handle('purchases:importPickFile', () => pickPurchaseImportFile(BrowserWindow.getFocusedWindow()));
   ipcMain.handle('purchases:importParse', (_e, filePath: string) => parsePurchaseFile(filePath));
+  // The web build has no file system: the renderer sends the picked file's
+  // bytes (base64) instead of a path.
+  ipcMain.handle('purchases:importParseData', (_e, fileName: string, payload: unknown) => parsePurchaseData(fileName, payload));
   ipcMain.handle('purchases:importTemplate', () => savePurchaseImportTemplate(BrowserWindow.getFocusedWindow()));
   ipcMain.handle('purchases:importConfirm', (_e, payload) => importPurchaseOrders(payload));
   ipcMain.handle('purchases:importUndo', (_e, importId?: number) => undoPurchaseImport(importId));

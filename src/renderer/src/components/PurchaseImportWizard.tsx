@@ -8,7 +8,9 @@ import type {
 import { ModalShell } from './ModalShell';
 import { DateInput } from './DateInput';
 import { downloadBytes } from '../utils/download';
-import { fileBytesFromResult } from '../../../shared/binaryTransfer';
+import { fileBytesFromResult, toBase64Payload } from '../../../shared/binaryTransfer';
+
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 /**
  * Phase 3 — Purchase import wizard (Excel / CSV).
@@ -364,31 +366,43 @@ export default function PurchaseImportWizard({
     }
   }, [file, headerByField, products]);
 
-  const handleFile = useCallback(
-    async (filePath: string) => {
-      setBusy(true);
-      setError(null);
-      try {
-        const parsed = await window.api.purchases.importParse(filePath);
-        setFile(parsed);
-        setStep(3);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setBusy(false);
-      }
-    },
-    []
-  );
-
-  const pickFile = useCallback(async () => {
+  const handleFile = useCallback(async (file: File) => {
+    setBusy(true);
+    setError(null);
     try {
-      const p = await window.api.purchases.importPickFile();
-      if (p) await handleFile(p);
+      // The file CONTENT is sent, not a path: the web app has no file system,
+      // and the web transport is JSON (so the bytes travel as base64).
+      const buf = await file.arrayBuffer();
+      const parsed = await window.api.purchases.importParseData(
+        file.name,
+        toBase64Payload(new Uint8Array(buf))
+      );
+      setFile(parsed);
+      setStep(3);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const pickFile = useCallback(() => {
+    // The browser's own file picker — the desktop app opens the same OS
+    // dialog, so there is one code path for both builds.
+    fileInputRef.current?.click();
+  }, []);
+
+  const downloadTemplate = useCallback(async () => {
+    try {
+      const res = await window.api.purchases.importTemplate();
+      const bytes = fileBytesFromResult(res);
+      if (bytes) {
+        downloadBytes(bytes, 'purchase-import-template.xlsx', XLSX_MIME);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [handleFile]);
+  }, []);
 
   // ── derived: editable row values ──────────────────────────────────────────
   const rowValue = (r: ProcessedRow, k: 'qty' | 'cost' | 'sale' | 'whole' | 'disc' | 'tax' | 'batch' | 'expiry') => {
@@ -632,9 +646,9 @@ export default function PurchaseImportWizard({
             onDrop={(e) => {
               e.preventDefault();
               setDragOver(false);
-              const f = e.dataTransfer.files?.[0] as (File & { path?: string }) | undefined;
-              if (f?.path) void handleFile(f.path);
-              else setError('Could not read the dropped file path.');
+              const f = e.dataTransfer.files?.[0];
+              if (f) void handleFile(f);
+              else setError('Could not read the dropped file.');
             }}
             style={{
               border: `2px dashed ${dragOver ? 'var(--primary)' : '#cbd5e1'}`,
@@ -653,7 +667,7 @@ export default function PurchaseImportWizard({
               <button
                 type="button"
                 className="btn btn-sm"
-                onClick={() => window.api.purchases.importTemplate().catch((e) => setError(String(e)))}
+                onClick={() => void downloadTemplate()}
               >
                 Download sample template
               </button>
@@ -664,8 +678,10 @@ export default function PurchaseImportWizard({
               accept=".xlsx,.xls,.csv"
               style={{ display: 'none' }}
               onChange={(e) => {
-                const f = e.target.files?.[0] as (File & { path?: string }) | undefined;
-                if (f?.path) void handleFile(f.path);
+                const f = e.target.files?.[0];
+                if (f) void handleFile(f);
+                // Reset so the same file can be picked again.
+                e.target.value = '';
               }}
             />
           </div>

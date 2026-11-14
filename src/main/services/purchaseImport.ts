@@ -26,6 +26,8 @@ import { logActivity } from './activity';
 import { can, getSessionUserId } from './auth';
 import { getPrintSettings, toShopProfile } from './printDocs';
 import { printDocument, previewDocument } from './printService';
+import { saveXlsx } from './export';
+import { normalizeBinaryPayload } from '../../shared/binaryTransfer';
 import {
   defaultDocumentDesign,
   renderDocument,
@@ -64,6 +66,26 @@ function requireImportPermission(): void {
  */
 export function parsePurchaseFile(filePath: string): PurchaseImportParseResult {
   const wb = XLSX.readFile(filePath, { cellDates: true });
+  return parsePurchaseWorkbook(wb, filePath.split(/[\\/]/).pop() || filePath);
+}
+
+/**
+ * Parse an import file whose CONTENT is already in memory.
+ *
+ * The web app has no file system: the renderer picks the file with an
+ * `<input type="file">` and sends the bytes (base64, because the web transport
+ * is JSON). This is the same parse as `parsePurchaseFile` — .xlsx, .xls and
+ * .csv all work, because SheetJS detects the format from the content.
+ */
+export function parsePurchaseData(fileName: string, payload: unknown): PurchaseImportParseResult {
+  const bytes = normalizeBinaryPayload(payload);
+  if (!bytes) throw new Error('The file could not be read.');
+  const wb = XLSX.read(bytes, { type: 'array', cellDates: true });
+  return parsePurchaseWorkbook(wb, fileName);
+}
+
+/** The shared grid → rows rule (header detect, value map, preview cap). */
+function parsePurchaseWorkbook(wb: XLSX.WorkBook, fileName: string): PurchaseImportParseResult {
   const sheetName = wb.SheetNames[0];
   if (!sheetName) throw new Error('The file has no sheets');
   const sheet = wb.Sheets[sheetName];
@@ -95,7 +117,7 @@ export function parsePurchaseFile(filePath: string): PurchaseImportParseResult {
     return { row: headerIndex + idx + 2, values }; // 1-based file line numbers
   });
 
-  return { file_name: filePath.split(/[\\/]/).pop() || filePath, sheet: sheetName, header_row: headerIndex + 1, headers, rows };
+  return { file_name: fileName, sheet: sheetName, header_row: headerIndex + 1, headers, rows };
 }
 
 /** File picker for the wizard (.xlsx/.xls/.csv). Returns null when cancelled. */
@@ -113,12 +135,7 @@ export async function pickPurchaseImportFile(win: BrowserWindow | null): Promise
 }
 
 /** Downloadable sample template (xlsx) with the import's canonical columns. */
-export async function savePurchaseImportTemplate(win: BrowserWindow | null): Promise<boolean> {
-  const { canceled, filePath } = await dialog.showSaveDialog(win ?? undefined!, {
-    defaultPath: 'purchase-import-template.xlsx',
-    filters: [{ name: 'Excel Workbook', extensions: ['xlsx'] }],
-  });
-  if (canceled || !filePath) return false;
+export async function savePurchaseImportTemplate(win: BrowserWindow | null): Promise<boolean | string> {
   const headers = [
     'barcode', 'sku', 'product name', 'qty', 'unit', 'cost rate',
     'sale price', 'wholesale price', 'discount %', 'tax %', 'batch', 'expiry date', 'notes',
@@ -127,12 +144,10 @@ export async function savePurchaseImportTemplate(win: BrowserWindow | null): Pro
     ['8901234567890', 'SKU-001', 'Basmati Rice 5kg', 10, 'Bag', 1850, 2100, 2050, 0, 0, 'B-2401', '2026-12-31', 'sample row — replace with your data'],
     ['', 'SKU-002', 'Cooking Oil 5L', 6, 'Piece', 3800, 4200, 4100, 2, 0, '', '2027-06-30', ''],
   ];
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...sample]);
-  ws['!cols'] = headers.map((h) => ({ wch: Math.max(12, h.length + 6) }));
-  XLSX.utils.book_append_sheet(wb, ws, 'Purchase Import');
-  XLSX.writeFile(wb, filePath);
-  return true;
+  // The desktop writes the file through the native save dialog; the web build
+  // has no dialog, so the workbook comes back as bytes for the browser to
+  // download.
+  return saveXlsx(win, 'purchase-import-template.xlsx', [{ name: 'Purchase Import', headers, rows: sample }]);
 }
 
 /**

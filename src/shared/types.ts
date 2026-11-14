@@ -1620,7 +1620,9 @@ export interface PosBridge {
     // Phase 3 — import (Excel / CSV)
     importPickFile: () => Promise<string | null>;
     importParse: (filePath: string) => Promise<PurchaseImportParseResult>;
-    importTemplate: () => Promise<boolean>;
+    /** The web build: the picked file's bytes (base64) instead of a path. */
+    importParseData: (fileName: string, payload: string) => Promise<PurchaseImportParseResult>;
+    importTemplate: () => Promise<boolean | string>;
     importConfirm: (payload: PurchaseImportPayload) => Promise<PurchaseImportSummary>;
     importUndo: (importId?: number) => Promise<{ ok: boolean; message: string }>;
     importLast: () => Promise<{ id: number; created_at: string; supplier_id: number | null; imported_count: number } | null>;
