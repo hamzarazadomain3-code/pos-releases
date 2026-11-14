@@ -227,13 +227,19 @@ export default function Reports() {
   }, [loadTab]);
 
   async function exportPdf(reportType: string, data: unknown) {
-    const res = await window.api.reports.exportReportPDF(reportType, data);
-    const bytes = fileBytesFromResult(res);
-    if (bytes) {
-      downloadBytes(bytes, `${reportType}-report.pdf`, 'application/pdf');
-      setNotice('PDF downloaded.');
-    } else if (res) {
-      setNotice(`PDF saved: ${res}`);
+    try {
+      const res = await window.api.reports.exportReportPDF(reportType, data);
+      const bytes = fileBytesFromResult(res);
+      if (bytes) {
+        downloadBytes(bytes, `${reportType}-report.pdf`, 'application/pdf');
+        setNotice('PDF downloaded.');
+      } else if (res) {
+        setNotice(`PDF saved: ${res}`);
+      }
+    } catch (e) {
+      // The browser build cannot build a PDF (no fonts, no filesystem) — say so
+      // instead of downloading a broken file.
+      setNotice(e instanceof Error ? e.message : String(e));
     }
   }
 
