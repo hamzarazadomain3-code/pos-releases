@@ -1862,6 +1862,24 @@ a plain object, `res instanceof Uint8Array` was false, and **nothing downloaded*
 
 ### The fix
 
+There were **two** root causes, and the first one was hiding the second.
+
+**Cause 1 — the JSON transport.** The web transport is JSON:
+`cloud/web/electron-browser.ts` posts `JSON.stringify({ channel, args })` to `/api/rpc`,
+so the picked workbook — sent as a `Uint8Array` — reached the main process as a **plain
+object** (`{"0":72,"1":105,…}`). `Buffer.from(plainObject)` is exactly the error above.
+The same flattening hit every export in the other direction: the main process returned a
+`Uint8Array`, the browser got a plain object, `res instanceof Uint8Array` was false, and
+**nothing downloaded**.
+
+**Cause 2 — the Worker had no spreadsheet library.** `cloud/scripts/build.mjs` aliased
+`xlsx` to `cloud/src/shims/xlsx.ts`, an inert stub whose `XLSX.read()` returns `{}` and
+whose `XLSX.write()` returns **no bytes**. So even with the payload fixed, the import
+threw `Cannot read properties of undefined (reading '0')` and **every Excel export
+produced an empty file**. The real SheetJS library is now bundled into the Worker.
+
+The changes:
+
 - **`src/shared/binaryTransfer.ts`** (new, pure, shared by both processes): the base64
   codec plus `normalizeBinaryPayload()`, which accepts every shape a payload can arrive
   as — a `Uint8Array`/`Buffer` (desktop), an `ArrayBuffer`, a base64 string with the
@@ -1873,6 +1891,11 @@ a plain object, `res instanceof Uint8Array` was false, and **nothing downloaded*
   `fileBytesFromResult()` / `normalizeBinaryPayload()`.
 - **The main process hands back a base64 payload** instead of raw bytes when there is no
   window (`saveCsv`, `saveXlsx`, `exportReportPDF`, `exportReportExcel`).
+- **The Worker bundles the real SheetJS**: the `xlsx` alias is gone, the build gained
+  `mainFields: ['main', 'module']` (`platform: 'neutral'` has no main fields, so a
+  package that only publishes `main` could not be resolved), and `cloud/src/shims/stream.ts`
+  stands in for the one Node builtin SheetJS asks for. `cloud/src/shims/xlsx.ts` is now a
+  **trap** that throws with the reason, so the stub can never be wired back up.
 - **The desktop is untouched**: it still uses the native save dialog, writes the file and
   answers `true`; the native open dialog path still reads the file into a Buffer.
 
@@ -1880,10 +1903,11 @@ a plain object, `res instanceof Uint8Array` was false, and **nothing downloaded*
 
 | Item | Status | Commit |
 |---|---|---|
-| W1 — Inventory file import channel (the browser file input) | DONE (superseded by W4) | 94bc874 |
+| W1 — Inventory file import channel (the browser file input) | DONE (superseded by W4/W5) | 94bc874 |
 | W2 — every Excel export downloads in the browser | DONE | 7f5f1d6, 2a517c4, 4b805f0 |
 | W3 — Udhaar catalog import/export in the browser | DONE | 784e1b8, 50cb885 |
 | W4 — the file bytes survive the JSON transport (the reported error) | DONE | 38a5e24, 71396e2 |
+| W5 — the Worker bundles the REAL SheetJS (the second root cause) | DONE | 7c24ecf, 01c9c1d |
 
 ### Verification
 - `npm run test:binaryTransfer` — **35/35** (the real `dist/shared/binaryTransfer.js`: the
@@ -1894,14 +1918,20 @@ a plain object, `res instanceof Uint8Array` was false, and **nothing downloaded*
   the desktop Buffer 1, and a broken file is reported instead of thrown).
 - `npm run typecheck` — exit 0 (E:\temp\proof\webimport_typecheck.txt).
 - `npm run build` — exit 0 (E:\temp\proof\webimport_build.txt).
-- Cloud build — exit 0 (E:\temp\proof\cloud_build_webimport.txt).
-- Web smoke — **PASS**, 21 nav pages (E:\temp\proof\websmoke_webimport.txt).
+- Cloud typecheck — exit 0; cloud suite — **111/111**
+  (E:\temp\proof\cloud_typecheck_xlsx.txt, cloud_suite_xlsx2.txt).
+- **LIVE Worker check — 14/14** (`npm run smoke:import:live` in cloud/): a real .xlsx
+  posted to the deployed `/api/rpc` imported 2 products, the flattened payload imported
+  1 more, and the Excel export came back as a **real 18 KB workbook** containing the
+  imported product (E:\temp\proof\live_web_import2.txt).
+- Web smoke — **PASS**, 21 nav pages, locally and against the live deployment
+  (E:\temp\proof\websmoke_local_xlsx.txt, websmoke_live_xlsx3.txt).
 - Every sidebar/mobile suite re-run and green (sidebarMenu 42/42, sidebarGuard 50/50,
   sidebarLanding 22/22, sidebarGroups 35/35, sidebarIcons 21/21, sidebarFooter 30/30,
   sidebarBadges 37/37, sidebarKeyboardNav 24/24, sidebarSearch 12/12, sidebarBrand 16/16,
   layoutMode 18/18, sidebarDrawer 8/8).
 - Deployed: `https://rokar-pos.bakery-saas.workers.dev` — Worker version
-  `f0c44746-0ce4-41f1-803a-0324464d029d`.
+  `c145d6e6-23b6-4094-8a48-d69dc7e6b131` (2.85 MiB raw / 611 KiB gzipped).
 
 ### Owner action required
 1. **Nothing for the web app** — the Worker is redeployed. Hard-refresh the browser tab
@@ -1909,4 +1939,4 @@ a plain object, `res instanceof Uint8Array` was false, and **nothing downloaded*
 2. **Nothing for the desktop app** — the desktop path is unchanged and still green. A
    desktop rebuild/reinstall is optional (the next release picks these changes up).
 3. Verify by hand: web → Inventory → Import Excel → pick an `.xlsx` → the rows land in
-   the list.
+   the list. The same page's "Export Excel" now downloads a real workbook.
