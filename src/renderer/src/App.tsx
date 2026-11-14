@@ -6,6 +6,14 @@ import { initCurrency } from './utils/currency';
 import { initDateUtils, resetDateUtils } from './utils/dateUtils';
 import { KeyboardProvider } from './keyboard/KeyboardProvider';
 import { buildSidebar, canOpenRoute, landingPageFor, SIDEBAR_GROUPS, SIDEBAR_ITEMS } from '@shared/sidebarMenu';
+import {
+  DEFAULT_GROUP_STATE,
+  groupStateKey,
+  groupStateReducer,
+  isGroupExpanded,
+  parseGroupState,
+  type GroupState,
+} from '@shared/sidebarMenu';
 import FirstRunWizard from './components/FirstRunWizard';
 import rokarLogoLight from './assets/rokar-pos-logo-light.png';
 import rokarMarkDark from './assets/rokar-pos-mark-dark.png';
@@ -598,6 +606,8 @@ export default function App() {
   const [firstRunChecked, setFirstRunChecked] = useState(false);
   /** The refusal message when the route guard blocks a page. */
   const [guardNotice, setGuardNotice] = useState<string | null>(null);
+  /** Which sidebar groups are collapsed (remembered per user). */
+  const [groupState, setGroupState] = useState<GroupState>(DEFAULT_GROUP_STATE);
  // The ONE menu: built for this role, this feature set and this language.
  const navGroups = useMemo(() => {
    const labels: Record<string, string> = {};
@@ -912,6 +922,37 @@ export default function App() {
     writeLastPage(page);
   }, [user, page]);
 
+  // ── The collapsible groups ────────────────────────────────────────────────
+  // The state is remembered PER USER. localStorage can be blocked (private
+  // mode), so every access is guarded — a blocked store must never break the
+  // app, it only means the state is not remembered.
+  useEffect(() => {
+    if (!user) {
+      setGroupState(DEFAULT_GROUP_STATE);
+      return;
+    }
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(groupStateKey(user.id));
+    } catch {
+      raw = null;
+    }
+    setGroupState(parseGroupState(raw));
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user) return;
+    try {
+      localStorage.setItem(groupStateKey(user.id), JSON.stringify(groupState));
+    } catch {
+      /* storage blocked — the state is simply not remembered */
+    }
+  }, [user?.id, groupState]);
+
+  const toggleSidebarGroup = useCallback((groupId: string) => {
+    setGroupState((s) => groupStateReducer(s, { type: 'toggle', groupId }));
+  }, []);
+
   if (sessionRestoring) {
     return (
       <div className="app-shell">
@@ -1010,24 +1051,41 @@ export default function App() {
           <img src={rokarMarkDark} alt="" className="brand-icon" />
           <span className="nav-label sidebar-brand-label">Rokar</span>
         </div>
-        <nav className="sidebar-nav">
-          {navGroups.map((group) => (
-            <div key={group.id} className={`nav-group${group.separated ? ' nav-group-separated' : ''}`}>
-              <div className="nav-group-title">{group.label}</div>
-              {group.items.map((item) => (
+        <nav className="sidebar-nav" aria-label={t('navigation.billing', 'Menu')}>
+          {navGroups.map((group) => {
+            // In icon-only mode there is no heading to collapse, so every group
+            // stays open — otherwise the sidebar would show nothing at all.
+            const expanded = sidebarOpen
+              ? isGroupExpanded(groupState, group.id, page)
+              : true;
+            return (
+              <div key={group.id} className={`nav-group${group.separated ? ' nav-group-separated' : ''}`}>
                 <button
-                  key={item.id}
-                  className={page === item.route ? 'nav-btn active' : 'nav-btn'}
-                  onClick={() => { navigate(item.route); }}
-                  aria-label={item.label}
-                  data-label={item.label}
+                  type="button"
+                  className="nav-group-title nav-group-toggle"
+                  aria-expanded={expanded}
+                  onClick={() => toggleSidebarGroup(group.id)}
+                  title={group.label}
                 >
-                  <span className="nav-icon">{NAV_ICONS[item.iconId] || null}</span>
-                  <span className="nav-label">{item.label}</span>
+                  <span className="nav-group-label">{group.label}</span>
+                  <span className="nav-group-chevron" aria-hidden="true">▾</span>
                 </button>
-              ))}
-            </div>
-          ))}
+                {expanded &&
+                  group.items.map((item) => (
+                    <button
+                      key={item.id}
+                      className={page === item.route ? 'nav-btn active' : 'nav-btn'}
+                      onClick={() => { navigate(item.route); }}
+                      aria-label={item.label}
+                      data-label={item.label}
+                    >
+                      <span className="nav-icon">{NAV_ICONS[item.iconId] || null}</span>
+                      <span className="nav-label">{item.label}</span>
+                    </button>
+                  ))}
+              </div>
+            );
+          })}
         </nav>
 
         <div className="sidebar-bottom">

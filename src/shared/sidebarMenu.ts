@@ -300,3 +300,93 @@ export function mobilePinnedFor(role: string | null | undefined, groups: Sidebar
   pinned.sort((a, b) => a.slot - b.slot);
   return pinned.map((p) => p.item);
 }
+
+// ── Collapsible groups ─────────────────────────────────────────────────────
+
+/** groupId -> expanded? A missing entry means "expanded". */
+export type GroupState = Record<string, boolean>;
+
+/** Every group starts expanded. */
+export const DEFAULT_GROUP_STATE: GroupState = SIDEBAR_GROUPS.reduce((acc, g) => {
+  acc[g.id] = true;
+  return acc;
+}, {} as GroupState);
+
+/** The localStorage key prefix — the state is remembered PER USER. */
+export const GROUP_STATE_KEY_PREFIX = 'pos_sidebar_groups_';
+
+export function groupStateKey(userId: string | number | null | undefined): string {
+  return `${GROUP_STATE_KEY_PREFIX}${userId ?? 'anon'}`;
+}
+
+/**
+ * Read a stored group state.
+ *
+ * A corrupt value (not JSON, not an object, a non-boolean entry) is IGNORED:
+ * the group falls back to the default instead of the app breaking. An entry
+ * for a group that no longer exists is dropped.
+ */
+export function parseGroupState(raw: string | null | undefined): GroupState {
+  const out: GroupState = { ...DEFAULT_GROUP_STATE };
+  if (!raw) return out;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return out; // corrupt JSON -> the defaults
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return out;
+  const known = new Set<string>(SIDEBAR_GROUPS.map((g) => g.id));
+  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (!known.has(key)) continue; // a group that no longer exists
+    if (typeof value === 'boolean') out[key] = value;
+    // anything else is ignored -> the default stands
+  }
+  return out;
+}
+
+/** Flip one group. */
+export function toggleGroup(state: GroupState, groupId: string): GroupState {
+  const current = state[groupId] !== false; // missing = expanded
+  return { ...state, [groupId]: !current };
+}
+
+/** The group a route belongs to, or null. */
+export function groupForRoute(route: string | null | undefined): SidebarGroupId | null {
+  if (!route) return null;
+  const group = SIDEBAR_GROUPS.find((g) => g.items.some((i) => i.route === route));
+  return group ? group.id : null;
+}
+
+/**
+ * Is a group expanded?
+ *
+ * The group holding the ACTIVE page is always expanded — a collapsed group
+ * must never hide the page the user is on.
+ */
+export function isGroupExpanded(
+  state: GroupState,
+  groupId: SidebarGroupId | string,
+  activeRoute?: string | null
+): boolean {
+  if (activeRoute && groupForRoute(activeRoute) === groupId) return true;
+  return state[groupId] !== false;
+}
+
+/**
+ * The reducer the sidebar uses. One pure function, so the behaviour can be
+ * tested without a browser.
+ */
+export function groupStateReducer(
+  state: GroupState,
+  action: { type: 'toggle'; groupId: string } | { type: 'restore'; raw: string | null }
+): GroupState {
+  switch (action.type) {
+    case 'toggle':
+      return toggleGroup(state, action.groupId);
+    case 'restore':
+      return parseGroupState(action.raw);
+    default:
+      return state;
+  }
+}

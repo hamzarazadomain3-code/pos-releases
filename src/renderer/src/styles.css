@@ -452,6 +452,56 @@ body.theme-dark ::-webkit-scrollbar-thumb:hover {
   text-overflow: ellipsis;
 }
 
+/* The heading is a button: it collapses and expands its group. */
+.nav-group-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: start;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.nav-group-toggle:hover {
+  color: #cbd5e1;
+}
+
+.nav-group-toggle:focus-visible {
+  outline: 2px solid #7dd3fc;
+  outline-offset: -2px;
+}
+
+.nav-group-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-group-chevron {
+  flex-shrink: 0;
+  font-size: 10px;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+
+.nav-group-toggle[aria-expanded='false'] .nav-group-chevron {
+  transform: rotate(-90deg);
+}
+
+/* In RTL the chevron points the other way. */
+[dir='rtl'] .nav-group-toggle[aria-expanded='false'] .nav-group-chevron {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-group-chevron {
+    transition: none;
+  }
+}
+
 /* Urdu reads right-to-left: keep the natural case and the reading order. */
 [dir='rtl'] .nav-group-title {
   text-transform: none;
