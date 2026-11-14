@@ -1799,3 +1799,41 @@ use it.
 - `npm run test:keyboard` → 93/93, `npm run test:billingKeys` → 26/26, `npm run
   test:shortcuts` → 37/37, `test:sidebarMenu` → 42/42, `test:sidebarGuard` → 50/50.
 - Typecheck + build: exit 0.
+
+
+## Sidebar + mobile run (feature/sidebar) — 2026-11-14
+
+Branch: eature/sidebar (cut from eature/customer-discount @ 3be927). No release, no version bump, no push, no deploy.
+
+### Status (from PROGRESS.md)
+
+| Item | Status | Commit |
+|---|---|---|
+| S0 — record the sidebar as it is today | DONE | 2dbb53c |
+| S1 — single menu definition + groups | DONE | f6ae643 |
+| S2 — role-aware menu + real route guard | DONE | 0c98a57 |
+| S3 — landing page per role | DONE | b2a533d |
+| S4 — collapsible groups + remembered state | DONE | 0c1f2c7 |
+| S5 — visual redesign | PARTIAL (no test: UI) | d8327ec |
+| S6 — footer fix (broken button) | DONE | 4d7ae50 |
+| S7 — badges (live counts) | DONE | 153a72e |
+| S8 — shortcut hints + keyboard nav | DONE | f4234ce |
+| S9 — quick page search (Ctrl+K) | DONE | e5de957 |
+| S10 — brand header | DONE | f050468 |
+| S10b — mobile and tablet friendly | PARTIAL (UI: screenshots not captured) | 807b9e3 |
+| S11 — proof (every suite) | DONE | (this commit) |
+
+### Verification
+- 
+pm run typecheck — exit 0 (E:\temp\proof\final_typecheck.txt).
+- 
+pm run build — exit 0 (E:\temp\proof\final_build.txt).
+- Web smoke — PASS (21 nav pages).
+- Keyboard smoke — 93/93. Billing keys — 26/26. Shortcuts — 37/37.
+- All sidebar suites green: sidebarMenu 42/42, sidebarGuard 50/50, sidebarLanding 22/22, sidebarGroups 35/35, sidebarIcons 21/21, sidebarFooter 30/30, sidebarBadges 37/37, sidebarKeyboardNav 24/24, sidebarSearch 12/12, sidebarBrand 16/16, layoutMode 18/18, sidebarDrawer 8/8.
+- Every other suite in package.json re-run and green (receiptdesigner flaky once on a GPU-cache error, passes on re-run; print baseline passes).
+
+### Owner action required
+1. Rebuild the desktop app and reinstall it (version stays 2.27.0; no release, no version bump).
+2. Redeploy the web app (rebuild cloud/web-dist and redeploy the Worker) so the mobile/tablet changes and the brand header reach the browser build.
+3. The menu is now one definition (src/shared/sidebarMenu.ts); any future page must be added there only.
