@@ -953,23 +953,32 @@ function fmt(n: number): string {
   return (n || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
-export async function exportReportPDF(reportType: string, data: unknown): Promise<string | null> {
+export async function exportReportPDF(reportType: string, data: unknown): Promise<string | null | Uint8Array> {
   const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  const isWeb = !win;
   const defaultName = `${reportType}-report-${todayLocal()}.pdf`;
-  const result = win
-    ? await dialog.showSaveDialog(win, {
-        title: `Save ${reportType} report as PDF`,
-        defaultPath: defaultName,
-        filters: [{ name: 'PDF', extensions: ['pdf'] }],
-      })
-    : { canceled: true, filePath: undefined as string | undefined };
-  if (result.canceled || !result.filePath) return null;
-  const filePath = result.filePath;
+  let filePath: string | undefined;
+  if (!isWeb) {
+    const result = await dialog.showSaveDialog(win!, {
+      title: `Save ${reportType} report as PDF`,
+      defaultPath: defaultName,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    });
+    if (result.canceled || !result.filePath) return null;
+    filePath = result.filePath;
+  }
 
   const PDFDocumentMod = require('pdfkit');
   const doc = new PDFDocumentMod({ margin: 50, size: 'A4' });
-  const stream = createWriteStream(filePath);
-  doc.pipe(stream);
+  const { PassThrough } = require('stream');
+  const pt = new PassThrough();
+  const chunks: Buffer[] = [];
+  pt.on('data', (c: Buffer) => chunks.push(c));
+  doc.pipe(pt);
+  if (!isWeb && filePath) {
+    const { createWriteStream } = require('fs');
+    pt.pipe(createWriteStream(filePath));
+  }
 
   const d = data as any;
   switch (reportType) {
@@ -1066,22 +1075,14 @@ export async function exportReportPDF(reportType: string, data: unknown): Promis
   }
 
   doc.end();
-  return new Promise((resolve) => stream.on('finish', () => resolve(filePath)));
+  await new Promise((resolve) => pt.on('end', resolve));
+  if (isWeb) return new Uint8Array(Buffer.concat(chunks));
+  return filePath ?? null;
 }
 
-export async function exportReportExcel(reportType: string, data: unknown): Promise<string | null> {
+export async function exportReportExcel(reportType: string, data: unknown): Promise<string | null | Uint8Array> {
   const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-  const defaultName = `${reportType}-report-${todayLocal()}.xlsx`;
-  const result = win
-    ? await dialog.showSaveDialog(win, {
-        title: `Save ${reportType} report as Excel`,
-        defaultPath: defaultName,
-        filters: [{ name: 'Excel', extensions: ['xlsx'] }],
-      })
-    : { canceled: true, filePath: undefined as string | undefined };
-  if (result.canceled || !result.filePath) return null;
-  const filePath = result.filePath;
-
+  const isWeb = !win;
   const XLSX = require('xlsx');
   const wb = XLSX.utils.book_new();
   const d = data as any;
@@ -1174,6 +1175,17 @@ export async function exportReportExcel(reportType: string, data: unknown): Prom
     }
   }
 
-  XLSX.writeFile(wb, filePath);
-  return filePath;
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  if (isWeb) return new Uint8Array(buffer);
+  if (!win) return null;
+  const defaultName = `${reportType}-report-${todayLocal()}.xlsx`;
+  const result = await dialog.showSaveDialog(win, {
+    title: `Save ${reportType} report as Excel`,
+    defaultPath: defaultName,
+    filters: [{ name: 'Excel', extensions: ['xlsx'] }],
+  });
+  if (result.canceled || !result.filePath) return null;
+  const fs = require('fs');
+  fs.writeFileSync(result.filePath, buffer);
+  return result.filePath;
 }

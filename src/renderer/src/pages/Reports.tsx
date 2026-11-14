@@ -225,13 +225,25 @@ export default function Reports() {
   }, [loadTab]);
 
   async function exportPdf(reportType: string, data: unknown) {
-    const path = await window.api.reports.exportReportPDF(reportType, data);
-    if (path) setNotice(`PDF saved: ${path}`);
+    const res = await window.api.reports.exportReportPDF(reportType, data);
+    if (res instanceof Uint8Array) {
+      const { downloadBytes } = await import('../utils/download');
+      downloadBytes(res, `${reportType}-report.pdf`, 'application/pdf');
+      setNotice('PDF downloaded.');
+    } else if (res) {
+      setNotice(`PDF saved: ${res}`);
+    }
   }
 
   async function exportFullExcel(reportType: string, data: unknown) {
-    const path = await window.api.reports.exportReportExcel(reportType, data);
-    if (path) setNotice(`Excel saved: ${path}`);
+    const res = await window.api.reports.exportReportExcel(reportType, data);
+    if (res instanceof Uint8Array) {
+      const { downloadBytes } = await import('../utils/download');
+      downloadBytes(res, `${reportType}-report.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      setNotice('Excel downloaded.');
+    } else if (res) {
+      setNotice(`Excel saved: ${res}`);
+    }
   }
 
   async function exportXlsx(name: string, headers: string[], rows: (string | number | null)[][]) {

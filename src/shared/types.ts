@@ -1515,8 +1515,8 @@ export interface PosBridge {
     getFinancialReport: (from?: string, to?: string) => Promise<FinancialReportResult>;
     getTaxReport: (from?: string, to?: string) => Promise<TaxReportResult>;
     getDailyClosing: (date: string) => Promise<DailyClosingResult>;
-    exportReportPDF: (reportType: string, data: unknown) => Promise<string | null>;
-    exportReportExcel: (reportType: string, data: unknown) => Promise<string | null>;
+    exportReportPDF: (reportType: string, data: unknown) => Promise<string | null | Uint8Array>;
+    exportReportExcel: (reportType: string, data: unknown) => Promise<string | null | Uint8Array>;
   };
   whatsapp: {
     getStatus: () => Promise<WhatsAppStatus>;
