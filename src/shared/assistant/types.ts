@@ -185,6 +185,33 @@ export interface AssistantActivityRow {
   user_id: number | null;
 }
 
+/** What the renderer sends for one assistant turn. */
+export interface AssistantTurnRequest {
+  message: string;
+  /** The page the user is on (a route id from the menu definition). */
+  route?: string | null;
+  /** The conversation so far (the model-facing messages). */
+  history?: AssistantMessage[];
+}
+
+/** A write tool's proposal — the user has to confirm it before it happens. */
+export interface AssistantPendingAction {
+  tool: string;
+  args: Record<string, unknown>;
+  risk: 'read' | 'write' | 'dangerous' | 'forbidden';
+  reason?: string;
+}
+
+/** The answer to one assistant turn. */
+export interface AssistantTurnResponse {
+  ok: boolean;
+  text: string;
+  usage: AssistantUsage;
+  pendingActions: AssistantPendingAction[];
+  stop: string;
+  failure?: { code: string; message: string };
+}
+
 /** The failure codes the assistant speaks. */
 export type AssistantErrorCode =  | 'disabled'
   | 'no_key'

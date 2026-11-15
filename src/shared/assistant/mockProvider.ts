@@ -39,9 +39,9 @@ export class MockProvider implements ProviderAdapter {
     this.requests.push(request);
     const index = this.callIndex++;
     const flat = request.messages.map((m) => m.content).join('\n');
+    // A `match` wins, then the scripted turn for this call, then the last one.
     const turn =
       this.turns.find((t) => (t.match ? flat.includes(t.match) : false)) ??
-      this.turns.find((t) => !t.match && t.respond === undefined) ??
       this.turns[index] ??
       this.turns[this.turns.length - 1];
     if (!turn) {

@@ -7,6 +7,8 @@ import type {
   AssistantRole,
   AssistantSettingsPatch,
   AssistantSettingsView,
+  AssistantTurnRequest,
+  AssistantTurnResponse,
 } from './assistant/types';
 import type {
   HistoryDetail,
@@ -1781,6 +1783,8 @@ export interface PosBridge {
     setKey: (key: string) => Promise<{ keySet: boolean; keyHint: string; message?: string }>;
     testConnection: () => Promise<{ ok: boolean; message: string }>;
     activity: () => Promise<AssistantActivityRow[]>;
+    send: (request: AssistantTurnRequest) => Promise<AssistantTurnResponse>;
+    cancel: () => Promise<boolean>;
   };
   email: {
     send: (options: { to: string | string[]; subject: string; text?: string; html?: string }) => Promise<{ ok: boolean; message: string }>;

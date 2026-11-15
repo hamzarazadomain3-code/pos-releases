@@ -64,6 +64,7 @@ import { createProviderForSettings, testAssistantConnection } from './services/a
 import { ProviderError } from './services/assistant/provider';
 import { resolveAssistantApiKey } from './services/assistant/settings';
 import { listAssistantActivity } from './services/assistant/activity';
+import { cancelAssistantTurn, runAssistantTurn } from './services/assistant/agent';
 import {
   printLabel,
   printBarcodeLabel,
@@ -426,6 +427,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('assistant:saveSettings', (_e, patch) => saveAssistantSettings(patch ?? {}));
   ipcMain.handle('assistant:setKey', (_e, key: string) => setAssistantApiKey(String(key ?? '')));
   ipcMain.handle('assistant:activity', () => listAssistantActivity(50));
+  ipcMain.handle('assistant:send', (_e, request) => runAssistantTurn(request ?? { message: '' }));
+  ipcMain.handle('assistant:cancel', () => cancelAssistantTurn());
   ipcMain.handle('assistant:testConnection', async () => {
     if (!can('owner')) throw new Error('Only the owner can test the assistant connection');
     const view = getAssistantSettingsView();
