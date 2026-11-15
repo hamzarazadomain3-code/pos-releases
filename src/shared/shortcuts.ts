@@ -104,6 +104,10 @@ export const SHORTCUT_ACTIONS: ShortcutActionDef[] = [
   { id: 'logout', label: 'Log out', defaultKey: 'Ctrl+L', screens: ['billing', 'inventory', 'admin', 'settings'] },
   { id: 'settings', label: 'Settings', defaultKey: 'Alt+S', screens: ['billing', 'inventory', 'admin'] },
   { id: 'admin_panel', label: 'Admin panel', defaultKey: 'Alt+A', screens: ['billing', 'inventory'] },
+  // The assistant. Ctrl+J is free in the app; the browser build rewrites the
+  // SEEDED default to Ctrl+Alt+J because Ctrl+J is the browser's downloads
+  // panel (the same treatment `save_print` gets).
+  { id: 'assistant_open', label: 'Open the assistant', defaultKey: 'Ctrl+J', screens: ['global'], hint: true, short: 'assistant' },
 ];
 
 const ACTION_BY_ID: Record<string, ShortcutActionDef> = Object.fromEntries(
@@ -173,3 +177,12 @@ export function hintRows(screen: ScreenId): { id: string; key: string; label: st
     .filter((a) => a.hint && a.screens.includes(screen))
     .map((a) => ({ id: a.id, key: a.defaultKey, label: a.label, short: a.short ?? a.label }));
 }
+
+/**
+ * The rows the F1 help shows under "Everywhere": the built-ins plus every
+ * action that runs on EVERY screen (the assistant). They keep their admin
+ * binding, so an owner can move them like any other shortcut.
+ */
+export const GLOBAL_SHORTCUT_ACTIONS: ShortcutActionDef[] = SHORTCUT_ACTIONS.filter(
+  (a) => a.global || a.screens.includes('global')
+);

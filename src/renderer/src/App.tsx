@@ -22,6 +22,7 @@ import {
   type GroupState,
 } from '@shared/sidebarMenu';
 import FirstRunWizard from './components/FirstRunWizard';
+import AssistantPanel from './components/AssistantPanel';
 import rokarLogoLight from './assets/rokar-pos-logo-light.png';
 import rokarMarkDark from './assets/rokar-pos-mark-dark.png';
 import defaultWallpaper from './assets/wallpaper-default.webp';
@@ -613,6 +614,8 @@ export default function App() {
   const [firstRunChecked, setFirstRunChecked] = useState(false);
   /** The refusal message when the route guard blocks a page. */
   const [guardNotice, setGuardNotice] = useState<string | null>(null);
+  /** The assistant panel (opened from the sidebar, the shortcut or a chip). */
+  const [assistantOpen, setAssistantOpen] = useState(false);
   /** Which sidebar groups are collapsed (remembered per user). */
   const [groupState, setGroupState] = useState<GroupState>(DEFAULT_GROUP_STATE);
  // The ONE menu: built for this role, this feature set and this language.
@@ -1131,6 +1134,7 @@ export default function App() {
       escapeGestureEnabled={escapeGestureEnabled}
       escapeDoubleTapWindowMs={escapeDoubleTapWindowMs}
       onGoToBilling={() => setPage('billing')}
+      onToggleAssistant={() => setAssistantOpen((o) => !o)}
     >
     <div className="app-shell">
       {guardNotice && (
@@ -1273,6 +1277,19 @@ export default function App() {
             <button
               type="button"
               className="sidebar-footer-btn"
+              onClick={() => setAssistantOpen((o) => !o)}
+              aria-label={t('assistant.open')}
+              title={t('assistant.open')}
+            >
+              <span className="nav-label collapse-label">{t('assistant.open')}</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+              </svg>
+            </button>
+
+            <button
+              type="button"
+              className="sidebar-footer-btn"
               onClick={() => handleLanguageChange(languageToggleTarget(i18n.language))}
               aria-label={t(languageToggleLabelKey(i18n.language))}
               title={t(languageToggleLabelKey(i18n.language))}
@@ -1381,6 +1398,17 @@ export default function App() {
           </Suspense>
         </ErrorBoundary>
       </main>
+      <AssistantPanel
+        open={assistantOpen}
+        onClose={() => setAssistantOpen(false)}
+        route={page}
+        role={user?.role}
+        userId={user?.id ?? 0}
+        onNavigate={(route) => {
+          setAssistantOpen(false);
+          navigate(route as NavPage);
+        }}
+      />
       {locked && <LockScreen user={user} onUnlock={() => setLocked(false)} logo={shopLogo} />}
       {mustChangePw && (
         <ChangePasswordModal

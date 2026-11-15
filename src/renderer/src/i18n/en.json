@@ -280,5 +280,31 @@
     "udhaar": "Udhaar",
     "low_stock": "Low Stock",
     "expenses": "Expenses"
+  },
+  "assistant": {
+    "title": "Assistant",
+    "open": "Assistant",
+    "close": "Close",
+    "empty": "Ask about the shop's numbers, or how to do something in the app.",
+    "placeholder": "Ask about the shop…",
+    "send": "Send",
+    "stop": "Stop",
+    "retry": "Retry",
+    "copy": "Copy",
+    "clearHistory": "Clear history",
+    "typing": "The assistant is typing…",
+    "hint": "Enter sends · Shift+Enter makes a new line",
+    "error": "The assistant could not answer.",
+    "actionProposed": "I would like to do this — please confirm.",
+    "actionTitle": "Proposed action",
+    "actionWaiting": "Nothing has been changed yet.",
+    "chips": {
+      "todaySale": "Today's sale",
+      "lowStock": "Low stock",
+      "udhaarOverdue": "Udhaar overdue",
+      "shiftStatus": "Shift status",
+      "belowCost": "Below cost",
+      "pageGuide": "This page's guide"
+    }
   }
 }

@@ -7,6 +7,7 @@ import {
   hintRows,
   defaultCombo,
   getAction,
+  GLOBAL_SHORTCUT_ACTIONS,
   type ScreenId,
   type ShortcutActionDef,
 } from '@shared/shortcuts';
@@ -35,7 +36,12 @@ export type ShortcutDef = ShortcutActionDef;
  * seeds the admin `shortcuts` table), the global provider and the F1 overlay all
  * read the same rows. These re-exports keep the old import sites working.
  */
-export const GLOBAL_SHORTCUTS: ShortcutActionDef[] = SHORTCUT_ACTIONS.filter((a) => a.global);
+/**
+ * The rows the F1 help shows under "Everywhere": the built-ins plus every
+ * action that runs on EVERY screen (the assistant). They keep their admin
+ * binding, so an owner can move them like any other shortcut.
+ */
+export const GLOBAL_SHORTCUTS: ShortcutActionDef[] = GLOBAL_SHORTCUT_ACTIONS;
 
 /**
  * Fallback combos for the handful of actions the global provider needs even on a
@@ -46,6 +52,9 @@ export const BUILTIN_DEFAULTS: Record<string, string> = {
   command_palette: defaultCombo('command_palette'),
   help: defaultCombo('help'),
   new_record: 'Ctrl+N',
+  // The assistant must work even before the admin table is seeded (the
+  // migration adds the row, but a fresh install must not need a reset).
+  assistant_open: defaultCombo('assistant_open'),
 };
 
 /**

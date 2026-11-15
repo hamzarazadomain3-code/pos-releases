@@ -25,6 +25,8 @@ export interface KeyboardProviderProps {
   escapeDoubleTapWindowMs?: number;
   /** "Go to Billing" (double Esc) — the app shell provides it. */
   onGoToBilling?: () => void;
+  /** The assistant panel is opened from here (the combo is admin-assignable). */
+  onToggleAssistant?: () => void;
   children: ReactNode;
 }
 
@@ -50,6 +52,7 @@ export function KeyboardProvider({
   escapeGestureEnabled = true,
   escapeDoubleTapWindowMs,
   onGoToBilling,
+  onToggleAssistant,
   children,
 }: KeyboardProviderProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -151,6 +154,16 @@ export function KeyboardProvider({
       // ── Admin shortcuts, routed to the active scope ──────────────────────
       const action = comboToAction.get(combo);
       if (action) {
+        // The assistant is a GLOBAL action: it must work on every page, so it
+        // is handled before the scope routing (the combo still comes from the
+        // admin's own binding, so the owner can move it).
+        if (action === 'assistant_open') {
+          if (!onToggleAssistant) return;
+          e.preventDefault();
+          e.stopPropagation();
+          onToggleAssistant();
+          return;
+        }
         if (!scope) return; // unmigrated screen owns its own handler
         const fn = scope.actions?.[action];
         if (fn) {

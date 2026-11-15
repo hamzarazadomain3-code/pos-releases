@@ -213,5 +213,31 @@
     "udhaar": "ادا نہیں",
     "low_stock": "کم اسٹاک",
     "expenses": "خرچ"
+  },
+  "assistant": {
+    "title": "اسسٹنٹ",
+    "open": "اسسٹنٹ",
+    "close": "بند کریں",
+    "empty": "دکان کے اعداد پوچھیں، یا ایپ میں کوئی کام کیسے کریں۔",
+    "placeholder": "دکان کے بارے میں پوچھیں…",
+    "send": "بھیجیں",
+    "stop": "روکیں",
+    "retry": "دوبارہ",
+    "copy": "کاپی",
+    "clearHistory": "تاریخ صاف کریں",
+    "typing": "اسسٹنٹ لکھ رہا ہے…",
+    "hint": "Enter بھیجتا ہے · Shift+Enter نئی سطر",
+    "error": "اسسٹنٹ جواب نہیں دے سکا۔",
+    "actionProposed": "میں یہ کام کرنا چاہتا ہوں — تصدیق کریں۔",
+    "actionTitle": "پیش کیا گیا کام",
+    "actionWaiting": "ابھی کچھ بھی تبدیل نہیں کیا گیا۔",
+    "chips": {
+      "todaySale": "آج کی فروخت",
+      "lowStock": "کم اسٹاک",
+      "udhaarOverdue": "واجب اُدھار",
+      "shiftStatus": "شیفٹ کی حالت",
+      "belowCost": "لاگت سے کم",
+      "pageGuide": "اس صفحے کی رہنمائی"
+    }
   }
 }
