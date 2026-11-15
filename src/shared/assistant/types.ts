@@ -52,9 +52,13 @@ export interface AssistantToolDefinition {
   description: string;
   inputSchema: JsonSchema;
   risk: AssistantRisk;
-  /** The minimum role (the app's own ladder) that may run this tool. */
-  requiredPermission?: AssistantRole;
-  /** A narrowing on top of `requiredPermission` (when present). */
+  /**
+   * The existing permission id that guards the same action in the app (for
+   * example `view_reports`, `manage_udhaar`). The app enforces its
+   * permissions by ROLE RANK, so the role lives on the tool itself.
+   */
+  requiredPermission?: string;
+  /** A narrowing on top of the role (when present). */
   allowedRoles?: AssistantRole[];
   /** True for the tools that change data (they still need the confirm flow). */
   write?: boolean;
