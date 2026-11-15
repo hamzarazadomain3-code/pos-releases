@@ -80,7 +80,8 @@
     "test:webImport": "npm run build:main && electron scripts/test_webImport.js",
     "test:assistantProvider": "npm run build:main && electron scripts/test_assistantProvider.cjs",
     "test:assistantSettings": "npm run build:main && electron scripts/test_assistantSettings.cjs",
-    "test:assistantTools": "npm run build:main && electron scripts/test_assistantTools.cjs"
+    "test:assistantTools": "npm run build:main && electron scripts/test_assistantTools.cjs",
+    "test:assistantAgent": "npm run build:main && electron scripts/test_assistantAgent.cjs"
   },
   "dependencies": {
     "bwip-js": "^4.11.2",
