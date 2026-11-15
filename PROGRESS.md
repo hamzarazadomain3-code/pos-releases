@@ -59,3 +59,30 @@ The web build is the **same renderer** running in a browser, so every feature th
 | W5 — the Worker bundles the REAL SheetJS (the second root cause) | DONE | `cloud/scripts/build.mjs` (the `xlsx` alias to the inert shim is GONE — the real library is bundled; `mainFields: ['main','module']` because `platform: 'neutral'` has no main fields; a `stream` alias for the one Node builtin SheetJS asks for); `cloud/src/shims/stream.ts` (the tiny stand-in); `cloud/src/shims/xlsx.ts` (now a TRAP that throws with the reason, so the shim can never be wired back up) | the old shim made `XLSX.read` return `{}` → the import threw "Cannot read properties of undefined (reading '0')" and `XLSX.write` returned **no bytes** → every web export was an EMPTY file; cloud suite **111/111**; cloud typecheck exit 0; local worker import+export **14/14**; **LIVE worker import+export 14/14** (2 products imported, the export a real 18 KB workbook with the product in it); live web smoke **PASS** (21 nav pages); local web smoke **PASS** | E:\temp\proof\cloud_suite_xlsx2.txt, cloud_typecheck_xlsx.txt, local_web_import2.txt, live_web_import2.txt, websmoke_live_xlsx3.txt, websmoke_local_xlsx.txt | 7c24ecf, 01c9c1d |
 | W6 — the report PDF fails cleanly in the browser (no corrupt file) | DONE | `cloud/src/shims/pdfkit.ts` (the stub document now THROWS the plain-English message instead of building an empty document — pdfkit loads its font metrics from disk, which a Worker cannot do); `src/renderer/src/pages/Reports.tsx` `exportPdf()` (a try/catch so the message reaches the owner) | the desktop keeps the real pdfkit; the browser says "Report PDF export needs the Windows app — the browser version cannot build a PDF file. Use "Excel (Full)" instead."; typecheck+build exit 0 | E:\temp\proof\pdfshim_typecheck.txt, pdfshim_build.txt | b5f1a9a |
 | W7 — "Import purchases from file" (the reported break) | DONE | `src/main/services/purchaseImport.ts` (`parsePurchaseData()` parses the bytes that are already in memory — .xlsx/.xls/.csv, SheetJS detects the format from the content; the grid→rows rule extracted into `parsePurchaseWorkbook()` so the disk path and the data path share it; `savePurchaseImportTemplate()` now goes through `saveXlsx()`, so the web build gets the template bytes instead of a save dialog); `src/main/ipc.ts` `purchases:importParseData`; `src/preload/preload.ts`; `src/shared/types.ts`; `src/renderer/src/components/PurchaseImportWizard.tsx` (the file CONTENT is sent — base64, because the web transport is JSON; "Choose file…" opens the browser's own picker, so desktop + web share ONE path; the sample template downloads through `downloadBytes()`); `src/renderer/src/pages/Purchases.tsx` (the drop zone passes the FILE, not `f.path` — Electron 43 removed `File.path`, so the old drop died on the desktop too) | `test:purchaseimportdata` **24/24** (the real `dist/main/services/purchaseImport.js`: a CSV and an .xlsx transported exactly like the web transports them, a flattened payload, the untouched desktop path, the template workbook, a broken file reported); `test:purchaseimportui` **20/20** (the REAL renderer in a real BrowserWindow: a file dropped on the Purchases screen and a file picked inside the wizard are both parsed — the wizard lands on the Columns step with the file's own columns and values); `test:purchaseimport` (the old suite) green; `test:keyboard` 93/93; typecheck+build exit 0; **LIVE worker 19/19** (the purchase import parses on the deployed Worker); local web smoke **PASS** | E:\temp\proof\test_purchaseImportData.txt, test_purchaseImportUi.txt, purch2_purchaseimport.txt, purch2_keyboard.txt, purch2_typecheck.txt, purch2_build.txt, purch2_cloud_build.txt, purch2_deploy.txt, purch2_live_import.txt, purch2_websmoke.txt | fbd5dd4, 2be2654, 1f272b7, 4d49474 |
+
+---
+
+# Assistant run (branch `feature/assistant`, from `37792c0`)
+
+The in-app AI assistant. No release, no version bump, no push, no deploy in this run.
+DONE needs: code + file:line, a permanent test that imports the REAL `dist` code, a saved
+proof file, exit-0 typecheck/build, and a commit hash. No test ever calls a real LLM or a
+real network.
+
+| Item | Status | File:line | Test | Proof | Commit |
+|---|---|---|---|---|---|
+| 1 — provider adapter + key handling | NOT STARTED | — | — | — | — |
+| 2 — Settings → Assistant (owner only) + kill switch | NOT STARTED | — | — | — | — |
+| 3 — the tool registry (one source of truth) | NOT STARTED | — | — | — | — |
+| 4 — the agent loop + injection defence | NOT STARTED | — | — | — | — |
+| 5 — the chat panel (desktop / tablet / phone) | NOT STARTED | — | — | — | — |
+| 6 — answers with real numbers | NOT STARTED | — | — | — | — |
+| 7 — guide mode ("dikha do") | NOT STARTED | — | — | — | — |
+| 8 — pending action + confirmation flow | NOT STARTED | — | — | — | — |
+| 9 — billing helper actions | NOT STARTED | — | — | — | — |
+| 10 — back-office actions | NOT STARTED | — | — | — | — |
+| 11 — proactive insights (opt-in) | NOT STARTED | — | — | — | — |
+| 12 — the evaluation set + regression suite | NOT STARTED | — | — | — | — |
+| 13 — privacy, cost and transparency | NOT STARTED | — | — | — | — |
+| 14 — accessibility, i18n, mobile verification | NOT STARTED | — | — | — | — |
+| 15 — proof (every suite) | NOT STARTED | — | — | — | — |
