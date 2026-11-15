@@ -1,6 +1,7 @@
 ﻿import type { ReceiptDesign, ReceiptLibrary } from './receiptDesign';
 import type { SidebarBadge } from './sidebarBadges';
 import type {
+  AssistantActivityRow,
   AssistantDataLevel,
   AssistantLanguage,
   AssistantRole,
@@ -1779,6 +1780,7 @@ export interface PosBridge {
     saveSettings: (patch: AssistantSettingsPatch) => Promise<AssistantSettingsView>;
     setKey: (key: string) => Promise<{ keySet: boolean; keyHint: string; message?: string }>;
     testConnection: () => Promise<{ ok: boolean; message: string }>;
+    activity: () => Promise<AssistantActivityRow[]>;
   };
   email: {
     send: (options: { to: string | string[]; subject: string; text?: string; html?: string }) => Promise<{ ok: boolean; message: string }>;

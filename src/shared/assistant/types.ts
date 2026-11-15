@@ -171,6 +171,16 @@ export interface AssistantSettingsPatch {
   proactiveEnabled?: boolean;
 }
 
+/** One row of the assistant's activity log (it lives in the app's own table). */
+export interface AssistantActivityRow {
+  id: number;
+  action: string;
+  details: string | null;
+  created_at: string;
+  username: string | null;
+  user_id: number | null;
+}
+
 /** The failure codes the assistant speaks. */
 export type AssistantErrorCode =  | 'disabled'
   | 'no_key'

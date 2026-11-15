@@ -121,19 +121,3 @@ export function assistantActionsAllowed(settings: AssistantSettings, role: strin
   if (role !== 'owner' && role !== 'manager') return false;
   return assistantRoleAllowed(settings, role);
 }
-
-/** The plain explanation of what each data level sends. */
-export const DATA_LEVEL_EXPLANATION: Record<AssistantDataLevel, { en: string; ur: string }> = {
-  aggregates: {
-    en: 'Only totals and counts are sent (for example "today\'s sale is 12,500"). No names, no phone numbers, no addresses.',
-    ur: 'صرف میزان اور اعداد بھیجے جاتے ہیں (مثلاً "آج کی فروخت 12,500")۔ نام، فون نمبر اور پتہ نہیں بھیجے جاتے۔',
-  },
-  names: {
-    en: 'Totals plus product and customer names are sent. Phone numbers and addresses are still removed.',
-    ur: 'میزان کے ساتھ پروڈکٹ اور کسٹمر کے نام بھی بھیجے جاتے ہیں۔ فون نمبر اور پتے پھر بھی ہٹا دیے جاتے ہیں۔',
-  },
-  full: {
-    en: 'Everything the tool returns is sent, including phone numbers and addresses.',
-    ur: 'ٹول جو کچھ بھی لوٹاتا ہے سب بھیج دیا جاتا ہے، بشمول فون نمبر اور پتے۔',
-  },
-};

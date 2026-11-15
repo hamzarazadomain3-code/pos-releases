@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import ShortcutKeys from './AdminPanel/ShortcutKeys';
 import FeatureToggles from './AdminPanel/FeatureToggles';
 import RolesPermissions from './AdminPanel/RolesPermissions';
@@ -6,8 +7,9 @@ import SystemSettings from './AdminPanel/SystemSettings';
 import UserManagement from './AdminPanel/UserManagement';
 import ActivityLog from './AdminPanel/ActivityLog';
 import AdminReports from './AdminPanel/AdminReports';
+import AssistantSettings from './AdminPanel/AssistantSettings';
 
-type AdminTab = 'shortcuts' | 'features' | 'roles' | 'settings' | 'users' | 'activity' | 'reports';
+type AdminTab = 'shortcuts' | 'features' | 'roles' | 'settings' | 'users' | 'activity' | 'reports' | 'assistant';
 
 const TABS: { key: AdminTab; label: string; icon: string }[] = [
   { key: 'settings', label: 'System Settings', icon: '' },
@@ -15,12 +17,14 @@ const TABS: { key: AdminTab; label: string; icon: string }[] = [
   { key: 'features', label: 'Feature Toggles', icon: '' },
   { key: 'roles', label: 'Roles & Permissions', icon: '' },
   { key: 'users', label: 'User Management', icon: '' },
+  { key: 'assistant', label: 'Assistant', icon: '' },
   { key: 'activity', label: 'Activity Log', icon: '' },
   { key: 'reports', label: 'System Reports', icon: '' },
 ];
 
 export default function AdminPanel({ onNavigate }: { onNavigate?: (key: string) => void }) {
   const [tab, setTab] = useState<AdminTab>('settings');
+  const { t } = useTranslation();
 
   const renderContent = () => {
     switch (tab) {
@@ -29,6 +33,7 @@ export default function AdminPanel({ onNavigate }: { onNavigate?: (key: string) 
       case 'roles': return <RolesPermissions />;
       case 'settings': return <SystemSettings onNavigate={onNavigate} />;
       case 'users': return <UserManagement />;
+      case 'assistant': return <AssistantSettings />;
       case 'activity': return <ActivityLog />;
       case 'reports': return <AdminReports />;
       default: return <SystemSettings onNavigate={onNavigate} />;
@@ -44,13 +49,13 @@ export default function AdminPanel({ onNavigate }: { onNavigate?: (key: string) 
 
       <div className="admin-layout">
         <nav className="admin-sidebar">
-          {TABS.map((t) => (
+          {TABS.map((tabDef) => (
             <button
-              key={t.key}
-              className={`admin-tab-btn ${tab === t.key ? 'active' : ''}`}
-              onClick={() => setTab(t.key)}
+              key={tabDef.key}
+              className={`admin-tab-btn ${tab === tabDef.key ? 'active' : ''}`}
+              onClick={() => setTab(tabDef.key)}
             >
-              {t.label}
+              {tabDef.key === 'assistant' ? t('settings.assistant.title') : tabDef.label}
             </button>
           ))}
         </nav>

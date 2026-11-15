@@ -438,6 +438,7 @@ const bridge: PosBridge = {
     saveSettings: (patch) => ipcRenderer.invoke('assistant:saveSettings', patch),
     setKey: (key: string) => ipcRenderer.invoke('assistant:setKey', key),
     testConnection: () => ipcRenderer.invoke('assistant:testConnection'),
+    activity: () => ipcRenderer.invoke('assistant:activity'),
   },
   email: {
     send: (options: { to: string | string[]; subject: string; text?: string; html?: string }) => ipcRenderer.invoke('email:send', options),
