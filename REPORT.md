@@ -2032,3 +2032,123 @@ Commits: `fbd5dd4` (the service + the wizard), `2be2654` (the permanent service 
 2. **Desktop:** the fix also repairs the desktop's drag & drop (Electron 43 removed
    `File.path`). The desktop build has to be rebuilt/reinstalled to get it; the released
    v2.28.0 installer does **not** contain this fix yet.
+
+---
+
+# Assistant run (branch `feature/assistant`, from `37792c0`)
+
+The in-app AI assistant. Branch `feature/assistant`, cut from the good `feature/sidebar`
+tip (`37792c0`). **No release, no version bump, no push, no deploy** in this run.
+
+## STEP 0 — the code this run must reuse (file:line)
+
+Everything below was READ before a single line of assistant code was written. The
+assistant is **additive**: it reuses the app's existing permission guard, services,
+shortcut registry, menu definition, i18n and secret masking instead of re-implementing
+them.
+
+### Shortcut registry (the ONE source of truth)
+- `src/shared/shortcuts.ts:19` — `ScreenId` (the list of screens a combo may run on).
+- `src/shared/shortcuts.ts:70` — `SHORTCUT_ACTIONS` (every combo; globals at `:72-73`:
+  `Ctrl+K` command palette, `F1` help).
+- `src/shared/shortcuts.ts:114` — `DEFAULT_SHORTCUTS` (seeded into the admin `shortcuts`
+  table → every row here is admin-assignable for free).
+- `src/shared/shortcuts.ts:143` — `resolveCombo()`; `:156` — `resolveCombos()`;
+  `:171` — `hintRows()` (the Billing footer hint bar).
+- Renderer side: `src/renderer/src/keyboard/shortcuts.ts` + `src/renderer/src/keyboard/KeyboardProvider.tsx`
+  (one bubble-phase `keydown` listener) + `src/renderer/src/keyboard/scopeRegistry.ts`.
+- F1 help content: `src/renderer/src/components/KeyboardHelp.tsx:21` (it renders the
+  scope rows + `GLOBAL_SHORTCUTS`; the registry rows flow in automatically).
+
+### Permission / role code (the ONE rank map)
+- `src/shared/roles.ts:13` — `ROLE_RANK` (cashier 1 / manager 2 / owner 3);
+  `:22` — `roleAtLeast()`; an unknown role ranks 0 (opens nothing).
+- `src/main/services/auth.ts:61` — `can(required)` (the main-process guard behind every
+  owner-gated IPC handler); `:51` `currentUser()`; `:43` `setSessionUser()`;
+  `:141` `verifyForUser()` (the manager-PIN check the dangerous actions must reuse).
+- `src/shared/sidebarMenu.ts:200` — `canOpenRoute()` (the ONE route guard: role +
+  feature toggle + narrowing); `:160` `buildSidebar()`; `:112` `SIDEBAR_ITEMS`;
+  `:121` `ROUTES_NOT_IN_SIDEBAR`.
+
+### Activity log
+- `src/main/services/activity.ts:15` — `logActivity(action, entity, entityId, details, userId)`;
+  `:27` — `listActivity(limit)`.
+- `src/main/services/admin.ts:293` — the richer `ActivityLogEntry` list used by the
+  Admin → Activity Log screen.
+
+### Settings service and secret masking
+- `src/main/services/settings.ts:4` `getAllSettings()`, `:12` `getSetting()`,
+  `:19` `setSetting()` (the Shop Profile table).
+- `src/main/services/admin.ts:234` `getAllAdminSettings()`, `:249` `setAdminSetting()`
+  (**owner-gated**), `:259` `setAdminSettingsBatch()`.
+- `src/main/utils/secrets.ts:12` `SECRET_MASK` (`••••••••`), `:15` `SECRET_SETTING_KEYS`,
+  `:18` `SECRET_ADMIN_KEYS`, `:27` `isMaskedSecret()` (a masked value written back means
+  "unchanged"), `:34` `maskSecrets()`.
+- The masking is applied at `src/main/ipc.ts:395` (Shop Profile) and `:942` (admin
+  settings) — the renderer therefore NEVER receives a real secret.
+
+### IPC / preload structure
+- `src/main/ipc.ts:273` — `registerIpcHandlers()` (every channel is `ipcMain.handle`);
+  the settings example at `:395-402`.
+- `src/preload/preload.ts:4` — the `PosBridge` object (the renderer's only window into
+  the main process); the type lives in `src/shared/types.ts` (`PosBridge`).
+- The web build runs the **same** preload against a browser shim: `cloud/web/bridge.ts`,
+  `cloud/web/electron-browser.ts:335` `webInvoke()` (the per-channel switch; everything
+  unknown falls through to the worker), `:54` `rpc()` → `POST /api/rpc`.
+
+### The web Worker
+- `cloud/src/index.ts:15` — the fetch router (`/api/login`, `/api/rpc`, `/api/activate`).
+- `cloud/src/accounts.ts:180` — `lookupSession()` (the bearer-token check every
+  authenticated endpoint reuses); `:256` — `handleRpc()`.
+- `cloud/src/shop-object.ts:126` — `handleRpc()` → `dispatch()`;
+  `cloud/src/dispatch.ts:55` `ensureDispatchInit()` + `:68` `dispatch()` — the worker
+  registers the **REAL** `src/main/ipc.ts` handlers, so any new channel added to
+  `ipc.ts` automatically works in the web.
+- `cloud/src/env.ts` — the Worker bindings (where a secret binding would live).
+
+### i18n
+- `src/renderer/src/i18n/index.ts` (i18next + react-i18next, `en` + `ur` resources,
+  `fallbackLng: 'en'`), `src/renderer/src/i18n/en.json`, `src/renderer/src/i18n/ur.json`
+  (top-level groups: navigation, sidebarGroups, sidebar, buttons, forms, tables,
+  messages, errors, settings, labels, dashboard).
+- `src/renderer/src/App.tsx:872` — the direction (`ltr` / `rtl`) follows the language.
+
+### Existing services the assistant must call (never re-derive)
+- `src/main/services/reports.ts:173` — `dashboard()` (today's sales, bills, udhaar due,
+  low stock, top products, expenses). `:244` — `salesReport()`; `:263` — `profitLoss()`.
+- `src/shared/salesHistory.ts:285` — `businessDayBounds()` (the shop's business day).
+- `src/main/services/inventory.ts` (products, stock, adjustments),
+  `src/main/services/udhaar.ts` (customers, balances, overdue),
+  `src/main/services/customers.ts`, `src/main/services/shifts.ts`,
+  `src/main/services/returns.ts`, `src/main/services/expenses.ts`,
+  `src/main/services/promotions.ts`, `src/main/services/sales.ts`.
+- `src/renderer/src/utils/currency.ts` — `formatMoney()` (every amount the assistant
+  prints goes through it).
+
+### Guard rails already in the repo
+- `scripts/check-forbidden-strings.js` — no hardcoded shop identity/content in `src/`
+  (wired into `npm run typecheck`).
+- `npm run test:keyboard` — the real renderer in a real BrowserWindow (the pattern the
+  assistant's UI tests copy).
+
+## STEP 0 — the plan, item by item
+
+| Item | What it delivers | Where the logic lives |
+|---|---|---|
+| 1 | Provider adapter + key handling | `src/shared/assistant/types.ts`, `src/shared/assistant/provider.ts`, `src/main/services/assistant/*` |
+| 2 | Settings → Assistant (owner only) + kill switch | `migrations/083_assistant_settings.js`, `src/main/services/assistant/settings.ts` |
+| 3 | The tool registry (one source of truth) | `src/shared/assistant/tools.ts` + the main-process implementations |
+| 4 | The agent loop + injection defence | `src/shared/assistant/agent.ts`, `redact.ts`, `prompt.ts` |
+| 5 | The chat panel | `src/renderer/src/components/AssistantPanel.tsx` + the pure helpers |
+| 6 | Answers with real numbers | `src/shared/assistant/verify.ts` + the read tools |
+| 7 | Guide mode ("dikha do") | `src/shared/assistant/guides.ts`, `faq.ts`, `search.ts` |
+| 8 | Pending action + confirmation | `src/main/services/assistant/pending.ts`, `migrations/084_assistant_actions.js` |
+| 9 | Billing helper actions | the write tools in the registry |
+| 10 | Back-office actions | the write tools in the registry |
+| 11 | Proactive insights | `src/shared/assistant/proactive.ts` |
+| 12 | The evaluation set | `src/shared/assistant/evals.json` + `npm run test:assistantEval` |
+| 13 | Privacy, cost, transparency | the registry-driven privacy page |
+| 14 | Accessibility, i18n, mobile | the renderer parts + the headless check |
+| 15 | Proof (every suite) | `E:\temp\proof\` |
+
+**Not started yet.** PROGRESS.md carries one row per item.
