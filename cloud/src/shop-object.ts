@@ -23,6 +23,8 @@ import { dispatch, ensureDispatchInit } from './dispatch';
 import { json } from './http';
 import * as auth from '../../src/main/services/auth';
 import * as settings from '../../src/main/services/settings';
+import { getAssistantSettings, getAssistantSettingsView } from '../../src/main/services/assistant/settings';
+import { testAssistantConnection } from '../../src/main/services/assistant/runtime';
 import type { Env } from './env';
 
 interface BootstrapBody {
@@ -68,6 +70,9 @@ export class ShopObject {
       }
       if (request.method === 'POST' && url.pathname === '/rpc') {
         return this.handleRpc(db, request);
+      }
+      if (request.method === 'POST' && url.pathname === '/assistant') {
+        return this.handleAssistant(db, request);
       }
       return json({ ok: false, error: 'Not found' }, 404);
     } finally {
@@ -118,6 +123,40 @@ export class ShopObject {
         return admin.id;
       });
       return json({ ok: true, adminUserId });
+    } catch (e) {
+      return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
+    }
+  }
+
+  /**
+   * The assistant, run inside the shop's Durable Object.
+   *
+   * The Worker forwards the provider key it holds as a secret binding; the key
+   * stays server-side (it is never sent to the browser and never written to
+   * the shop's database). The shop's own settings decide whether the assistant
+   * is on at all.
+   */
+  private async handleAssistant(db: SqliteCompat, request: Request): Promise<Response> {
+    let body: { op?: unknown; apiKey?: unknown; payload?: unknown };
+    try {
+      body = (await request.json()) as { op?: unknown; apiKey?: unknown; payload?: unknown };
+    } catch {
+      return json({ ok: false, error: 'Invalid JSON body' }, 400);
+    }
+    const op = typeof body.op === 'string' ? body.op : 'testConnection';
+    const apiKey = typeof body.apiKey === 'string' ? body.apiKey : '';
+    try {
+      setWebDb(db);
+      if (op === 'status') {
+        return json({ ok: true, data: getAssistantSettingsView() });
+      }
+      if (op === 'testConnection') {
+        const settings = getAssistantSettings();
+        if (!settings.enabled) return json({ ok: false, error: 'disabled' }, 403);
+        const result = await testAssistantConnection(apiKey, settings.model);
+        return json({ ok: true, data: result });
+      }
+      return json({ ok: false, error: 'Unknown assistant operation' }, 400);
     } catch (e) {
       return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
     }

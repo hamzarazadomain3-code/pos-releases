@@ -332,9 +332,41 @@ function patchBrowserShortcuts(rows: unknown): unknown {
   });
 }
 
+/**
+ * The assistant, in the browser.
+ *
+ * The API key lives on the SERVER (the Worker holds it as a secret binding),
+ * so these calls go to /api/assistant instead of /api/rpc — the Worker adds
+ * the key to the provider request. The browser never carries the key.
+ */
+async function webAssistant(op: string, payload: Record<string, unknown>): Promise<unknown> {
+  const token = currentToken();
+  if (!token) throw new Error('Not signed in');
+  const res = await fetch('/api/assistant', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
+    body: JSON.stringify({ op, payload }),
+  });
+  const body = (await res.json().catch(() => null)) as { ok?: boolean; data?: unknown; error?: string } | null;
+  if (!body || !body.ok) throw new Error((body && body.error) || `Request failed (${res.status})`);
+  return body.data;
+}
+
 async function webInvoke(channel: string, ...args: unknown[]): Promise<unknown> {
   if (PRINT_DOC_CHANNELS.has(channel)) return webPrint(channel, args);
   switch (channel) {
+    // The assistant: the key is a server secret, so the browser asks the server.
+    case 'assistant:getSettings':
+      return webAssistant('status', {});
+    case 'assistant:testConnection':
+      return webAssistant('testConnection', {});
+    case 'assistant:setKey':
+      return {
+        keySet: false,
+        keyHint: '',
+        message:
+          'In the browser version the assistant key lives on the server (wrangler secret put ASSISTANT_API_KEY) — it is never stored in the shop.',
+      };
     // Handled in the browser: there is no Electron main process here.
     case 'app:get-version':
       return WEB_VERSION;

@@ -5,7 +5,7 @@
 //   exported ShopObject is the per-shop Durable Object class that wrangler
 //                  instantiates via the SHOP binding.
 
-import { handleSignup, handleLogin, handleRpc, handleActivate, handleHealth } from './accounts';
+import { handleSignup, handleLogin, handleRpc, handleActivate, handleHealth, handleAssistant } from './accounts';
 import { json } from './http';
 import { serveApp } from './web';
 import type { Env } from './env';
@@ -39,6 +39,11 @@ export default {
     }
     if (request.method === 'POST' && url.pathname === '/api/rpc') {
       return handleRpc(env, request);
+    }
+    // The assistant: the Worker holds the API key as a secret binding, so the
+    // browser never carries it.
+    if (request.method === 'POST' && url.pathname === '/api/assistant') {
+      return handleAssistant(env, request);
     }
     if (request.method === 'POST' && url.pathname === '/api/activate') {
       return handleActivate(env, request);

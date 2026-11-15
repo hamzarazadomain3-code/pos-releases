@@ -22,6 +22,9 @@ export const SECRET_ADMIN_KEYS = new Set([
   'whatsapp_api_token',
   'whatsapp_token',
   'license_key',
+  // The assistant's provider key. The Settings → Assistant screen shows its own
+  // hint (the last four characters); this generic dump must never carry it.
+  'assistant_api_key',
 ]);
 
 export function isMaskedSecret(value: unknown): boolean {

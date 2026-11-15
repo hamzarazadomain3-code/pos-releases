@@ -56,6 +56,14 @@ import {
 } from './services/salesHistory';
 import { getAllSettings, setSetting } from './services/settings';
 import {
+  getAssistantSettingsView,
+  saveAssistantSettings,
+  setAssistantApiKey,
+} from './services/assistant/settings';
+import { createProviderForSettings, testAssistantConnection } from './services/assistant/runtime';
+import { ProviderError } from './services/assistant/provider';
+import { resolveAssistantApiKey } from './services/assistant/settings';
+import {
   printLabel,
   printBarcodeLabel,
   printBarcodeBatch,
@@ -408,6 +416,21 @@ export function registerIpcHandlers(): void {
       properties: ['openDirectory'],
     });
      return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
+  });
+
+  // ── Assistant ────────────────────────────────────────────────────────────
+  // The API key never crosses this boundary: `getAssistantSettingsView` returns
+  // only whether a key is set and its last four characters.
+  ipcMain.handle('assistant:getSettings', () => getAssistantSettingsView());
+  ipcMain.handle('assistant:saveSettings', (_e, patch) => saveAssistantSettings(patch ?? {}));
+  ipcMain.handle('assistant:setKey', (_e, key: string) => setAssistantApiKey(String(key ?? '')));
+  ipcMain.handle('assistant:testConnection', async () => {
+    if (!can('owner')) throw new Error('Only the owner can test the assistant connection');
+    const view = getAssistantSettingsView();
+    if (!view.enabled) return { ok: false, message: 'The assistant is turned off.' };
+    if (!view.keySet) return { ok: false, message: 'Add an API key first.' };
+    if (!view.model) return { ok: false, message: 'Choose a model first.' };
+    return testAssistantConnection(resolveAssistantApiKey(), view.model);
   });
 
   // --- BayLan Label Scale barcode handlers ---

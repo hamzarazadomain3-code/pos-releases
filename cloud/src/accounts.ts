@@ -289,6 +289,61 @@ export async function handleRpc(env: Env, request: Request): Promise<Response> {
 }
 
 /**
+ * The assistant endpoint (web).
+ *
+ * The browser NEVER sees the API key: the Worker holds it as a secret binding
+ * (`ASSISTANT_API_KEY`) and adds it to the provider request server-side. The
+ * request is authenticated exactly like /api/rpc (the bearer web session), and
+ * the shop's own Durable Object runs the assistant (the tools need its
+ * database).
+ */
+export async function handleAssistant(env: Env, request: Request): Promise<Response> {
+  await ensureSchema(env);
+  const looked = await lookupSession(env, request);
+  if ('response' in looked) return looked.response;
+  const { session, shop } = looked;
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await readJson(request)) as Record<string, unknown>;
+  } catch {
+    return json({ ok: false, error: 'Invalid JSON body' }, 400);
+  }
+
+  const op = typeof body.op === 'string' ? body.op : 'testConnection';
+  const apiKey = (env.ASSISTANT_API_KEY ?? '').trim();
+
+  const stub = env.SHOP.get(env.SHOP.idFromName(session.shop_slug));
+  const res = await stub.fetch('https://shop/assistant', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    // The key travels server-to-server (Worker → the shop's own Durable
+    // Object). It is never sent to the browser.
+    body: JSON.stringify({ op, apiKey, payload: body.payload ?? null }),
+  });
+  const result = (await res.json().catch(() => null)) as { ok?: boolean; data?: unknown; error?: string } | null;
+  if (!result || !result.ok) {
+    return json({ ok: false, error: (result && result.error) || 'The assistant could not answer.' }, 500);
+  }
+  if (op === 'status') {
+    // The key status comes from the WORKER (the secret binding), never from
+    // the browser and never from the shop's database.
+    const data = (result.data ?? {}) as Record<string, unknown>;
+    return json({
+      ok: true,
+      data: {
+        ...data,
+        keySet: apiKey.length > 0,
+        keyHint: apiKey ? `••••${apiKey.slice(-4)}` : '',
+        keySource: 'server',
+      },
+      shop: { slug: shop.slug },
+    });
+  }
+  return json({ ok: true, data: result.data, shop: { slug: shop.slug } });
+}
+
+/**
  * Manual activation: the shop OWNER (verified through the shop's DO) flips the
  * account from `trial` to `active`, which clears the trial-expiry 402 gate.
  * Neutral and truthful — no pricing claims, no fake entitlements.

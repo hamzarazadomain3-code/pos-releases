@@ -1,6 +1,13 @@
 ﻿import type { ReceiptDesign, ReceiptLibrary } from './receiptDesign';
 import type { SidebarBadge } from './sidebarBadges';
 import type {
+  AssistantDataLevel,
+  AssistantLanguage,
+  AssistantRole,
+  AssistantSettingsPatch,
+  AssistantSettingsView,
+} from './assistant/types';
+import type {
   HistoryDetail,
   HistoryFilters,
   HistoryListResult,
@@ -1762,6 +1769,16 @@ export interface PosBridge {
     method: () => Promise<string>;
     generateOtp: (userId: number) => Promise<{ ok: boolean; method: string; message: string }>;
     verifyOtp: (userId: number, code: string) => Promise<{ ok: boolean; message: string }>;
+  };
+  /**
+   * The assistant. The API key NEVER crosses this boundary: the renderer only
+   * learns whether a key is set and its last four characters.
+   */
+  assistant: {
+    getSettings: () => Promise<AssistantSettingsView>;
+    saveSettings: (patch: AssistantSettingsPatch) => Promise<AssistantSettingsView>;
+    setKey: (key: string) => Promise<{ keySet: boolean; keyHint: string; message?: string }>;
+    testConnection: () => Promise<{ ok: boolean; message: string }>;
   };
   email: {
     send: (options: { to: string | string[]; subject: string; text?: string; html?: string }) => Promise<{ ok: boolean; message: string }>;

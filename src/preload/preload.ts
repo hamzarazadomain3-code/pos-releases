@@ -431,6 +431,14 @@ const bridge: PosBridge = {
     generateOtp: (userId: number) => ipcRenderer.invoke('2fa:generateOtp', userId),
     verifyOtp: (userId: number, code: string) => ipcRenderer.invoke('2fa:verifyOtp', userId, code),
   },
+  // The assistant. The key stays in the main process — the renderer only ever
+  // sees whether a key is set and its last four characters.
+  assistant: {
+    getSettings: () => ipcRenderer.invoke('assistant:getSettings'),
+    saveSettings: (patch) => ipcRenderer.invoke('assistant:saveSettings', patch),
+    setKey: (key: string) => ipcRenderer.invoke('assistant:setKey', key),
+    testConnection: () => ipcRenderer.invoke('assistant:testConnection'),
+  },
   email: {
     send: (options: { to: string | string[]; subject: string; text?: string; html?: string }) => ipcRenderer.invoke('email:send', options),
     sendDailyReport: () => ipcRenderer.invoke('email:sendDailyReport'),

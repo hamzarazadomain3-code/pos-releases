@@ -10,4 +10,10 @@ export interface Env {
   SHOP: DurableObjectNamespace;
   // Static-assets binding for the web build of the desktop renderer (served at /app).
   ASSETS?: Fetcher;
+  /**
+   * The assistant's provider API key, held by the WORKER as a secret binding
+   * (`wrangler secret put ASSISTANT_API_KEY`). The browser never sees it: the
+   * /api/assistant endpoint adds it to the provider request server-side.
+   */
+  ASSISTANT_API_KEY?: string;
 }
