@@ -77,7 +77,8 @@
     "test:layoutMode": "npm run build:main && node scripts/test_layoutMode.cjs",
     "test:sidebarDrawer": "npm run build:main && node scripts/test_sidebarDrawer.cjs",
     "test:binaryTransfer": "npm run build:main && node scripts/test_binaryTransfer.cjs",
-    "test:webImport": "npm run build:main && electron scripts/test_webImport.js"
+    "test:webImport": "npm run build:main && electron scripts/test_webImport.js",
+    "test:assistantProvider": "npm run build:main && electron scripts/test_assistantProvider.cjs"
   },
   "dependencies": {
     "bwip-js": "^4.11.2",
