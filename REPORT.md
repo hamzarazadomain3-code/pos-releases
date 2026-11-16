@@ -2174,11 +2174,11 @@ in the suites that could otherwise).
 | 8 | The pending action + the confirmation flow | `test:assistantPending` **54/54** | `a8_assistantPending.txt` | `e963131` |
 | 9 | The billing helper actions (add to bill / hold bill) | `test:assistantBillActions` **61/61** | `a9_assistantBillActions.txt` | `c274c9e` |
 | 10 | The back-office actions (discount, expense draft, promotion draft, stock, price) | `test:assistantBackOffice` **88/88** | `a10_assistantBackOffice.txt` | `b663963` |
-| 11 | The proactive insights (opt-in) | `test:assistantProactive` **48/48** | `a11_assistantProactive.txt` | `1c0ba31` |
+| 11 | The proactive insights (opt-in) | `test:assistantProactive` **48/48** + `test:assistantUI` **25/25** (the card in the real panel) | `a11_assistantProactive.txt`, `a15_testassistantUI.txt` | `1c0ba31` |
 | 12 | The evaluation set (12 cases) + the regression suite | `test:assistantEval` **81/81 (12 cases)** | `a12_assistantEval.txt` | `4f7b289` |
-| 13 | Privacy, cost and transparency + the per-user opt-out | `test:assistantPrivacy` **72/72** | `a13_testassistantPrivacy.txt` | `b11ad1b` |
+| 13 | Privacy, cost and transparency + the per-user opt-out | `test:assistantPrivacy` **72/72** + `test:assistantUI` **25/25** (the page in the real UI) | `a13_testassistantPrivacy.txt`, `a15_testassistantUI.txt` | `b11ad1b` |
 | 14 | Accessibility, i18n and the phone/tablet/desktop sizes | `test:assistantA11y` **73/73** | `a14_assistantA11y.txt` (+ the PNGs) | `257fd8e` |
-| 15 | The proof — every suite + the typecheck + the build | **14 suites, 946 checks, all green** | `a15_*.txt` | this commit |
+| 15 | The proof — every suite + the typecheck + the build | **15 suites, 971 checks, all green** | `a15_*.txt` | this commit |
 
 ### The final run (item 15) — the saved output
 
@@ -2200,6 +2200,7 @@ in the suites that could otherwise).
 | `npm run test:assistantEval` | 81/81 (12 cases) | `a15_testassistantEval.txt` |
 | `npm run test:assistantPrivacy` | 72/72 | `a15_testassistantPrivacy.txt` |
 | `npm run test:assistantA11y` | 73/73 | `a15_testassistantA11y.txt` |
+| `npm run test:assistantUI` | 25/25 | `a15_testassistantUI.txt` |
 | `npm run eval:assistant:live` (without `--live`) | exit 0 — it refuses to run without the flag, so it never spends money by accident | `a15_eval_live_guard.txt` |
 
 ### Two real defects the audit found and fixed (items 13 + 14)
@@ -2212,6 +2213,21 @@ in the suites that could otherwise).
   they covered its title, its header buttons and its composer. On a tablet the search
   button covered the panel's header buttons (and in Urdu the menu button did). The
   chrome now steps aside while the panel is open, and the audit asserts it.
+
+### The two screens in the real UI (items 11 + 13)
+
+`test:assistantUI` drives the real renderer once more and covers what the service
+suites cannot: that the SCREENS really render it.
+
+- **The privacy page** (Admin → Assistant) really lists **every** tool of the registry
+  — the row count on the screen is the registry's own count — with the real risk and
+  the real roles, the write tools are the write ones on the screen, the card shows the
+  spend of today against the cap and the number of turns, and the opt-out hint is there.
+- **The proactive card** really appears in the panel when the opt-in is on, it is a
+  button with a title and a real touch target (≥40px), it carries its severity, and
+  clicking it really sends its question.
+- **"Turn off for me"** really closes the panel and takes the assistant button away
+  from that user's sidebar — and only from that user.
 
 ### What is still the owner's job (nothing was done automatically)
 
