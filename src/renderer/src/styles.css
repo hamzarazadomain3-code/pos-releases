@@ -7055,3 +7055,118 @@ body.theme-dark .bill-items .bill-summary-icon { background: rgba(139, 92, 246, 
   }
 }
 
+/* ── The guide overlay ("dikha do") ───────────────────────────────────────
+   A small card that walks the owner through the steps of a guide and
+   highlights the control of the current step. It never clicks for the
+   owner. Logical properties only, so the Urdu layout mirrors itself. */
+.guide-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.35);
+  pointer-events: none;
+}
+
+.guide-card {
+  pointer-events: auto;
+  width: min(520px, calc(100vw - 24px));
+  margin: 0 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface, #ffffff);
+  color: var(--text, #0f172a);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.22);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.guide-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.guide-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  flex: 1 1 auto;
+}
+
+.guide-count {
+  white-space: nowrap;
+}
+
+.guide-close {
+  border: 1px solid var(--border, #e2e8f0);
+  background: var(--surface-alt, #f1f5f9);
+  border-radius: 8px;
+  min-width: 32px;
+  min-height: 32px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.guide-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.guide-step-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.guide-step-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.guide-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* The control the current step points at. */
+.guide-highlight {
+  outline: 3px solid var(--brand, #0b5d4b);
+  outline-offset: 2px;
+  border-radius: 6px;
+  animation: guide-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes guide-pulse {
+  0%, 100% { outline-color: var(--brand, #0b5d4b); }
+  50% { outline-color: rgba(11, 93, 75, 0.35); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guide-highlight {
+    animation: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .guide-card {
+    width: 100vw;
+    margin: 0;
+    border-radius: 14px 14px 0 0;
+    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .guide-close,
+  .guide-actions .btn {
+    min-height: 44px;
+  }
+}
+

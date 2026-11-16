@@ -469,7 +469,7 @@ export function UdhaarCustomerModal({ customer, onClose, onSaved, onOpenExisting
         <div className="form-grid">
           <label className="field">
             <span>Phone *</span>
-            <input value={form.phone} onChange={(e) => setPhone(e.target.value)} placeholder="03XXXXXXXXX" inputMode="tel" autoFocus={!editing} />
+            <input value={form.phone} data-guide-id="udhaar.form.details" onChange={(e) => setPhone(e.target.value)} placeholder="03XXXXXXXXX" inputMode="tel" autoFocus={!editing} />
           </label>
           <label className="field">
             <span>Alternate phone</span>

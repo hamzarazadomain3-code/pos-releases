@@ -257,7 +257,7 @@ export default function Udhaar() {
             <button className="btn btn-sm" onClick={exportCustomers}>
               Export Excel
             </button>
-            <button className="btn btn-primary" onClick={() => setCustomerModal({ customer: null })}>
+            <button className="btn btn-primary" data-guide-id="udhaar.new" onClick={() => setCustomerModal({ customer: null })}>
               + Add Customer
             </button>
           </FilterRow>

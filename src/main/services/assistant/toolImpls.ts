@@ -26,6 +26,8 @@ import { currentShift, shiftTotals } from '../shifts';
 import { listReturns } from '../returns';
 import { canOpenRoute } from '../../../shared/sidebarMenu';
 import { roleAtLeast } from '../../../shared/roles';
+import { GUIDES, guideById } from '../../../shared/assistant/guides';
+import { searchHelp } from '../../../shared/assistant/search';
 import type { AssistantContext } from '../../../shared/assistant/types';
 import type { ToolImplementation, ToolPreview } from '../../../shared/assistant/tools';
 
@@ -405,16 +407,60 @@ export function buildAssistantToolImplementations(): Record<string, ToolImplemen
       },
     },
 
+    search_help: {
+      execute(_ctx, input) {
+        const query = String(input.query ?? '').trim();
+        if (!query) return { found: false, message: 'Ask what you want to know.' };
+        const results = searchHelp(query);
+        if (!results.length) {
+          return {
+            found: false,
+            query,
+            message: 'The in-app help has nothing about that. Try the page the question is about.',
+          };
+        }
+        return {
+          found: true,
+          query,
+          results: results.map((r) => ({
+            kind: r.kind,
+            id: r.id,
+            title: r.title,
+            text: r.body,
+            route: r.route ?? null,
+            steps: r.steps ?? null,
+          })),
+        };
+      },
+    },
+
     start_guide: {
       execute(_ctx, input) {
         const guideId = String(input.guideId ?? '');
-        return { ok: true, guideId };
+        const guide = guideById(guideId);
+        if (!guide) {
+          return {
+            ok: false,
+            guideId,
+            message: 'There is no guide with that name.',
+            available: GUIDES.map((g) => ({ id: g.id, title: g.title, route: g.route })),
+          };
+        }
+        return {
+          ok: true,
+          guideId: guide.id,
+          title: guide.title,
+          route: guide.route,
+          steps: guide.steps.map((s) => ({ id: s.id, anchor: s.anchor, title: s.title, text: s.body })),
+        };
       },
     },
 
     highlight: {
       execute(_ctx, input) {
-        return { ok: true, elementId: String(input.elementId ?? '') };
+        const elementId = String(input.elementId ?? '');
+        if (!elementId) return { ok: false, message: 'Say which control to highlight.' };
+        return { ok: true, elementId };
       },
     },
   };

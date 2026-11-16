@@ -144,8 +144,11 @@ export default function AssistantPanel({
       setInput('');
       // The messages this turn adds — they are persisted with the question.
       const added: PanelMessage[] = [];
+      // The guide the assistant may have started (the overlay walks it).
+      let startedGuide: string | undefined;
       try {
         const res = await window.api.assistant.send({ message: text, route, history });
+        startedGuide = res?.guide;
         if (!res.ok) {
           setError(res.failure?.message || t('assistant.error'));
           const failed: PanelMessage = {
@@ -186,8 +189,11 @@ export default function AssistantPanel({
         setBusy(false);
         persist([...messages, asked, ...added]);
       }
+      // The assistant may have started a guide — the overlay walks the user
+      // through it on the real screen.
+      if (startedGuide) onStartGuide?.(startedGuide);
     },
-    [busy, messages, route, t, persist]
+    [busy, messages, route, t, persist, onStartGuide]
   );
 
   const stop = useCallback(async () => {

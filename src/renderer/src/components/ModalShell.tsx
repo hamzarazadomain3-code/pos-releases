@@ -103,7 +103,7 @@ export function ModalShell({
             Next
           </button>
         )}
-        <button type="button" className="btn btn-primary" onClick={onSubmit}>
+        <button type="button" className="btn btn-primary" data-guide-id="modal.save" onClick={onSubmit}>
           {submitLabel}
         </button>
       </div>

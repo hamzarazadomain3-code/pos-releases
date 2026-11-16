@@ -303,7 +303,7 @@ export default function Returns() {
                   <td>{s.total_amount.toFixed(2)}</td>
                   <td className={s.returned_amount ? 'text-warn' : ''}>{(s.returned_amount ?? 0).toFixed(2)}</td>
                   <td>
-                    <button className="btn btn-sm" onClick={() => openSale(s)}>
+                    <button className="btn btn-sm" data-guide-id="returns.list" onClick={() => openSale(s)}>
                       {selected?.id === s.id ? 'Selected' : 'Select'}
                     </button>
                   </td>
@@ -398,7 +398,7 @@ export default function Returns() {
             <label className="lbl" style={{ margin: 0 }}>
               <input type="checkbox" checked={restock} onChange={(e) => setRestock(e.target.checked)} /> Restock returned items
             </label>
-            <button className="btn btn-primary" onClick={doReturn}>
+            <button className="btn btn-primary" data-guide-id="returns.items" onClick={doReturn}>
               Return — refund{' '}
               {saleDetail.items
                 .filter((i) => includeMap[i.id])

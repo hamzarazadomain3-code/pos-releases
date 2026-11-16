@@ -305,6 +305,14 @@
       "guide": "Guide"
     },
     "unverified": "Some figures could not be confirmed against the shop data, so they are not shown.",
+    "guide": {
+      "close": "Close the guide",
+      "done": "That is the whole guide. You did every step yourself.",
+      "next": "Next",
+      "back": "Back",
+      "openPage": "Open the page",
+      "missingTarget": "The control is not on this screen — open the page and it will be highlighted."
+    },
     "chips": {
       "todaySale": "Today's sale",
       "lowStock": "Low stock",

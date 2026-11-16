@@ -23,6 +23,7 @@ import {
 } from '@shared/sidebarMenu';
 import FirstRunWizard from './components/FirstRunWizard';
 import AssistantPanel from './components/AssistantPanel';
+import GuideOverlay from './components/GuideOverlay';
 import rokarLogoLight from './assets/rokar-pos-logo-light.png';
 import rokarMarkDark from './assets/rokar-pos-mark-dark.png';
 import defaultWallpaper from './assets/wallpaper-default.webp';
@@ -616,6 +617,8 @@ export default function App() {
   const [guardNotice, setGuardNotice] = useState<string | null>(null);
   /** The assistant panel (opened from the sidebar, the shortcut or a chip). */
   const [assistantOpen, setAssistantOpen] = useState(false);
+  /** The step-by-step guide the assistant started (the overlay walks it). */
+  const [activeGuide, setActiveGuide] = useState<string | null>(null);
   /** Which sidebar groups are collapsed (remembered per user). */
   const [groupState, setGroupState] = useState<GroupState>(DEFAULT_GROUP_STATE);
  // The ONE menu: built for this role, this feature set and this language.
@@ -1227,6 +1230,7 @@ export default function App() {
                         onClick={() => { navigate(item.route); }}
                         aria-label={item.label}
                         data-label={item.label}
+                        data-guide-id={`nav.${item.route}`}
                         title={item.label}
                         aria-current={page === item.route ? 'page' : undefined}
                       >
@@ -1408,6 +1412,13 @@ export default function App() {
           setAssistantOpen(false);
           navigate(route as NavPage);
         }}
+        onStartGuide={(guideId) => setActiveGuide(guideId)}
+      />
+      <GuideOverlay
+        guideId={activeGuide}
+        route={page}
+        onClose={() => setActiveGuide(null)}
+        onNavigate={(route) => navigate(route as NavPage)}
       />
       {locked && <LockScreen user={user} onUnlock={() => setLocked(false)} logo={shopLogo} />}
       {mustChangePw && (

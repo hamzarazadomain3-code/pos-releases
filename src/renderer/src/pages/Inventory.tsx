@@ -724,7 +724,7 @@ export default function Inventory() {
             <button className="btn btn-sm" onClick={openStockReceived}>
               Stock Received
             </button>
-            <button className="btn btn-primary" onClick={() => openCreate()}>
+            <button className="btn btn-primary" data-guide-id="inventory.add" onClick={() => openCreate()}>
               + Add Product
             </button>
           </FilterRow>
@@ -912,6 +912,7 @@ export default function Inventory() {
                 <span>Name *</span>
                 <input
                   value={form.name}
+                  data-guide-id="inventory.form.name"
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   placeholder="e.g. Dalda Ghee 1kg"
                 />
@@ -1051,6 +1052,7 @@ export default function Inventory() {
                   <KeyboardInput
                     type="text"
                     decimals
+                    data-guide-id="inventory.form.quantity"
                     value={form.stock_qty}
                     onChange={(e) => setForm({ ...form, stock_qty: e.target.value })}
                   />
@@ -1211,7 +1213,7 @@ export default function Inventory() {
               <button className="btn" onClick={() => setFormOpen(false)}>
                 Cancel
               </button>
-              <button className="btn btn-primary" onClick={handleSave} disabled={busy || !form.name.trim()}>
+              <button className="btn btn-primary" data-guide-id="inventory.form.save" onClick={handleSave} disabled={busy || !form.name.trim()}>
                 {busy ? 'Saving...' : 'Save '}
               </button>
             </div>

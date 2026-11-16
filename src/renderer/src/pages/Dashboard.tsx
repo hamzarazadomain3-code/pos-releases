@@ -328,7 +328,7 @@ export default function Dashboard() {
       </div>
 
       {/* Row 1: Sales & Revenue Metrics (Green) */}
-      <div className="billten-kpi-grid-row1">
+      <div className="billten-kpi-grid-row1" data-guide-id="dashboard.today">
         <KpiCard
           label={`${periodLabel} Sales`}
           value={formatMoney(dailyStats.total_sales)}
@@ -360,7 +360,7 @@ export default function Dashboard() {
       </div>
 
       {/* Row 2: Customer & Product Metrics (Blue/Purple) */}
-      <div className="billten-kpi-grid-row2">
+      <div className="billten-kpi-grid-row2" data-guide-id="dashboard.cards">
         <KpiCard
           label="Total Parties"
           value={totalParties}

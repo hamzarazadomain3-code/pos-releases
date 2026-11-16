@@ -2544,6 +2544,7 @@ return (
           <input
             ref={searchRef}
             className="search-input billing-search"
+            data-guide-id="billing.search"
             placeholder="Search, scan barcode, or type phone... (F2)"
             value={search}
             onChange={(e) => { setSearch(e.target.value); handlePhoneLookup(e.target.value); }}
@@ -2641,7 +2642,7 @@ return (
             } catch (e) { setNotice(e instanceof Error ? e.message : String(e)); }
           }}>Close</button>
         ) : (
-          <button className="shift-open-btn" onClick={() => setOpenShiftModal(true)}>Open</button>
+          <button className="shift-open-btn" data-guide-id="billing.shift" onClick={() => setOpenShiftModal(true)}>Open</button>
         )}
         <button className="sale-inv-icon-btn" title={refreshing ? 'Refreshing…' : 'Refresh'} onClick={() => { void refreshData(); }} disabled={refreshing}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
@@ -2651,7 +2652,7 @@ return (
 
       {/* ─── Toolbar row 2: actions ─── */}
       <div className="billing-top">
-        <button className="btn btn-sm" onClick={() => setCustModal(true)}>+ Customer</button>
+        <button className="btn btn-sm" data-guide-id="billing.customer" onClick={() => setCustModal(true)}>+ Customer</button>
         <button className={quotationMode ? 'btn btn-sm btn-quote active' : 'btn btn-sm btn-quote'} onClick={() => setQuotationMode(!quotationMode)}>
           {quotationMode ? 'Quotation ON' : 'Quotation'}
         </button>
@@ -2875,6 +2876,7 @@ return (
           </div>
           <div
             className="cart-list"
+            data-guide-id="billing.cart"
             role={billEditMode ? 'listbox' : undefined}
             aria-label={billEditMode ? 'Bill items' : undefined}
           >
@@ -3576,7 +3578,7 @@ const handleUnitChange = (newLevel: number) => {
                   </div>
                 </div>
                 <div className="billten-actions-col">
-                  <button className="action-btn-pay-save" onClick={quotationMode ? completeQuotation : openPay} disabled={items.length === 0 || busy || (!quotationMode && !shift)}>
+                  <button className="action-btn-pay-save" data-guide-id="billing.payment" onClick={quotationMode ? completeQuotation : openPay} disabled={items.length === 0 || busy || (!quotationMode && !shift)}>
                     {busy ? 'Working...' : quotationMode ? 'Save Quotation' : 'Pay & Save'}
                   </button>
                   <button className="action-btn-save" onClick={quotationMode ? completeQuotation : openPay} disabled={items.length === 0 || busy || (!quotationMode && !shift)}>

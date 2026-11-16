@@ -214,6 +214,8 @@ export interface AssistantTurnResponse {
   source?: string;
   /** The numbers that could not be traced to a tool result (empty when all were). */
   unverifiedNumbers?: string[];
+  /** The guide the assistant started (the overlay walks the user through it). */
+  guide?: string;
 }
 
 /** The failure codes the assistant speaks. */

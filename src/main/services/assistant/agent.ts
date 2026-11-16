@@ -47,6 +47,18 @@ export interface AssistantTurnResponse {
   source?: string;
   /** The numbers that could not be traced to a tool result. */
   unverifiedNumbers?: string[];
+  /** The guide the assistant started (the overlay walks the user through it). */
+  guide?: string;
+}
+
+/** The guide a turn started (the `start_guide` tool's own result). */
+function startedGuide(results: unknown[]): string | undefined {
+  for (const result of results) {
+    if (!result || typeof result !== 'object') continue;
+    const row = result as { ok?: unknown; guideId?: unknown };
+    if (row.ok === true && typeof row.guideId === 'string' && row.guideId) return row.guideId;
+  }
+  return undefined;
 }
 
 /** The secrets that must never leave the shop, whatever the data level is. */
@@ -215,6 +227,7 @@ export async function runAssistantTurn(request: AssistantTurnRequest): Promise<A
         failure: { code: result.failure.code, message: result.failure.message },
         source: sourceLineFor(result.sources ?? []),
         unverifiedNumbers: result.unverifiedNumbers ?? [],
+        guide: startedGuide(result.verifiedAgainst ?? []),
       };
     }
 
@@ -226,6 +239,7 @@ export async function runAssistantTurn(request: AssistantTurnRequest): Promise<A
       stop: result.stop,
       source: sourceLineFor(result.sources ?? []),
       unverifiedNumbers: result.unverifiedNumbers ?? [],
+      guide: startedGuide(result.verifiedAgainst ?? []),
     };
   } finally {
     if (currentAbort === controller) currentAbort = null;
