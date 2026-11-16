@@ -2152,3 +2152,115 @@ them.
 | 15 | Proof (every suite) | `E:\temp\proof\` |
 
 **Not started yet.** PROGRESS.md carries one row per item.
+
+---
+
+## The result — every item, the proof and the commit
+
+Every number below comes from the saved output in `E:\temp\proof\`. Every suite drives
+the **real** `dist` code over a throwaway database with the **mock** provider only — no
+test ever reaches a real LLM, a real key or the network (the global `fetch` is guarded
+in the suites that could otherwise).
+
+| Item | What it delivers | Permanent test | Proof | Commit |
+|---|---|---|---|---|
+| 1 | The provider adapter + the key handling (the key never crosses IPC) | `test:assistantProvider` **77/77** | `a1_assistantProvider.txt` | `d2e76da` + `d453129` |
+| 2 | Settings → Assistant (owner only) + the kill switch | `test:assistantSettings` **47/47** | `a2_assistantSettings.txt` | `b7df160` + `1a6182d` |
+| 3 | The tool registry — the ONE definition of what the assistant may do | `test:assistantTools` **101/101** | `a3_assistantTools.txt` | `c7d2cfc` + `ff3e8be` |
+| 4 | The agent loop + the injection defence | `test:assistantAgent` **54/54** | `a4_assistantAgent.txt` | `1f693f9` + `7f675c9` |
+| 5 | The chat panel (desktop / tablet / phone) + the shortcut | `test:assistantPanel` **49/49** | `a5_assistantPanel.txt` | `e5e3e1c` (+ `d55c971` for the web combo) |
+| 6 | Answers with real numbers (an invented figure never reaches the shop) | `test:assistantVerify` **61/61** | `a6_assistantVerify.txt` | `b4fd26e` |
+| 7 | Guide mode ("dikha do") + the FAQ + the help search | `test:assistantGuide` **80/80** | `a7_assistantGuide.txt` | `73f7a93` |
+| 8 | The pending action + the confirmation flow | `test:assistantPending` **54/54** | `a8_assistantPending.txt` | `e963131` |
+| 9 | The billing helper actions (add to bill / hold bill) | `test:assistantBillActions` **61/61** | `a9_assistantBillActions.txt` | `c274c9e` |
+| 10 | The back-office actions (discount, expense draft, promotion draft, stock, price) | `test:assistantBackOffice` **88/88** | `a10_assistantBackOffice.txt` | `b663963` |
+| 11 | The proactive insights (opt-in) | `test:assistantProactive` **48/48** | `a11_assistantProactive.txt` | `1c0ba31` |
+| 12 | The evaluation set (12 cases) + the regression suite | `test:assistantEval` **81/81 (12 cases)** | `a12_assistantEval.txt` | `4f7b289` |
+| 13 | Privacy, cost and transparency + the per-user opt-out | `test:assistantPrivacy` **72/72** | `a13_testassistantPrivacy.txt` | `b11ad1b` |
+| 14 | Accessibility, i18n and the phone/tablet/desktop sizes | `test:assistantA11y` **73/73** | `a14_assistantA11y.txt` (+ the PNGs) | `257fd8e` |
+| 15 | The proof — every suite + the typecheck + the build | **14 suites, 946 checks, all green** | `a15_*.txt` | this commit |
+
+### The final run (item 15) — the saved output
+
+| Command | Result | Proof |
+|---|---|---|
+| `npm run typecheck` | exit 0 | `a15_typecheck.txt`, `a15_typecheck_main.txt`, `a15_typecheck_renderer.txt` |
+| `npm run build` | exit 0 | `a15_build.txt` |
+| `npm run test:assistantProvider` | 77/77 | `a15_testassistantProvider.txt` |
+| `npm run test:assistantSettings` | 47/47 | `a15_testassistantSettings.txt` |
+| `npm run test:assistantTools` | 101/101 | `a15_testassistantTools.txt` |
+| `npm run test:assistantAgent` | 54/54 | `a15_testassistantAgent.txt` |
+| `npm run test:assistantPanel` | 49/49 | `a15_testassistantPanel.txt` |
+| `npm run test:assistantVerify` | 61/61 | `a15_testassistantVerify.txt` |
+| `npm run test:assistantGuide` | 80/80 | `a15_testassistantGuide.txt` |
+| `npm run test:assistantPending` | 54/54 | `a15_testassistantPending.txt` |
+| `npm run test:assistantBillActions` | 61/61 | `a15_testassistantBillActions.txt` |
+| `npm run test:assistantBackOffice` | 88/88 | `a15_testassistantBackOffice.txt` |
+| `npm run test:assistantProactive` | 48/48 | `a15_testassistantProactive.txt` |
+| `npm run test:assistantEval` | 81/81 (12 cases) | `a15_testassistantEval.txt` |
+| `npm run test:assistantPrivacy` | 72/72 | `a15_testassistantPrivacy.txt` |
+| `npm run test:assistantA11y` | 73/73 | `a15_testassistantA11y.txt` |
+| `npm run eval:assistant:live` (without `--live`) | exit 0 — it refuses to run without the flag, so it never spends money by accident | `a15_eval_live_guard.txt` |
+
+### Two real defects the audit found and fixed (items 13 + 14)
+
+- **The answer-language label showed a raw key.** The screen asked for
+  `settings.assistant.language` but the file had `language_label` — the owner saw
+  `settings.assistant.language` instead of "Answer language". Fixed in both languages.
+- **On a phone the app's chrome sat ON TOP of the assistant panel.** The menu button,
+  the search button and the bottom bar are above the panel in the stacking order, so
+  they covered its title, its header buttons and its composer. On a tablet the search
+  button covered the panel's header buttons (and in Urdu the menu button did). The
+  chrome now steps aside while the panel is open, and the audit asserts it.
+
+### What is still the owner's job (nothing was done automatically)
+
+- The desktop build has to be **rebuilt and reinstalled** — this branch is not released.
+- The web build needs the **Worker redeployed** (`wrangler deploy`) and the
+  `ASSISTANT_API_KEY` secret binding set (`wrangler secret put ASSISTANT_API_KEY`).
+- The **API key is the owner's own**; it was never committed and never entered a test.
+- The assistant is **OFF by default** in every install — the migration seeds
+  `assistant_enabled = 0`.
+
+---
+
+## Owner manual checklist (the assistant)
+
+1. **Turn it on — Admin → Assistant.** The assistant ships **off** (`assistant_enabled = 0`
+   in the migration). Tick "Turn the assistant on", choose the roles (owner / manager /
+   cashier), the data level and the answer language, then Save. Until this is done no
+   turn is ever started and no provider is called.
+2. **Put the API key in.** *Desktop:* paste the provider's key into "API key" and Save —
+   it is stored through the app's own secret mechanism, the UI only ever shows the last
+   four characters, and the renderer never receives the real key. *Web:* the key is a
+   **Worker secret** (`wrangler secret put ASSISTANT_API_KEY`) and the browser never
+   sees it; the desktop's key field is not used on the web. The key is never committed.
+3. **Test the connection.** Press "Test connection" — it says whether the key works and
+   spends nothing. The model id is a setting; change it if the provider needs another.
+4. **Ask a question and check the numbers.** Open the assistant with **Ctrl+J** on the
+   desktop (**Ctrl+Alt+J** on the web — Ctrl+J is the browser's Downloads panel) or with
+   the sidebar button, and ask *"How much did we sell today?"*. The answer must carry
+   the shop's **real** figure and a source line with the app's own page names. If a
+   figure cannot be traced to a tool result, the assistant shows the reason instead of
+   a number.
+5. **Ask for a guide.** *"How do I add a customer?"* — the guide overlay highlights the
+   control of the current step and scrolls to it. It never clicks for you.
+6. **Ask for a write and watch it wait.** *"Add Pepsi to the bill"* (or *"set Rahim's
+   discount to 5%"*) — a card appears with the **before/after** table and **nothing
+   changes** until you press **Confirm**. Cancel changes nothing. A pending action
+   expires after 10 minutes.
+7. **Confirm, then check the real screen.** After Confirm the change appears in the
+   ordinary screen (Billing / Inventory / Udhaar / Promotions / Expenses) and the app's
+   own Activity Log gets an `assistant_` row — the assistant never writes behind the
+   app's back.
+8. **Check the privacy, the cost and the opt-out.** Admin → Assistant → "Privacy, tools
+   and cost" lists **every** tool the assistant may use (the table is generated from the
+   tool registry itself, so it cannot drift), who may use it and how risky it is, plus
+   today's spend and turn count against the cap. In the panel, **"Turn off for me"**
+   switches the assistant off for **your own account only** — nobody else can do that
+   for you.
+9. **Check the opt-ins and the kill switch.** The proactive cards (low stock, below
+   cost, overdue udhaar, open shift) appear only when the **proactive** switch is on;
+   the write actions work only when the **actions** switch is on; and turning the
+   assistant off in Settings stops every turn at once — nothing is read and no provider
+   is called.
