@@ -91,7 +91,8 @@
     "test:assistantProactive": "npm run build:main && electron scripts/test_assistant_proactive.cjs",
     "test:assistantEval": "npm run build:main && electron scripts/test_assistant_eval.cjs",
     "eval:assistant:live": "npm run build:main && electron scripts/eval_assistant_live.cjs",
-    "test:assistantPrivacy": "npm run build:main && electron scripts/test_assistant_privacy.cjs"
+    "test:assistantPrivacy": "npm run build:main && electron scripts/test_assistant_privacy.cjs",
+    "test:assistantA11y": "npm run build && electron scripts/test_assistant_a11y.cjs"
   },
   "dependencies": {
     "bwip-js": "^4.11.2",

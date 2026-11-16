@@ -161,7 +161,7 @@
       "modelHint": "The model is a setting — change it any time, no rebuild needed.",
       "budget": "Daily budget (USD)",
       "budgetHint": "The assistant stops for the day once this much is used.",
-      "language_label": "Answer language",
+      "language": "Answer language",
       "language_auto": "Same as the app",
       "language_en": "English",
       "language_ur": "Urdu",

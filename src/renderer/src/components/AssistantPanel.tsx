@@ -486,6 +486,9 @@ export default function AssistantPanel({
           value={input}
           rows={2}
           placeholder={t('assistant.placeholder')}
+          // The placeholder alone is not an accessible name — a screen reader
+          // must be able to say what this box is.
+          aria-label={t('assistant.placeholder')}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
             // Enter sends, Shift+Enter makes a new line. The scanner's keys are

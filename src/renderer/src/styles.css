@@ -6861,6 +6861,36 @@ body.theme-dark .bill-items .bill-summary-icon { background: rgba(139, 92, 246, 
   color: #fff;
 }
 
+/* ── The assistant and the app's top chrome ─────────────────────────────────
+   The menu button and the phone's search button are fixed at the top of the
+   window. On a tablet the assistant panel is a SIDE panel on the inline-end
+   side, so that chrome can sit ON TOP of the panel's header — the search
+   button is exactly where the panel's header buttons are. While the panel is
+   open the chrome moves to the opposite edge (the panel's inline-start side),
+   so nothing covers the panel.
+
+   These two controls are positioned PHYSICALLY in the app (the search button
+   is at the top-right in English and at the top-left in Urdu), so moving them
+   needs physical values and an explicit Urdu override — the panel's own rules
+   stay logical. */
+@media (max-width: 64rem) {
+  body.assistant-open .mobile-search-btn {
+    right: auto;
+    left: 4.25rem;
+  }
+
+  /* In Urdu the panel is on the LEFT, so the chrome goes to the right. */
+  [dir='rtl'] body.assistant-open .sidebar-toggle {
+    left: auto;
+    right: 1rem;
+  }
+
+  [dir='rtl'] body.assistant-open .mobile-search-btn {
+    left: auto;
+    right: 4.25rem;
+  }
+}
+
 /* ── The assistant panel ───────────────────────────────────────────────────
    A right-side panel on the desktop and the tablet; a full-screen sheet on
    the phone. The RTL layout flips it automatically (logical properties). */
@@ -7089,6 +7119,28 @@ body.theme-dark .bill-items .bill-summary-icon { background: rgba(139, 92, 246, 
     inset: 0;
     border: none;
     padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  /* The sheet takes the whole screen, so the app's chrome steps aside: the
+     menu button, the search button and the phone's bottom bar would
+     otherwise sit ON TOP of the panel (they are above it in the stacking
+     order) and hide its title, its header buttons and its composer. The lock
+     screen is NOT touched — it stays above the panel. */
+  body.assistant-open .sidebar-toggle,
+  body.assistant-open .mobile-search-btn,
+  body.assistant-open .sidebar-bottom-bar {
+    display: none !important;
+  }
+
+  /* The head has a title, two small buttons and the close button — on a
+     narrow phone they do not fit on one line, so the buttons wrap under it. */
+  .assistant-panel-head {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .assistant-panel-head-actions {
+    margin-inline-start: auto;
   }
 
   .assistant-chip,

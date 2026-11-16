@@ -624,6 +624,15 @@ export default function App() {
   const [assistantBillCommand, setAssistantBillCommand] = useState<AssistantBillCommand | null>(null);
   /** The user turned the assistant off for their OWN account. */
   const [assistantOptedOut, setAssistantOptedOut] = useState(false);
+
+  // On a phone the assistant panel is a FULL-SCREEN sheet, so the app's chrome
+  // (the menu button and the bottom bar) steps aside while it is open — they
+  // sit above it in the stacking order and would hide its title and composer.
+  useEffect(() => {
+    if (!assistantOpen) return;
+    document.body.classList.add('assistant-open');
+    return () => document.body.classList.remove('assistant-open');
+  }, [assistantOpen]);
   /** Which sidebar groups are collapsed (remembered per user). */
   const [groupState, setGroupState] = useState<GroupState>(DEFAULT_GROUP_STATE);
  // The ONE menu: built for this role, this feature set and this language.
