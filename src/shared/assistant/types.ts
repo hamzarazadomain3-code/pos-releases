@@ -164,6 +164,10 @@ export interface AssistantSettingsView {
   keyHint: string;
   /** Where the key lives: the shop's own store (desktop) or the server (web). */
   keySource?: 'shop' | 'server';
+  /** What the assistant has spent today (the transparency). */
+  spendTodayUsd?: number;
+  /** How many turns ran today. */
+  callsToday?: number;
 }
 
 /** What the settings screen may change. */

@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AssistantActivityRow, AssistantRole, AssistantSettingsView } from '../../../../shared/assistant/types';
 import { ASSISTANT_DATA_LEVELS, ASSISTANT_LANGUAGES, ASSISTANT_ROLES } from '../../../../shared/assistant/settings';
+import { buildToolRegistry } from '../../../../shared/assistant/tools';
+import { privacyRows, privacySummary } from '../../../../shared/assistant/privacy';
 import { clearHistory } from '../../../../shared/assistant/history';
 import { formatTimestamp } from '../../utils/dateUtils';
 
@@ -23,6 +25,13 @@ export default function AssistantSettings() {
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
   const [activity, setActivity] = useState<AssistantActivityRow[]>([]);
+
+  // The privacy table is GENERATED from the tool registry — it can never
+  // drift from what the assistant may really do.
+  const privacy = useMemo(() => {
+    const rows = privacyRows(buildToolRegistry());
+    return { rows, summary: privacySummary(rows) };
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -306,6 +315,71 @@ export default function AssistantSettings() {
           </label>
           <div className="muted small">{t('settings.assistant.proactiveHint')}</div>
         </div>
+      </div>
+
+      {/* ── the privacy + the cost (what the assistant may do) ───────────── */}
+      <div className="card">
+        <div className="card-head">
+          <h3>{t('settings.assistant.privacyTitle')}</h3>
+        </div>
+        <p className="muted small">{t('settings.assistant.privacyHint')}</p>
+
+        <div className="form-row" style={{ gap: 12, flexWrap: 'wrap' }}>
+          <div className="form-group" style={{ minWidth: 200 }}>
+            <label>{t('settings.assistant.spentToday')}</label>
+            <div className="small">
+              ${(settings.spendTodayUsd ?? 0).toFixed(4)} / ${(settings.dailyBudgetUsd ?? 0).toFixed(2)}
+            </div>
+            <div className="muted small">
+              {t('settings.assistant.callsToday', { count: settings.callsToday ?? 0 })}
+            </div>
+          </div>
+          <div className="form-group" style={{ minWidth: 200 }}>
+            <label>{t('settings.assistant.dataLevel')}</label>
+            <div className="small">{t(`settings.assistant.dataLevel_${settings.dataLevel}`)}</div>
+            <div className="muted small">{t(`settings.assistant.dataLevelExplain_${settings.dataLevel}`)}</div>
+          </div>
+          <div className="form-group" style={{ minWidth: 220 }}>
+            <label>{t('settings.assistant.toolsCount')}</label>
+            <div className="small">
+              {t('settings.assistant.toolsSummary', {
+                total: privacy.summary.total,
+                read: privacy.summary.read,
+                write: privacy.summary.write,
+                dangerous: privacy.summary.dangerous,
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="table-wrap" style={{ maxHeight: 320, marginTop: 10 }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{t('settings.assistant.tool')}</th>
+                <th>{t('settings.assistant.toolDoes')}</th>
+                <th>{t('settings.assistant.toolRisk')}</th>
+                <th>{t('settings.assistant.toolRoles')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {privacy.rows.map((row) => (
+                <tr key={row.name}>
+                  <td className="small">{row.name}</td>
+                  <td className="muted small">{row.description}</td>
+                  <td className="small">{t(`settings.assistant.risk_${row.risk}`)}</td>
+                  <td className="muted small">
+                    {row.roles.map((role) => t(`settings.assistant.role_${role}`)).join(', ')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <p className="muted small" style={{ marginTop: 8 }}>
+          {t('settings.assistant.optOutHint')}
+        </p>
       </div>
 
       {/* ── the history + the activity ──────────────────────────────────── */}

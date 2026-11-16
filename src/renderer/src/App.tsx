@@ -622,6 +622,8 @@ export default function App() {
   const [activeGuide, setActiveGuide] = useState<string | null>(null);
   /** A confirmed assistant action for the billing screen (the bill lives there). */
   const [assistantBillCommand, setAssistantBillCommand] = useState<AssistantBillCommand | null>(null);
+  /** The user turned the assistant off for their OWN account. */
+  const [assistantOptedOut, setAssistantOptedOut] = useState(false);
   /** Which sidebar groups are collapsed (remembered per user). */
   const [groupState, setGroupState] = useState<GroupState>(DEFAULT_GROUP_STATE);
  // The ONE menu: built for this role, this feature set and this language.
@@ -1010,6 +1012,14 @@ export default function App() {
     if (u.role === 'owner') {
       setMustChangePw(await window.api.auth.defaultPasswordActive());
     }
+    // The user's OWN opt-out (the assistant may be switched off for one
+    // account without the owner doing anything).
+    try {
+      const optOut = await window.api.assistant.optOut();
+      setAssistantOptedOut(optOut?.optedOut === true);
+    } catch {
+      setAssistantOptedOut(false);
+    }
   }, []);
 
   const handleLogout = useCallback(() => {
@@ -1281,18 +1291,20 @@ export default function App() {
           </div>
 
           <div className="sidebar-bottom-actions">
-            <button
-              type="button"
-              className="sidebar-footer-btn"
-              onClick={() => setAssistantOpen((o) => !o)}
-              aria-label={t('assistant.open')}
-              title={t('assistant.open')}
-            >
-              <span className="nav-label collapse-label">{t('assistant.open')}</span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-              </svg>
-            </button>
+            {!assistantOptedOut && (
+              <button
+                type="button"
+                className="sidebar-footer-btn"
+                onClick={() => setAssistantOpen((o) => !o)}
+                aria-label={t('assistant.open')}
+                title={t('assistant.open')}
+              >
+                <span className="nav-label collapse-label">{t('assistant.open')}</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                </svg>
+              </button>
+            )}
 
             <button
               type="button"
@@ -1427,6 +1439,13 @@ export default function App() {
           // The open bill lives in the Billing screen — the command goes there.
           setAssistantBillCommand(command);
           if (command.kind === 'add_to_bill' && page !== 'billing') setPage('billing');
+        }}
+        onOptOut={() => {
+          // The user decides for themselves — the panel goes away for good.
+          void window.api.assistant.optOut(true).then(() => {
+            setAssistantOptedOut(true);
+            setAssistantOpen(false);
+          });
         }}
       />
       <GuideOverlay

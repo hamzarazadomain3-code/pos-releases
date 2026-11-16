@@ -15,7 +15,7 @@ import { listLowStock } from '../inventory';
 import { listBelowCostProducts } from '../reports';
 import { getUdhaarAging } from '../udhaar';
 import { currentShift } from '../shifts';
-import { getAssistantSettings } from './settings';
+import { getAssistantSettings, assistantOptedOut } from './settings';
 import {
   buildProactiveSuggestions,
   type ProactiveFact,
@@ -73,6 +73,8 @@ export function getProactiveSuggestions(): ProactiveSuggestion[] {
   const user = currentUser();
   if (!user) return [];
   if (!settings.roles.includes(user.role as 'owner' | 'manager' | 'cashier')) return [];
+  // The user's own opt-out wins over everything else.
+  if (assistantOptedOut(user.id)) return [];
   try {
     return buildProactiveSuggestions(collectProactiveFacts(), user.role);
   } catch {

@@ -1800,6 +1800,11 @@ export interface PosBridge {
      * suggestions are COUNTS, never rows.
      */
     proactive: () => Promise<ProactiveSuggestion[]>;
+    /**
+     * The user's OWN opt-out: true when the assistant is switched off for
+     * this account. A user may only decide for themselves.
+     */
+    optOut: (optedOut?: boolean) => Promise<{ optedOut: boolean; userId: number | null }>;
   };
   email: {
     send: (options: { to: string | string[]; subject: string; text?: string; html?: string }) => Promise<{ ok: boolean; message: string }>;

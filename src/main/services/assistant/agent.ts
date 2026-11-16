@@ -22,6 +22,7 @@ import type { AssistantContext, AssistantMessage, AssistantPendingAction, Assist
 import { buildAssistantToolImplementations } from './toolImpls';
 import { createProviderForSettings } from './runtime';
 import { getAssistantSettings } from './settings';
+import { assistantOptedOut } from './settings';
 import { cancelPendingAction, confirmPendingAction, createPendingAction, listPendingActions } from './pending';
 import { logAssistantActivity } from './activity';
 import { addDayUsage, getDayUsage } from './usage';
@@ -122,6 +123,18 @@ export async function runAssistantTurn(request: AssistantTurnRequest): Promise<A
       pendingActions: [],
       stop: 'error',
       failure: { code: 'unauthorized', message: assistantErrorMessage('unauthorized', settings.language) },
+    };
+  }
+  // A user may turn the assistant off for their OWN account — that decision
+  // is final for them, whoever signed the settings.
+  if (assistantOptedOut(user.id)) {
+    return {
+      ok: false,
+      text: '',
+      usage: emptyUsage,
+      pendingActions: [],
+      stop: 'error',
+      failure: { code: 'disabled', message: assistantErrorMessage('disabled', settings.language) },
     };
   }
   if (!assistantRoleAllowed(settings, user.role)) {

@@ -40,6 +40,8 @@ export interface AssistantPanelProps {
    * only hands the command over.
    */
   onBillCommand?: (command: AssistantBillCommand) => void;
+  /** Called when the user turns the assistant off for their OWN account. */
+  onOptOut?: () => void;
 }
 
 interface PanelMessage extends StoredAssistantMessage {
@@ -84,6 +86,7 @@ export default function AssistantPanel({
   onNavigate,
   onStartGuide,
   onBillCommand,
+  onOptOut,
 }: AssistantPanelProps) {
   const { t } = useTranslation();
   const [messages, setMessages] = useState<PanelMessage[]>([]);
@@ -325,6 +328,14 @@ export default function AssistantPanel({
         <div className="assistant-panel-head-actions">
           <button type="button" className="btn btn-sm" onClick={clear} title={t('assistant.clearHistory')}>
             {t('assistant.clearHistory')}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => onOptOut?.()}
+            title={t('assistant.optOut')}
+          >
+            {t('assistant.optOut')}
           </button>
           <button type="button" className="assistant-panel-close" onClick={onClose} aria-label={t('assistant.close')}>
             ×

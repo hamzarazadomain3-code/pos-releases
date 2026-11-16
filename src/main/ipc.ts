@@ -59,6 +59,8 @@ import {
   getAssistantSettingsView,
   saveAssistantSettings,
   setAssistantApiKey,
+  setAssistantOptOut,
+  assistantOptedOut,
 } from './services/assistant/settings';
 import { createProviderForSettings, testAssistantConnection } from './services/assistant/runtime';
 import { ProviderError } from './services/assistant/provider';
@@ -434,6 +436,15 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('assistant:pendingConfirm', (_e, id) => confirmAssistantAction(Number(id)));
   ipcMain.handle('assistant:pendingCancel', (_e, id) => cancelAssistantAction(Number(id)));
   ipcMain.handle('assistant:proactive', () => getProactiveSuggestions());
+  ipcMain.handle('assistant:optOut', (_e, optedOut: unknown) => {
+    // A user decides for THEMSELVES — never for anybody else.
+    const user = currentUser();
+    if (!user) throw new Error('Sign in again.');
+    if (optedOut === undefined || optedOut === null) {
+      return { optedOut: assistantOptedOut(user.id), userId: user.id };
+    }
+    return setAssistantOptOut(optedOut === true);
+  });
   ipcMain.handle('assistant:testConnection', async () => {
     if (!can('owner')) throw new Error('Only the owner can test the assistant connection');
     const view = getAssistantSettingsView();
