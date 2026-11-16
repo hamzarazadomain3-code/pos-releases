@@ -11,6 +11,7 @@ import type {
   AssistantTurnRequest,
   AssistantTurnResponse,
 } from './assistant/types';
+import type { ProactiveSuggestion } from './assistant/proactive';
 import type {
   HistoryDetail,
   HistoryFilters,
@@ -1794,6 +1795,11 @@ export interface PosBridge {
     ) => Promise<{ ok: boolean; message?: string; tool?: string; result?: unknown }>;
     /** Cancel a waiting action — nothing happens. */
     pendingCancel: (id: number) => Promise<{ ok: boolean; message?: string }>;
+    /**
+     * The proactive insights (opt-in). Empty while the switch is off — the
+     * suggestions are COUNTS, never rows.
+     */
+    proactive: () => Promise<ProactiveSuggestion[]>;
   };
   email: {
     send: (options: { to: string | string[]; subject: string; text?: string; html?: string }) => Promise<{ ok: boolean; message: string }>;

@@ -6,6 +6,7 @@ import { chipsForContext } from '../../../shared/assistant/chips';
 import { loadHistory, saveHistory, clearHistory, type StoredAssistantMessage } from '../../../shared/assistant/history';
 import { detectLanguage } from '../../../shared/assistant/language';
 import { billCommandFromResult, type AssistantBillCommand } from '../../../shared/assistant/billActions';
+import type { ProactiveSuggestion } from '../../../shared/assistant/proactive';
 import { formatMoney } from '../utils/currency';
 
 /**
@@ -91,11 +92,31 @@ export default function AssistantPanel({
   const [error, setError] = useState<string | null>(null);
   const [lastQuestion, setLastQuestion] = useState('');
   const [feedback, setFeedback] = useState<Record<string, 'up' | 'down'>>({});
+  /** The proactive insights (opt-in — empty while the switch is off). */
+  const [suggestions, setSuggestions] = useState<ProactiveSuggestion[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<Element | null>(null);
 
   const chips = useMemo(() => chipsForContext(role, route), [role, route]);
+
+  // The proactive insights (opt-in). The main process decides whether there
+  // are any at all — the switch is off by default.
+  const loadSuggestions = useCallback(async () => {
+    try {
+      const rows = await window.api.assistant.proactive();
+      setSuggestions(Array.isArray(rows) ? rows : []);
+    } catch {
+      setSuggestions([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    void loadSuggestions();
+    const timer = setInterval(() => void loadSuggestions(), 60000);
+    return () => clearInterval(timer);
+  }, [open, loadSuggestions]);
 
   // Load the history when the panel opens; save it after every answer.
   useEffect(() => {
@@ -310,6 +331,28 @@ export default function AssistantPanel({
           </button>
         </div>
       </div>
+
+      {suggestions.length > 0 && (
+        <div className="assistant-suggestions">
+          <div className="muted small">{t('assistant.proactiveTitle')}</div>
+          {suggestions.map((suggestion) => (
+            <button
+              key={suggestion.id}
+              type="button"
+              className={`assistant-suggestion assistant-suggestion-${suggestion.severity}`}
+              onClick={() => void send(suggestion.prompt)}
+            >
+              <span className="assistant-suggestion-title">{t(suggestion.titleKey)}</span>
+              <span className="muted small">
+                {t(suggestion.messageKey, {
+                  count: suggestion.values.count ?? 0,
+                  amount: suggestion.values.amount !== undefined ? formatMoney(suggestion.values.amount) : '',
+                })}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="assistant-messages" ref={listRef} aria-live="polite" aria-atomic="false">
         {messages.length === 0 && (

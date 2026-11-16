@@ -327,6 +327,19 @@
       "shiftStatus": "Shift status",
       "belowCost": "Below cost",
       "pageGuide": "This page's guide"
+    },
+    "proactiveTitle": "Things worth a look",
+    "proactive": {
+      "lowStockTitle": "Stock is running low",
+      "lowStockBody": "{{count}} products are low in stock.",
+      "belowCostTitle": "A price is below the cost",
+      "belowCostBody": "{{count}} products are priced at or below their cost.",
+      "overdueTitle": "Udhaar is overdue",
+      "overdueBody": "{{count}} customers are overdue, {{amount}} in total.",
+      "shiftTitle": "A shift is open",
+      "shiftBody": "The current shift is still open.",
+      "noShiftTitle": "No shift is open",
+      "noShiftBody": "Open a shift before the next bill."
     }
   }
 }

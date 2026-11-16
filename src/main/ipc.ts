@@ -65,6 +65,7 @@ import { ProviderError } from './services/assistant/provider';
 import { resolveAssistantApiKey } from './services/assistant/settings';
 import { listAssistantActivity } from './services/assistant/activity';
 import { cancelAssistantTurn, confirmAssistantAction, cancelAssistantAction, assistantPendingActions, runAssistantTurn } from './services/assistant/agent';
+import { getProactiveSuggestions } from './services/assistant/proactive';
 import {
   printLabel,
   printBarcodeLabel,
@@ -432,6 +433,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('assistant:pendingList', () => assistantPendingActions());
   ipcMain.handle('assistant:pendingConfirm', (_e, id) => confirmAssistantAction(Number(id)));
   ipcMain.handle('assistant:pendingCancel', (_e, id) => cancelAssistantAction(Number(id)));
+  ipcMain.handle('assistant:proactive', () => getProactiveSuggestions());
   ipcMain.handle('assistant:testConnection', async () => {
     if (!can('owner')) throw new Error('Only the owner can test the assistant connection');
     const view = getAssistantSettingsView();

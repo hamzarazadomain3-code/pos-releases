@@ -7001,6 +7001,39 @@ body.theme-dark .bill-items .bill-summary-icon { background: rgba(139, 92, 246, 
   min-height: 32px;
 }
 
+/* The proactive insights (opt-in) — a tappable card above the conversation. */
+.assistant-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+
+.assistant-suggestion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: start;
+  border: 1px solid var(--border, #e2e8f0);
+  border-inline-start: 3px solid var(--brand, #0b5d4b);
+  background: var(--surface-alt, #f1f5f9);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.assistant-suggestion-warning {
+  border-inline-start-color: #b45309;
+}
+
+.assistant-suggestion-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
 .assistant-composer {
   border-top: 1px solid var(--border, #e2e8f0);
   padding: 10px 12px;

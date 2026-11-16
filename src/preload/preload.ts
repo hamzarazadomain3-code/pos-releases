@@ -444,6 +444,7 @@ const bridge: PosBridge = {
     pendingList: () => ipcRenderer.invoke('assistant:pendingList'),
     pendingConfirm: (id) => ipcRenderer.invoke('assistant:pendingConfirm', id),
     pendingCancel: (id) => ipcRenderer.invoke('assistant:pendingCancel', id),
+    proactive: () => ipcRenderer.invoke('assistant:proactive'),
   },
   email: {
     send: (options: { to: string | string[]; subject: string; text?: string; html?: string }) => ipcRenderer.invoke('email:send', options),

@@ -260,6 +260,19 @@
       "shiftStatus": "شیفٹ کی حالت",
       "belowCost": "لاگت سے کم",
       "pageGuide": "اس صفحے کی رہنمائی"
+    },
+    "proactiveTitle": "غور کے قابل باتیں",
+    "proactive": {
+      "lowStockTitle": "اسٹاک کم ہو رہا ہے",
+      "lowStockBody": "{{count}} products کم اسٹاک میں ہیں۔",
+      "belowCostTitle": "قیمت لاگت سے کم ہے",
+      "belowCostBody": "{{count}} products کی قیمت لاگت یا اس سے کم ہے۔",
+      "overdueTitle": "اُدھار کی ادائیگی رہ گئی ہے",
+      "overdueBody": "{{count}} customers کا اُدھار واجب ہے، کل {{amount}}۔",
+      "shiftTitle": "ایک شیفٹ کھلی ہے",
+      "shiftBody": "موجودہ شیفٹ ابھی کھلی ہے۔",
+      "noShiftTitle": "کوئی شیفٹ کھلی نہیں",
+      "noShiftBody": "اگلے بل سے پہلے شیفٹ کھولیں۔"
     }
   }
 }
