@@ -298,6 +298,13 @@
     "actionProposed": "I would like to do this — please confirm.",
     "actionTitle": "Proposed action",
     "actionWaiting": "Nothing has been changed yet.",
+    "sourceLabel": "Source",
+    "source": {
+      "help": "Help",
+      "navigation": "Navigation",
+      "guide": "Guide"
+    },
+    "unverified": "Some figures could not be confirmed against the shop data, so they are not shown.",
     "chips": {
       "todaySale": "Today's sale",
       "lowStock": "Low stock",

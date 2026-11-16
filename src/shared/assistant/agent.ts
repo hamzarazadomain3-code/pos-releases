@@ -19,6 +19,7 @@ import {
 } from './limits';
 import { redactResult } from './redact';
 import { wrapToolData, wrapToolError } from './prompt';
+import { numberRetryMessage, unverifiedFallbackMessage, verifyReply } from './verify';
 import { isWriteTool, type AssistantTool, type ToolRisk } from './tools';
 import type {
   AssistantDataLevel,
@@ -43,7 +44,8 @@ export type AgentEvent =
   | { type: 'tool_call'; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; name: string; ok: boolean }
   | { type: 'pending_action'; tool: string; risk: ToolRisk }
-  | { type: 'limit'; reason: string };
+  | { type: 'limit'; reason: string }
+  | { type: 'number_retry'; unverified: string[] };
 
 export interface AgentTurnInput {
   adapter: ProviderAdapter;
@@ -85,6 +87,14 @@ export interface AgentTurnResult {
   pendingActions: PendingActionDraft[];
   stop: AgentStopReason;
   failure?: AssistantFailure;
+  /** The tool results the numbers were checked against (the read tools only). */
+  verifiedAgainst?: unknown[];
+  /** The numbers in the FINAL answer that could not be traced to a tool result. */
+  unverifiedNumbers?: string[];
+  /** How many times the model was asked to fix an unverified number. */
+  numberRetries?: number;
+  /** The tools that ran — the source line under the answer. */
+  sources?: string[];
 }
 
 /**
@@ -107,6 +117,14 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
   let failure: AssistantFailure | undefined;
   /** Set when a limit stopped the turn (the loop must not continue). */
   let limitHit = false;
+  /** The results of the READ tools — the numbers are checked against these. */
+  const toolResults: unknown[] = [];
+  /** The tools that ran (the source line under the answer). */
+  const usedTools: string[] = [];
+  /** How many times the model was asked to fix an unverified number. */
+  let numberRetries = 0;
+  /** The numbers of the LAST check (the ones the final answer still carries). */
+  let unverifiedNumbers: string[] = [];
 
   const emit = (event: AgentEvent) => {
     try {
@@ -166,6 +184,27 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
     usage.costUsd = estimateCostUsd(input.model, usage.inputTokens, usage.outputTokens);
 
     if (response.toolCalls.length === 0) {
+      // The answer is checked BEFORE it is shown: every number in it must
+      // come from a tool result. One retry is allowed; after that the answer
+      // is replaced by a message that shows no figure at all.
+      const check = verifyReply(response.text, toolResults, language);
+      if (!check.ok && numberRetries < 1) {
+        numberRetries += 1;
+        emit({ type: 'number_retry', unverified: check.unverified });
+        // The model is told exactly which numbers it invented, so it can fix
+        // the answer with the numbers the tools actually returned (it may
+        // also call a tool it did not call before).
+        messages.push({ role: 'assistant', content: response.text });
+        messages.push({ role: 'user', content: numberRetryMessage(response.text, check, language) });
+        continue;
+      }
+      unverifiedNumbers = check.unverified;
+      if (!check.ok) {
+        text = unverifiedFallbackMessage(language);
+        if (text) emit({ type: 'text', text });
+        stop = 'end_turn';
+        break;
+      }
       text = response.text;
       if (text) emit({ type: 'text', text });
       stop = 'end_turn';
@@ -248,6 +287,10 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
       }
 
       const redacted = redactResult(raw, input.dataLevel, input.secrets);
+      // The read result is kept: the numbers in the answer are checked
+      // against exactly the data the model was shown.
+      toolResults.push(redacted);
+      if (!usedTools.includes(tool.name)) usedTools.push(tool.name);
       messages.push({
         role: 'tool',
         toolCallId: call.id,
@@ -260,5 +303,17 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
     if (limitHit) break;
   }
 
-  return { text, messages, usage, toolCalls: calls.length, pendingActions, stop, failure };
+  return {
+    text,
+    messages,
+    usage,
+    toolCalls: calls.length,
+    pendingActions,
+    stop,
+    failure,
+    verifiedAgainst: toolResults,
+    unverifiedNumbers,
+    numberRetries,
+    sources: usedTools,
+  };
 }

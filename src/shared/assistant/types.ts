@@ -210,6 +210,10 @@ export interface AssistantTurnResponse {
   pendingActions: AssistantPendingAction[];
   stop: string;
   failure?: { code: string; message: string };
+  /** The source line — where the numbers in the answer came from. */
+  source?: string;
+  /** The numbers that could not be traced to a tool result (empty when all were). */
+  unverifiedNumbers?: string[];
 }
 
 /** The failure codes the assistant speaks. */

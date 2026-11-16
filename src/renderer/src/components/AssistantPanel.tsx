@@ -142,41 +142,49 @@ export default function AssistantPanel({
         .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text }));
       setMessages((prev) => [...prev, asked]);
       setInput('');
+      // The messages this turn adds — they are persisted with the question.
+      const added: PanelMessage[] = [];
       try {
         const res = await window.api.assistant.send({ message: text, route, history });
         if (!res.ok) {
           setError(res.failure?.message || t('assistant.error'));
-          setMessages((prev) => [
-            ...prev,
-            { id: `a-${Date.now()}`, role: 'assistant', text: res.failure?.message || t('assistant.error'), at: Date.now(), failed: true },
-          ]);
+          const failed: PanelMessage = {
+            id: `a-${Date.now()}`,
+            role: 'assistant',
+            text: res.failure?.message || t('assistant.error'),
+            at: Date.now(),
+            failed: true,
+          };
+          added.push(failed);
+          setMessages((prev) => [...prev, failed]);
         } else {
           const answer: PanelMessage = {
             id: `a-${Date.now()}`,
             role: 'assistant',
             text: res.text,
             at: Date.now(),
+            source: res.source || undefined,
           };
+          added.push(answer);
           setMessages((prev) => [...prev, answer]);
         }
         // The proposed actions (a write tool) are shown as cards, never run.
         for (const pending of res.pendingActions || []) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `p-${Date.now()}-${pending.tool}`,
-              role: 'assistant',
-              text: t('assistant.actionProposed'),
-              at: Date.now(),
-              pending,
-            },
-          ]);
+          const card: PanelMessage = {
+            id: `p-${Date.now()}-${pending.tool}`,
+            role: 'assistant',
+            text: t('assistant.actionProposed'),
+            at: Date.now(),
+            pending,
+          };
+          added.push(card);
+          setMessages((prev) => [...prev, card]);
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
         setBusy(false);
-        persist([...messages, asked]);
+        persist([...messages, asked, ...added]);
       }
     },
     [busy, messages, route, t, persist]

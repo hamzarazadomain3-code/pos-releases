@@ -14,6 +14,7 @@ import { runAgentTurn, type AgentStopReason, type PendingActionDraft } from '../
 import { DEFAULT_ASSISTANT_LIMITS, RateLimiter, type AssistantLimits } from '../../../shared/assistant/limits';
 import { assistantErrorMessage } from '../../../shared/assistant/provider';
 import { buildSystemPrompt } from '../../../shared/assistant/prompt';
+import { sourceLineFor } from '../../../shared/assistant/sources';
 import { assistantRoleAllowed } from '../../../shared/assistant/settings';
 import { buildToolRegistry, toolsForRole } from '../../../shared/assistant/tools';
 import { contentHash } from '../../../shared/assistant/hash';
@@ -42,6 +43,10 @@ export interface AssistantTurnResponse {
   pendingActions: PendingActionDraft[];
   stop: AgentStopReason;
   failure?: { code: string; message: string };
+  /** The source line — where the numbers in the answer came from. */
+  source?: string;
+  /** The numbers that could not be traced to a tool result. */
+  unverifiedNumbers?: string[];
 }
 
 /** The secrets that must never leave the shop, whatever the data level is. */
@@ -208,6 +213,8 @@ export async function runAssistantTurn(request: AssistantTurnRequest): Promise<A
         pendingActions: result.pendingActions,
         stop: result.stop,
         failure: { code: result.failure.code, message: result.failure.message },
+        source: sourceLineFor(result.sources ?? []),
+        unverifiedNumbers: result.unverifiedNumbers ?? [],
       };
     }
 
@@ -217,6 +224,8 @@ export async function runAssistantTurn(request: AssistantTurnRequest): Promise<A
       usage: result.usage,
       pendingActions: result.pendingActions,
       stop: result.stop,
+      source: sourceLineFor(result.sources ?? []),
+      unverifiedNumbers: result.unverifiedNumbers ?? [],
     };
   } finally {
     if (currentAbort === controller) currentAbort = null;
