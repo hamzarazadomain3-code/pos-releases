@@ -18,13 +18,15 @@ import {
   profitLoss,
   salesReport,
 } from '../reports';
-import { getProduct, getProductByBarcode, listLowStock, listProducts } from '../inventory';
+import { getProduct, getProductByBarcode, listLowStock, listProducts, adjustStock, updateProduct } from '../inventory';
 import { listCustomers } from '../sales';
 import { saveCustomer } from '../customers';
-import { getUdhaarAging } from '../udhaar';
+import { getUdhaarAging, getUdhaarLedger } from '../udhaar';
 import { listSuppliers } from '../purchases';
 import { currentShift, shiftTotals } from '../shifts';
 import { listReturns } from '../returns';
+import { createExpense, listCategories, updateExpense } from '../expenses';
+import { createPromotion } from '../promotions';
 import { makeMoney, printCurrency } from '../printDocs';
 import { canOpenRoute } from '../../../shared/sidebarMenu';
 import { roleAtLeast } from '../../../shared/roles';
@@ -33,6 +35,7 @@ import { billQty } from '../../../shared/assistant/billActions';
 import { searchHelp } from '../../../shared/assistant/search';
 import type { AssistantContext } from '../../../shared/assistant/types';
 import type { ToolImplementation, ToolPreview } from '../../../shared/assistant/tools';
+import type { Customer, CustomerInput, Product, ProductInput } from '../../../shared/types';
 
 /** May this role see profit / cost figures? (The Reports page is manager+.) */
 export function maySeeProfit(ctx: AssistantContext): boolean {
@@ -86,6 +89,106 @@ function findCustomer(input: { name?: unknown; phone?: unknown; customer?: unkno
   if (!name) return null;
   const lower = name.toLowerCase();
   return all.find((c) => c.name.toLowerCase() === lower) ?? all.find((c) => c.name.toLowerCase().includes(lower)) ?? null;
+}
+
+/** A date the app accepts (YYYY-MM-DD) — anything else is refused. */
+function dateOnly(value: unknown): string | null {
+  const text = String(value ?? '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  return text;
+}
+
+/** Today, in the shop's own date format. */
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * The customer's own profile, so changing ONE field keeps every other one.
+ *
+ * `saveCustomer` writes the WHOLE profile, so the assistant hands the service
+ * the profile it found and changes only the discount. The opening balance lives
+ * in the ledger (it is the customer's own money), so it is read back from there
+ * — otherwise the balance would move.
+ */
+function customerProfileInput(customer: Customer, openingBalance: number): CustomerInput {
+  return {
+    name: customer.name,
+    phone: customer.phone,
+    address: customer.address,
+    urdu_name: customer.urdu_name ?? null,
+    customer_type: customer.customer_type ?? null,
+    business_name: customer.business_name ?? null,
+    contact_person: customer.contact_person ?? null,
+    photo: customer.photo ?? null,
+    status: customer.status ?? null,
+    customer_code: customer.customer_code ?? null,
+    group_name: customer.group_name ?? null,
+    tags: customer.tags ?? null,
+    phone_alt: customer.phone_alt ?? null,
+    whatsapp: customer.whatsapp ?? null,
+    email: customer.email ?? null,
+    city: customer.city ?? null,
+    area: customer.area ?? null,
+    maps_link: customer.maps_link ?? null,
+    message_language: customer.message_language ?? null,
+    cnic: customer.cnic ?? null,
+    ntn: customer.ntn ?? null,
+    drug_licence: customer.drug_licence ?? null,
+    guarantor: customer.guarantor ?? null,
+    guarantor_phone: customer.guarantor_phone ?? null,
+    credit_limit: num(customer.credit_limit),
+    credit_days: num(customer.credit_days),
+    price_level: customer.price_level ?? null,
+    default_discount_pct: num(customer.default_discount_pct),
+    discount_type: customer.discount_type ?? 'percent',
+    discount_min_bill: num(customer.discount_min_bill),
+    credit_action: customer.credit_action ?? null,
+    max_single_bill: num(customer.max_single_bill),
+    opening_balance: openingBalance,
+    opening_balance_as_of: customer.opening_balance_as_of ?? null,
+    notes: customer.notes ?? null,
+    birthday: customer.birthday ?? null,
+    anniversary: customer.anniversary ?? null,
+    reminder_freq: customer.reminder_freq ?? null,
+  };
+}
+
+/** The customer's opening balance (the ledger's own row). */
+function customerOpeningBalance(customerId: number): number {
+  const ledger = getUdhaarLedger(customerId);
+  const row = ledger.rows.find((r) => r.type === 'opening_balance');
+  return row ? round2(num(row.amount)) : 0;
+}
+
+/** The product's own fields, so a price change keeps everything else. */
+function productProfileInput(product: Product): ProductInput {
+  return {
+    name: product.name,
+    sku: product.sku,
+    barcode: product.barcode,
+    category_id: product.category_id,
+    unit_id: product.unit_id,
+    cost_price: num(product.cost_price),
+    sale_price: num(product.sale_price),
+    wholesale_price: product.wholesale_price,
+    shelf_location: product.shelf_location,
+    low_stock_threshold: num(product.low_stock_threshold),
+    tax_rate: num(product.tax_rate),
+    expiry_date: product.expiry_date,
+    image: product.image ?? null,
+    net_weight: product.net_weight ?? null,
+    is_loose: product.is_loose ?? 0,
+    is_test: product.is_test ?? 0,
+    mfg_date: product.mfg_date ?? null,
+    batch_no: product.batch_no ?? null,
+  };
+}
+
+/** A discount as the owner reads it (a percent or a fixed amount). */
+function discountText(value: number, type: string | null | undefined): string {
+  if (type === 'fixed') return `${round2(num(value))} (a fixed amount)`;
+  return `${round2(num(value))}%`;
 }
 
 /** The product fields a role may see. */
@@ -485,6 +588,249 @@ export function buildAssistantToolImplementations(): Record<string, ToolImplemen
         return {
           summary: `Hold the open bill as "${label}"`,
           details: [{ label: 'Label', after: label }],
+        };
+      },
+    },
+
+    // ── the BACK-OFFICE helpers (the app's own services) ────────────────────
+    // Every one of them writes through the very same service the normal screen
+    // uses, so there is never a second way of changing a customer, an expense,
+    // a promotion, the stock or a price.
+    set_customer_discount: {
+      async execute(_ctx, input) {
+        const customer = findCustomer(input);
+        if (!customer) throw new Error('No customer matched that name or phone number.');
+        const discount = Math.max(0, round2(num(input.discount)));
+        // The registry says "percent" or "amount"; the app calls a fixed amount
+        // "fixed".
+        const discountType = input.discountType === 'amount' ? 'fixed' : 'percent';
+        const result = saveCustomer(
+          {
+            ...customerProfileInput(customer, customerOpeningBalance(customer.id)),
+            default_discount_pct: discount,
+            discount_type: discountType,
+          },
+          customer.id
+        );
+        if (!result.ok) throw new Error(result.message || 'The discount could not be saved.');
+        return {
+          ok: true,
+          customer_id: customer.id,
+          name: customer.name,
+          discount,
+          discountType,
+        };
+      },
+      async preview(_ctx, input) {
+        const customer = findCustomer(input);
+        const discount = Math.max(0, round2(num(input.discount)));
+        const discountType = input.discountType === 'amount' ? 'fixed' : 'percent';
+        return {
+          summary: `Set a ${discountText(discount, discountType)} discount for "${customer?.name ?? String(input.customer ?? '')}"`,
+          details: [
+            { label: 'Customer', after: customer?.name ?? String(input.customer ?? '') },
+            {
+              label: 'Discount',
+              before: customer ? discountText(num(customer.default_discount_pct), customer.discount_type) : null,
+              after: discountText(discount, discountType),
+            },
+          ],
+        };
+      },
+    },
+    create_expense_draft: {
+      async execute(ctx, input) {
+        const amount = round2(num(input.amount));
+        if (!(amount > 0)) throw new Error('The amount must be more than zero.');
+        const categories = listCategories(false);
+        const wanted = String(input.category ?? '').trim().toLowerCase();
+        const category = wanted
+          ? categories.find((c) => c.name.trim().toLowerCase() === wanted)
+          : categories.find((c) => c.is_active === 1);
+        if (!category) throw new Error('No expense category matched that name.');
+        const note = String(input.note ?? '').trim();
+        const date = dateOnly(input.date) ?? todayIso();
+        const created = createExpense({
+          category_id: category.id,
+          user_id: ctx.user.id,
+          title: note || 'Expense',
+          description: note || undefined,
+          amount,
+          expense_date: date,
+          is_recurring: false,
+        });
+        if (!created.ok || !created.id) throw new Error(created.message || 'The expense could not be saved.');
+        // A DRAFT: the expense is saved but it does not count towards the
+        // totals until the owner activates it (the app's own "paused" status).
+        const paused = updateExpense(created.id, { status: 'paused' });
+        if (!paused.ok) throw new Error(paused.message || 'The expense draft could not be saved.');
+        return {
+          ok: true,
+          expense_id: created.id,
+          title: note || 'Expense',
+          amount,
+          category: category.name,
+          date,
+          status: 'paused',
+        };
+      },
+      async preview(_ctx, input) {
+        const amount = round2(num(input.amount));
+        const categories = listCategories(false);
+        const wanted = String(input.category ?? '').trim().toLowerCase();
+        const category = wanted
+          ? categories.find((c) => c.name.trim().toLowerCase() === wanted)
+          : categories.find((c) => c.is_active === 1);
+        return {
+          summary: `Save an expense draft of ${makeMoney(printCurrency())(amount)} for the owner to review`,
+          details: [
+            { label: 'Amount', after: makeMoney(printCurrency())(amount) },
+            { label: 'Category', after: category?.name ?? String(input.category ?? '—') },
+            { label: 'Note', after: String(input.note ?? '—') },
+            { label: 'Date', after: dateOnly(input.date) ?? todayIso() },
+          ],
+        };
+      },
+    },
+    create_promotion_draft: {
+      async execute(_ctx, input) {
+        const name = String(input.name ?? '').trim();
+        if (!name) throw new Error('The promotion needs a name.');
+        const product = findProduct({ product: String(input.product ?? '') });
+        if (!product) throw new Error('Tell me which product the promotion is for.');
+        const percent = round2(num(input.percent));
+        if (!(percent > 0)) throw new Error('The discount percent must be more than zero.');
+        const startsOn = dateOnly(input.startsOn);
+        const endsOn = dateOnly(input.endsOn);
+        const promotion = createPromotion({
+          name,
+          type: 'percent',
+          scope: 'product',
+          product_id: product.id,
+          discount_value: percent,
+          buy_qty: 0,
+          free_qty: 0,
+          start_date: startsOn,
+          end_date: endsOn,
+          // A DRAFT: the promotion stays inactive until the owner activates it.
+          active: false,
+        });
+        return {
+          ok: true,
+          promotion_id: promotion.id,
+          name: promotion.name,
+          product: product.name,
+          percent,
+          active: false,
+        };
+      },
+      async preview(_ctx, input) {
+        const product = findProduct({ product: String(input.product ?? '') });
+        const percent = round2(num(input.percent));
+        return {
+          summary: `Save a promotion draft: ${percent}% off "${product?.name ?? String(input.product ?? '')}"`,
+          details: [
+            { label: 'Name', after: String(input.name ?? '') },
+            { label: 'Product', after: product?.name ?? String(input.product ?? '') },
+            { label: 'Discount', after: `${percent}%` },
+            { label: 'From', after: dateOnly(input.startsOn) ?? '—' },
+            { label: 'To', after: dateOnly(input.endsOn) ?? '—' },
+            { label: 'Status', after: 'draft (inactive)' },
+          ],
+        };
+      },
+    },
+    stock_adjustment: {
+      async execute(_ctx, input) {
+        const product = findProduct(input);
+        if (!product) throw new Error('No product matched that name or barcode.');
+        const changeQty = num(input.changeQty);
+        if (!changeQty) throw new Error('How much should the stock change by?');
+        const reason = String(input.reason ?? '').trim();
+        if (!reason) throw new Error('A reason is required for a stock adjustment.');
+        const updated = adjustStock(product.id, changeQty, reason);
+        return {
+          ok: true,
+          product_id: product.id,
+          name: product.name,
+          old_stock: round2(num(product.stock_qty)),
+          new_stock: round2(num(updated.stock_qty)),
+          change: changeQty,
+          reason,
+        };
+      },
+      async preview(_ctx, input) {
+        const product = findProduct(input);
+        const changeQty = num(input.changeQty);
+        const oldStock = product ? round2(num(product.stock_qty)) : 0;
+        return {
+          summary: `Change the stock of "${product?.name ?? String(input.product ?? '')}" by ${changeQty > 0 ? '+' : ''}${changeQty}`,
+          details: [
+            { label: 'Product', after: product?.name ?? String(input.product ?? '') },
+            { label: 'Stock', before: oldStock, after: round2(oldStock + changeQty) },
+            { label: 'Change', after: `${changeQty > 0 ? '+' : ''}${changeQty}` },
+            { label: 'Reason', after: String(input.reason ?? '') },
+          ],
+        };
+      },
+    },
+    update_product_price: {
+      async execute(ctx, input) {
+        const product = findProduct(input);
+        if (!product) throw new Error('No product matched that name or barcode.');
+        const salePrice = input.salePrice !== undefined ? round2(num(input.salePrice)) : null;
+        const costPrice = input.costPrice !== undefined ? round2(num(input.costPrice)) : null;
+        if (salePrice === null && costPrice === null) {
+          throw new Error('Give me the new sale price or the new cost price.');
+        }
+        // The cost price is a manager figure — a role that may not see it may
+        // not change it either.
+        if (costPrice !== null && !maySeeProfit(ctx)) {
+          throw new Error('This role may not change the cost price.');
+        }
+        const updated = updateProduct(product.id, {
+          ...productProfileInput(product),
+          sale_price: salePrice ?? num(product.sale_price),
+          cost_price: costPrice ?? num(product.cost_price),
+        });
+        const result: Record<string, unknown> = {
+          ok: true,
+          product_id: product.id,
+          name: product.name,
+          old_sale_price: round2(num(product.sale_price)),
+          new_sale_price: round2(num(updated.sale_price)),
+        };
+        if (maySeeProfit(ctx)) {
+          result.old_cost_price = round2(num(product.cost_price));
+          result.new_cost_price = round2(num(updated.cost_price));
+        }
+        return result;
+      },
+      async preview(ctx, input) {
+        const product = findProduct(input);
+        const money = makeMoney(printCurrency());
+        const salePrice = input.salePrice !== undefined ? round2(num(input.salePrice)) : null;
+        const costPrice = input.costPrice !== undefined ? round2(num(input.costPrice)) : null;
+        const details: { label: string; before?: string | number | null; after?: string | number | null }[] = [
+          { label: 'Product', after: product?.name ?? String(input.product ?? '') },
+        ];
+        if (salePrice !== null) {
+          details.push({
+            label: 'Sale price',
+            before: product ? money(num(product.sale_price)) : null,
+            after: money(salePrice),
+          });
+        }
+        if (costPrice !== null && maySeeProfit(ctx)) {
+          details.push({
+            label: 'Cost price',
+            before: product ? money(num(product.cost_price)) : null,
+            after: money(costPrice),
+          });
+        }
+        return {
+          summary: `Change the price of "${product?.name ?? String(input.product ?? '')}"`,
+          details,
         };
       },
     },

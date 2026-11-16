@@ -86,7 +86,8 @@
     "test:assistantVerify": "npm run build:main && electron scripts/test_assistantVerify.cjs",
     "test:assistantGuide": "npm run build:main && electron scripts/test_assistantGuide.cjs",
     "test:assistantPending": "npm run build:main && electron scripts/test_assistantPending.cjs",
-    "test:assistantBillActions": "npm run build:main && electron scripts/test_assistant_bill_actions.cjs"
+    "test:assistantBillActions": "npm run build:main && electron scripts/test_assistant_bill_actions.cjs",
+    "test:assistantBackOffice": "npm run build:main && electron scripts/test_assistant_back_office.cjs"
   },
   "dependencies": {
     "bwip-js": "^4.11.2",
