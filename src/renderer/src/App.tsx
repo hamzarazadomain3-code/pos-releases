@@ -13,6 +13,7 @@ import { brandDisplayName, brandSubtitle, brandInitials, PRODUCT_NAME } from '@s
 import { sidebarIconShapes } from '@shared/sidebarIcons';
 import { languageToggleLabelKey, languageToggleTarget, roleLabelKey, userDisplayName, userInitials } from '@shared/sidebarFooter';
 import { badgeFor, BADGE_REFRESH_MS, type SidebarBadge } from '@shared/sidebarBadges';
+import { type AssistantBillCommand } from '@shared/assistant/billActions';
 import {
   DEFAULT_GROUP_STATE,
   groupStateKey,
@@ -619,6 +620,8 @@ export default function App() {
   const [assistantOpen, setAssistantOpen] = useState(false);
   /** The step-by-step guide the assistant started (the overlay walks it). */
   const [activeGuide, setActiveGuide] = useState<string | null>(null);
+  /** A confirmed assistant action for the billing screen (the bill lives there). */
+  const [assistantBillCommand, setAssistantBillCommand] = useState<AssistantBillCommand | null>(null);
   /** Which sidebar groups are collapsed (remembered per user). */
   const [groupState, setGroupState] = useState<GroupState>(DEFAULT_GROUP_STATE);
  // The ONE menu: built for this role, this feature set and this language.
@@ -1374,7 +1377,14 @@ export default function App() {
       <main className="content">
         <ErrorBoundary>
           <Suspense fallback={<div className="page"><div className="muted center pad">Loading…</div></div>}>
-          {page === 'billing' && <Billing onNavigate={(key) => navigate(key as NavPage)} onLogout={handleLogout} />}
+          {page === 'billing' && (
+            <Billing
+              onNavigate={(key) => navigate(key as NavPage)}
+              onLogout={handleLogout}
+              assistantCommand={assistantBillCommand}
+              onAssistantCommandDone={() => setAssistantBillCommand(null)}
+            />
+          )}
           {page === 'dashboard' && <Dashboard />}
           {page === 'inventory' && <Inventory />}
           {page === 'branches' && <Branches />}
@@ -1413,6 +1423,11 @@ export default function App() {
           navigate(route as NavPage);
         }}
         onStartGuide={(guideId) => setActiveGuide(guideId)}
+        onBillCommand={(command) => {
+          // The open bill lives in the Billing screen — the command goes there.
+          setAssistantBillCommand(command);
+          if (command.kind === 'add_to_bill' && page !== 'billing') setPage('billing');
+        }}
       />
       <GuideOverlay
         guideId={activeGuide}

@@ -17,6 +17,7 @@ import { parseNegativeStockPolicy, checkNegativeStock, type NegativeStockPolicy 
 import { applyCustomerDiscount, customerDiscountBadge, describeDiscountSource, minBillHint } from '@shared/customerDiscount';
 import { shouldJumpToQty } from '@shared/qtyJump';
 import { fileBytesFromResult } from '@shared/binaryTransfer';
+import { type AssistantBillCommand } from '@shared/assistant/billActions';
 import { downloadBytes } from '@utils/download';
 import {
   billEditReducer,
@@ -173,9 +174,23 @@ const RETURN_REFUND_MODES = [
 interface BillingProps {
   onNavigate?: (page: NavPage) => void;
   onLogout?: () => void;
+  /**
+   * A confirmed assistant action for this screen. The assistant PROPOSES and
+   * the owner CONFIRMS; only then does the command arrive here, and it is
+   * applied with the very same `addProduct` / `doHold` the Billing buttons
+   * use — there is no second way of touching the open bill.
+   */
+  assistantCommand?: AssistantBillCommand | null;
+  /** The command was applied (or could not be) — the app clears it. */
+  onAssistantCommandDone?: () => void;
 }
 
-export default function Billing({ onNavigate, onLogout }: BillingProps) {
+export default function Billing({
+  onNavigate,
+  onLogout,
+  assistantCommand,
+  onAssistantCommandDone,
+}: BillingProps) {
   const [items, setItems] = useState<CartLine[]>([]);
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -882,10 +897,10 @@ const openQtyDialog = useCallback((p: Product) => {
     [addProduct]
   );
 
-  const doHold = useCallback(() => {
+  const doHold = useCallback((customLabel?: string) => {
     if (items.length === 0) return;
     window.api.sales
-      .hold('held', `${items.length} items`, { 
+      .hold('held', customLabel || `${items.length} items`, { 
         // Persist the FULL cart line. Saving only a subset (the pre-2.15.2 bug)
         // dropped name/retail_price/wholesale_price/cost_price, so Resume rendered
         // an empty price box and NaN totals.
@@ -909,6 +924,35 @@ const openQtyDialog = useCallback((p: Product) => {
       })
       .catch((e) => setNotice(e.message));
   }, [items, customerId, billDiscount, discountType, priceMode]);
+
+  // A confirmed assistant action lands here (the open bill lives in this
+  // screen). It is applied with the same code the Billing buttons use, and the
+  // owner has already confirmed it in the assistant panel.
+  useEffect(() => {
+    if (!assistantCommand) return;
+    const command = assistantCommand;
+    let cancelled = false;
+    if (command.kind === 'add_to_bill') {
+      window.api.inventory
+        .get(command.productId)
+        .then((product) => {
+          if (cancelled) return;
+          if (!product) {
+            setNotice('That product is no longer in the inventory.');
+            return;
+          }
+          addProduct(product, undefined, command.qty, 'dropdown');
+          setNotice(`${product.name} added to the bill.`);
+        })
+        .catch((e) => {
+          if (!cancelled) setNotice(e instanceof Error ? e.message : String(e));
+        });
+    } else {
+      doHold(command.label);
+    }
+    onAssistantCommandDone?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assistantCommand]);
 
 const newBill = useCallback(() => {
   setItems([]);
@@ -3584,7 +3628,7 @@ const handleUnitChange = (newLevel: number) => {
                   <button className="action-btn-save" onClick={quotationMode ? completeQuotation : openPay} disabled={items.length === 0 || busy || (!quotationMode && !shift)}>
                     Save
                   </button>
-                  <button className="action-btn-hold" onClick={doHold} disabled={items.length === 0}>
+                  <button className="action-btn-hold" onClick={() => doHold()} disabled={items.length === 0}>
                     Hold
                   </button>
                   <button

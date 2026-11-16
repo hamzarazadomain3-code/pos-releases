@@ -1789,7 +1789,9 @@ export interface PosBridge {
     /** The actions that wait for the owner to confirm them. */
     pendingList: () => Promise<AssistantPendingRow[]>;
     /** Confirm a waiting action — the real service runs then. */
-    pendingConfirm: (id: number) => Promise<{ ok: boolean; message?: string; tool?: string }>;
+    pendingConfirm: (
+      id: number
+    ) => Promise<{ ok: boolean; message?: string; tool?: string; result?: unknown }>;
     /** Cancel a waiting action — nothing happens. */
     pendingCancel: (id: number) => Promise<{ ok: boolean; message?: string }>;
   };

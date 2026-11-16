@@ -25,9 +25,11 @@ import { getUdhaarAging } from '../udhaar';
 import { listSuppliers } from '../purchases';
 import { currentShift, shiftTotals } from '../shifts';
 import { listReturns } from '../returns';
+import { makeMoney, printCurrency } from '../printDocs';
 import { canOpenRoute } from '../../../shared/sidebarMenu';
 import { roleAtLeast } from '../../../shared/roles';
 import { GUIDES, guideById } from '../../../shared/assistant/guides';
+import { billQty } from '../../../shared/assistant/billActions';
 import { searchHelp } from '../../../shared/assistant/search';
 import type { AssistantContext } from '../../../shared/assistant/types';
 import type { ToolImplementation, ToolPreview } from '../../../shared/assistant/tools';
@@ -423,6 +425,66 @@ export function buildAssistantToolImplementations(): Record<string, ToolImplemen
             { label: 'Phone', after: input.phone ? String(input.phone) : '—' },
             { label: 'Address', after: input.address ? String(input.address) : '—' },
           ],
+        };
+      },
+    },
+
+    // ── the BILLING helpers (the open bill lives in the renderer) ───────────
+    // The cart belongs to the Billing screen, so these two tools resolve what
+    // they can in the main process (the product, through the app's own
+    // inventory service) and hand the renderer a COMMAND. The renderer then
+    // applies it with the same `addProduct` / `doHold` the Billing buttons
+    // use — there is no second way of touching the open bill.
+    add_to_bill: {
+      async execute(_ctx, input) {
+        const product = findProduct(input);
+        if (!product) throw new Error('No product matched that name or barcode.');
+        const qty = billQty(input.qty);
+        const unit = String(input.unit ?? '').trim();
+        return {
+          ok: true,
+          product_id: product.id,
+          name: product.name,
+          qty,
+          sale_price: num(product.sale_price),
+          billCommand: {
+            kind: 'add_to_bill' as const,
+            productId: product.id,
+            productName: product.name,
+            qty,
+            ...(unit ? { unit } : {}),
+          },
+        };
+      },
+      async preview(_ctx, input) {
+        const product = findProduct(input);
+        const qty = billQty(input.qty);
+        const money = makeMoney(printCurrency());
+        return {
+          summary: `Add ${qty} × "${product?.name ?? String(input.product ?? '')}" to the open bill`,
+          details: [
+            { label: 'Product', after: product?.name ?? String(input.product ?? '') },
+            { label: 'Qty', after: String(qty) },
+            { label: 'Price', after: product ? money(num(product.sale_price)) : '—' },
+            { label: 'Unit', after: String(input.unit ?? product?.unit_name ?? 'pcs') },
+          ],
+        };
+      },
+    },
+    hold_bill: {
+      async execute(_ctx, input) {
+        const label = String(input.label ?? '').trim() || 'Held bill';
+        return {
+          ok: true,
+          label,
+          billCommand: { kind: 'hold_bill' as const, label },
+        };
+      },
+      async preview(_ctx, input) {
+        const label = String(input.label ?? '').trim() || 'Held bill';
+        return {
+          summary: `Hold the open bill as "${label}"`,
+          details: [{ label: 'Label', after: label }],
         };
       },
     },

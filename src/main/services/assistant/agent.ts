@@ -323,7 +323,7 @@ export function assistantPendingActions() {
  */
 export async function confirmAssistantAction(
   id: number
-): Promise<{ ok: boolean; message?: string; tool?: string }> {
+): Promise<{ ok: boolean; message?: string; tool?: string; result?: unknown }> {
   const user = currentUser();
   if (!user) return { ok: false, message: 'Sign in again.' };
   const settings = getAssistantSettings();
@@ -345,7 +345,14 @@ export async function confirmAssistantAction(
     },
     ctx
   );
-  return { ok: result.ok, message: result.message, tool: result.row?.tool };
+  return {
+    ok: result.ok,
+    message: result.message,
+    tool: result.row?.tool,
+    // The tool's own result (a billing action carries the command the Billing
+    // screen has to apply — the bill lives in the renderer).
+    result: result.row?.result,
+  };
 }
 
 /** Cancel a waiting action — nothing happens. */

@@ -5,6 +5,7 @@ import { sanitizeMessage, sanitizePlainText } from '../../../shared/assistant/sa
 import { chipsForContext } from '../../../shared/assistant/chips';
 import { loadHistory, saveHistory, clearHistory, type StoredAssistantMessage } from '../../../shared/assistant/history';
 import { detectLanguage } from '../../../shared/assistant/language';
+import { billCommandFromResult, type AssistantBillCommand } from '../../../shared/assistant/billActions';
 import { formatMoney } from '../utils/currency';
 
 /**
@@ -32,6 +33,12 @@ export interface AssistantPanelProps {
   onNavigate?: (route: string) => void;
   /** Called when the assistant asks for a guide to start. */
   onStartGuide?: (guideId: string) => void;
+  /**
+   * Called when the owner confirms a BILLING action (add to the open bill,
+   * hold the open bill). The bill lives in the Billing screen, so the panel
+   * only hands the command over.
+   */
+  onBillCommand?: (command: AssistantBillCommand) => void;
 }
 
 interface PanelMessage extends StoredAssistantMessage {
@@ -75,6 +82,7 @@ export default function AssistantPanel({
   userId,
   onNavigate,
   onStartGuide,
+  onBillCommand,
 }: AssistantPanelProps) {
   const { t } = useTranslation();
   const [messages, setMessages] = useState<PanelMessage[]>([]);
@@ -259,13 +267,21 @@ export default function AssistantPanel({
           )
         );
         if (!res.ok && res.message) setError(res.message);
+        // A confirmed BILLING action is applied by the Billing screen (the bill
+        // lives there): the panel only hands the command over.
+        if (what === 'confirm' && res.ok) {
+          const command = billCommandFromResult(
+            (res as { result?: unknown }).result
+          );
+          if (command) onBillCommand?.(command);
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
         setBusy(false);
       }
     },
-    []
+    [onBillCommand]
   );
 
   if (!open) return null;
