@@ -20,6 +20,7 @@ import {
 } from '../reports';
 import { getProduct, getProductByBarcode, listLowStock, listProducts } from '../inventory';
 import { listCustomers } from '../sales';
+import { saveCustomer } from '../customers';
 import { getUdhaarAging } from '../udhaar';
 import { listSuppliers } from '../purchases';
 import { currentShift, shiftTotals } from '../shifts';
@@ -393,6 +394,36 @@ export function buildAssistantToolImplementations(): Record<string, ToolImplemen
           };
         }
         return { metric, value: null, components: [], message: 'That figure is not one the assistant can explain.' };
+      },
+    },
+
+    // ── WRITE (they only PROPOSE — the owner confirms) ──────────────────────
+    // The write tools run ONLY after the owner confirms the action card (the
+    // agent loop never runs them). They call the very same service the
+    // normal UI calls, so there is no second way of writing the data.
+    create_customer: {
+      async execute(_ctx, input) {
+        const result = saveCustomer({
+          name: String(input.name ?? '').trim(),
+          phone: input.phone ? String(input.phone) : null,
+          address: input.address ? String(input.address) : null,
+        });
+        if (!result.ok) throw new Error(result.message || 'The customer could not be saved.');
+        return {
+          ok: true,
+          customer_id: result.customer?.id ?? null,
+          name: result.customer?.name ?? String(input.name),
+        };
+      },
+      async preview(_ctx, input) {
+        return {
+          summary: `Add the customer "${String(input.name ?? '')}" to the udhaar list`,
+          details: [
+            { label: 'Name', after: String(input.name ?? '') },
+            { label: 'Phone', after: input.phone ? String(input.phone) : '—' },
+            { label: 'Address', after: input.address ? String(input.address) : '—' },
+          ],
+        };
       },
     },
 

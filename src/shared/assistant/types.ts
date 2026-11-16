@@ -11,6 +11,9 @@
 /** The roles the app knows — the SAME ladder as `src/shared/roles.ts`. */
 export type AssistantRole = 'owner' | 'manager' | 'cashier';
 
+/** The waiting actions (the pending-action model). */
+export type { AssistantPendingRow, AssistantPendingStatus } from './pending';
+
 /** The language the assistant answers in. `auto` follows the shop's language. */
 export type AssistantLanguage = 'auto' | 'en' | 'ur' | 'roman';
 
@@ -200,6 +203,16 @@ export interface AssistantPendingAction {
   args: Record<string, unknown>;
   risk: 'read' | 'write' | 'dangerous' | 'forbidden';
   reason?: string;
+  /** The row id — the owner confirms THIS action (never a new one). */
+  id?: number;
+  /** The one-line summary of what the action would change. */
+  preview?: string;
+  /** The before/after of every affected value. */
+  details?: { label: string; before?: string | number | null; after?: string | number | null }[];
+  /** When the action dies — it waits for the owner. */
+  expires_at?: string;
+  /** The status of the action (always `pending` for a fresh card). */
+  status?: 'pending' | 'confirmed' | 'cancelled' | 'expired' | 'failed';
 }
 
 /** The answer to one assistant turn. */

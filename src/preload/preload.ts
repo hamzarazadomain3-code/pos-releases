@@ -441,6 +441,9 @@ const bridge: PosBridge = {
     activity: () => ipcRenderer.invoke('assistant:activity'),
     send: (request) => ipcRenderer.invoke('assistant:send', request),
     cancel: () => ipcRenderer.invoke('assistant:cancel'),
+    pendingList: () => ipcRenderer.invoke('assistant:pendingList'),
+    pendingConfirm: (id) => ipcRenderer.invoke('assistant:pendingConfirm', id),
+    pendingCancel: (id) => ipcRenderer.invoke('assistant:pendingCancel', id),
   },
   email: {
     send: (options: { to: string | string[]; subject: string; text?: string; html?: string }) => ipcRenderer.invoke('email:send', options),

@@ -7030,6 +7030,25 @@ body.theme-dark .bill-items .bill-summary-icon { background: rgba(139, 92, 246, 
   flex: 1 1 auto;
 }
 
+.assistant-action-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.assistant-action-details {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 6px;
+}
+
+.assistant-action-details td {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  text-align: start;
+}
+
 /* Phone: the panel is a full-screen sheet. */
 @media (max-width: 768px) {
   .assistant-panel {

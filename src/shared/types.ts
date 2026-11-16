@@ -4,6 +4,7 @@ import type {
   AssistantActivityRow,
   AssistantDataLevel,
   AssistantLanguage,
+  AssistantPendingRow,
   AssistantRole,
   AssistantSettingsPatch,
   AssistantSettingsView,
@@ -1785,6 +1786,12 @@ export interface PosBridge {
     activity: () => Promise<AssistantActivityRow[]>;
     send: (request: AssistantTurnRequest) => Promise<AssistantTurnResponse>;
     cancel: () => Promise<boolean>;
+    /** The actions that wait for the owner to confirm them. */
+    pendingList: () => Promise<AssistantPendingRow[]>;
+    /** Confirm a waiting action — the real service runs then. */
+    pendingConfirm: (id: number) => Promise<{ ok: boolean; message?: string; tool?: string }>;
+    /** Cancel a waiting action — nothing happens. */
+    pendingCancel: (id: number) => Promise<{ ok: boolean; message?: string }>;
   };
   email: {
     send: (options: { to: string | string[]; subject: string; text?: string; html?: string }) => Promise<{ ok: boolean; message: string }>;

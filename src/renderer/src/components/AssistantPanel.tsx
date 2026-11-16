@@ -229,6 +229,45 @@ export default function AssistantPanel({
     setMessages([]);
   }, [userId]);
 
+  /**
+   * Confirm or cancel a waiting action.
+   *
+   * The action itself runs in the main process (through the very same service
+   * the normal UI uses) and only when the owner confirms it.
+   */
+  const settle = useCallback(
+    async (message: PanelMessage, what: 'confirm' | 'cancel') => {
+      const id = message.pending?.id;
+      if (!id) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const res =
+          what === 'confirm'
+            ? await window.api.assistant.pendingConfirm(id)
+            : await window.api.assistant.pendingCancel(id);
+        const status = res.ok
+          ? what === 'confirm'
+            ? 'confirmed'
+            : 'cancelled'
+          : 'failed';
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === message.id && m.pending
+              ? { ...m, pending: { ...m.pending, status: status as any } }
+              : m
+          )
+        );
+        if (!res.ok && res.message) setError(res.message);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(false);
+      }
+    },
+    []
+  );
+
   if (!open) return null;
 
   return (
@@ -285,9 +324,42 @@ export default function AssistantPanel({
             {message.pending && (
               <div className="assistant-action-card">
                 <div className="assistant-action-title">{t('assistant.actionTitle')}</div>
-                <div className="muted small">{message.pending.tool}</div>
-                <pre className="assistant-action-args">{JSON.stringify(message.pending.args, null, 1)}</pre>
-                <div className="muted small">{t('assistant.actionWaiting')}</div>
+                <div className="muted small">
+                  {message.pending.preview || message.pending.tool}
+                </div>
+                {message.pending.details && message.pending.details.length > 0 && (
+                  <table className="assistant-action-details">
+                    <tbody>
+                      {message.pending.details.map((d) => (
+                        <tr key={d.label}>
+                          <td className="muted small">{d.label}</td>
+                          <td className="small">{d.before !== undefined && d.before !== null ? String(d.before) : '—'}</td>
+                          <td className="small">{d.after !== undefined && d.after !== null ? String(d.after) : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {message.pending.status === 'pending' && message.pending.id ? (
+                  <div className="assistant-action-buttons">
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-primary"
+                      onClick={() => void settle(message, 'confirm')}
+                    >
+                      {t('assistant.actionConfirm')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-xs"
+                      onClick={() => void settle(message, 'cancel')}
+                    >
+                      {t('assistant.actionCancel')}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="muted small">{t(`assistant.action_${message.pending.status || 'pending'}`)}</div>
+                )}
               </div>
             )}
             {message.role === 'assistant' && !message.pending && (

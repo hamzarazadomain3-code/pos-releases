@@ -298,6 +298,13 @@
     "actionProposed": "I would like to do this — please confirm.",
     "actionTitle": "Proposed action",
     "actionWaiting": "Nothing has been changed yet.",
+    "actionConfirm": "Confirm",
+    "actionCancel": "Cancel",
+    "action_pending": "Nothing has been changed yet.",
+    "action_confirmed": "Done.",
+    "action_cancelled": "Cancelled — nothing was changed.",
+    "action_expired": "This action expired. Ask the assistant again.",
+    "action_failed": "That action could not be done.",
     "sourceLabel": "Source",
     "source": {
       "help": "Help",

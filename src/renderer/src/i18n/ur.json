@@ -231,6 +231,13 @@
     "actionProposed": "میں یہ کام کرنا چاہتا ہوں — تصدیق کریں۔",
     "actionTitle": "پیش کیا گیا کام",
     "actionWaiting": "ابھی کچھ بھی تبدیل نہیں کیا گیا۔",
+    "actionConfirm": "تصدیق کریں",
+    "actionCancel": "منسوخ کریں",
+    "action_pending": "ابھی کچھ بھی تبدیل نہیں کیا گیا۔",
+    "action_confirmed": "ہو گیا۔",
+    "action_cancelled": "منسوخ — کچھ بھی تبدیل نہیں ہوا۔",
+    "action_expired": "یہ کام کی میعاد ختم ہو گئی۔ اسسٹنٹ سے دوبارہ پوچھیں۔",
+    "action_failed": "یہ کام انجام نہیں ہو سکا۔",
     "sourceLabel": "ماخذ",
     "source": {
       "help": "مدد",
