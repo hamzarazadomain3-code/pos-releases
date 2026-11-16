@@ -88,7 +88,9 @@
     "test:assistantPending": "npm run build:main && electron scripts/test_assistantPending.cjs",
     "test:assistantBillActions": "npm run build:main && electron scripts/test_assistant_bill_actions.cjs",
     "test:assistantBackOffice": "npm run build:main && electron scripts/test_assistant_back_office.cjs",
-    "test:assistantProactive": "npm run build:main && electron scripts/test_assistant_proactive.cjs"
+    "test:assistantProactive": "npm run build:main && electron scripts/test_assistant_proactive.cjs",
+    "test:assistantEval": "npm run build:main && electron scripts/test_assistant_eval.cjs",
+    "eval:assistant:live": "npm run build:main && electron scripts/eval_assistant_live.cjs"
   },
   "dependencies": {
     "bwip-js": "^4.11.2",
