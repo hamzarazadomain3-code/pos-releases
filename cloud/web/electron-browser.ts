@@ -317,6 +317,15 @@ async function webPrint(channel: string, args: unknown[]): Promise<unknown> {
 const BROWSER_SAFE_SAVE_PRINT = 'Ctrl+Alt+S';
 const DEFAULT_SAVE_PRINT = 'ctrl+shift+s';
 
+/**
+ * Ctrl+J is the browser's DOWNLOADS panel (Chrome and Firefox), so the
+ * assistant's shortcut is rewritten to Ctrl+Alt+J in the browser build — the
+ * same treatment `save_print` gets. Only the untouched default is rewritten,
+ * so an owner's own binding is respected.
+ */
+const BROWSER_SAFE_ASSISTANT_OPEN = 'Ctrl+Alt+J';
+const DEFAULT_ASSISTANT_OPEN = 'ctrl+j';
+
 function patchBrowserShortcuts(rows: unknown): unknown {
   if (!Array.isArray(rows)) return rows;
   return rows.map((row) => {
@@ -327,6 +336,12 @@ function patchBrowserShortcuts(rows: unknown): unknown {
       String(r.shortcut_key ?? '').toLowerCase() === DEFAULT_SAVE_PRINT
     ) {
       return { ...r, shortcut_key: BROWSER_SAFE_SAVE_PRINT };
+    }
+    if (
+      r.action === 'assistant_open' &&
+      String(r.shortcut_key ?? '').toLowerCase() === DEFAULT_ASSISTANT_OPEN
+    ) {
+      return { ...r, shortcut_key: BROWSER_SAFE_ASSISTANT_OPEN };
     }
     return row;
   });
