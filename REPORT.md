@@ -2409,6 +2409,18 @@ The web build has no Windows recogniser: it uses the **browser's** own speech
 recognition there instead (Chrome and Edge have it). The Worker needs no change for
 the voice — the audio never reaches the server.
 
+The web build uses the **real desktop preload**, so `window.api.assistant.transcribe`
+and `voiceSupport` exist in the browser too. Left alone they would have gone to the
+Worker, where there is no `process.resourcesPath` and no `__dirname` — the lookup
+would have thrown and the microphone button would never have appeared. Two fixes
+close that gap:
+
+- the script lookup is **defensive** — outside Electron/Node it answers "not here"
+  instead of throwing (`src/main/services/assistant/voice.ts`),
+- the browser answers the voice question **itself** — `assistant:voiceSupport` →
+  `{ stt: 'browser' }`, and `assistant:transcribe` is refused politely, so a
+  recording can never travel to the server (`cloud/web/electron-browser.ts`).
+
 ### Proven on this PC (live, the real key, never printed)
 
 ```
@@ -2434,7 +2446,7 @@ really saw it. The voice came back **word for word** from the offline recogniser
 
 ### The permanent test
 
-`npm run test:assistantVoice` → **122/122** (the real `dist` code, the MockProvider
+`npm run test:assistantVoice` → **128/128** (the real `dist` code, the MockProvider
 only — no LLM, no network): the WAV encoder (the RIFF header, 16 kHz, mono, 16-bit,
 the resampling), the base64, the rules for which file may be attached, the gate that
 refuses a too-big / unknown / broken file and a fifth file, the clean-up of an answer
@@ -2443,7 +2455,8 @@ turn (the photo reaches the provider, the vision model is used, the token budget
 grows, the source line says so), the voice service (the script is on the computer, an
 empty recording is refused politely, the recogniser needs no key and no network) and
 the wiring (the IPC, the preload, the panel's buttons, the two languages, the
-packaged resource).
+packaged resource, the **web path** — the browser listens by itself and the recording
+never travels to the server).
 
 `test:assistantA11y` grew to **81/81** — the microphone button, the attach button
 and the voice-only switch are named, reachable and big enough to tap.
@@ -2480,9 +2493,9 @@ packaged=true version=2.28.0`, the DB migrated, the licence check passed, no err
 
 ### Final numbers
 
-**17 suites, 1214 checks, all green** — Provider 77/77, Settings 47/47, Tools 101/101,
+**17 suites, 1220 checks, all green** — Provider 77/77, Settings 47/47, Tools 101/101,
 Agent 55/55, Panel 49/49, Verify 74/74, Guide 80/80, Pending 54/54, BillActions 61/61,
 BackOffice 88/88, Proactive 48/48, Eval 81/81 (12 cases), Privacy 72/72, NVIDIA 99/99,
-**Voice 122/122**, A11y 81/81, UI 25/25. Typecheck main+renderer **exit 0**, cloud
+**Voice 128/128**, A11y 81/81, UI 25/25. Typecheck main+renderer **exit 0**, cloud
 typecheck **exit 0**, `npm run build` **exit 0**, the cloud suite **111 passed / 0
 failed**. Proof: `E:\temp\proof\a18_*.txt`.
