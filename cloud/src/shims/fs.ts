@@ -55,7 +55,22 @@ export const promises = {
   writeFile: async (): Promise<void> => {},
   readFile: async (): Promise<string> => '',
   mkdir: async (): Promise<void> => {},
+  mkdtemp: async (): Promise<string> => '',
+  rm: async (): Promise<void> => {},
   stat: async (): Promise<unknown> => ({}),
   unlink: async (): Promise<void> => {},
   readdir: async (): Promise<string[]> => [],
 };
+
+// `node:fs/promises` is aliased to this same shim, so the named imports the
+// desktop code uses must exist here too (the assistant's offline voice writes
+// a temporary WAV — a Worker never does that, so it stays a no-op).
+export async function writeFile(): Promise<void> {}
+export async function readFile(): Promise<string> {
+  return '';
+}
+export async function mkdtemp(): Promise<string> {
+  return '';
+}
+export async function rm(): Promise<void> {}
+export async function mkdir(): Promise<void> {}

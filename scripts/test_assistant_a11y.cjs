@@ -86,6 +86,17 @@ const PROBE = `(() => {
   const chips = Array.from(document.querySelectorAll('.assistant-chip'));
   const buttons = Array.from(panel.querySelectorAll('button'));
   const name = (el) => (el.getAttribute('aria-label') || el.textContent || '').trim();
+  const buttonInfo = (sel) => {
+    const el = panel.querySelector(sel);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return {
+      name: name(el),
+      width: r.width,
+      height: r.height,
+      pressed: el.getAttribute('aria-pressed') || '',
+    };
+  };
   const rect = panel.getBoundingClientRect();
   const inputRect = input ? input.getBoundingClientRect() : null;
   const chipRects = chips.map((c) => c.getBoundingClientRect());
@@ -114,6 +125,13 @@ const PROBE = `(() => {
     inputHeight: inputRect ? inputRect.height : 0,
     unnamedButtons: buttons.filter((b) => !name(b)).map((b) => b.className || b.tagName),
     buttonNames: buttons.map((b) => name(b)),
+    micButton: buttonInfo('.assistant-mic'),
+    attachButton: buttonInfo('.assistant-icon-btn[aria-label]:not(.assistant-mic)'),
+    voiceOnlyButton: buttonInfo('.assistant-panel-head-actions button[aria-pressed]'),
+    fileInputName: (() => {
+      const el = panel.querySelector('.assistant-file-input');
+      return el ? (el.getAttribute('aria-label') || '') : '';
+    })(),
     chipHeight: chipRects.length ? Math.min(...chipRects.map((r) => r.height)) : 0,
     chipCount: chips.length,
     rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height },
@@ -246,6 +264,16 @@ async function run() {
   check('every button in the panel has a name', probe.unnamedButtons.length === 0, probe.unnamedButtons.join(', '));
   check('the panel has a title', !!probe.title, probe.title);
   check('the chips are there', probe.chipCount > 0, String(probe.chipCount));
+
+  // The voice and the files (item 18).
+  check('the microphone button is there', !!probe.micButton);
+  check('the microphone button has a name', !!(probe.micButton && probe.micButton.name), probe.micButton && probe.micButton.name);
+  check('the microphone button is big enough to tap', !!(probe.micButton && probe.micButton.height >= 40), probe.micButton && String(probe.micButton.height));
+  check('the attach button is there', !!probe.attachButton);
+  check('the attach button has a name', !!(probe.attachButton && probe.attachButton.name), probe.attachButton && probe.attachButton.name);
+  check('the voice-only switch is there', !!probe.voiceOnlyButton);
+  check('the voice-only switch says if it is on', !!(probe.voiceOnlyButton && (probe.voiceOnlyButton.pressed === 'true' || probe.voiceOnlyButton.pressed === 'false')), probe.voiceOnlyButton && probe.voiceOnlyButton.pressed);
+  check('the file picker has a name', !!probe.fileInputName, probe.fileInputName);
 
   // ── the phone, the tablet and the desktop ────────────────────────────────
   section('The sizes (360 / 390 / 768 / 1280)');

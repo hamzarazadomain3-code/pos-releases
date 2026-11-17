@@ -29,3 +29,21 @@ const osStub: any = new Proxy(
 );
 
 export default osStub;
+
+// The named imports the desktop code uses (the assistant's offline voice
+// writes a temporary WAV — a Worker never does that, so it stays a stub).
+export function tmpdir(): string {
+  return '/tmp';
+}
+export function homedir(): string {
+  return '/tmp';
+}
+export function platform(): string {
+  return 'linux';
+}
+export function arch(): string {
+  return 'x64';
+}
+export function cpus(): unknown[] {
+  return [{}, {}];
+}

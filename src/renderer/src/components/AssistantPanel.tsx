@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AssistantMessage, AssistantPendingAction } from '../../../shared/assistant/types';
+import {
+  attachmentKindFor,
+  bytesToBase64,
+  cleanAttachmentName,
+  MAX_ATTACHMENTS,
+  maxBytesFor,
+  splitDataUrl,
+  textToBase64,
+  type AssistantAttachment,
+} from '../../../shared/assistant/voice';
 import { sanitizeMessage, sanitizePlainText } from '../../../shared/assistant/sanitize';
 import { chipsForContext } from '../../../shared/assistant/chips';
 import { loadHistory, saveHistory, clearHistory, type StoredAssistantMessage } from '../../../shared/assistant/history';
@@ -8,6 +18,9 @@ import { detectLanguage } from '../../../shared/assistant/language';
 import { billCommandFromResult, type AssistantBillCommand } from '../../../shared/assistant/billActions';
 import type { ProactiveSuggestion } from '../../../shared/assistant/proactive';
 import { formatMoney } from '../utils/currency';
+import { speak, speechSupported, stopSpeaking, browserSpeechRecognition, type BrowserSpeechRecognition } from '../utils/speech';
+import { speakableText } from '../../../shared/assistant/voice';
+import { recordingSupported, startVoiceRecording, type VoiceRecording } from '../utils/voiceRecorder';
 
 /**
  * The assistant panel.
@@ -51,11 +64,43 @@ interface PanelMessage extends StoredAssistantMessage {
   /** A pending action the assistant proposed. */
   pending?: AssistantPendingAction;
   failed?: boolean;
+  /** The photos/files the user sent with this message (not persisted). */
+  attachments?: PanelAttachment[];
+}
+
+/** A file the user attached — the same shape the main process expects. */
+interface PanelAttachment extends AssistantAttachment {
+  /** The id of the chip in the composer (so a file can be removed again). */
+  id: string;
+  /** The picture the user sees (an image only). */
+  preview?: string;
 }
 
 const FEEDBACK_KEY = 'assistant_feedback';
+/** The voice-only mode is the user's OWN choice (this computer, this account). */
+const VOICE_ONLY_KEY = 'assistant_voice_only';
 
-function feedbackKey(messageId: string): string {
+function readVoiceOnly(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(VOICE_ONLY_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeVoiceOnly(value: boolean): void {
+  try {
+    if (value) globalThis.localStorage?.setItem(VOICE_ONLY_KEY, '1');
+    else globalThis.localStorage?.removeItem(VOICE_ONLY_KEY);
+  } catch {
+    /* storage is optional */
+  }
+}
+
+/** The browser's own speech recognition (the web build uses it). */
+function browserRecognition(): (new () => BrowserSpeechRecognition) | null {
+  return browserSpeechRecognition();
+}function feedbackKey(messageId: string): string {
   return `${FEEDBACK_KEY}_${messageId}`;
 }
 
@@ -97,9 +142,20 @@ export default function AssistantPanel({
   const [feedback, setFeedback] = useState<Record<string, 'up' | 'down'>>({});
   /** The proactive insights (opt-in — empty while the switch is off). */
   const [suggestions, setSuggestions] = useState<ProactiveSuggestion[]>([]);
+  /** The files the user picked (they go with the next question). */
+  const [attachments, setAttachments] = useState<PanelAttachment[]>([]);
+  /** True while the microphone is recording. */
+  const [recording, setRecording] = useState(false);
+  /** The voice-only mode: the answer is read out and the mic is the main button. */
+  const [voiceOnly, setVoiceOnly] = useState<boolean>(() => readVoiceOnly());
+  /** What this computer can do with the voice. */
+  const [voiceSupport, setVoiceSupport] = useState<'windows' | 'browser' | 'none'>('none');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<Element | null>(null);
+  const recordingRef = useRef<VoiceRecording | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const browserRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
 
   const chips = useMemo(() => chipsForContext(role, route), [role, route]);
 
@@ -120,6 +176,32 @@ export default function AssistantPanel({
     const timer = setInterval(() => void loadSuggestions(), 60000);
     return () => clearInterval(timer);
   }, [open, loadSuggestions]);
+
+  // What this computer can do with the voice: the app's own offline
+  // recogniser (the desktop app) or the browser's own (the web build).
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    const detect = async () => {
+      const api = window.api?.assistant as
+        | { transcribe?: unknown; voiceSupport?: () => Promise<{ stt?: string }> }
+        | undefined;
+      if (typeof api?.transcribe === 'function') {
+        try {
+          const support = await api.voiceSupport?.();
+          if (!cancelled) setVoiceSupport(support?.stt === 'windows' ? 'windows' : 'none');
+        } catch {
+          if (!cancelled) setVoiceSupport('none');
+        }
+        return;
+      }
+      if (!cancelled) setVoiceSupport(browserSpeechRecognition() ? 'browser' : 'none');
+    };
+    void detect();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   // Load the history when the panel opens; save it after every answer.
   useEffect(() => {
@@ -157,9 +239,10 @@ export default function AssistantPanel({
   );
 
   const send = useCallback(
-    async (question: string) => {
+    async (question: string, withAttachments?: PanelAttachment[]) => {
       const text = question.trim();
-      if (!text || busy) return;
+      const files = withAttachments ?? attachments;
+      if ((!text && files.length === 0) || busy) return;
       setBusy(true);
       setError(null);
       setLastQuestion(text);
@@ -168,18 +251,27 @@ export default function AssistantPanel({
         role: 'user',
         text,
         at: Date.now(),
+        attachments: files.length ? files : undefined,
       };
       const history: AssistantMessage[] = messages
         .filter((m) => !m.pending)
         .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text }));
       setMessages((prev) => [...prev, asked]);
       setInput('');
+      setAttachments([]);
       // The messages this turn adds — they are persisted with the question.
       const added: PanelMessage[] = [];
       // The guide the assistant may have started (the overlay walks it).
       let startedGuide: string | undefined;
       try {
-        const res = await window.api.assistant.send({ message: text, route, history });
+        // The UI-only fields (the id, the preview) never leave the renderer.
+        const payload = files.map(({ id: _id, preview: _preview, ...rest }) => rest);
+        const res = await window.api.assistant.send({
+          message: text,
+          route,
+          history,
+          attachments: payload,
+        });
         startedGuide = res?.guide;
         if (!res.ok) {
           setError(res.failure?.message || t('assistant.error'));
@@ -202,6 +294,8 @@ export default function AssistantPanel({
           };
           added.push(answer);
           setMessages((prev) => [...prev, answer]);
+          // The voice-only mode reads the answer out by itself.
+          if (voiceOnly) speak(res.text, detectLanguage(res.text));
         }
         // The proposed actions (a write tool) are shown as cards, never run.
         for (const pending of res.pendingActions || []) {
@@ -225,7 +319,7 @@ export default function AssistantPanel({
       // through it on the real screen.
       if (startedGuide) onStartGuide?.(startedGuide);
     },
-    [busy, messages, route, t, persist, onStartGuide]
+    [busy, messages, route, t, persist, onStartGuide, attachments, voiceOnly]
   );
 
   const stop = useCallback(async () => {
@@ -235,6 +329,175 @@ export default function AssistantPanel({
       /* the turn may already be over */
     }
     setBusy(false);
+  }, []);
+
+  /**
+   * Stop listening and put the words into the question box.
+   *
+   * The desktop app records the microphone and hands the audio to its own
+   * OFFLINE recogniser; the web build uses the browser's own recogniser. The
+   * words always land in the input box first, so the user can read them and
+   * change them before the question is sent.
+   */
+  const stopListening = useCallback(async () => {
+    const browserRecognition = browserRecognitionRef.current;
+    if (browserRecognition) {
+      browserRecognitionRef.current = null;
+      try {
+        browserRecognition.stop();
+      } catch {
+        /* the recogniser may already be stopped */
+      }
+      setRecording(false);
+      return;
+    }
+    const active = recordingRef.current;
+    recordingRef.current = null;
+    setRecording(false);
+    if (!active) return;
+    try {
+      const { base64 } = await active.stop();
+      const result = await window.api.assistant.transcribe(base64);
+      if (result?.ok && result.text?.trim()) {
+        setInput((prev) => (prev ? `${prev} ${result.text.trim()}` : result.text.trim()));
+        inputRef.current?.focus();
+      } else {
+        setError(result?.message || t('assistant.voiceNotHeard'));
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('assistant.voiceUnavailable'));
+    }
+  }, [t]);
+
+  /** Start listening — the microphone, or the browser's own recogniser. */
+  const listen = useCallback(async () => {
+    if (recording) {
+      await stopListening();
+      return;
+    }
+    setError(null);
+    const Recognition = browserSpeechRecognition();
+    if (voiceSupport === 'browser' && Recognition) {
+      try {
+        const recognition = new Recognition();
+        recognition.lang = 'en-US';
+        recognition.interimResults = false;
+        recognition.continuous = false;
+        recognition.onresult = (event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => {
+          const transcript = String(event.results?.[0]?.[0]?.transcript ?? '').trim();
+          if (transcript) {
+            setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+            inputRef.current?.focus();
+          }
+          setRecording(false);
+        };
+        recognition.onerror = () => {
+          setRecording(false);
+          setError(t('assistant.voiceNotHeard'));
+        };
+        recognition.onend = () => setRecording(false);
+        browserRecognitionRef.current = recognition;
+        recognition.start();
+        setRecording(true);
+      } catch {
+        setError(t('assistant.voiceUnavailable'));
+      }
+      return;
+    }
+    if (!recordingSupported()) {
+      setError(t('assistant.voiceUnavailable'));
+      return;
+    }
+    try {
+      recordingRef.current = await startVoiceRecording();
+      setRecording(true);
+    } catch {
+      setError(t('assistant.voiceUnavailable'));
+    }
+  }, [recording, stopListening, t, voiceSupport]);
+
+  /** Take the files the user picked (a photo the model can see, or a text file). */
+  const attachFiles = useCallback(
+    async (files: FileList | null) => {
+      if (!files || !files.length) return;
+      const picked: PanelAttachment[] = [];
+      for (const file of Array.from(files)) {
+        const kind = attachmentKindFor(file.name, file.type);
+        if (!kind) {
+          setError(t('assistant.fileNotSupported'));
+          continue;
+        }
+        if (file.size > maxBytesFor(kind)) {
+          setError(t('assistant.fileTooBig'));
+          continue;
+        }
+        try {
+          if (kind === 'image') {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result || ''));
+              reader.onerror = () => reject(new Error('read failed'));
+              reader.readAsDataURL(file);
+            });
+            const { mediaType, base64 } = splitDataUrl(dataUrl);
+            picked.push({
+              id: `att-${Date.now()}-${picked.length}`,
+              kind,
+              mediaType: mediaType || file.type || 'image/png',
+              name: cleanAttachmentName(file.name),
+              data: base64,
+              preview: dataUrl,
+            });
+            continue;
+          }
+          const text = await file.text();
+          picked.push({
+            id: `att-${Date.now()}-${picked.length}`,
+            kind,
+            mediaType: file.type || 'text/plain',
+            name: cleanAttachmentName(file.name),
+            data: textToBase64(text),
+          });
+        } catch {
+          setError(t('assistant.fileNotSupported'));
+        }
+      }
+      if (picked.length) {
+        setAttachments((prev) => {
+          const merged = [...prev, ...picked];
+          if (merged.length > MAX_ATTACHMENTS) {
+            setError(t('assistant.fileTooMany'));
+            return merged.slice(0, MAX_ATTACHMENTS);
+          }
+          return merged;
+        });
+      }
+    },
+    [t]
+  );
+
+  /** Read an answer out loud (the button on every answer). */
+  const say = useCallback(
+    (message: PanelMessage) => {
+      const text = speakableText(message.text);
+      if (!text) return;
+      if (!speechSupported()) {
+        setError(t('assistant.voiceUnavailable'));
+        return;
+      }
+      speak(message.text, detectLanguage(message.text));
+    },
+    [t]
+  );
+
+  /** The voice-only mode — the user's own choice, kept on this computer. */
+  const toggleVoiceOnly = useCallback(() => {
+    setVoiceOnly((prev) => {
+      const next = !prev;
+      writeVoiceOnly(next);
+      if (!next) stopSpeaking();
+      return next;
+    });
   }, []);
 
   const copy = useCallback(async (message: PanelMessage) => {
@@ -326,6 +589,15 @@ export default function AssistantPanel({
       <div className="assistant-panel-head">
         <h2 className="assistant-panel-title">{t('assistant.title')}</h2>
         <div className="assistant-panel-head-actions">
+          <button
+            type="button"
+            className={`btn btn-sm${voiceOnly ? ' active' : ''}`}
+            aria-pressed={voiceOnly}
+            onClick={toggleVoiceOnly}
+            title={t('assistant.voiceOnlyHint')}
+          >
+            {t('assistant.voiceOnly')}
+          </button>
           <button type="button" className="btn btn-sm" onClick={clear} title={t('assistant.clearHistory')}>
             {t('assistant.clearHistory')}
           </button>
@@ -371,6 +643,20 @@ export default function AssistantPanel({
         )}
         {messages.map((message) => (
           <div key={message.id} className={`assistant-message assistant-message-${message.role}`}>
+            {message.attachments && message.attachments.length > 0 && (
+              <div className="assistant-message-attachments">
+                {message.attachments.map((file) => (
+                  <span key={file.id} className="assistant-attachment assistant-attachment-sent">
+                    {file.preview ? (
+                      <img src={file.preview} alt={file.name} className="assistant-attachment-thumb" />
+                    ) : (
+                      <span className="assistant-attachment-icon" aria-hidden="true">📄</span>
+                    )}
+                    <span className="assistant-attachment-name">{file.name}</span>
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="assistant-message-body">
               {message.role === 'assistant'
                 ? sanitizeMessage(message.text).map((block, index) => (
@@ -435,6 +721,16 @@ export default function AssistantPanel({
             {message.role === 'assistant' && !message.pending && (
               <div className="assistant-message-actions">
                 <button type="button" className="btn btn-xs" onClick={() => void copy(message)}>{t('assistant.copy')}</button>
+                {speechSupported() && (
+                  <button
+                    type="button"
+                    className="btn btn-xs assistant-speak"
+                    onClick={() => say(message)}
+                    title={t('assistant.speak')}
+                  >
+                    {t('assistant.speak')}
+                  </button>
+                )}
                 <button
                   type="button"
                   className={`btn btn-xs${feedback[message.id] === 'up' ? ' active' : ''}`}
@@ -480,30 +776,98 @@ export default function AssistantPanel({
       )}
 
       <div className="assistant-composer">
-        <textarea
-          ref={inputRef}
-          className="assistant-input"
-          value={input}
-          rows={2}
-          placeholder={t('assistant.placeholder')}
-          // The placeholder alone is not an accessible name — a screen reader
-          // must be able to say what this box is.
-          aria-label={t('assistant.placeholder')}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            // Enter sends, Shift+Enter makes a new line. The scanner's keys are
-            // untouched: this handler only sees the panel's own textarea.
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              void send(input);
-            }
-          }}
-        />
+        {attachments.length > 0 && (
+          <div className="assistant-attachments" role="list">
+            {attachments.map((file) => (
+              <span key={file.id} className="assistant-attachment" role="listitem">
+                {file.preview ? (
+                  <img src={file.preview} alt={file.name} className="assistant-attachment-thumb" />
+                ) : (
+                  <span className="assistant-attachment-icon" aria-hidden="true">📄</span>
+                )}
+                <span className="assistant-attachment-name">{file.name}</span>
+                <button
+                  type="button"
+                  className="assistant-attachment-remove"
+                  aria-label={`${t('assistant.removeAttachment')} ${file.name}`}
+                  onClick={() => setAttachments((prev) => prev.filter((f) => f.id !== file.id))}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        {recording && (
+          <div className="assistant-listening" role="status">
+            <span className="assistant-listening-dot" aria-hidden="true" />
+            {t('assistant.voiceListening')}
+          </div>
+        )}
+        <div className="assistant-input-row">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif,.txt,.csv,.json,.md,.log,.xml,.yml,.yaml,.ini"
+            multiple
+            className="assistant-file-input"
+            aria-label={t('assistant.attach')}
+            onChange={(e) => {
+              void attachFiles(e.target.files);
+              e.target.value = '';
+            }}
+          />
+          <button
+            type="button"
+            className="assistant-icon-btn"
+            onClick={() => fileInputRef.current?.click()}
+            title={t('assistant.attach')}
+            aria-label={t('assistant.attach')}
+          >
+            📎
+          </button>
+          <textarea
+            ref={inputRef}
+            className="assistant-input"
+            value={input}
+            rows={2}
+            placeholder={t('assistant.placeholder')}
+            // The placeholder alone is not an accessible name — a screen reader
+            // must be able to say what this box is.
+            aria-label={t('assistant.placeholder')}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter sends, Shift+Enter makes a new line. The scanner's keys are
+              // untouched: this handler only sees the panel's own textarea.
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                void send(input);
+              }
+            }}
+          />
+          {voiceSupport !== 'none' && (
+            <button
+              type="button"
+              className={`assistant-icon-btn assistant-mic${recording ? ' assistant-mic-active' : ''}`}
+              onClick={() => void listen()}
+              title={recording ? t('assistant.voiceStop') : t('assistant.voiceInput')}
+              aria-label={recording ? t('assistant.voiceStop') : t('assistant.voiceInput')}
+              aria-pressed={recording}
+            >
+              🎤
+            </button>
+          )}
+        </div>
         <div className="assistant-composer-actions">
           {busy ? (
             <button type="button" className="btn btn-primary" onClick={() => void stop()}>{t('assistant.stop')}</button>
           ) : (
-            <button type="button" className="btn btn-primary" disabled={!input.trim()} onClick={() => void send(input)}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={!input.trim() && attachments.length === 0}
+              onClick={() => void send(input)}
+            >
               {t('assistant.send')}
             </button>
           )}

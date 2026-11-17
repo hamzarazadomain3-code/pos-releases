@@ -449,6 +449,10 @@ const bridge: PosBridge = {
       optedOut === undefined
         ? ipcRenderer.invoke('assistant:optOut')
         : ipcRenderer.invoke('assistant:optOut', optedOut),
+    // The voice: the recorded audio goes to the app's own offline recogniser
+    // (it never leaves the computer) and the words come back.
+    transcribe: (wavBase64: string) => ipcRenderer.invoke('assistant:transcribe', wavBase64),
+    voiceSupport: () => ipcRenderer.invoke('assistant:voiceSupport'),
   },
   email: {
     send: (options: { to: string | string[]; subject: string; text?: string; html?: string }) => ipcRenderer.invoke('email:send', options),

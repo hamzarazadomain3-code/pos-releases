@@ -115,6 +115,20 @@ app.whenReady().then(async () => {
   initLogger();
   log(`App ready. packaged=${app.isPackaged} version=${app.getVersion()}`);
 
+  // The assistant's microphone. The app asks for the microphone only when the
+  // user presses the mic button, and the recording never leaves the computer
+  // (the app's own offline recogniser reads it). Every OTHER permission is
+  // refused — the app needs no camera, no location and no notifications.
+  try {
+    const { session } = require('electron');
+    session.defaultSession.setPermissionRequestHandler((_wc: unknown, permission: string, callback: (allow: boolean) => void) => {
+      callback(permission === 'media');
+    });
+    session.defaultSession.setPermissionCheckHandler((_wc: unknown, permission: string) => permission === 'media');
+  } catch (e) {
+    logError('microphone permission', e);
+  }
+
   // Kill orphan Chrome/Puppeteer processes from previous crashed/force-killed runs
   try {
     const { execSync } = require('node:child_process');

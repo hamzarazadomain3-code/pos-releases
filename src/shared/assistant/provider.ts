@@ -16,6 +16,7 @@ import type {
   ProviderRequest,
   ProviderResponse,
 } from './types';
+import { attachmentTextBlock, type AssistantAttachment } from './voice';
 
 /** The Anthropic Messages API version this adapter speaks. */
 export const ANTHROPIC_API_VERSION = '2023-06-01';
@@ -48,6 +49,98 @@ export const NVIDIA_TOOL_MODELS = [
 export const NVIDIA_DEFAULT_MODEL = 'nvidia/nemotron-3.5-lightning-30b-a3b';
 
 /**
+ * The NVIDIA models that can LOOK at a photo.
+ *
+ * The free tier serves 32 models, but only the vision-language ones read an
+ * image — the text models answer `400 "multimodal processing is not enabled"`.
+ * The vision model also calls the tools, so one model can do the whole job.
+ */
+export const NVIDIA_VISION_MODELS = [
+  'nvidia/nemotron-3.5-super-vl-120b-a12b',
+] as const;
+
+/** The model used for a question that carries a photo. */
+export const NVIDIA_VISION_MODEL = 'nvidia/nemotron-3.5-super-vl-120b-a12b';
+
+/**
+ * The vision models spend a lot of their tokens THINKING before they answer,
+ * so they need more room than the plain models — otherwise the answer is cut
+ * off half way through the reasoning.
+ */
+export const VISION_OUTPUT_TOKEN_FLOOR = 2048;
+
+/** Can this model look at a photo? */
+export function modelSupportsVision(provider: AssistantProvider, model: string): boolean {
+  const id = String(model || '').trim().toLowerCase();
+  if (!id) return false;
+  // Every Claude model the assistant can pick reads images.
+  if (provider === 'anthropic') return true;
+  if ((NVIDIA_VISION_MODELS as readonly string[]).includes(id)) return true;
+  return /(^|[-/_])(vl|vision|llava|omni)([-/_]|$)/.test(id);
+}
+
+/**
+ * The model that must be used when a photo is attached.
+ *
+ * `null` means "the shop's own model already sees photos" (Anthropic), so
+ * nothing has to be changed.
+ */
+export function visionModelFor(provider: AssistantProvider, model: string): string | null {
+  if (modelSupportsVision(provider, model)) return null;
+  if (provider === 'anthropic') return null;
+  return NVIDIA_VISION_MODEL;
+}
+
+/** The output-token budget for a model (the vision models need more room). */
+export function maxOutputTokensFor(model: string, base: number): number {
+  const id = String(model || '').trim().toLowerCase();
+  if (id.includes('-vl-') || id.includes('vision')) return Math.max(base, VISION_OUTPUT_TOKEN_FLOOR);
+  return base;
+}
+
+/**
+ * The OpenAI-compatible content blocks for the files a user attached.
+ *
+ * A photo becomes an `image_url` part with the data URL (that is the shape
+ * NVIDIA's API reads); a text file becomes a text part with its words — the
+ * model then knows the file is DATA and never an instruction.
+ */
+export function openAiAttachmentBlocks(attachments: AssistantAttachment[]): Record<string, unknown>[] {
+  const blocks: Record<string, unknown>[] = [];
+  for (const attachment of attachments ?? []) {
+    if (attachment.kind === 'image') {
+      blocks.push({
+        type: 'image_url',
+        image_url: { url: `data:${attachment.mediaType || 'image/png'};base64,${attachment.data}` },
+      });
+      continue;
+    }
+    blocks.push({ type: 'text', text: attachmentTextBlock(attachment) });
+  }
+  return blocks;
+}
+
+/** The Anthropic content blocks for the files a user attached. */
+export function anthropicAttachmentBlocks(attachments: AssistantAttachment[]): Record<string, unknown>[] {
+  const blocks: Record<string, unknown>[] = [];
+  for (const attachment of attachments ?? []) {
+    if (attachment.kind === 'image') {
+      blocks.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: attachment.mediaType || 'image/png',
+          data: attachment.data,
+        },
+      });
+      continue;
+    }
+    blocks.push({ type: 'text', text: attachmentTextBlock(attachment) });
+  }
+  return blocks;
+}
+
+/**
  * The OpenAI-compatible chat-completions body for one request.
  *
  * The tool definitions become `tools: [{type: 'function', function: {...}}]`,
@@ -76,6 +169,15 @@ export function buildOpenAiBody(request: ProviderRequest): Record<string, unknow
           type: 'function',
           function: { name: c.name, arguments: JSON.stringify(c.input ?? {}) },
         })),
+      });
+      continue;
+    }
+    // A question with files attached carries a content ARRAY: the words first,
+    // then the photo (or the file's text).
+    if (m.role === 'user' && m.attachments && m.attachments.length > 0) {
+      messages.push({
+        role: 'user',
+        content: [{ type: 'text', text: m.content }, ...openAiAttachmentBlocks(m.attachments)],
       });
       continue;
     }
@@ -354,6 +456,14 @@ export function buildAnthropicBody(request: ProviderRequest): Record<string, unk
         blocks.push({ type: 'tool_use', id: call.id, name: call.name, input: call.input });
       }
       return { role: 'assistant', content: blocks };
+    }
+    // A question with files attached carries a content ARRAY: the words first,
+    // then the photo (or the file's text).
+    if (m.role === 'user' && m.attachments && m.attachments.length > 0) {
+      return {
+        role: 'user',
+        content: [{ type: 'text', text: m.content }, ...anthropicAttachmentBlocks(m.attachments)],
+      };
     }
     return { role: m.role, content: m.content };
   });

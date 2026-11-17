@@ -14,6 +14,10 @@ export type AssistantRole = 'owner' | 'manager' | 'cashier';
 /** The waiting actions (the pending-action model). */
 export type { AssistantPendingRow, AssistantPendingStatus } from './pending';
 
+/** The voice + attachment helpers (the pure half of the voice/photo feature). */
+import type { AssistantAttachment } from './voice';
+export type { AssistantAttachment, AssistantAttachmentKind } from './voice';
+
 /** The language the assistant answers in. `auto` follows the shop's language. */
 export type AssistantLanguage = 'auto' | 'en' | 'ur' | 'roman';
 
@@ -103,6 +107,12 @@ export interface AssistantMessage {
   toolCalls?: AssistantToolCall[];
   /** The tool name on a `tool` message. */
   name?: string;
+  /**
+   * The files the user attached to THIS message (a photo the model can look at,
+   * or a text file whose words go into the prompt). Only a `user` message has
+   * them, and they are never written to the history on disk.
+   */
+  attachments?: AssistantAttachment[];
 }
 
 export interface ProviderRequest {
@@ -218,6 +228,31 @@ export interface AssistantTurnRequest {
   route?: string | null;
   /** The conversation so far (the model-facing messages). */
   history?: AssistantMessage[];
+  /**
+   * The files the user attached to this question (a photo the model can look
+   * at, or a text file). They travel with the question and are never stored.
+   */
+  attachments?: AssistantAttachment[];
+}
+
+/** What the speech recogniser said. */
+export interface AssistantTranscriptionResult {
+  ok: boolean;
+  /** The words it heard (empty when it heard nothing). */
+  text: string;
+  /** Why it failed (in plain words, for the user). */
+  message?: string;
+}
+
+/** What this computer can do with the voice. */
+export interface AssistantVoiceSupport {
+  /**
+   * The speech recogniser: 'windows' (the app's own offline recogniser),
+   * 'browser' (the web build uses the browser's own) or 'none'.
+   */
+  stt: 'windows' | 'browser' | 'none';
+  /** True when the answer can be read out loud. */
+  tts: boolean;
 }
 
 /** A write tool's proposal — the user has to confirm it before it happens. */

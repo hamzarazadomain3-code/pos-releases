@@ -112,6 +112,9 @@ const resolveAliases = [
   { filter: /^\.\.\/generated\/supportKey$/, path: shim('supportKey.ts') },
   { filter: /^\.\/licensing$/, path: shim('licensing.ts') },
   { filter: /^(node:)?fs$/, path: shim('fs.ts') },
+  // `node:fs/promises` is the same inert shim (the assistant's offline voice
+  // writes a temporary WAV — a Worker never does that, so it stays a no-op).
+  { filter: /^node:fs\/promises$/, path: shim('fs.ts') },
   { filter: /^(node:)?os$/, path: shim('os.ts') },
   { filter: /^(node:)?path$/, path: shim('path.ts') },
   { filter: /^(node:)?child_process$/, path: shim('child_process.ts') },

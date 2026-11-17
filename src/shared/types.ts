@@ -8,8 +8,10 @@ import type {
   AssistantRole,
   AssistantSettingsPatch,
   AssistantSettingsView,
+  AssistantTranscriptionResult,
   AssistantTurnRequest,
   AssistantTurnResponse,
+  AssistantVoiceSupport,
 } from './assistant/types';
 import type { ProactiveSuggestion } from './assistant/proactive';
 import type {
@@ -1805,6 +1807,14 @@ export interface PosBridge {
      * this account. A user may only decide for themselves.
      */
     optOut: (optedOut?: boolean) => Promise<{ optedOut: boolean; userId: number | null }>;
+    /**
+     * What the user SAID — the recorded WAV (base64) goes to the app's own
+     * offline recogniser and the words come back. The audio never leaves the
+     * computer.
+     */
+    transcribe: (wavBase64: string) => Promise<AssistantTranscriptionResult>;
+    /** What this computer can do with the voice. */
+    voiceSupport: () => Promise<AssistantVoiceSupport>;
   };
   email: {
     send: (options: { to: string | string[]; subject: string; text?: string; html?: string }) => Promise<{ ok: boolean; message: string }>;

@@ -68,6 +68,7 @@ import { resolveAssistantApiKey } from './services/assistant/settings';
 import { listAssistantActivity } from './services/assistant/activity';
 import { cancelAssistantTurn, confirmAssistantAction, cancelAssistantAction, assistantPendingActions, runAssistantTurn } from './services/assistant/agent';
 import { getProactiveSuggestions } from './services/assistant/proactive';
+import { transcribeWav, voiceSupport } from './services/assistant/voice';
 import {
   printLabel,
   printBarcodeLabel,
@@ -464,6 +465,12 @@ export function registerIpcHandlers(): void {
     // variable — the resolver knows, the renderer never sees it.
     return testAssistantConnection(resolveAssistantApiKey(view.provider), view.model, { provider: view.provider });
   });
+  // The voice: the recorded WAV goes to the app's own OFFLINE recogniser on
+  // this computer. The audio never leaves the PC and no key is needed.
+  ipcMain.handle('assistant:transcribe', (_e, wavBase64: unknown) =>
+    transcribeWav(String(wavBase64 ?? ''))
+  );
+  ipcMain.handle('assistant:voiceSupport', () => voiceSupport());
 
   // --- BayLan Label Scale barcode handlers ---
   ipcMain.handle('scaleBarcode:parse', (_e, barcode: string) => parseBayLanBarcode(barcode));
