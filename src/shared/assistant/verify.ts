@@ -23,8 +23,13 @@ const URDU_GROUP = '[\\u066C\\u060C,]';
 /** The Urdu decimal separator (٫). */
 const URDU_DECIMAL = '\\u066B';
 
-/** Latin digits: 12,500 / 12500 / 12.50 / 1,234.56 */
-const LATIN_NUMBER_RE = /\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g;
+/**
+ * Latin digits: 12,500 / 12500 / 12.50 / 1,234.56 — and the space-separated
+ * form a model sometimes writes ("91 600", also with a non-breaking space).
+ * Without it a correct "91 600" was read as TWO numbers ("91" and "600"),
+ * neither of which is in the tool data, so a right answer was refused.
+ */
+const LATIN_NUMBER_RE = /\d{1,3}(?:[,\u00A0\u202F ]\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g;
 /**
  * The same, written in Urdu digits with the Urdu separators.
  *
@@ -37,6 +42,23 @@ const URDU_NUMBER_RE = new RegExp(
 );
 
 /**
+ * The month names — for the everyday date forms ("17 November", "November 17").
+ * The day's number is not a shop figure, so it must never be checked.
+ */
+const MONTH = '(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*';
+
+/**
+ * The hyphens a date may use: '-' and the typographic / non-breaking ones
+ * (U+2010–U+2012). A model that writes "2026‑11‑17" with a non-breaking hyphen
+ * must not have the "17" checked as a shop figure.
+ */
+const DATE_HYPHEN = '\\u2010\\u2011\\u2012-';
+/** The separators of a numeric date: '/', '.', and the hyphens above. */
+const DATE_SEP = '/.\\u2010\\u2011\\u2012-';
+/** A dash between two days: the hyphens above plus the en/em dash. */
+const RANGE_DASH = '\\u2010\\u2011\\u2012\\u2013\\u2014-';
+
+/**
  * The numbers that are NOT shop data and must never be checked: a list
  * marker ("1."), a shortcut ("F1", "Ctrl+2"), a date, a time, a version or a
  * step number ("Step 2"). Without this the assistant would be told off for
@@ -45,12 +67,29 @@ const URDU_NUMBER_RE = new RegExp(
  * An identifier ("INV-2026-0042", "RET-20260116-0003") and a reference ("bill
  * #12") are stripped too: they are names, not figures, and a false alarm
  * would block a correct answer.
+ *
+ * The DATES matter most: a correct answer that says "from 11/11/2026 to
+ * 11/17/2026" was being refused because the day's numbers ("11", "17") are
+ * not in the tool's data. The everyday date forms are stripped too, so a
+ * right answer is never blocked by the way it writes the date.
  */
 const NON_DATA_PATTERNS: RegExp[] = [
   /^\s*\d{1,2}[.)]\s+/gm, // a list marker at the start of a line
+  /\b\d{1,2}(?:st|nd|rd|th)\b/gi, // a day of the month ("on the 17th")
   /\b(?:Ctrl|Alt|Shift|Control|Cmd|Command|Option|F)\+?\d{1,2}\b/gi, // a shortcut
   /\bv?\d+\.\d+\.\d+\b/gi, // a version number
-  /\b\d{4}-\d{2}-\d{2}\b/g, // a date
+  new RegExp(`\\b\\d{4}[${DATE_HYPHEN}]\\d{2}[${DATE_HYPHEN}]\\d{2}\\b`, 'g'), // a date (ISO), any hyphen
+  // A range that ends in a month: "15 to 17 November", "15 - 17 November",
+  // "15 and 17 November". It comes FIRST, so the day's numbers go with it.
+  new RegExp(`\\b\\d{1,2}\\s*(?:to|and|[${RANGE_DASH}])\\s*\\d{1,2}\\s+${MONTH}\\.?\\b`, 'gi'),
+  // "17 November", "17 Nov."
+  new RegExp(`\\b\\d{1,2}\\s+${MONTH}\\.?\\b`, 'gi'),
+  // "November 17", "November 17, 2026"
+  new RegExp(`\\b${MONTH}\\.?\\s+\\d{1,2}(?:,\\s*\\d{4})?\\b`, 'gi'),
+  // "November 2026"
+  new RegExp(`\\b${MONTH}\\.?\\s+\\d{4}\\b`, 'gi'),
+  // "11/11/2026", "11.11.2026", "11‑11‑2026" — the numeric date
+  new RegExp(`\\b\\d{1,2}[${DATE_SEP}]\\d{1,2}[${DATE_SEP}]\\d{2,4}\\b`, 'g'),
   /\b\d{1,2}:\d{2}\b/g, // a time
   /\b(?:step|page|section|level|part|way)\s+\d{1,3}\b/gi, // "Step 2", "page 3"
   /\b[A-Z]{2,}[-_][A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*\b/g, // an identifier

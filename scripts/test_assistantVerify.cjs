@@ -109,6 +109,63 @@ async function run() {
   check('a date is not a number', !verify.extractNumbers('on 2026-11-16 we sold', 'en').includes('2026'));
   check('a version is not a number', !verify.extractNumbers('version 2.18.0 is out', 'en').includes('2.18.0'));
   check('a step number is not a number', !verify.extractNumbers('Step 2 of the guide', 'en').includes('2'));
+  // A DATE in the everyday forms: the day's numbers are not shop figures, and
+  // a correct answer must never be blocked by the way it writes the date.
+  check(
+    'a numeric date is not a number',
+    verify.extractNumbers('From 11/11/2026 to 11/17/2026 we sold', 'en').length === 0,
+    JSON.stringify(verify.extractNumbers('From 11/11/2026 to 11/17/2026 we sold', 'en'))
+  );
+  check(
+    'a dotted date is not a number',
+    verify.extractNumbers('on 11.11.2026 we sold', 'en').length === 0
+  );
+  check(
+    'a day with a month name is not a number',
+    verify.extractNumbers('on 17 November we sold', 'en').length === 0
+  );
+  check(
+    'a month name with a day is not a number',
+    verify.extractNumbers('November 17, 2026: we sold', 'en').length === 0,
+    JSON.stringify(verify.extractNumbers('November 17, 2026: we sold', 'en'))
+  );
+  check(
+    'a month with a year is not a number',
+    verify.extractNumbers('November 2026 was good', 'en').length === 0
+  );
+  check(
+    'a range of days is not a number',
+    verify.extractNumbers('Between 15 and 17 November we sold', 'en').length === 0,
+    JSON.stringify(verify.extractNumbers('Between 15 and 17 November we sold', 'en'))
+  );
+  check(
+    'a range of days with "to" is not a number',
+    verify.extractNumbers('from 15 to 17 November we sold', 'en').length === 0
+  );
+  check(
+    'the real figure next to a date is still checked',
+    verify.extractNumbers('From 11/11/2026 to 11/17/2026, the total was 91,600', 'en').join(',') === '91,600',
+    JSON.stringify(verify.extractNumbers('From 11/11/2026 to 11/17/2026, the total was 91,600', 'en'))
+  );
+  check(
+    'a number with a space separator is ONE number',
+    verify.extractNumbers('Total sales: 91 600', 'en').join(',') === '91 600',
+    JSON.stringify(verify.extractNumbers('Total sales: 91 600', 'en'))
+  );
+  check(
+    'a number with a non-breaking space is ONE number',
+    verify.normaliseNumber(verify.extractNumbers('Total sales: 91\u00a0600', 'en')[0]) === '91600',
+    JSON.stringify(verify.extractNumbers('Total sales: 91\u00a0600', 'en'))
+  );
+  check(
+    'a non-breaking-hyphen date is not a number',
+    verify.extractNumbers('From 2026\u201111\u201111 to 2026\u201111\u201117 we sold', 'en').length === 0,
+    JSON.stringify(verify.extractNumbers('From 2026\u201111\u201111 to 2026\u201111\u201117 we sold', 'en'))
+  );
+  check(
+    'a day of the month ("the 17th") is not a number',
+    verify.extractNumbers('on the 17th we sold', 'en').length === 0
+  );
 
   // ── 2. the comparison ─────────────────────────────────────────────────────
   section('The comparison with the tool results');
@@ -126,6 +183,9 @@ async function run() {
 
   const rounded = verify.verifyReply('The sale was 1,235 (a rounded figure).', toolResults, 'en');
   check('a whole-unit rounding of a tool value passes', rounded.ok === true, JSON.stringify(rounded.unverified));
+
+  const spaced = verify.verifyReply('The 7-day total was 91 600.', [{ total: 91600, days: 7 }], 'en');
+  check('a space-separated figure matches the tool value', spaced.ok === true, JSON.stringify(spaced.unverified));
 
   const listLength = verify.verifyReply('There are 2 products.', toolResults, 'en');
   check('the length of a returned list counts as a number', listLength.ok === true, JSON.stringify(listLength.unverified));
