@@ -2280,3 +2280,91 @@ suites cannot: that the SCREENS really render it.
    the write actions work only when the **actions** switch is on; and turning the
    assistant off in Settings stops every turn at once — nothing is read and no provider
    is called.
+
+## NVIDIA provider run — the PC's own key (2026-11-17)
+
+The owner asked for the assistant to use the NVIDIA API key that is already on this
+PC. The key was found in the computer's **user environment** (`NVIDIA_API_KEY`, the
+same value as `NVIDIA_INFERENCE_API_KEY`; `OPENAI_API_KEY` holds a different
+`nvapi-…` key). The value was **never printed, logged, committed or sent to the
+model** — only the variable's NAME, the `nvapi-` prefix and the last four characters
+were used while wiring it. The endpoint answered `GET /v1/models` with HTTP 200 (32
+models), and three models really called tools: `nvidia/nemotron-3.5-lightning-30b-a3b`
+(the default), `openai/gpt-oss-20b` and `nvidia/nemotron-3-ultra-550b-a55b`.
+
+### What changed
+
+- **A second provider.** `assistant_provider = anthropic | nvidia`
+  (migration `087_assistant_provider.js` seeds `anthropic`, so an existing install
+  changes nothing). `OpenAiCompatibleProvider` talks to
+  `https://integrate.api.nvidia.com/v1/chat/completions` with the key in
+  `Authorization: Bearer`; the **same** agent loop, tools, confirmation cards and
+  number checks run unchanged.
+- **The key can stay in the environment.** The saved key wins; otherwise the
+  provider's own variable is read (`NVIDIA_API_KEY` / `NVIDIA_INFERENCE_API_KEY`, or
+  `ANTHROPIC_API_KEY`). The renderer only ever learns `keySet`, the last four
+  characters and the **name** of the variable — never the key.
+- **Admin → Assistant** gets a provider picker, the verified tool models as one-tap
+  buttons, the key-source line and the free-tier note (an NVIDIA call estimates
+  **0 USD**, so the daily cap does not bite; the rate limit and the tool limits still
+  do).
+- **The web build** marks the key as a **server** secret (the Worker holds it); the
+  browser never has it.
+- **A turn that runs out of turns** without an answer now says so instead of
+  returning an empty reply.
+
+### Verified live on this PC
+
+```
+npm run eval:assistant:live -- --live --provider nvidia --model nvidia/nemotron-3.5-lightning-30b-a3b
+```
+
+The real key, the real shop database, the key never printed: **6/7 cases pass**
+(`today_sale`, `low_stock`, `overdue_udhaar`, `shift_status`,
+`below_cost_is_manager_only`, `a_guide_is_offered_not_played`). The one miss is an
+ambiguous question — *"What is this product called?"* — which the model answers with
+*"Which product are you asking about?"* instead of calling `get_product`: a
+clarifying question, **no write ran and no forbidden tool was called**. For
+comparison, `openai/gpt-oss-20b` scored 4/7 and `nvidia/nemotron-3-ultra-550b-a55b`
+6/7 (same miss). A real turn on the shop's own database answered a sales question
+from the real tool data.
+
+### Two false alarms the live run exposed (fixed, `95e0701`)
+
+The number check was refusing **correct** answers because the day part of a date was
+treated as a shop figure:
+
+| The model wrote | Was read as | Now |
+| --- | --- | --- |
+| `2026‑11‑17` (a non-breaking hyphen) | `2026`, `11`, `17` | the whole date is stripped |
+| `91 600` (a space as the thousands separator) | `91` **and** `600` | one number (`91600`) |
+| `on the 17th` | `17` | a day of the month, stripped |
+
+`test:assistantVerify` is **74/74** (was 61/61) and the date forms are pinned by
+permanent checks. The empty-answer guard is covered too (`test:assistantAgent`
+**55/55**).
+
+### This PC is already set up
+
+The shop's own database (`%APPDATA%\pos-app\pos.db`) was migrated with the app's own
+runner (which makes its pre-migration backup first) and set to:
+
+| Setting | Value |
+| --- | --- |
+| `assistant_provider` | `nvidia` |
+| `assistant_model` | `nvidia/nemotron-3.5-lightning-30b-a3b` |
+| `assistant_enabled` | **1** (the owner asked for it; turn it off in Admin → Assistant to stop every turn) |
+| `assistant_actions_enabled` | `0` (no writes until the owner turns them on) |
+| `assistant_proactive_enabled` | `0` (no proactive cards) |
+| `assistant_api_key` | empty — the app reads `NVIDIA_API_KEY` from the environment |
+
+The installed app is still the **old** build, so these settings take effect after the
+desktop **rebuild + reinstall**. Nothing was pushed and the version stays `2.28.0`.
+
+### Final numbers
+
+**16 suites, 1078 checks, all green** — Provider 77/77, Settings 47/47, Tools 101/101,
+Agent 55/55, Panel 49/49, Verify 74/74, Guide 80/80, Pending 54/54, BillActions 61/61,
+BackOffice 88/88, Proactive 48/48, Eval 81/81 (12 cases), Privacy 72/72, NVIDIA 93/93,
+A11y 73/73, UI 25/25. Typecheck main+renderer **exit 0**, `npm run build` **exit 0**.
+Proof: `E:\temp\proof\a16_*.txt`.
