@@ -98,8 +98,15 @@ export function cancelAssistantTurn(): boolean {
  *
  * The kill switch, the role gate and the rate limit are checked BEFORE the
  * provider is called, so a disabled assistant never reaches the network.
+ *
+ * `options.apiKey` exists for the WEB: the Worker holds the provider key as a
+ * secret binding and passes it to the shop's own Durable Object, so the browser
+ * never has it and it is never written to the shop's database.
  */
-export async function runAssistantTurn(request: AssistantTurnRequest): Promise<AssistantTurnResponse> {
+export async function runAssistantTurn(
+  request: AssistantTurnRequest,
+  options: { apiKey?: string } = {}
+): Promise<AssistantTurnResponse> {
   const settings = getAssistantSettings();
   const emptyUsage: AssistantUsage = { inputTokens: 0, outputTokens: 0, costUsd: 0, calls: 0 };
 
@@ -193,7 +200,10 @@ export async function runAssistantTurn(request: AssistantTurnRequest): Promise<A
 
   try {
     const result = await runAgentTurn({
-      adapter: createProviderForSettings({ language: settings.language === 'auto' ? 'en' : settings.language }),
+      adapter: createProviderForSettings({
+        apiKey: options.apiKey,
+        language: settings.language === 'auto' ? 'en' : settings.language,
+      }),
       model: settings.model,
       provider: settings.provider,
       system,

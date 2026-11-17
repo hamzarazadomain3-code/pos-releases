@@ -31,12 +31,23 @@ export function getAssistantProviderOverride(): ProviderAdapter | null {
  * without a rebuild.
  */
 export function createProviderForSettings(
-  options: { timeoutMs?: number; language?: AssistantLanguage; fetchImpl?: typeof fetch } = {}
+  options: {
+    timeoutMs?: number;
+    language?: AssistantLanguage;
+    fetchImpl?: typeof fetch;
+    /**
+     * The key the SERVER holds (the web Worker passes its `ASSISTANT_API_KEY`
+     * secret binding). When it is given it wins over the shop's saved key and
+     * over the environment — and it still never leaves the server.
+     */
+    apiKey?: string;
+  } = {}
 ): ProviderAdapter {
   if (providerOverride) return providerOverride;
   const settings = getAssistantSettings();
+  const apiKey = (options.apiKey ?? '').trim() || resolveAssistantApiKey(settings.provider);
   return createAssistantProvider({
-    apiKey: resolveAssistantApiKey(settings.provider),
+    apiKey,
     model: settings.model,
     provider: settings.provider,
     timeoutMs: options.timeoutMs ?? 60_000,

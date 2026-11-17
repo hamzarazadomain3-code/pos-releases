@@ -319,7 +319,7 @@ export async function handleAssistant(env: Env, request: Request): Promise<Respo
     headers: { 'content-type': 'application/json' },
     // The key travels server-to-server (Worker → the shop's own Durable
     // Object). It is never sent to the browser.
-    body: JSON.stringify({ op, apiKey, payload: body.payload ?? null }),
+    body: JSON.stringify({ op, apiKey, sessionUser: session.user_id, payload: body.payload ?? null }),
   });
   const result = (await res.json().catch(() => null)) as { ok?: boolean; data?: unknown; error?: string } | null;
   if (!result || !result.ok) {

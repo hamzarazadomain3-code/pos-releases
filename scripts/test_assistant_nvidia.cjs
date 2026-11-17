@@ -53,6 +53,7 @@ async function run() {
   const auth = require('../dist/main/services/auth.js');
   const shared = require('../dist/shared/assistant/provider.js');
   const providerService = require('../dist/main/services/assistant/provider.js');
+  const providerServiceRuntime = require('../dist/main/services/assistant/runtime.js');
   const settingsService = require('../dist/main/services/assistant/settings.js');
   const sharedSettings = require('../dist/shared/assistant/settings.js');
   const en = require('../src/renderer/src/i18n/en.json');
@@ -230,6 +231,42 @@ async function run() {
     unauthorized && unauthorized.failure.message.includes('API key'),
     unauthorized && unauthorized.failure.message
   );
+
+  // ── 3b. the web path (the Worker holds the key) ────────────────────────
+  section('The web path (the Worker holds the key)');
+  settingsService.saveAssistantSettings({ provider: 'nvidia' });
+  const webCalls = [];
+  const webProvider = providerServiceRuntime.createProviderForSettings({
+    apiKey: 'nvapi-SERVER-SIDE-TEST',
+    language: 'en',
+    fetchImpl: async (url, init) => {
+      webCalls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: 'ok' } }] }),
+      };
+    },
+  });
+  check('the web provider follows the shop setting', webProvider.id === 'nvidia', webProvider.id);
+  await webProvider.send(request);
+  check(
+    'the key the Worker holds is the one used',
+    webCalls[0].init.headers.authorization === 'Bearer nvapi-SERVER-SIDE-TEST'
+  );
+  check('the Worker-held key is NOT in the body', !String(webCalls[0].init.body).includes('nvapi-SERVER-SIDE-TEST'));
+  // The web plumbing: the browser sends the turn to the secret route, the
+  // Worker passes the shop's user, and the shop object runs the real turn with
+  // the key it was handed (server to server).
+  const shopObjectSource = fs.readFileSync(path.join(PROJECT_ROOT, 'cloud/src/shop-object.ts'), 'utf8');
+  check(
+    'the shop object runs the real turn with the key it was handed',
+    shopObjectSource.includes('runAssistantTurn(payload, { apiKey })')
+  );
+  const accountsSource = fs.readFileSync(path.join(PROJECT_ROOT, 'cloud/src/accounts.ts'), 'utf8');
+  check('the Worker passes the signed-in user to the shop object', accountsSource.includes('sessionUser: session.user_id'));
+  const browserSource = fs.readFileSync(path.join(PROJECT_ROOT, 'cloud/web/electron-browser.ts'), 'utf8');
+  check('the browser sends the turn to the secret route', browserSource.includes("webAssistant('send'"));
 
   // ── 4. the settings + the key in the environment ────────────────────────
   section('The provider setting and the key');

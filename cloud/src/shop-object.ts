@@ -24,7 +24,9 @@ import { json } from './http';
 import * as auth from '../../src/main/services/auth';
 import * as settings from '../../src/main/services/settings';
 import { getAssistantSettings, getAssistantSettingsView } from '../../src/main/services/assistant/settings';
+import { runAssistantTurn } from '../../src/main/services/assistant/agent';
 import { testAssistantConnection } from '../../src/main/services/assistant/runtime';
+import type { AssistantTurnRequest } from '../../src/shared/assistant/types';
 import type { Env } from './env';
 
 interface BootstrapBody {
@@ -137,14 +139,15 @@ export class ShopObject {
    * is on at all.
    */
   private async handleAssistant(db: SqliteCompat, request: Request): Promise<Response> {
-    let body: { op?: unknown; apiKey?: unknown; payload?: unknown };
+    let body: { op?: unknown; apiKey?: unknown; payload?: unknown; sessionUser?: unknown };
     try {
-      body = (await request.json()) as { op?: unknown; apiKey?: unknown; payload?: unknown };
+      body = (await request.json()) as { op?: unknown; apiKey?: unknown; payload?: unknown; sessionUser?: unknown };
     } catch {
       return json({ ok: false, error: 'Invalid JSON body' }, 400);
     }
     const op = typeof body.op === 'string' ? body.op : 'testConnection';
     const apiKey = typeof body.apiKey === 'string' ? body.apiKey : '';
+    const sessionUser = typeof body.sessionUser === 'number' ? body.sessionUser : null;
     try {
       setWebDb(db);
       if (op === 'status') {
@@ -155,6 +158,20 @@ export class ShopObject {
         if (!settings.enabled) return json({ ok: false, error: 'disabled' }, 403);
         const result = await testAssistantConnection(apiKey, settings.model);
         return json({ ok: true, data: result });
+      }
+      if (op === 'send') {
+        // The real turn: the Worker's secret key is handed in here (server to
+        // server) and used for this request only — it is never stored in the
+        // shop's database and never reaches the browser.
+        if (sessionUser === null) return json({ ok: false, error: 'Not signed in' }, 401);
+        const payload = (body.payload ?? { message: '' }) as AssistantTurnRequest;
+        auth.setSessionUser(sessionUser);
+        try {
+          const result = await runAssistantTurn(payload, { apiKey });
+          return json({ ok: true, data: result });
+        } finally {
+          auth.setSessionUser(null);
+        }
       }
       return json({ ok: false, error: 'Unknown assistant operation' }, 400);
     } catch (e) {

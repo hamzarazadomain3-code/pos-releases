@@ -379,6 +379,10 @@ async function webInvoke(channel: string, ...args: unknown[]): Promise<unknown> 
     }
     case 'assistant:testConnection':
       return webAssistant('testConnection', {});
+    // The real turn: the Worker holds the key and runs the turn inside the
+    // shop's Durable Object — the browser never carries the key.
+    case 'assistant:send':
+      return webAssistant('send', (args[0] ?? { message: '' }) as Record<string, unknown>);
     case 'assistant:setKey':
       return {
         keySet: false,
