@@ -390,6 +390,21 @@ async function webInvoke(channel: string, ...args: unknown[]): Promise<unknown> 
         message:
           'In the browser version the assistant key lives on the server (wrangler secret put ASSISTANT_API_KEY) — it is never stored in the shop.',
       };
+    // The VOICE in the browser: there is no Windows recogniser here, so the
+    // BROWSER'S own speech recognition does the listening (Chrome and Edge
+    // have it). The audio never reaches the server — it never leaves the
+    // browser at all.
+    case 'assistant:voiceSupport':
+      return { stt: 'browser', tts: true };
+    case 'assistant:transcribe':
+      // Never called in the browser (the browser listens by itself) — but if
+      // it ever is, it must fail politely instead of shipping the audio to
+      // the server.
+      return {
+        ok: false,
+        text: '',
+        message: 'The browser listens by itself — the recording never leaves this computer.',
+      };
     // Handled in the browser: there is no Electron main process here.
     case 'app:get-version':
       return WEB_VERSION;

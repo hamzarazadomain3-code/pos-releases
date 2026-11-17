@@ -363,6 +363,30 @@ async function run() {
   const extraResources = packageJson.build.extraResources.map((r) => r.from);
   check('the packaged app carries the recogniser', extraResources.includes('resources/voice'), extraResources.join(','));
 
+  // The web build: the browser listens by itself, and the audio never travels.
+  const webSource = fs.readFileSync(path.join(PROJECT_ROOT, 'cloud/web/electron-browser.ts'), 'utf8');
+  check('the web build answers what the voice can do', webSource.includes("'assistant:voiceSupport'"));
+  check('the web build uses the browser recogniser', webSource.includes("stt: 'browser'"));
+  check('the web build never sends the recording to the server', webSource.includes("'assistant:transcribe'"));
+  check(
+    'the web build refuses the recording politely',
+    webSource.includes('The browser listens by itself')
+  );
+  const voiceServiceSource = fs.readFileSync(
+    path.join(PROJECT_ROOT, 'src/main/services/assistant/voice.ts'),
+    'utf8'
+  );
+  check(
+    'the voice service survives a place with no filesystem',
+    voiceServiceSource.includes("typeof process !== 'undefined'") &&
+      voiceServiceSource.includes("typeof __dirname !== 'undefined'")
+  );
+  const panelSource2 = panelSource;
+  check(
+    'the panel falls back to the browser recogniser',
+    panelSource2.includes("voiceSupport === 'browser'")
+  );
+
   // ── 9. the strings ──────────────────────────────────────────────────────
   section('The strings');
   const keys = [

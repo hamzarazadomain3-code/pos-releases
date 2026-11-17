@@ -32,14 +32,31 @@ const RECOGNISE_TIMEOUT_MS = 30_000;
  * A PACKED app keeps its extra resources next to the executable
  * (`resources/voice/transcribe.ps1`); a development run finds them in the
  * project folder.
+ *
+ * The lookup is DEFENSIVE on purpose: this file is also bundled into the
+ * Cloudflare Worker (the web build), where there is no `process.resourcesPath`
+ * and no `__dirname` — the function must answer "not here" instead of
+ * throwing.
  */
 export function transcribeScriptPath(): string | null {
-  const candidates = [
-    // The packed app: `<resources>/voice/transcribe.ps1`.
-    process.resourcesPath ? join(process.resourcesPath, 'voice', 'transcribe.ps1') : '',
+  const candidates: string[] = [];
+  try {
+    const resourcesPath =
+      typeof process !== 'undefined'
+        ? (process as unknown as { resourcesPath?: string }).resourcesPath
+        : undefined;
+    if (resourcesPath) candidates.push(join(resourcesPath, 'voice', 'transcribe.ps1'));
+  } catch {
+    /* not a Node/Electron process */
+  }
+  try {
     // The development run: `dist/main/services/assistant` → the project root.
-    resolve(__dirname, '..', '..', '..', '..', 'resources', 'voice', 'transcribe.ps1'),
-  ].filter(Boolean);
+    if (typeof __dirname !== 'undefined') {
+      candidates.push(resolve(__dirname, '..', '..', '..', '..', 'resources', 'voice', 'transcribe.ps1'));
+    }
+  } catch {
+    /* not a Node/Electron process */
+  }
   for (const candidate of candidates) {
     try {
       if (existsSync(candidate)) return candidate;
