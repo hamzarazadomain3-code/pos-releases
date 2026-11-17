@@ -2358,8 +2358,28 @@ runner (which makes its pre-migration backup first) and set to:
 | `assistant_proactive_enabled` | `0` (no proactive cards) |
 | `assistant_api_key` | empty — the app reads `NVIDIA_API_KEY` from the environment |
 
-The installed app is still the **old** build, so these settings take effect after the
-desktop **rebuild + reinstall**. Nothing was pushed and the version stays `2.28.0`.
+The installed app was rebuilt (fresh portable at `E:\antigravty\Rokar POS\Rokar POS.exe`,
+built 2026‑11‑17 23:29). On next launch it will pick up `NVIDIA_API_KEY` from the
+environment and run with the NVIDIA provider. Nothing was pushed and the version
+stays `2.28.0`.
+
+### Web deployment (2026‑11‑17)
+
+The Cloudflare Worker was redeployed with the new code (which now runs the real
+assistant turn inside the shop's Durable Object using the Worker's secret
+`ASSISTANT_API_KEY` — server to server, never to the browser). The secret was set
+from the PC's `NVIDIA_API_KEY` environment variable:
+
+```powershell
+# key never printed — piped from the environment
+$env:NVIDIA_API_KEY | npx wrangler secret put ASSISTANT_API_KEY --config wrangler.toml
+```
+
+Worker URL: `https://rokar-pos.bakery-saas.workers.dev` (version `9f9b5190-f0cd-4672-abf1-811b99c1fd24`).
+
+For the web shop to use NVIDIA, the owner flips **Admin → Assistant → Provider = NVIDIA**
+and picks the model button (the web shop's own settings are independent of the desktop
+DB). The secret is already on the Worker.
 
 ### Final numbers
 
@@ -2368,3 +2388,101 @@ Agent 55/55, Panel 49/49, Verify 74/74, Guide 80/80, Pending 54/54, BillActions 
 BackOffice 88/88, Proactive 48/48, Eval 81/81 (12 cases), Privacy 72/72, NVIDIA 93/93,
 A11y 73/73, UI 25/25. Typecheck main+renderer **exit 0**, `npm run build` **exit 0**.
 Proof: `E:\temp\proof\a16_*.txt`.
+
+---
+
+## The voice, the uploads and the photos (2026‑11‑18)
+
+The owner asked for four things: the assistant must **listen**, it must **answer out
+loud**, it must take an **upload**, and it must **see the photos**. All four are in.
+
+### What was built
+
+| Ask | What it does | Where |
+| --- | --- | --- |
+| **Voice input** | The panel records the microphone as raw PCM and builds the 16 kHz mono WAV that the **Windows speech recogniser** reads. It runs **on this computer** — no key, no cloud, no network — and the audio is deleted right after. The words land in the question box first, so they can be read and changed before sending. | `src/shared/assistant/voice.ts` (the WAV encoder), `src/main/services/assistant/voice.ts` (the service), `resources/voice/transcribe.ps1` (the recogniser), `src/renderer/src/utils/voiceRecorder.ts` |
+| **Voice output** | Every answer has a "Read it out" button, and the new **Voice only** switch reads every answer by itself and makes the microphone the main button. | `src/renderer/src/utils/speech.ts`, `AssistantPanel.tsx` |
+| **Upload** | The composer takes photos and text files (`.txt .csv .json .md .log .xml .yml .yaml .ini`). The **main process** is the real gate: the size, the type and the count are checked again on the server side, so a file the renderer sneaks in never leaves the shop. | `src/shared/assistant/voice.ts` (`sanitizeAttachments`), `src/main/services/assistant/agent.ts` |
+| **Photos** | A photo becomes an image block for the provider (`image_url` for the OpenAI-compatible shape NVIDIA speaks, an `image` block for Anthropic). The NVIDIA **text** models cannot see — they answer `400 "multimodal processing is not enabled"` — so a photo uses the **vision model** (`nvidia/nemotron-3.5-super-vl-120b-a12b`) and the source line says so. | `src/shared/assistant/provider.ts` (`openAiAttachmentBlocks`, `anthropicAttachmentBlocks`, `visionModelFor`) |
+
+The web build has no Windows recogniser: it uses the **browser's** own speech
+recognition there instead (Chrome and Edge have it). The Worker needs no change for
+the voice — the audio never reaches the server.
+
+### Proven on this PC (live, the real key, never printed)
+
+```
+npm run eval:assistant:voice:live -- --live
+```
+
+```
+=== The offline voice (Windows itself) ===
+  the Windows voice said: "What is the total sale of today"
+  [PASS] the app heard something
+  the app heard: "What is the total sale of today"
+  [PASS] the words came back right
+=== The photo (the real model) ===
+  the model said: "Red"
+  [PASS] the model answered
+  [PASS] the model saw the red
+  [PASS] the source line says the vision model answered -- vision model
+ALL LIVE CHECKS PASSED
+```
+
+The picture was a red square with a white band; the model answered **"Red"** — it
+really saw it. The voice came back **word for word** from the offline recogniser.
+
+### The permanent test
+
+`npm run test:assistantVoice` → **122/122** (the real `dist` code, the MockProvider
+only — no LLM, no network): the WAV encoder (the RIFF header, 16 kHz, mono, 16-bit,
+the resampling), the base64, the rules for which file may be attached, the gate that
+refuses a too-big / unknown / broken file and a fifth file, the clean-up of an answer
+before it is spoken, both request bodies with a photo, the vision rules, the real
+turn (the photo reaches the provider, the vision model is used, the token budget
+grows, the source line says so), the voice service (the script is on the computer, an
+empty recording is refused politely, the recogniser needs no key and no network) and
+the wiring (the IPC, the preload, the panel's buttons, the two languages, the
+packaged resource).
+
+`test:assistantA11y` grew to **81/81** — the microphone button, the attach button
+and the voice-only switch are named, reachable and big enough to tap.
+
+### The desktop rebuild + reinstall (2026‑11‑18)
+
+Both installers were rebuilt from the new code (11/18 2:19 AM) and the **NSIS
+installer** was installed over the old build:
+
+```
+dist_release\RokarPOS-Setup-2.28.0.exe      (the installer)
+dist_release\RokarPOS-Portable-2.28.0.exe   (the portable)
+→ E:\antigravty\RokarPOS\Rokar POS.exe      (the installed app)
+```
+
+Two things the earlier run had taught:
+
+- **The silent NSIS install cannot target a path with a space.** `/D=E:\antigravty\Rokar POS`
+  was truncated to `E:\antigravty\Rokar`, and the default (`%LOCALAPPDATA%\Programs\Rokar POS`,
+  under `C:\Users\Hamza PC\`) broke the same way — the profile's space truncates it to
+  `C:\Users\Hamza`. The install therefore lives at **`E:\antigravty\RokarPOS`** (no space),
+  and the old path `E:\antigravty\Rokar POS` is kept as a **junction** to it, so anything
+  that still points there keeps working.
+- **A silent install creates no shortcut.** The desktop and Start-menu shortcuts were
+  created by hand (`Rokar POS.lnk` → `E:\antigravty\RokarPOS\Rokar POS.exe`).
+
+Verified on the installed app: the registry entry `Rokar POS 2.28.0` points at the new
+uninstaller, `app.asar` really carries the new code (`assistant:transcribe`,
+`assistant:voiceSupport`, `super-vl-120b-a12b`, `speakableText`, `sanitizeAttachments`),
+and **`resources\voice\transcribe.ps1` ships inside the app** — the offline recogniser is
+there. The app was launched from the new install: it starts clean (`App ready.
+packaged=true version=2.28.0`, the DB migrated, the licence check passed, no error in
+`logs\app-2026-11-18.log`).
+
+### Final numbers
+
+**17 suites, 1214 checks, all green** — Provider 77/77, Settings 47/47, Tools 101/101,
+Agent 55/55, Panel 49/49, Verify 74/74, Guide 80/80, Pending 54/54, BillActions 61/61,
+BackOffice 88/88, Proactive 48/48, Eval 81/81 (12 cases), Privacy 72/72, NVIDIA 99/99,
+**Voice 122/122**, A11y 81/81, UI 25/25. Typecheck main+renderer **exit 0**, cloud
+typecheck **exit 0**, `npm run build` **exit 0**, the cloud suite **111 passed / 0
+failed**. Proof: `E:\temp\proof\a18_*.txt`.
