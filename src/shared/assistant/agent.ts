@@ -25,6 +25,7 @@ import type {
   AssistantDataLevel,
   AssistantFailure,
   AssistantMessage,
+  AssistantProvider,
   AssistantToolCall,
   AssistantUsage,
   ProviderAdapter,
@@ -51,6 +52,8 @@ export interface AgentTurnInput {
   adapter: ProviderAdapter;
   /** The model id — it comes from the `assistant_model` setting. */
   model: string;
+  /** Which provider the turn talks to (the cost estimate depends on it). */
+  provider?: AssistantProvider;
   system: string;
   messages: AssistantMessage[];
   /** The registry (the loop uses it for the validation and the risk). */
@@ -181,7 +184,7 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
     usage.calls += 1;
     usage.inputTokens += response.usage.inputTokens;
     usage.outputTokens += response.usage.outputTokens;
-    usage.costUsd = estimateCostUsd(input.model, usage.inputTokens, usage.outputTokens);
+    usage.costUsd = estimateCostUsd(input.model, usage.inputTokens, usage.outputTokens, input.provider);
 
     if (response.toolCalls.length === 0) {
       // The answer is checked BEFORE it is shown: every number in it must
@@ -301,6 +304,13 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
     }
 
     if (limitHit) break;
+  }
+
+  // The loop can run out of turns without the model ever writing a final
+  // answer. The user must never get an empty bubble, so that becomes the
+  // friendly "try again" failure (the stop code still says why).
+  if (!text && !failure && pendingActions.length === 0) {
+    failure = assistantFailure('unknown', language);
   }
 
   return {

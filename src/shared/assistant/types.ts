@@ -26,6 +26,15 @@ export type AssistantLanguage = 'auto' | 'en' | 'ur' | 'roman';
  */
 export type AssistantDataLevel = 'aggregates' | 'names' | 'full';
 
+/**
+ * The AI provider the shop talks to.
+ *
+ * `anthropic` — the Anthropic Messages API (the key in the `x-api-key` header).
+ * `nvidia` — NVIDIA's integrate API, which speaks the OpenAI chat-completions
+ * shape (the key in the `Authorization: Bearer` header).
+ */
+export type AssistantProvider = 'anthropic' | 'nvidia';
+
 /** What a tool may do. `forbidden` tools are never registered at all. */
 export type AssistantRisk = 'read' | 'write' | 'dangerous' | 'forbidden';
 
@@ -153,6 +162,8 @@ export interface AssistantSettingsView {
   enabled: boolean;
   roles: AssistantRole[];
   model: string;
+  /** Which AI provider the shop talks to. */
+  provider: AssistantProvider;
   dailyBudgetUsd: number;
   dataLevel: AssistantDataLevel;
   language: AssistantLanguage;
@@ -164,6 +175,13 @@ export interface AssistantSettingsView {
   keyHint: string;
   /** Where the key lives: the shop's own store (desktop) or the server (web). */
   keySource?: 'shop' | 'server';
+  /**
+   * Where the key the assistant USES comes from: the shop's own store, the
+   * computer's environment variable (the name only) or nowhere.
+   */
+  keySourceLocal?: 'saved' | 'environment' | 'none';
+  /** The NAME of the environment variable the key was found in (never the key). */
+  keyEnvVar?: string;
   /** What the assistant has spent today (the transparency). */
   spendTodayUsd?: number;
   /** How many turns ran today. */
@@ -175,6 +193,7 @@ export interface AssistantSettingsPatch {
   enabled?: boolean;
   roles?: AssistantRole[];
   model?: string;
+  provider?: AssistantProvider;
   dailyBudgetUsd?: number;
   dataLevel?: AssistantDataLevel;
   language?: AssistantLanguage;

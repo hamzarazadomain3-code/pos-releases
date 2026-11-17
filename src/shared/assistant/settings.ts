@@ -9,11 +9,13 @@
  *
  * THE DEFAULTS KEEP EVERY EXISTING INSTALL UNCHANGED: the assistant is OFF.
  */
-import type { AssistantDataLevel, AssistantLanguage, AssistantRole } from './types';
+import type { AssistantDataLevel, AssistantLanguage, AssistantProvider, AssistantRole } from './types';
 
 export const ASSISTANT_ROLES: AssistantRole[] = ['owner', 'manager', 'cashier'];
 export const ASSISTANT_DATA_LEVELS: AssistantDataLevel[] = ['aggregates', 'names', 'full'];
 export const ASSISTANT_LANGUAGES: AssistantLanguage[] = ['auto', 'en', 'ur', 'roman'];
+/** The providers the shop may talk to. */
+export const ASSISTANT_PROVIDERS: AssistantProvider[] = ['anthropic', 'nvidia'];
 
 /** The admin_settings keys the assistant owns. */
 export const ASSISTANT_SETTING_KEYS = {
@@ -26,6 +28,7 @@ export const ASSISTANT_SETTING_KEYS = {
   actions: 'assistant_actions_enabled',
   proactive: 'assistant_proactive_enabled',
   apiKey: 'assistant_api_key',
+  provider: 'assistant_provider',
 } as const;
 
 export interface AssistantSettings {
@@ -35,6 +38,8 @@ export interface AssistantSettings {
   roles: AssistantRole[];
   /** The provider model id — a SETTING, never a hardcoded name in the code. */
   model: string;
+  /** Which AI provider the shop talks to. */
+  provider: AssistantProvider;
   /** The daily spend cap (USD). */
   dailyBudgetUsd: number;
   /** How much shop data may leave the device. */
@@ -54,6 +59,7 @@ export const DEFAULT_ASSISTANT_SETTINGS: AssistantSettings = {
   enabled: false,
   roles: ['owner', 'manager'],
   model: '',
+  provider: 'anthropic',
   dailyBudgetUsd: DEFAULT_ASSISTANT_BUDGET_USD,
   dataLevel: 'aggregates',
   language: 'auto',
@@ -91,10 +97,14 @@ export function parseAssistantSettings(raw: Record<string, string | undefined>):
     : [...DEFAULT_ASSISTANT_SETTINGS.roles];
   const level = String(raw[ASSISTANT_SETTING_KEYS.dataLevel] ?? '').trim().toLowerCase();
   const language = String(raw[ASSISTANT_SETTING_KEYS.language] ?? '').trim().toLowerCase();
+  const provider = String(raw[ASSISTANT_SETTING_KEYS.provider] ?? '').trim().toLowerCase();
   return {
     enabled: asBool(raw[ASSISTANT_SETTING_KEYS.enabled], DEFAULT_ASSISTANT_SETTINGS.enabled),
     roles: roles.length > 0 ? roles : [...DEFAULT_ASSISTANT_SETTINGS.roles],
     model: String(raw[ASSISTANT_SETTING_KEYS.model] ?? '').trim(),
+    provider: (ASSISTANT_PROVIDERS as string[]).includes(provider)
+      ? (provider as AssistantProvider)
+      : DEFAULT_ASSISTANT_SETTINGS.provider,
     dailyBudgetUsd: asNumber(raw[ASSISTANT_SETTING_KEYS.budget], DEFAULT_ASSISTANT_SETTINGS.dailyBudgetUsd),
     dataLevel: (ASSISTANT_DATA_LEVELS as string[]).includes(level)
       ? (level as AssistantDataLevel)

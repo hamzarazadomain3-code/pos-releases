@@ -22,11 +22,27 @@ import {
   encodeOptOutUsers,
   parseOptOutUsers,
 } from '../../../shared/assistant/privacy';
-import type { AssistantRole } from '../../../shared/assistant/types';
+import type { AssistantProvider, AssistantRole } from '../../../shared/assistant/types';
 import { getDayUsage } from './usage';
 
 /** The admin_settings key the per-user opt-out list lives in. */
 export const ASSISTANT_OPT_OUT_KEY = 'assistant_optout_users';
+
+/**
+ * The environment variables that can hold the provider's key.
+ *
+ * A shop that already keeps the key in its own environment (the usual way on a
+ * shop PC) does not have to paste it into the app a second time — the main
+ * process reads it from here. The renderer NEVER sees the value: it only ever
+ * learns THAT a key was found and its last four characters.
+ */
+export const ASSISTANT_KEY_ENV_VARS: Record<AssistantProvider, string[]> = {
+  anthropic: ['ANTHROPIC_API_KEY'],
+  nvidia: ['NVIDIA_API_KEY', 'NVIDIA_INFERENCE_API_KEY'],
+};
+
+/** Where the key the assistant uses comes from. */
+export type AssistantKeySource = 'saved' | 'environment' | 'none';
 
 /** The mask the assistant key hint uses — the last four characters only. */
 export const ASSISTANT_KEY_MASK_PREFIX = '••••';
@@ -57,11 +73,15 @@ export function getAssistantSettings(): AssistantSettings {
 export function getAssistantSettingsView(): AssistantSettings & {
   keySet: boolean;
   keyHint: string;
+  keySourceLocal: AssistantKeySource;
+  keyEnvVar: string;
   spendTodayUsd: number;
   callsToday: number;
 } {
   const settings = getAssistantSettings();
-  const key = getAdminSetting(ASSISTANT_SETTING_KEYS.apiKey) ?? '';
+  const savedKey = (getAdminSetting(ASSISTANT_SETTING_KEYS.apiKey) ?? '').trim();
+  const env = assistantEnvKey(settings.provider);
+  const key = savedKey || env.value;
   let spendTodayUsd = 0;
   let callsToday = 0;
   try {
@@ -77,6 +97,8 @@ export function getAssistantSettingsView(): AssistantSettings & {
     ...settings,
     keySet: key.trim().length > 0,
     keyHint: assistantKeyHint(key),
+    keySourceLocal: savedKey ? 'saved' : env.value ? 'environment' : 'none',
+    keyEnvVar: env.name,
     spendTodayUsd,
     callsToday,
   };
@@ -139,6 +161,7 @@ export function saveAssistantSettings(patch: {
   enabled?: boolean;
   roles?: AssistantRole[];
   model?: string;
+  provider?: AssistantProvider;
   dailyBudgetUsd?: number;
   dataLevel?: string;
   language?: string;
@@ -152,6 +175,9 @@ export function saveAssistantSettings(patch: {
   if (typeof patch.proactiveEnabled === 'boolean') set(ASSISTANT_SETTING_KEYS.proactive, patch.proactiveEnabled ? '1' : '0');
   if (Array.isArray(patch.roles)) set(ASSISTANT_SETTING_KEYS.roles, patch.roles.join(','));
   if (typeof patch.model === 'string') set(ASSISTANT_SETTING_KEYS.model, patch.model.trim());
+  if (patch.provider === 'anthropic' || patch.provider === 'nvidia') {
+    set(ASSISTANT_SETTING_KEYS.provider, patch.provider);
+  }
   if (typeof patch.dailyBudgetUsd === 'number' && Number.isFinite(patch.dailyBudgetUsd) && patch.dailyBudgetUsd >= 0) {
     set(ASSISTANT_SETTING_KEYS.budget, String(patch.dailyBudgetUsd));
   }
@@ -177,18 +203,39 @@ export function setAssistantApiKey(key: string): { keySet: boolean; keyHint: str
 }
 
 /**
+ * The provider's key from the shop's own environment.
+ *
+ * The VALUE never leaves the main process — only the name of the variable and
+ * the fact that a key was found.
+ */
+export function assistantEnvKey(provider: AssistantProvider): { name: string; value: string } {
+  for (const name of ASSISTANT_KEY_ENV_VARS[provider] ?? []) {
+    const value = (process.env[name] ?? '').trim();
+    if (value) return { name, value };
+  }
+  return { name: '', value: '' };
+}
+
+/**
  * The real key — MAIN PROCESS ONLY. Never call this from the renderer, never
  * put the result into a log line, an error message or an IPC payload.
+ *
+ * The shop's own saved key wins; when there is none, the provider's own
+ * environment variable is used (so a PC that already has `NVIDIA_API_KEY` set
+ * works without pasting the key a second time).
  */
-export function resolveAssistantApiKey(): string {
-  return (getAdminSetting(ASSISTANT_SETTING_KEYS.apiKey) ?? '').trim();
+export function resolveAssistantApiKey(provider?: AssistantProvider): string {
+  const saved = (getAdminSetting(ASSISTANT_SETTING_KEYS.apiKey) ?? '').trim();
+  if (saved) return saved;
+  const p = provider ?? getAssistantSettings().provider;
+  return assistantEnvKey(p).value;
 }
 
 /** Is the assistant usable at all? (The kill switch + a key + a model.) */
 export function assistantReady(): { ok: boolean; reason: 'disabled' | 'no_key' | 'no_model' | null } {
   const settings = getAssistantSettings();
   if (!settings.enabled) return { ok: false, reason: 'disabled' };
-  if (!resolveAssistantApiKey()) return { ok: false, reason: 'no_key' };
+  if (!resolveAssistantApiKey(settings.provider)) return { ok: false, reason: 'no_key' };
   if (!settings.model) return { ok: false, reason: 'no_model' };
   return { ok: true, reason: null };
 }

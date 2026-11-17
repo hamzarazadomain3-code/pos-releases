@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { AssistantActivityRow, AssistantRole, AssistantSettingsView } from '../../../../shared/assistant/types';
-import { ASSISTANT_DATA_LEVELS, ASSISTANT_LANGUAGES, ASSISTANT_ROLES } from '../../../../shared/assistant/settings';
+import type { AssistantActivityRow, AssistantProvider, AssistantRole, AssistantSettingsView } from '../../../../shared/assistant/types';
+import { ASSISTANT_DATA_LEVELS, ASSISTANT_LANGUAGES, ASSISTANT_PROVIDERS, ASSISTANT_ROLES } from '../../../../shared/assistant/settings';
 import { buildToolRegistry } from '../../../../shared/assistant/tools';
+import { NVIDIA_TOOL_MODELS } from '../../../../shared/assistant/provider';
 import { privacyRows, privacySummary } from '../../../../shared/assistant/privacy';
 import { clearHistory } from '../../../../shared/assistant/history';
 import { formatTimestamp } from '../../utils/dateUtils';
@@ -206,19 +207,37 @@ export default function AssistantSettings() {
               </button>
             </div>
             <p className="muted small" style={{ marginTop: 8 }}>
-              {settings.keySet ? t('settings.assistant.keyStored', { hint: settings.keyHint }) : t('settings.assistant.keyMissing')}
+              {settings.keySet
+                ? settings.keySourceLocal === 'environment'
+                  ? t('settings.assistant.keyFromEnvironment', { env: settings.keyEnvVar || 'the environment', hint: settings.keyHint })
+                  : t('settings.assistant.keyStored', { hint: settings.keyHint })
+                : t('settings.assistant.keyMissing')}
             </p>
           </>
         )}
       </div>
 
-      {/* ── the model, the budget, the roles, the data level ────────────── */}
+      {/* ── the provider, the model, the budget, the roles, the data level ── */}
       <div className="card">
         <div className="card-head">
           <h3>{t('settings.assistant.behaviour')}</h3>
         </div>
 
         <div className="form-row" style={{ gap: 12, flexWrap: 'wrap' }}>
+          <div className="form-group" style={{ minWidth: 240 }}>
+            <label>{t('settings.assistant.provider')}</label>
+            <select
+              value={settings.provider}
+              disabled={busy}
+              onChange={(e) => void save({ provider: e.target.value as AssistantProvider })}
+            >
+              {ASSISTANT_PROVIDERS.map((p) => (
+                <option key={p} value={p}>{t(`settings.assistant.provider_${p}`)}</option>
+              ))}
+            </select>
+            <div className="muted small">{t(`settings.assistant.providerHint_${settings.provider}`)}</div>
+          </div>
+
           <div className="form-group" style={{ minWidth: 240 }}>
             <label>{t('settings.assistant.model')}</label>
             <input
@@ -229,6 +248,22 @@ export default function AssistantSettings() {
               onBlur={() => void save({ model: settings.model })}
             />
             <div className="muted small">{t('settings.assistant.modelHint')}</div>
+            {settings.provider === 'nvidia' && (
+              <div className="muted small" style={{ marginTop: 4 }}>
+                {t('settings.assistant.nvidiaModelsHint')}
+                {NVIDIA_TOOL_MODELS.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    className="btn btn-sm"
+                    style={{ marginInlineEnd: 6, marginTop: 4 }}
+                    onClick={() => void save({ model: m })}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="form-group" style={{ minWidth: 200 }}>
@@ -243,6 +278,9 @@ export default function AssistantSettings() {
               onBlur={() => void save({ dailyBudgetUsd: settings.dailyBudgetUsd })}
             />
             <div className="muted small">{t('settings.assistant.budgetHint')}</div>
+            {settings.provider === 'nvidia' && (
+              <div className="muted small" style={{ marginTop: 4 }}>{t('settings.assistant.nvidiaBudgetNote')}</div>
+            )}
           </div>
 
           <div className="form-group" style={{ minWidth: 200 }}>

@@ -330,6 +330,11 @@ async function run() {
   });
   check('the turn limit stops the turn', turnLimitRun.stop === 'turn_limit', turnLimitRun.stop);
   check('the turn limit is respected', turnLimitRun.usage.calls <= 2, String(turnLimitRun.usage.calls));
+  check(
+    'a turn that ran out of turns says something instead of an empty answer',
+    !turnLimitRun.text && turnLimitRun.failure?.code === 'unknown',
+    JSON.stringify(turnLimitRun.failure ?? null)
+  );
 
   let clock = 0;
   const timeLimitRun = await runAgentTurn({

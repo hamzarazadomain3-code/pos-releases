@@ -7,7 +7,7 @@
  * `setAssistantProviderOverride()`, so the whole plumbing — the settings, the
  * IPC, the error mapping — can be exercised WITHOUT a network.
  */
-import type { AssistantLanguage, ProviderAdapter } from '../../../shared/assistant/types';
+import type { AssistantLanguage, AssistantProvider, ProviderAdapter } from '../../../shared/assistant/types';
 import { createAssistantProvider, ProviderError } from './provider';
 import { getAssistantSettings, resolveAssistantApiKey } from './settings';
 
@@ -26,8 +26,9 @@ export function getAssistantProviderOverride(): ProviderAdapter | null {
 /**
  * Build the provider for the shop's current settings.
  *
- * The model id comes from the `assistant_model` SETTING — there is no model
- * name anywhere in the code, so the owner can change it without a rebuild.
+ * The model id AND the provider come from SETTINGS — there is no provider name
+ * anywhere in the code, so the owner can switch between Anthropic and NVIDIA
+ * without a rebuild.
  */
 export function createProviderForSettings(
   options: { timeoutMs?: number; language?: AssistantLanguage; fetchImpl?: typeof fetch } = {}
@@ -35,8 +36,9 @@ export function createProviderForSettings(
   if (providerOverride) return providerOverride;
   const settings = getAssistantSettings();
   return createAssistantProvider({
-    apiKey: resolveAssistantApiKey(),
+    apiKey: resolveAssistantApiKey(settings.provider),
     model: settings.model,
+    provider: settings.provider,
     timeoutMs: options.timeoutMs ?? 60_000,
     language: options.language ?? (settings.language === 'auto' ? 'en' : settings.language),
     fetchImpl: options.fetchImpl,
@@ -49,26 +51,40 @@ export function createProviderForSettings(
  * The desktop passes the key it holds; the web Worker passes the key it holds
  * as a secret binding. In both cases the key stays on the server — it is only
  * ever a header on the provider request.
+ *
+ * When no key is passed the shop's own saved key (or the provider's environment
+ * variable) is used, so "Test connection" also works when the key was never
+ * pasted into the app.
  */
 export async function testAssistantConnection(
   apiKey: string,
   model: string,
-  options: { timeoutMs?: number; language?: AssistantLanguage; fetchImpl?: typeof fetch } = {}
+  options: {
+    timeoutMs?: number;
+    language?: AssistantLanguage;
+    fetchImpl?: typeof fetch;
+    provider?: AssistantProvider;
+  } = {}
 ): Promise<{ ok: boolean; message: string }> {
-  if (!apiKey) return { ok: false, message: 'Add an API key first.' };
-  if (!model) return { ok: false, message: 'Choose a model first.' };
-  const provider = providerOverride
+  const settings = getAssistantSettings();
+  const provider = options.provider ?? settings.provider;
+  const key = (apiKey ?? '').trim() || resolveAssistantApiKey(provider);
+  const modelId = (model ?? '').trim() || settings.model;
+  if (!key) return { ok: false, message: 'Add an API key first.' };
+  if (!modelId) return { ok: false, message: 'Choose a model first.' };
+  const adapter = providerOverride
     ? providerOverride
     : createAssistantProvider({
-        apiKey,
-        model,
+        apiKey: key,
+        model: modelId,
+        provider,
         timeoutMs: options.timeoutMs ?? 20_000,
         language: options.language,
         fetchImpl: options.fetchImpl,
       });
   try {
-    await provider.send({
-      model,
+    await adapter.send({
+      model: modelId,
       system: 'You are a connection test. Reply with the single word: ok',
       messages: [{ role: 'user', content: 'ping' }],
       tools: [],

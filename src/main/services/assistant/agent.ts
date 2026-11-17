@@ -195,6 +195,7 @@ export async function runAssistantTurn(request: AssistantTurnRequest): Promise<A
     const result = await runAgentTurn({
       adapter: createProviderForSettings({ language: settings.language === 'auto' ? 'en' : settings.language }),
       model: settings.model,
+      provider: settings.provider,
       system,
       messages: [...history, { role: 'user', content: message }],
       tools: roleTools,

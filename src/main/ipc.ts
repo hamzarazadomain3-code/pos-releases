@@ -426,8 +426,17 @@ export function registerIpcHandlers(): void {
   // ── Assistant ────────────────────────────────────────────────────────────
   // The API key never crosses this boundary: `getAssistantSettingsView` returns
   // only whether a key is set and its last four characters.
-  ipcMain.handle('assistant:getSettings', () => getAssistantSettingsView());
-  ipcMain.handle('assistant:saveSettings', (_e, patch) => saveAssistantSettings(patch ?? {}));
+  ipcMain.handle('assistant:getSettings', () => {
+    // The renderer learns WHETHER a key was found and its last four characters —
+    // never the key itself, and never the environment variable's value.
+    return getAssistantSettingsView();
+  });
+  ipcMain.handle('assistant:saveSettings', (_e, patch) => {
+    saveAssistantSettings(patch ?? {});
+    // The VIEW comes back (not the raw settings), so the screen keeps the key
+    // hint and the cost after a save.
+    return getAssistantSettingsView();
+  });
   ipcMain.handle('assistant:setKey', (_e, key: string) => setAssistantApiKey(String(key ?? '')));
   ipcMain.handle('assistant:activity', () => listAssistantActivity(50));
   ipcMain.handle('assistant:send', (_e, request) => runAssistantTurn(request ?? { message: '' }));
@@ -451,7 +460,9 @@ export function registerIpcHandlers(): void {
     if (!view.enabled) return { ok: false, message: 'The assistant is turned off.' };
     if (!view.keySet) return { ok: false, message: 'Add an API key first.' };
     if (!view.model) return { ok: false, message: 'Choose a model first.' };
-    return testAssistantConnection(resolveAssistantApiKey(), view.model);
+    // The key may live in the shop's own store OR in the provider's environment
+    // variable — the resolver knows, the renderer never sees it.
+    return testAssistantConnection(resolveAssistantApiKey(view.provider), view.model, { provider: view.provider });
   });
 
   // --- BayLan Label Scale barcode handlers ---

@@ -31,15 +31,21 @@ process.env.POS_DB_PATH = path.join(tmpDir, 'assistant-eval-live.db');
 
 async function run() {
   const live = process.argv.includes('--live');
+  /** `--provider nvidia --model nvidia/...` — a one-off override for this run. */
+  const argOf = (name) => {
+    const i = process.argv.indexOf(name);
+    return i > -1 && typeof process.argv[i + 1] === 'string' ? process.argv[i + 1] : '';
+  };
+  const providerOverride = argOf('--provider');
+  const modelOverride = argOf('--model');
   const { initDatabase, getDb } = require('../dist/main/db.js');
   const auth = require('../dist/main/services/auth.js');
   const { runAgentTurn } = require('../dist/shared/assistant/agent.js');
-  const { AnthropicProvider } = require('../dist/main/services/assistant/provider.js');
+  const { createAssistantProvider } = require('../dist/main/services/assistant/provider.js');
   const toolsModule = require('../dist/shared/assistant/tools.js');
   const { buildAssistantToolImplementations } = require('../dist/main/services/assistant/toolImpls.js');
   const { buildSystemPrompt } = require('../dist/shared/assistant/prompt.js');
-  const { getAdminSetting } = require('../dist/main/services/admin.js');
-  const { getAssistantSettings } = require('../dist/main/services/assistant/settings.js');
+  const { getAssistantSettings, resolveAssistantApiKey } = require('../dist/main/services/assistant/settings.js');
   const inventory = require('../dist/main/services/inventory.js');
 
   const evalFile = path.join(PROJECT_ROOT, 'src/shared/assistant/evals.json');
@@ -48,7 +54,7 @@ async function run() {
   if (!live) {
     console.log('The live evaluation is OFF by default.');
     console.log('Run it with:  npm run eval:assistant:live -- --live');
-    console.log(`It would run ${evals.cases.length} cases against the real model (the API key comes from the app\'s own settings and is never printed).`);
+    console.log(`It would run ${evals.cases.length} cases against the real model (the API key comes from the app\'s own settings or the provider\'s environment variable and is never printed).`);
     app.exit(0);
     return;
   }
@@ -59,17 +65,22 @@ async function run() {
   const db = getDb();
 
   const settings = getAssistantSettings();
-  const apiKey = String(getAdminSetting('assistant_api_key') ?? '').trim();
+  const providerName = providerOverride === 'nvidia' || providerOverride === 'anthropic' ? providerOverride : settings.provider;
+  const modelId = (modelOverride || settings.model).trim();
+  // The key: the shop's own store first, then the provider's environment
+  // variable (NVIDIA_API_KEY on a PC that already has one).
+  const apiKey = resolveAssistantApiKey(providerName);
   if (!apiKey) {
-    console.log('No API key is set in the app\'s settings — nothing to run.');
+    console.log('No API key is set in the app\'s settings or the provider\'s environment — nothing to run.');
     app.exit(0);
     return;
   }
-  if (!settings.model) {
+  if (!modelId) {
     console.log('No model is set in the app\'s settings — nothing to run.');
     app.exit(0);
     return;
   }
+  console.log(`Live run: provider ${providerName}, model ${modelId} (the key is never printed).`);
 
   // The same fixtures the regression suite uses.
   inventory.createProduct({
@@ -93,9 +104,12 @@ async function run() {
      VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?)`
   ).run('EVAL-LIVE-1', null, owner.user.id, 500, 0, 0, 500, new Date().toISOString());
 
-  const provider = new AnthropicProvider({
+  // The provider the shop is set up for (Anthropic or NVIDIA) — the SAME
+  // adapter the app itself uses, so the live run tests the real thing.
+  const provider = createAssistantProvider({
     apiKey,
-    model: settings.model,
+    model: modelId,
+    provider: providerName,
     language: settings.language === 'auto' ? 'en' : settings.language,
   });
 
@@ -116,10 +130,12 @@ async function run() {
     });
     let ok = true;
     let detail = '';
+    let answerText = '';
     try {
       const result = await runAgentTurn({
         adapter: provider,
-        model: settings.model,
+        model: modelId,
+        provider: providerName,
         system,
         messages: [{ role: 'user', content: evalCase.question }],
         tools: roleTools,
@@ -145,6 +161,7 @@ async function run() {
         language: 'en',
       });
       const ran = result.sources || [];
+      answerText = (result.text || '').replace(/\s+/g, ' ').trim().slice(0, 200);
       if (result.failure) {
         ok = false;
         detail = result.failure.code;
@@ -167,7 +184,7 @@ async function run() {
     }
     if (ok) passed++;
     else failed++;
-    console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${evalCase.id}${detail ? ' -- ' + detail : ''}`);
+    console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${evalCase.id}${detail ? ' -- ' + detail : ''}${!ok && answerText ? ` -- the model said: "${answerText}"` : ''}`);
   }
 
   console.log(`\n${passed}/${passed + failed} live cases passed.`);

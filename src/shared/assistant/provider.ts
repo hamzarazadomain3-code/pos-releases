@@ -11,6 +11,7 @@ import type {
   AssistantErrorCode,
   AssistantFailure,
   AssistantLanguage,
+  AssistantProvider,
   AssistantToolCall,
   ProviderRequest,
   ProviderResponse,
@@ -19,6 +20,155 @@ import type {
 /** The Anthropic Messages API version this adapter speaks. */
 export const ANTHROPIC_API_VERSION = '2023-06-01';
 export const ANTHROPIC_DEFAULT_HOST = 'https://api.anthropic.com';
+
+/**
+ * The OpenAI-compatible host.
+ *
+ * NVIDIA's integrate API (`build.nvidia.com`) speaks the OpenAI chat-completions
+ * shape, so the same adapter covers it (and any other compatible endpoint).
+ */
+export const OPENAI_COMPATIBLE_DEFAULT_HOST = 'https://integrate.api.nvidia.com';
+/** NVIDIA's own name for the same host. */
+export const NVIDIA_DEFAULT_HOST = OPENAI_COMPATIBLE_DEFAULT_HOST;
+
+/**
+ * The models NVIDIA's free tier serves that can CALL THE TOOLS.
+ *
+ * The assistant needs tool calling — a model that cannot call a tool can only
+ * chat. These three are verified to return `tool_calls` on NVIDIA's API; the
+ * others in the catalogue are embedding, safety or plain-chat models.
+ */
+export const NVIDIA_TOOL_MODELS = [
+  'openai/gpt-oss-20b',
+  'nvidia/nemotron-3.5-lightning-30b-a3b',
+  'nvidia/nemotron-3-ultra-550b-a55b',
+] as const;
+
+/** The model NVIDIA's free tier serves by default (the fastest one). */
+export const NVIDIA_DEFAULT_MODEL = 'nvidia/nemotron-3.5-lightning-30b-a3b';
+
+/**
+ * The OpenAI-compatible chat-completions body for one request.
+ *
+ * The tool definitions become `tools: [{type: 'function', function: {...}}]`,
+ * the assistant's messages become the `messages` array and a `tool` message
+ * carries `tool_call_id` + `name` (that is the shape this API expects).
+ */
+export function buildOpenAiBody(request: ProviderRequest): Record<string, unknown> {
+  const messages: Record<string, unknown>[] = [];
+  if (request.system) messages.push({ role: 'system', content: request.system });
+  for (const m of request.messages) {
+    if (m.role === 'tool') {
+      messages.push({
+        role: 'tool',
+        tool_call_id: m.toolCallId ?? '',
+        name: m.name ?? '',
+        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+      });
+      continue;
+    }
+    if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
+      messages.push({
+        role: 'assistant',
+        content: m.content || '',
+        tool_calls: m.toolCalls.map((c) => ({
+          id: c.id,
+          type: 'function',
+          function: { name: c.name, arguments: JSON.stringify(c.input ?? {}) },
+        })),
+      });
+      continue;
+    }
+    messages.push({ role: m.role, content: m.content });
+  }
+
+  const body: Record<string, unknown> = {
+    model: request.model,
+    messages,
+    max_tokens: request.maxOutputTokens,
+    stream: false,
+  };
+  if (request.tools.length > 0) {
+    body.tools = request.tools.map((t) => ({
+      type: 'function',
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: {
+          type: 'object',
+          properties: t.inputSchema.properties,
+          required: t.inputSchema.required ?? [],
+          additionalProperties: false,
+        },
+      },
+    }));
+  }
+  if (typeof request.temperature === 'number') body.temperature = request.temperature;
+  return body;
+}
+
+/**
+ * The OpenAI-compatible response, parsed into the provider contract.
+ *
+ * A tool call's arguments arrive as a JSON STRING — junk in that string is
+ * dropped (an empty input), never thrown at the agent loop.
+ */
+export function parseOpenAiBody(json: unknown): ProviderResponse {
+  const body = (json ?? {}) as {
+    choices?: {
+      message?: {
+        content?: string;
+        tool_calls?: { id?: string; function?: { name?: string; arguments?: string } }[];
+      };
+      finish_reason?: string;
+    }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  };
+  const choice = body.choices?.[0];
+  const message = choice?.message;
+  const toolCalls: AssistantToolCall[] = [];
+  for (const call of message?.tool_calls ?? []) {
+    const name = call?.function?.name;
+    if (typeof name !== 'string' || !name) continue;
+    let input: Record<string, unknown> = {};
+    const raw = call?.function?.arguments;
+    if (typeof raw === 'string' && raw.trim()) {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          input = parsed as Record<string, unknown>;
+        }
+      } catch {
+        input = {};
+      }
+    } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      input = raw as Record<string, unknown>;
+    }
+    toolCalls.push({
+      id: typeof call?.id === 'string' && call.id ? call.id : `call_${toolCalls.length + 1}`,
+      name,
+      input,
+    });
+  }
+  const finish = choice?.finish_reason;
+  const stopReason: ProviderResponse['stopReason'] =
+    finish === 'tool_calls' || finish === 'function_call'
+      ? 'tool_use'
+      : finish === 'length'
+        ? 'max_tokens'
+        : finish === 'stop'
+          ? 'end_turn'
+          : 'error';
+  return {
+    text: typeof message?.content === 'string' ? message.content.trim() : '',
+    toolCalls,
+    usage: {
+      inputTokens: body.usage?.prompt_tokens ?? 0,
+      outputTokens: body.usage?.completion_tokens ?? 0,
+    },
+    stopReason,
+  };
+}
 
 /**
  * The friendly message for every failure code, in the three languages the
@@ -269,6 +419,10 @@ export function parseAnthropicBody(json: unknown): ProviderResponse {
  * A rough table per 1M tokens; an unknown model falls back to the middle of the
  * table so the budget is never silently zero. The owner can read the estimate
  * in Settings → Assistant (Item 13).
+ *
+ * NVIDIA's free tier (build.nvidia.com) does NOT bill per token — the call is
+ * free, so the estimate is 0 and the daily cap cannot bite. The rate limit and
+ * the tool limits still do.
  */
 const COST_PER_MTOK: Record<string, { input: number; output: number }> = {
   'claude-opus-4': { input: 15, output: 75 },
@@ -276,7 +430,13 @@ const COST_PER_MTOK: Record<string, { input: number; output: number }> = {
   'claude-haiku-4': { input: 1, output: 5 },
 };
 
-export function estimateCostUsd(model: string, inputTokens: number, outputTokens: number): number {
+export function estimateCostUsd(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  provider: AssistantProvider = 'anthropic'
+): number {
+  if (provider === 'nvidia') return 0;
   const key = Object.keys(COST_PER_MTOK).find((k) => model.startsWith(k));
   const rate = key ? COST_PER_MTOK[key] : { input: 3, output: 15 };
   const cost = (inputTokens / 1_000_000) * rate.input + (outputTokens / 1_000_000) * rate.output;

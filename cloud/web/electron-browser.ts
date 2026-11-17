@@ -371,8 +371,12 @@ async function webInvoke(channel: string, ...args: unknown[]): Promise<unknown> 
   if (PRINT_DOC_CHANNELS.has(channel)) return webPrint(channel, args);
   switch (channel) {
     // The assistant: the key is a server secret, so the browser asks the server.
-    case 'assistant:getSettings':
-      return webAssistant('status', {});
+    case 'assistant:getSettings': {
+      const data = (await webAssistant('status', {})) as Record<string, unknown>;
+      // In the browser the key lives on the server — it is never in the shop and
+      // never in the browser.
+      return { ...data, keySource: 'server', keySourceLocal: 'none', keyEnvVar: '' };
+    }
     case 'assistant:testConnection':
       return webAssistant('testConnection', {});
     case 'assistant:setKey':
