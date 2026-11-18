@@ -203,15 +203,43 @@ export function setAssistantApiKey(key: string): { keySet: boolean; keyHint: str
 }
 
 /**
- * The provider's key from the shop's own environment.
+ * The provider's key from the shop's own environment — with a registry fallback.
  *
- * The VALUE never leaves the main process — only the name of the variable and
- * the fact that a key was found.
+ * On Windows the user may set the key in HKCU\Environment (via System →
+ * Environment Variables) but the running Explorer (and processes it launches)
+ * won't see it until Explorer restarts. We therefore also read the registry
+ * directly as a fallback — the VALUE never leaves the main process, only the
+ * name of the variable and the fact that a key was found.
  */
 export function assistantEnvKey(provider: AssistantProvider): { name: string; value: string } {
+  // 1) The process environment (works when the app is launched from a shell
+  //    that already has the var).
   for (const name of ASSISTANT_KEY_ENV_VARS[provider] ?? []) {
     const value = (process.env[name] ?? '').trim();
     if (value) return { name, value };
+  }
+  // 2) Fallback: read HKCU\Environment directly (the owner may have set it
+  //    there and restarted the app but not Explorer). This runs ONLY on Windows
+  //    and ONLY in the main process — the renderer never sees the value.
+  if (process.platform === 'win32') {
+    try {
+      const { execSync } = require('node:child_process');
+      for (const name of ASSISTANT_KEY_ENV_VARS[provider] ?? []) {
+        // `reg query HKCU\Environment /v NAME` returns the value if it exists.
+        const out = execSync(`reg query HKCU\\Environment /v ${name} 2>NUL`, {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim();
+        // Output looks like: "HKCU\Environment    NVIDIA_API_KEY    REG_SZ    nvapi-..."
+        const match = out.match(new RegExp(`REG_SZ\\s+(\\S+)`));
+        if (match) {
+          const value = match[1].trim();
+          if (value) return { name, value };
+        }
+      }
+    } catch {
+      /* registry read failed — not Windows or no permission, ignore */
+    }
   }
   return { name: '', value: '' };
 }
