@@ -175,6 +175,9 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
         signal: input.signal,
       });
     } catch (e) {
+      // The provider WAS called — a refused/aborted call still counts as an
+      // attempt, so the shop's "calls today" matches what really happened.
+      usage.calls += 1;
       const failureFromError = e as { failure?: AssistantFailure; message?: string };
       stop = 'error';
       failure = failureFromError.failure ?? assistantFailure('unknown', language);

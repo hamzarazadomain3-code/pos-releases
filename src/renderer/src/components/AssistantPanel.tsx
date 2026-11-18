@@ -139,6 +139,8 @@ export default function AssistantPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastQuestion, setLastQuestion] = useState('');
+  /** The files of the last question — Retry sends them again (a photo turn). */
+  const [lastAttachments, setLastAttachments] = useState<PanelAttachment[]>([]);
   const [feedback, setFeedback] = useState<Record<string, 'up' | 'down'>>({});
   /** The proactive insights (opt-in — empty while the switch is off). */
   const [suggestions, setSuggestions] = useState<ProactiveSuggestion[]>([]);
@@ -246,6 +248,7 @@ export default function AssistantPanel({
       setBusy(true);
       setError(null);
       setLastQuestion(text);
+      setLastAttachments(files);
       const asked: PanelMessage = {
         id: `u-${Date.now()}`,
         role: 'user',
@@ -359,15 +362,23 @@ export default function AssistantPanel({
       const { base64 } = await active.stop();
       const result = await window.api.assistant.transcribe(base64);
       if (result?.ok && result.text?.trim()) {
-        setInput((prev) => (prev ? `${prev} ${result.text.trim()}` : result.text.trim()));
-        inputRef.current?.focus();
+        const heard = result.text.trim();
+        // In VOICE-ONLY mode the user is talking, not typing: the question is
+        // sent as soon as it is heard, so the answer comes back spoken.
+        if (voiceOnly) {
+          setInput('');
+          void send(heard);
+        } else {
+          setInput((prev) => (prev ? `${prev} ${heard}` : heard));
+          inputRef.current?.focus();
+        }
       } else {
         setError(result?.message || t('assistant.voiceNotHeard'));
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : t('assistant.voiceUnavailable'));
     }
-  }, [t]);
+  }, [t, send, voiceOnly]);
 
   /** Start listening — the microphone, or the browser's own recogniser. */
   const listen = useCallback(async () => {
@@ -386,8 +397,15 @@ export default function AssistantPanel({
         recognition.onresult = (event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => {
           const transcript = String(event.results?.[0]?.[0]?.transcript ?? '').trim();
           if (transcript) {
-            setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
-            inputRef.current?.focus();
+            // Voice-only: send what was heard (the answer is read out); the
+            // normal mode only fills the box so the user can edit the words.
+            if (voiceOnly) {
+              setInput('');
+              void send(transcript);
+            } else {
+              setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+              inputRef.current?.focus();
+            }
           }
           setRecording(false);
         };
@@ -414,7 +432,7 @@ export default function AssistantPanel({
     } catch {
       setError(t('assistant.voiceUnavailable'));
     }
-  }, [recording, stopListening, t, voiceSupport]);
+  }, [recording, stopListening, t, voiceSupport, send, voiceOnly]);
 
   /** Take the files the user picked (a photo the model can see, or a text file). */
   const attachFiles = useCallback(
@@ -871,8 +889,14 @@ export default function AssistantPanel({
               {t('assistant.send')}
             </button>
           )}
-          {lastQuestion && !busy && (
-            <button type="button" className="btn btn-sm" onClick={() => void send(lastQuestion)}>{t('assistant.retry')}</button>
+          {(lastQuestion || lastAttachments.length > 0) && !busy && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => void send(lastQuestion, lastAttachments)}
+            >
+              {t('assistant.retry')}
+            </button>
           )}
           <span className="muted small assistant-composer-hint">{t('assistant.hint')}</span>
         </div>

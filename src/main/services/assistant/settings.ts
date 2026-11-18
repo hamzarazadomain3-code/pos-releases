@@ -17,6 +17,7 @@ import {
   parseAssistantSettings,
   type AssistantSettings,
 } from '../../../shared/assistant/settings';
+import { ASSISTANT_AUTO_MODEL, modelFitsProvider } from '../../../shared/assistant/modelRouter';
 import {
   assistantAllowedForUser,
   encodeOptOutUsers,
@@ -177,6 +178,14 @@ export function saveAssistantSettings(patch: {
   if (typeof patch.model === 'string') set(ASSISTANT_SETTING_KEYS.model, patch.model.trim());
   if (patch.provider === 'anthropic' || patch.provider === 'nvidia') {
     set(ASSISTANT_SETTING_KEYS.provider, patch.provider);
+    // Switching the provider used to leave the OTHER provider's model in the
+    // setting (claude-sonnet-4-5 sent to NVIDIA), so every turn failed with a
+    // 400. A model that does not fit the new provider becomes AUTO — the
+    // router then picks a valid model for every task.
+    const current = (getAdminSetting(ASSISTANT_SETTING_KEYS.model) ?? '').trim();
+    if (current && !modelFitsProvider(patch.provider, current)) {
+      set(ASSISTANT_SETTING_KEYS.model, ASSISTANT_AUTO_MODEL);
+    }
   }
   if (typeof patch.dailyBudgetUsd === 'number' && Number.isFinite(patch.dailyBudgetUsd) && patch.dailyBudgetUsd >= 0) {
     set(ASSISTANT_SETTING_KEYS.budget, String(patch.dailyBudgetUsd));

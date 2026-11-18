@@ -369,7 +369,7 @@ export function mapProviderFailure(
   if (status === 401 || status === 403) code = 'unauthorized';
   else if (status === 429) code = 'rate_limited';
   else if (status >= 500) code = 'server_error';
-  else if (status === 400 || status === 422) code = 'invalid_request';
+  else if (status === 400 || status === 404 || status === 405 || status === 422) code = 'invalid_request';
   else if (status === 408 || status === 504) code = 'timeout';
   else code = 'unknown';
   const detail = extractProviderMessage(bodyText);

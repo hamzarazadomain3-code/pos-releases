@@ -79,6 +79,7 @@
     "test:binaryTransfer": "npm run build:main && node scripts/test_binaryTransfer.cjs",
     "test:webImport": "npm run build:main && electron scripts/test_webImport.js",
     "test:assistantProvider": "npm run build:main && electron scripts/test_assistantProvider.cjs",
+    "test:assistantAutoModel": "npm run build:main && electron scripts/test_assistant_auto_model.cjs",
     "test:assistantSettings": "npm run build:main && electron scripts/test_assistantSettings.cjs",
     "test:assistantTools": "npm run build:main && electron scripts/test_assistantTools.cjs",
     "test:assistantAgent": "npm run build:main && electron scripts/test_assistantAgent.cjs",

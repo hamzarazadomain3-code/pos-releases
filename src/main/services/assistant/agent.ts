@@ -16,8 +16,12 @@ import {
   assistantErrorMessage,
   maxOutputTokensFor,
   modelSupportsVision,
-  visionModelFor,
 } from '../../../shared/assistant/provider';
+import {
+  autoFallbackChain,
+  routeAssistantModel,
+  shouldRetryWithAnotherModel,
+} from '../../../shared/assistant/modelRouter';
 import { buildSystemPrompt } from '../../../shared/assistant/prompt';
 import { sourceLineFor } from '../../../shared/assistant/sources';
 import { assistantRoleAllowed } from '../../../shared/assistant/settings';
@@ -187,18 +191,23 @@ export async function runAssistantTurn(
     };
   }
 
-  // A photo needs a model that can SEE one. When the shop's model cannot, the
-  // vision model answers this turn (the free tier has one).
+  // ── the AUTO MODEL ──────────────────────────────────────────────────────
+  // One place decides which model answers THIS turn: a photo needs the vision
+  // model, a deep question gets the strong one, a simple lookup the fast one,
+  // and a saved model that belongs to the other provider is never sent
+  // upstream (that was a 400 on every turn after a provider switch).
   const hasPhoto = attachments.some((a) => a.kind === 'image');
-  let model = settings.model;
-  let usedVisionModel = false;
-  if (hasPhoto && !modelSupportsVision(settings.provider, model)) {
-    const fallback = visionModelFor(settings.provider, model);
-    if (fallback) {
-      model = fallback;
-      usedVisionModel = true;
-    }
-  }
+  const hasTextFile = attachments.some((a) => a.kind === 'text');
+  const route = routeAssistantModel({
+    provider: settings.provider,
+    model: settings.model,
+    question: message,
+    hasPhoto,
+    hasTextFile,
+  });
+  let model = route.model;
+  let usedVisionModel = hasPhoto && !modelSupportsVision(settings.provider, settings.model);
+  let usedFallbackModel = false;
 
   if (!rateLimiter.allow(String(user.id))) {
     return {
@@ -212,14 +221,8 @@ export async function runAssistantTurn(
   }
 
   const baseLimits = assistantLimits();
-  const limits: AssistantLimits = {
-    ...baseLimits,
-    // The vision models think out loud before they answer, so they need more
-    // room — otherwise the answer is cut off half way through.
-    maxOutputTokens: maxOutputTokensFor(model, baseLimits.maxOutputTokens),
-  };
   const day = getDayUsage();
-  const budget = { spentUsd: day.costUsd, budgetUsd: limits.dailyBudgetUsd };
+  const budget = { spentUsd: day.costUsd, budgetUsd: baseLimits.dailyBudgetUsd };
 
   const registry = buildToolRegistry(buildAssistantToolImplementations());
   const roleTools = toolsForRole(registry, user.role);
@@ -240,14 +243,20 @@ export async function runAssistantTurn(
   const controller = new AbortController();
   currentAbort = controller;
   const history = Array.isArray(request.history) ? request.history.slice(-12) : [];
+  const adapter = createProviderForSettings({
+    apiKey: options.apiKey,
+    language: settings.language === 'auto' ? 'en' : settings.language,
+  });
 
-  try {
-    const result = await runAgentTurn({
-      adapter: createProviderForSettings({
-        apiKey: options.apiKey,
-        language: settings.language === 'auto' ? 'en' : settings.language,
-      }),
-      model,
+  /**
+   * Run the loop with ONE model. The limits are per model (a vision model gets
+   * more room to think), so a fallback is a real second attempt, not a copy of
+   * the first.
+   */
+  const runWithModel = (modelId: string) =>
+    runAgentTurn({
+      adapter,
+      model: modelId,
       provider: settings.provider,
       system: systemWithFiles,
       messages: [...history, { role: 'user', content: message, attachments }],
@@ -267,13 +276,47 @@ export async function runAssistantTurn(
           input
         );
       },
-      limits,
+      limits: { ...baseLimits, maxOutputTokens: maxOutputTokensFor(modelId, baseLimits.maxOutputTokens) },
       budget,
       dataLevel: settings.dataLevel,
       secrets: shopSecrets(),
       language: settings.language === 'auto' ? 'en' : settings.language,
       signal: controller.signal,
     });
+
+  try {
+    let result = await runWithModel(model);
+
+    // ── the AUTO MODEL fallback ───────────────────────────────────────────
+    // A retired model id, a provider that is busy or a model that breaks must
+    // not end the turn while another model can answer. The failed attempt's
+    // usage is still counted (the shop sees the real cost).
+    if (result.failure) {
+      const spent: AssistantUsage = { inputTokens: 0, outputTokens: 0, costUsd: 0, calls: 0 };
+      // A photo can ONLY be answered by a vision model; falling back to a text
+      // model would fail again with the same 400. A photo turn has no fallback.
+      const fallbacks = hasPhoto ? [] : autoFallbackChain(settings.provider, model);
+      for (const fallback of fallbacks) {
+        if (!result.failure) break;
+        if (!shouldRetryWithAnotherModel(result.failure.code, route.auto)) break;
+        spent.inputTokens += result.usage.inputTokens;
+        spent.outputTokens += result.usage.outputTokens;
+        spent.costUsd += result.usage.costUsd;
+        spent.calls += result.usage.calls;
+        model = fallback;
+        usedFallbackModel = true;
+        result = await runWithModel(fallback);
+      }
+      result = {
+        ...result,
+        usage: {
+          inputTokens: result.usage.inputTokens + spent.inputTokens,
+          outputTokens: result.usage.outputTokens + spent.outputTokens,
+          costUsd: Math.round((result.usage.costUsd + spent.costUsd) * 10000) / 10000,
+          calls: result.usage.calls + spent.calls,
+        },
+      };
+    }
 
     addDayUsage(result.usage);
 
@@ -326,13 +369,16 @@ export async function runAssistantTurn(
     // the question itself, never a secret.
     logAssistantActivity(
       'question',
-      `hash=${contentHash(message)} tools=${result.toolCalls} stop=${result.stop} cost=${result.usage.costUsd}`
+      `hash=${contentHash(message)} model=${model} tools=${result.toolCalls} stop=${result.stop} cost=${result.usage.costUsd}`
     );
 
-    // The source line also says when the VISION model answered and when a file
-    // could not be attached — the user must never wonder what happened.
+    // The source line also says which model answered (when the auto router
+    // chose it or fell back) and when a file could not be attached — the user
+    // must never wonder what happened.
     const notes: string[] = [];
     if (usedVisionModel) notes.push('vision model');
+    else if (usedFallbackModel) notes.push('fallback model');
+    else if (route.auto) notes.push(`auto model: ${route.tier}`);
     if (rejected.length) notes.push(`${rejected.length} file(s) not attached`);
     const source = [sourceLineFor(result.sources ?? []), notes.join(' · ')]
       .filter(Boolean)

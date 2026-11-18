@@ -10,6 +10,7 @@
  * THE DEFAULTS KEEP EVERY EXISTING INSTALL UNCHANGED: the assistant is OFF.
  */
 import type { AssistantDataLevel, AssistantLanguage, AssistantProvider, AssistantRole } from './types';
+import { ASSISTANT_AUTO_MODEL } from './modelRouter';
 
 export const ASSISTANT_ROLES: AssistantRole[] = ['owner', 'manager', 'cashier'];
 export const ASSISTANT_DATA_LEVELS: AssistantDataLevel[] = ['aggregates', 'names', 'full'];
@@ -58,7 +59,7 @@ export const DEFAULT_ASSISTANT_BUDGET_USD = 1;
 export const DEFAULT_ASSISTANT_SETTINGS: AssistantSettings = {
   enabled: false,
   roles: ['owner', 'manager'],
-  model: '',
+  model: ASSISTANT_AUTO_MODEL,
   provider: 'anthropic',
   dailyBudgetUsd: DEFAULT_ASSISTANT_BUDGET_USD,
   dataLevel: 'aggregates',
@@ -101,7 +102,9 @@ export function parseAssistantSettings(raw: Record<string, string | undefined>):
   return {
     enabled: asBool(raw[ASSISTANT_SETTING_KEYS.enabled], DEFAULT_ASSISTANT_SETTINGS.enabled),
     roles: roles.length > 0 ? roles : [...DEFAULT_ASSISTANT_SETTINGS.roles],
-    model: String(raw[ASSISTANT_SETTING_KEYS.model] ?? '').trim(),
+    // A cleared model means AUTO — every turn still works, and the router
+    // never sends an empty model id to a provider.
+    model: String(raw[ASSISTANT_SETTING_KEYS.model] ?? '').trim() || ASSISTANT_AUTO_MODEL,
     provider: (ASSISTANT_PROVIDERS as string[]).includes(provider)
       ? (provider as AssistantProvider)
       : DEFAULT_ASSISTANT_SETTINGS.provider,

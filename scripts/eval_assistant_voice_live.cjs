@@ -150,7 +150,9 @@ async function run() {
   if (key) {
     settingsService.saveAssistantSettings({
       provider: 'nvidia',
-      model: 'nvidia/nemotron-3.5-lightning-30b-a3b',
+      // AUTO: the router must send the photo to the vision model and keep the
+      // text turns on the configured/default text model.
+      model: 'auto',
       enabled: true,
     });
     const turn = await agentService.runAssistantTurn({

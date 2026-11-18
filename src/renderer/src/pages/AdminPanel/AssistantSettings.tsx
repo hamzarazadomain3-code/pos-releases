@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { AssistantActivityRow, AssistantProvider, AssistantRole, AssistantSettingsView } from '../../../../shared/assistant/types';
 import { ASSISTANT_DATA_LEVELS, ASSISTANT_LANGUAGES, ASSISTANT_PROVIDERS, ASSISTANT_ROLES } from '../../../../shared/assistant/settings';
 import { buildToolRegistry } from '../../../../shared/assistant/tools';
-import { NVIDIA_TOOL_MODELS, NVIDIA_VISION_MODELS } from '../../../../shared/assistant/provider';
+import { ASSISTANT_AUTO_MODEL, ASSISTANT_MODEL_CATALOG } from '../../../../shared/assistant/modelRouter';
 import { privacyRows, privacySummary } from '../../../../shared/assistant/privacy';
 import { clearHistory } from '../../../../shared/assistant/history';
 import { formatTimestamp } from '../../utils/dateUtils';
@@ -250,35 +250,29 @@ export default function AssistantSettings() {
             <div className="muted small">{t('settings.assistant.modelHint')}</div>
             {/* The voice works OFFLINE on this computer — no key, no cloud. */}
             <div className="muted small" style={{ marginTop: 4 }}>{t('settings.assistant.voiceNote')}</div>
-            {settings.provider === 'nvidia' && (
-              <div className="muted small" style={{ marginTop: 4 }}>
-                {t('settings.assistant.nvidiaModelsHint')}
-                {NVIDIA_TOOL_MODELS.map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    className="btn btn-sm"
-                    style={{ marginInlineEnd: 6, marginTop: 4 }}
-                    onClick={() => void save({ model: m })}
-                  >
-                    {m}
-                  </button>
-                ))}
-                {/* The VISION model — the one that can look at a photo. */}
-                <div style={{ marginTop: 6 }}>{t('settings.assistant.visionModelHint')}</div>
-                {NVIDIA_VISION_MODELS.map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    className="btn btn-sm"
-                    style={{ marginInlineEnd: 6, marginTop: 4 }}
-                    onClick={() => void save({ model: m })}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="row-btns" style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+              <button
+                type="button"
+                className={`btn btn-sm${settings.model === ASSISTANT_AUTO_MODEL ? ' active' : ''}`}
+                aria-pressed={settings.model === ASSISTANT_AUTO_MODEL}
+                onClick={() => void save({ model: ASSISTANT_AUTO_MODEL })}
+              >
+                {t('settings.assistant.modelAuto')}
+              </button>
+              {(ASSISTANT_MODEL_CATALOG[settings.provider] ?? []).map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={`btn btn-sm${settings.model === option.id ? ' active' : ''}`}
+                  aria-pressed={settings.model === option.id}
+                  title={t(`settings.assistant.tier_${option.tier}`)}
+                  onClick={() => void save({ model: option.id })}
+                >
+                  {option.id} · {t(`settings.assistant.tier_${option.tier}`)}
+                </button>
+              ))}
+            </div>
+            <div className="muted small" style={{ marginTop: 4 }}>{t('settings.assistant.modelAutoHint')}</div>
           </div>
 
           <div className="form-group" style={{ minWidth: 200 }}>
