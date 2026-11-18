@@ -2491,11 +2491,16 @@ there. The app was launched from the new install: it starts clean (`App ready.
 packaged=true version=2.28.0`, the DB migrated, the licence check passed, no error in
 `logs\app-2026-11-18.log`).
 
-After the release the same installer was re-run with the **2.29.0** build, so the
-installed app matches the published release exactly: `App ready. packaged=true
-version=2.29.0`, the exe's `ProductVersion` is `2.29.0`, the registry entry is
-`Rokar POS 2.29.0`, and the updater now says **"up to date"** (no update nag on the
-owner's machine).
+The installed app was re-installed from the **2.29.0** build (the log says
+`version=2.29.0`, the registry says `Rokar POS 2.29.0`, the updater says
+**"up to date"**).
+
+**One key fix for the key** — if the owner sets `NVIDIA_API_KEY` in Windows
+System → Environment Variables but launches the app from Explorer (which won't
+see the new variable until Explorer restarts), the app now falls back to
+reading **HKCU\Environment** directly (`src/main/services/assistant/settings.ts`
+`assistantEnvKey`). The value still never leaves the main process. The
+test suite still passes (47/47).
 
 ### Final numbers
 
