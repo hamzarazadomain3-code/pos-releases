@@ -2491,6 +2491,12 @@ there. The app was launched from the new install: it starts clean (`App ready.
 packaged=true version=2.28.0`, the DB migrated, the licence check passed, no error in
 `logs\app-2026-11-18.log`).
 
+After the release the same installer was re-run with the **2.29.0** build, so the
+installed app matches the published release exactly: `App ready. packaged=true
+version=2.29.0`, the exe's `ProductVersion` is `2.29.0`, the registry entry is
+`Rokar POS 2.29.0`, and the updater now says **"up to date"** (no update nag on the
+owner's machine).
+
 ### Final numbers
 
 **17 suites, 1220 checks, all green** — Provider 77/77, Settings 47/47, Tools 101/101,
