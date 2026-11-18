@@ -51,6 +51,12 @@ async function main() {
           durable_objects: { bindings: [{ name: 'SHOP', class_name: 'ShopObject' }] },
           migrations: [{ tag: 'v1', new_sqlite_classes: ['ShopObject'] }],
           assets: { directory: './web-dist', binding: 'ASSETS' },
+          // The assistant key lives on the SERVER in the web build (the deployed
+          // Worker has it as a secret binding; `env.ASSISTANT_API_KEY` reads
+          // both). It is a FAKE key here — nothing ever calls a provider with
+          // it, because every turn in this suite stops at the budget gate
+          // before the provider is reached.
+          vars: { ASSISTANT_API_KEY: 'nvapi-test-key-not-real' },
         },
       },
     ],
@@ -390,6 +396,109 @@ async function main() {
     check('printing:getPrinterSettings ok', (await rpcData(token1b, 'printing:getPrinterSettings', [])).ok === true);
     check('licensing:trialStatus ok', (await rpcData(token1b, 'licensing:trialStatus', [])).ok === true);
     check('app:get-version ok', (await rpcData(token1b, 'app:get-version', [])).data === APP_VERSION);
+
+    console.log('== assistant on the web (the "../../db" alias) ==');
+    // The worker bundles the REAL desktop src/main/ipc.ts, so the assistant
+    // services (src/main/services/assistant/*) come with it. They live one
+    // folder deeper than every other service and import '../../db' — a build
+    // alias that only matched '../db' let the REAL desktop src/main/db.ts into
+    // the bundle, and ITS getDb() threw "Database not initialized. Call
+    // initDatabase first." on the web (every assistant turn 500'd). The four
+    // importers are activity.ts, pending.ts, settings.ts and usage.ts.
+    const workerBundle = readFileSync(path.join(root, 'dist', 'index.js'), 'utf8');
+    check(
+      'worker bundle has no desktop db error',
+      !workerBundle.includes('Call initDatabase first.'),
+      'the desktop src/main/db.ts got bundled again'
+    );
+    check(
+      'worker bundle has no desktop db module',
+      !workerBundle.includes('src/main/db.ts'),
+      'the desktop src/main/db.ts got bundled again'
+    );
+    check(
+      'worker bundle uses the web db shim',
+      workerBundle.includes('Call setWebDb first.'),
+      'the web db shim (cloud/src/web-db.ts) is missing from the bundle'
+    );
+
+    const aSettings = await rpcData(token1b, 'assistant:getSettings', []);
+    check('assistant:getSettings ok', aSettings.ok === true, `err=${aSettings.error}`);
+
+    // activity.ts + pending.ts read through '../../db' — these two reads were
+    // the 500s the shop owner saw in the browser.
+    const aActivity = await rpcData(token1b, 'assistant:activity', []);
+    check(
+      'assistant:activity ok (reads through ../../db)',
+      aActivity.ok === true && Array.isArray(aActivity.data),
+      `err=${aActivity.error}`
+    );
+    const aPending = await rpcData(token1b, 'assistant:pendingList', []);
+    check(
+      'assistant:pendingList ok (reads through ../../db)',
+      aPending.ok === true && Array.isArray(aPending.data),
+      `err=${aPending.error}`
+    );
+
+    // settings.ts WRITES the per-user opt-out through '../../db' too.
+    const aOptOn = await rpcData(token1b, 'assistant:optOut', [true]);
+    check(
+      'assistant:optOut writes through ../../db',
+      aOptOn.ok === true && aOptOn.data?.optedOut === true,
+      `err=${aOptOn.error}`
+    );
+    const aOptOff = await rpcData(token1b, 'assistant:optOut', [false]);
+    check(
+      'assistant:optOut restored',
+      aOptOff.ok === true && aOptOff.data?.optedOut === false,
+      `err=${aOptOff.error}`
+    );
+
+    // usage.ts (getDayUsage/addDayUsage) is the fourth '../../db' importer and
+    // only a real turn reaches it. A ZERO daily budget stops the turn at the
+    // budget gate BEFORE the provider is called — so this exercises the whole
+    // DB path with NO network and NO LLM.
+    const aSave = await rpcData(token1b, 'assistant:saveSettings', [
+      { enabled: true, dailyBudgetUsd: 0 },
+    ]);
+    check(
+      'assistant:saveSettings ok (owner)',
+      aSave.ok === true && aSave.data?.enabled === true,
+      `err=${aSave.error}`
+    );
+    const aSend = await rpcData(token1b, 'assistant:send', [{ message: 'web db alias regression check' }]);
+    check(
+      'assistant:send reaches the budget gate (usage.ts reads through ../../db, no provider call)',
+      aSend.ok === true && aSend.data?.failure?.code === 'budget_exceeded',
+      `err=${aSend.error} code=${aSend.data?.failure?.code}`
+    );
+    const aUsage = await rpcData(token1b, 'assistant:getSettings', []);
+    check(
+      'assistant:usage row written through ../../db',
+      aUsage.ok === true && typeof aUsage.data?.callsToday === 'number',
+      `err=${aUsage.error}`
+    );
+    // Put the shop back the way the suite found it (migration 083 seeds).
+    await rpcData(token1b, 'assistant:saveSettings', [{ enabled: false, dailyBudgetUsd: 1 }]);
+
+    // On the web the key lives on the SERVER, so the provider follows the KEY
+    // and not the shop's own setting (whose shipped default is anthropic): a
+    // shop left on that default used to send an NVIDIA key to Anthropic and
+    // got "401 invalid x-api-key" on every single turn.
+    const serverStatus = await api('/api/assistant', {
+      method: 'POST',
+      token: token1b,
+      body: { op: 'status' },
+    });
+    const serverStatusBody = await serverStatus.json();
+    check(
+      "the server's provider wins over the shop's setting",
+      serverStatus.status === 200 &&
+        serverStatusBody.ok === true &&
+        serverStatusBody.data?.provider === 'nvidia' &&
+        serverStatusBody.data?.keySource === 'server',
+      `provider=${serverStatusBody.data?.provider} err=${serverStatusBody.error}`
+    );
 
     console.log('== web printing (cloud:print bridge) ==');
     // A browser cannot run Electron's hidden print window, so printing is served

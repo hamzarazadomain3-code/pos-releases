@@ -93,7 +93,12 @@ const shim = (name) => path.join(srcDir, 'shims', name);
 
 const resolveAliases = [
   // Real services import { getDb } from '../db' -> cloud web-db singleton.
-  { filter: /^\.\.\/db$/, path: path.join(srcDir, 'web-db.ts') },
+  // The filter covers EVERY depth: services use '../db', but the assistant
+  // services (src/main/services/assistant/*) sit one folder deeper and import
+  // '../../db'. A filter that only matched '../db' let the REAL desktop
+  // src/main/db.ts into the bundle, so getDb() there threw
+  // "Database not initialized. Call initDatabase first." on the web.
+  { filter: /^(\.\.\/)+db$/, path: path.join(srcDir, 'web-db.ts') },
   // Services + migrations import node:crypto / crypto -> noble scrypt shim.
   { filter: /^(node:)?crypto$/, path: path.join(srcDir, 'crypto-shim.ts') },
   // The REAL desktop IPC surface, imported through opaque specifiers so cloud tsc
