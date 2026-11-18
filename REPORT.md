@@ -2580,3 +2580,116 @@ the wrong source snapshot — a checkout of `v2.29.0` would have given the 2.23.
   (`b8d609b`, "chore: bump version to 2.29.0 for the AI assistant + voice release").
   The release itself is attached to the tag NAME, so the assets, `latest.yml` and the
   auto-updater are unaffected — only the source snapshot is now honest.
+
+## The AUTO MODEL + the voice/photo bugs (v2.29.1) — 2026‑11‑18
+
+### The request
+"abhi kafi sare bugs hen ai asisstant men auto model lgao jo task ke mutabiq khud swithe hon"
+
+### The bugs this run actually found and fixed
+These are the failures a shop could hit on the shipped 2.29.0 build. Each one is
+covered by a permanent check now (see the table at the end of this section).
+
+1. **Switching the provider broke every turn.** The old provider's model id stayed in
+   `assistant_model` (`claude-sonnet-4-5` sent to NVIDIA), so the next question got a
+   400. `saveAssistantSettings` now turns a model that does not fit the new provider
+   into `auto`, and the router repairs a foreign id even if it was written directly.
+2. **An empty model was sent upstream.** A cleared field (or an upgrade with no
+   `assistant_model` row) produced `model: ''`. The parser now reads an empty value as
+   `auto`, and `createProviderForSettings` / `testAssistantConnection` never send the
+   literal word `auto` or an empty id to a provider.
+3. **A retired/unknown model was not retried.** A 404/405 was mapped to `unknown`, not
+   `invalid_request`, so the fallback never ran. The failure map now treats them as a
+   refused request, and the turn runner tries the next tier once.
+4. **Voice-only mode transcribed but did not send.** The user still had to press Send.
+   In voice-only mode the heard question is now sent as soon as it is recognised (and
+   the answer is read out); normal mode still fills the box so the wording can be
+   edited.
+5. **Retry dropped the photo (and a photo-only failure had no Retry button).** The last
+   question's attachments are kept and the button is shown when there is a photo even
+   with no text.
+6. **A failed photo turn could have been retried on a text model.** The text fallback
+   chain is skipped for a photo: the vision model is the only model that can see it, so
+   a second text attempt would just repeat the same 400.
+
+### The router — one place decides the model
+`src/shared/assistant/modelRouter.ts` (pure; imported by the main process, the settings
+screen and the test):
+
+| The turn | Tier | NVIDIA | Anthropic |
+|---|---|---|---|
+| greeting / simple lookup | fast | `nvidia/nemotron-3.5-lightning-30b-a3b` | `claude-haiku-4-5` |
+| a write/action request | balanced | `openai/gpt-oss-20b` | `claude-sonnet-4-5` |
+| why / compare / report / advice, or a long question | strong | `nvidia/nemotron-3-ultra-550b-a55b` | `claude-sonnet-4-5` |
+| a photo | vision | `nvidia/nemotron-3.5-super-vl-120b-a12b` | any Claude (all see) |
+
+- **A pinned model is the owner's choice** and is used unchanged. `auto` (or an empty
+  value, or a model that belongs to the other provider) turns the router on.
+- **A photo always wins**: a pinned text model is replaced with the vision model for
+  that turn (the source line says `vision model`).
+- **The fallback** is balanced → fast → strong, never the vision model for text. It
+  runs for `invalid_request` even with a pinned model (a retired id must not brick the
+  assistant) and additionally for `rate_limited` / `server_error` / `timeout` in auto
+  mode. It never runs for a wrong key, no internet, a cancelled turn or an exhausted
+  budget. A photo turn has no text fallback. Both attempts' usage is counted.
+- **The source line** names what happened: `auto model: fast|balanced|strong`,
+  `vision model` or `fallback model` — the user never has to guess which model answered.
+- **The settings screen** (`AssistantSettings.tsx:255-273`) has an **Auto
+  (recommended)** button plus the provider's catalogue with fast/balanced/strong/vision
+  labels, in English and Urdu (`en.json` / `ur.json`: `modelAuto`, `modelAutoHint`,
+  `tier_*`).
+- `migrations/088_assistant_auto_model.js` moves the **shipped seed**
+  (`claude-sonnet-4-5`) to `auto`; a model the owner chose is never touched. The live
+  shop on this PC (NVIDIA + the strong model) is switched to `auto` as part of the
+  install so every turn uses the task-appropriate model.
+
+### Verification (numbers from the SAVED output)
+- `test:assistantAutoModel` — **124/124** (the real `dist` router + the REAL
+  `runAssistantTurn` with the MockProvider; no network, no real LLM, no key):
+  the catalogue, auto detection, 16 task-classification cases (English / Roman Urdu /
+  Urdu script), every routing tier, a photo on a text model, a pinned model, a foreign
+  model, the fallback chain, the failure policy, three real routed turns, the foreign
+  model being repaired by the turn, a failing model falling back, both attempts counted,
+  a failed photo not retrying a text model, the provider-switch repair, the migration,
+  the parser and both i18n files.
+- **All 18 assistant suites: 1344/1344 checks** — see
+  `E:\temp\proof\a22_all_assistant_suites.txt` for the per-suite output
+  (provider 77, settings 47, autoModel 124, tools 101, agent 55, panel 49,
+  verify 74, guide 80, pending 54, billActions 61, backOffice 88, proactive 48,
+  eval 81, privacy 72, nvidia 99, voice 128, a11y 81, ui 25).
+- `npm run typecheck` exit 0; the release build (`npm run build` + electron-builder
+  + finalize) exit 0; `cloud` typecheck + build + tests exit 0 (**111/111**).
+- The live voice + photo eval passed on the retry: the offline Windows recogniser
+  heard the sentence, and the **auto** turn sent the photo to the vision model
+  (`source = "vision model"`) and the model answered `"Red"`. The first live call
+  hit a flaky free-tier reply (`"Unknown"`) — the source still proved the vision
+  model; the retry is what is saved in `a22_live_eval2.txt`.
+- The web Worker was redeployed with the same code
+  (`https://rokar-pos.bakery-saas.workers.dev`, version id
+  `e85d39fe-0062-47c6-ab2c-7dced698cc80`, HTTP 200).
+
+### Release and install (v2.29.1)
+
+- `package.json` 2.29.0 → **2.29.1** (commit `0fa9a56`) so the auto-updater offers the
+  new build to every 2.29.0 shop. The code commit is `ddfa5b3`.
+- `npm run release` built `dist_release/RokarPOS-Setup-2.29.1.exe` (121,765,388 bytes),
+  uploaded it and the portable, published
+  [v2.29.1](https://github.com/hamzarazadomain3-code/pos-releases/releases/tag/v2.29.1),
+  rebuilt `latest.yml` from the installer bytes and uploaded the version-less
+  `RokarPOS-Setup.exe`. The first finalize tagged `main` because the branch had not been
+  pushed yet; the tag was then moved to the built commit `0fa9a56` and the branch was
+  pushed (`main` untouched). The release notes are the Roman-Urdu summary.
+- `npm run verify:release -- v2.29.1`: **9 passed, 0 failed** — the downloaded
+  installer's size and sha512 match `latest.yml`, the blockmap and alias are
+  downloadable, and the alias's first two bytes are `MZ`.
+- Installed: both `E:\antigravty\RokarPOS` and the pinned junction
+  `E:\antigravty\Rokar POS` (→ `E:\antigravty\RokarPOS`) report
+  `Rokar POS.exe` **2.29.1**, and `resources/app.asar` is the new build. In the live
+  shop DB `assistant_model` went from
+  `nvidia/nemotron-3-ultra-550b-a55b` to **`auto`** (provider `nvidia`, enabled,
+  roles owner/manager/cashier), and the app was relaunched on 2.29.1.
+- Web Worker: `https://rokar-pos.bakery-saas.workers.dev` (version id
+  `e85d39fe-0062-47c6-ab2c-7dced698cc80`, HTTP 200) with the same code and migration 088.
+
+
+
