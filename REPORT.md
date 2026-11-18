@@ -2498,4 +2498,74 @@ Agent 55/55, Panel 49/49, Verify 74/74, Guide 80/80, Pending 54/54, BillActions 
 BackOffice 88/88, Proactive 48/48, Eval 81/81 (12 cases), Privacy 72/72, NVIDIA 99/99,
 **Voice 128/128**, A11y 81/81, UI 25/25. Typecheck main+renderer **exit 0**, cloud
 typecheck **exit 0**, `npm run build` **exit 0**, the cloud suite **111 passed / 0
-failed**. Proof: `E:\temp\proof\a18_*.txt`.
+failed**. Proof: `E:\temp\proof\a18_*.txt`, `E:\temp\proof\a19_*.txt`.
+
+---
+
+## Release v2.29.0 on GitHub (2026‑11‑18) — the AI assistant + the voice
+
+### The request
+"kar den or github pe bhi kardo deploy" — put the work out on GitHub as well.
+
+### The version question, answered
+`v2.28.0` was already **published** (2026‑11‑14, the old build). The owner was asked
+which way to go and chose **a new `v2.29.0` release** — the reason is the
+auto-updater: a shop that already runs `2.28.0` is only offered a build whose
+version is **newer**, so replacing the `2.28.0` assets in place would have left
+every existing shop on the old build forever. `package.json` moved `2.28.0` →
+`2.29.0` (the lock file lags in this repo by design — it still says `2.21.0`).
+
+### The code
+`origin` is `hamzarazadomain3-code/pos-releases` (the same repo that carries the
+release assets; its `main` is still on `2.23.0`). The owner chose to push **only the
+feature branch**, so `main` was left untouched:
+
+```
+git push -u origin feature/assistant
+→ origin/feature/assistant = b8d609b
+```
+
+### The release
+```
+npm run release
+  = npm run build
+  & dotenv -e .env -- electron-builder --publish always
+  & dotenv -e .env -- node scripts/finalize-release.js
+```
+
+`electron-builder` creates the release as a **draft** (the tag does not exist yet);
+`finalize-release.js` creates the tag, **rebuilds `latest.yml` from the installer's
+actual bytes** (a stale manifest breaks EVERY client's updater), uploads the
+version-less asset the marketing site downloads
+(`/releases/latest/download/RokarPOS-Setup.exe` → must start with `MZ`), and verifies
+the release carries every asset the updater needs.
+
+### Verified after the publish
+- the release `v2.29.0` is **published** (not a draft, not a prerelease),
+- the assets are there: `RokarPOS-Setup-2.29.0.exe`, `RokarPOS-Portable-2.29.0.exe`,
+  `RokarPOS-Setup-2.29.0.exe.blockmap`, `latest.yml`, `RokarPOS-Setup.exe`,
+- `npm run verify:release -- v2.29.0` → **9 passed, 0 failed** (the manifest, the
+  installer's sha512 **byte for byte**, the blockmap, the version-less alias and
+  the generic CDN feed),
+- the website's alias really starts with `MZ` (`4D 5A 90 00` — the first bytes of a
+  PE file), so the marketing site's download button serves the new build,
+- the release shows as **Latest** (2.29.0 above 2.28.0).
+
+### A real bug found by that check — the tag pointed at the WRONG code
+The release published fine, but `git ls-remote --tags origin v2.29.0` showed the tag
+on **`6d2209f` — the old 2.23.0 commit**, not on the code that was built.
+
+The cause was in `scripts/finalize-release.js`: when the tag did not exist it created
+it at **`main`'s head** (`GET /repos/…/commits/main`). `main` is far behind on this
+repo, so every release published since the branch was created would have pointed at
+the wrong source snapshot — a checkout of `v2.29.0` would have given the 2.23.0 code.
+
+- **Fixed** (`scripts/finalize-release.js`): the tag is now created at the commit the
+  build ran from (the local HEAD, checked against the remote so an unpushed branch
+  cannot break it), and only falls back to `main` with a loud warning. An EXISTING tag
+  is never moved automatically — but the script now says so out loud when it points
+  somewhere else.
+- **Repaired**: the published tag was moved to the built commit
+  (`b8d609b`, "chore: bump version to 2.29.0 for the AI assistant + voice release").
+  The release itself is attached to the tag NAME, so the assets, `latest.yml` and the
+  auto-updater are unaffected — only the source snapshot is now honest.

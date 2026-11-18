@@ -8,6 +8,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { execSync } = require('child_process');
 
 const TOKEN = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
 const { version } = require('../package.json');
@@ -177,11 +178,38 @@ function api(method, path, body) {
     process.exit(1);
   }
 
-  // 2. Create the git tag if it doesn't exist
+  // 2. Create the git tag if it doesn't exist.
+  //
+  //    The tag MUST point at the commit that was BUILT. It used to point at
+  //    `main`'s head, which published a release whose source snapshot was a
+  //    completely different version (on 2026-11-18 the v2.29.0 tag landed on
+  //    the 2.23.0 commit because `main` was that old). The built commit is
+  //    the local HEAD — this script runs right after the build, so nothing has
+  //    committed in between — and it is only used when the remote actually has
+  //    it (a branch that was never pushed falls back to `main`, with a
+  //    warning).
   const tagCheck = await api('GET', `/repos/${OWNER}/${REPO}/git/ref/tags/${tag}`);
   if (tagCheck.status === 404) {
-    const head = await api('GET', `/repos/${OWNER}/${REPO}/commits/main`);
-    const sha = head.body.sha;
+    let sha = null;
+    let localSha = null;
+    try {
+      localSha = String(
+        execSync('git rev-parse HEAD', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) || ''
+      ).trim();
+    } catch {
+      localSha = null;
+    }
+    if (localSha) {
+      const built = await api('GET', `/repos/${OWNER}/${REPO}/commits/${localSha}`);
+      if (built.status === 200) sha = localSha;
+    }
+    if (!sha) {
+      const head = await api('GET', `/repos/${OWNER}/${REPO}/commits/main`);
+      sha = head.body.sha;
+      console.warn(
+        `WARN: the built commit is not on the remote — the tag falls back to main (${sha}).`
+      );
+    }
     const created = await api('POST', `/repos/${OWNER}/${REPO}/git/refs`, {
       ref: `refs/tags/${tag}`,
       sha,
@@ -190,7 +218,25 @@ function api(method, path, body) {
       console.error(`FINALIZE_FAIL: could not create tag ${tag}: ${JSON.stringify(created.body)}`);
       process.exit(1);
     }
-    console.log(`Tag ${tag} created.`);
+    console.log(`Tag ${tag} created at ${sha}.`);
+  } else if (tagCheck.status === 200) {
+    // The tag exists. If it points somewhere else than the code that was
+    // built, say so loudly — but never move a published tag on its own.
+    let localSha = null;
+    try {
+      localSha = String(
+        execSync('git rev-parse HEAD', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) || ''
+      ).trim();
+    } catch {
+      localSha = null;
+    }
+    const tagged = tagCheck.body && tagCheck.body.object ? tagCheck.body.object.sha : '';
+    if (localSha && tagged && tagged !== localSha) {
+      console.warn(
+        `WARN: the tag ${tag} points at ${tagged} but this build ran at ${localSha}. ` +
+          'A published tag is never moved automatically — check it before shipping.'
+      );
+    }
   }
 
   // 3. Publish the draft release
