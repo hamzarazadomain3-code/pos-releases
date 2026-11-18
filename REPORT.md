@@ -2692,4 +2692,94 @@ screen and the test):
   `e85d39fe-0062-47c6-ab2c-7dced698cc80`, HTTP 200) with the same code and migration 088.
 
 
+## The WEB assistant: the real db + the server's provider — 2026‑11‑19
+
+### The request
+"web app me do bugs fix karo: 'Database not initialized. Call initDatabase first.' aur
+photo par model 'I can't see images' bol raha hai."
+
+### The three defects this run actually found
+
+1. **The web bundle carried the DESKTOP database.**
+   `cloud/scripts/build.mjs` aliases the desktop's `../db` import onto the web db shim,
+   but the alias filter was `/^\.\.\/db$/` — it matched **one** level only. The four
+   assistant services live one folder deeper (`src/main/services/assistant/*`) and
+   import `'../../db'`, so they slipped past the alias and pulled the **real**
+   `src/main/db.ts` into the worker bundle. Its `getDb()` throws
+   `"Database not initialized. Call initDatabase first."` on the web, and every
+   assistant turn 500'd before it ever reached the provider.
+
+   *Fix:* `cloud/scripts/build.mjs:101` — the filter is now `/^(\.\.\/)+db$/`, so it
+   covers **every** depth. The four importers that were affected:
+   `activity.ts:9`, `pending.ts:17`, `settings.ts:12`, `usage.ts:7`.
+
+2. **A photo could never be answered by the web** — not because the model could not
+   see it, but because the turn died on defect 1 before the provider was called.
+   With the db fixed, the web photo path works end to end (proved live below: the
+   model answered **"Red"** for a solid-red PNG, `source: vision model`).
+
+3. **Every fresh web shop got "401 invalid x-api-key".** The key lives on the
+   **SERVER** (one key for every shop, `ASSISTANT_API_KEY` as a Worker secret), but
+   the *provider* was a per-shop setting whose shipped default is `anthropic`
+   (migration 087). The Worker therefore sent its NVIDIA key to Anthropic on every
+   single turn. The shop cannot fix this itself — on the web `assistant:setKey` is a
+   no-op, so it can never paste a key of its own.
+
+   *Fix:* the provider now follows the **key**, not the shop:
+   - `src/shared/assistant/provider.ts:93` — `providerForApiKey()` reads the provider
+     off the key's own prefix (`nvapi-` → nvidia, `sk-ant-` → anthropic).
+   - `cloud/src/accounts.ts:25,321` — the Worker derives it from its own key, hands
+     it to the shop object and reports it in the status view.
+   - `cloud/src/shop-object.ts:159,180` — the shop object runs the turn with the key
+     **and** the provider that key belongs to.
+   - `src/main/services/assistant/agent.ts:134,207,252,305` — one *effective*
+     provider decides the route, the adapter and the fallback chain for the whole
+     turn (a foreign saved model falls back to `auto` automatically).
+   - `src/main/services/assistant/runtime.ts:56` — `createProviderForSettings()`
+     accepts the server's provider.
+   - `AssistantSettings.tsx:231,239-240` + `en.json` / `ur.json` — on the web the
+     provider picker is **locked** and says why (the key and the provider must agree).
+
+### The permanent regression test (it must never come back)
+
+`cloud/scripts/run-tests.mjs:400-500` — a new section in the cloud suite, all of it
+against the **real built bundle**, with **no provider call and no network**:
+
+- **static**: the bundle must not contain `"Call initDatabase first."`, must not
+  contain `src/main/db.ts`, and must contain the web shim's
+  `"Call setWebDb first."`;
+- **live**: `assistant:activity` (activity.ts) and `assistant:pendingList`
+  (pending.ts) must both return an array; `assistant:optOut` must write and restore
+  (settings.ts);
+- **live, network-free**: `assistant:send` with `dailyBudgetUsd: 0` stops at the
+  budget gate **before** the provider is called — that still runs `getDayUsage()` and
+  `addDayUsage()` (usage.ts), so the fourth importer is covered too;
+- **the server's provider** must win over the shop's own setting.
+
+### Verification (numbers are from the saved output, nothing typed by hand)
+
+- cloud suite: **123 passed, 0 failed** (`E:\temp\proof\a31_web_provider_tests.txt`)
+- `test:assistantAutoModel` **134/134**, `test:assistantNvidia` **101/101**
+- all 18 assistant suites: **1356/1356, 0 failed**
+  (`E:\temp\proof\a37_all_assistant_suites_final.txt`)
+- desktop typecheck (main + renderer) exit 0; cloud build + typecheck exit 0
+- **LIVE on the deployed Worker** (version `5b2691ec-d58b-4dcb-9edf-6fa292b49d87`):
+  `/api/health` 200, `/api/signup` 201, `assistant:activity` 200 with the rows (the
+  photo turn logged `model=nvidia/nemotron-3.5-super-vl-120b-a12b`),
+  `assistant:pendingList` 200, a text turn answered **"pong"**
+  (`source: auto model: fast`), a **PHOTO** turn answered **"Red"**
+  (`source: vision model`), and a **fresh** shop left on the shipped `anthropic`
+  default answered **"pong"** instead of "401 invalid x-api-key".
+
+### Commits (branch `feature/assistant`, `main` untouched)
+
+- `0d3179b` — `fix(cloud): the web assistant's provider follows the server's key`
+- `1733408` — `fix(cloud): the web assistant must use the web db, not the desktop one`
+
+### What the owner has to do
+
+Nothing. The web Worker is redeployed and the fix is live; the desktop app is
+unaffected (its provider is still the shop's own setting, and its own key).
+
+
 
