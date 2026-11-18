@@ -33,6 +33,7 @@ import type {
   AssistantContext,
   AssistantMessage,
   AssistantPendingAction,
+  AssistantProvider,
   AssistantUsage,
 } from '../../../shared/assistant/types';
 import { buildAssistantToolImplementations } from './toolImpls';
@@ -123,9 +124,14 @@ export function cancelAssistantTurn(): boolean {
  */
 export async function runAssistantTurn(
   request: AssistantTurnRequest,
-  options: { apiKey?: string } = {}
+  options: { apiKey?: string; provider?: AssistantProvider } = {}
 ): Promise<AssistantTurnResponse> {
   const settings = getAssistantSettings();
+  // The provider THIS turn really uses. On the web the key lives on the server
+  // and the server says which provider that key belongs to — the shop's own
+  // setting is ignored there, because a key and a provider that disagree fail
+  // with "401 invalid x-api-key" on every turn.
+  const provider = options.provider ?? settings.provider;
   const emptyUsage: AssistantUsage = { inputTokens: 0, outputTokens: 0, costUsd: 0, calls: 0 };
 
   if (!settings.enabled) {
@@ -199,14 +205,14 @@ export async function runAssistantTurn(
   const hasPhoto = attachments.some((a) => a.kind === 'image');
   const hasTextFile = attachments.some((a) => a.kind === 'text');
   const route = routeAssistantModel({
-    provider: settings.provider,
+    provider,
     model: settings.model,
     question: message,
     hasPhoto,
     hasTextFile,
   });
   let model = route.model;
-  let usedVisionModel = hasPhoto && !modelSupportsVision(settings.provider, settings.model);
+  let usedVisionModel = hasPhoto && !modelSupportsVision(provider, settings.model);
   let usedFallbackModel = false;
 
   if (!rateLimiter.allow(String(user.id))) {
@@ -245,6 +251,7 @@ export async function runAssistantTurn(
   const history = Array.isArray(request.history) ? request.history.slice(-12) : [];
   const adapter = createProviderForSettings({
     apiKey: options.apiKey,
+    provider,
     language: settings.language === 'auto' ? 'en' : settings.language,
   });
 
@@ -257,7 +264,7 @@ export async function runAssistantTurn(
     runAgentTurn({
       adapter,
       model: modelId,
-      provider: settings.provider,
+      provider,
       system: systemWithFiles,
       messages: [...history, { role: 'user', content: message, attachments }],
       tools: roleTools,
@@ -295,7 +302,7 @@ export async function runAssistantTurn(
       const spent: AssistantUsage = { inputTokens: 0, outputTokens: 0, costUsd: 0, calls: 0 };
       // A photo can ONLY be answered by a vision model; falling back to a text
       // model would fail again with the same 400. A photo turn has no fallback.
-      const fallbacks = hasPhoto ? [] : autoFallbackChain(settings.provider, model);
+      const fallbacks = hasPhoto ? [] : autoFallbackChain(provider, model);
       for (const fallback of fallbacks) {
         if (!result.failure) break;
         if (!shouldRetryWithAnotherModel(result.failure.code, route.auto)) break;

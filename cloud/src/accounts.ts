@@ -22,6 +22,7 @@
 
 import type { Env } from './env';
 import { json, readJson } from './http';
+import { providerForApiKey } from '../../src/shared/assistant/provider';
 
 const TRIAL_DAYS = 7;
 const SESSION_DAYS = 30;
@@ -312,6 +313,12 @@ export async function handleAssistant(env: Env, request: Request): Promise<Respo
 
   const op = typeof body.op === 'string' ? body.op : 'testConnection';
   const apiKey = (env.ASSISTANT_API_KEY ?? '').trim();
+  // The provider the SERVER's key belongs to. On the web the key is the
+  // server's — one key for every shop — so the provider follows the KEY and not
+  // the shop's own setting (whose default is Anthropic): a shop that left it
+  // alone would send an NVIDIA key to Anthropic and get "401 invalid
+  // x-api-key" on every turn.
+  const provider = providerForApiKey(apiKey);
 
   const stub = env.SHOP.get(env.SHOP.idFromName(session.shop_slug));
   const res = await stub.fetch('https://shop/assistant', {
@@ -319,7 +326,13 @@ export async function handleAssistant(env: Env, request: Request): Promise<Respo
     headers: { 'content-type': 'application/json' },
     // The key travels server-to-server (Worker → the shop's own Durable
     // Object). It is never sent to the browser.
-    body: JSON.stringify({ op, apiKey, sessionUser: session.user_id, payload: body.payload ?? null }),
+    body: JSON.stringify({
+      op,
+      apiKey,
+      provider,
+      sessionUser: session.user_id,
+      payload: body.payload ?? null,
+    }),
   });
   const result = (await res.json().catch(() => null)) as { ok?: boolean; data?: unknown; error?: string } | null;
   if (!result || !result.ok) {
@@ -327,12 +340,14 @@ export async function handleAssistant(env: Env, request: Request): Promise<Respo
   }
   if (op === 'status') {
     // The key status comes from the WORKER (the secret binding), never from
-    // the browser and never from the shop's database.
+    // the browser and never from the shop's database. The provider is shown
+    // the same way — it belongs to the server's key.
     const data = (result.data ?? {}) as Record<string, unknown>;
     return json({
       ok: true,
       data: {
         ...data,
+        ...(provider ? { provider } : {}),
         keySet: apiKey.length > 0,
         keyHint: apiKey ? `••••${apiKey.slice(-4)}` : '',
         keySource: 'server',

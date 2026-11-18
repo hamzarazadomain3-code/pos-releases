@@ -228,7 +228,7 @@ export default function AssistantSettings() {
             <label>{t('settings.assistant.provider')}</label>
             <select
               value={settings.provider}
-              disabled={busy}
+              disabled={busy || keySourceServer}
               onChange={(e) => void save({ provider: e.target.value as AssistantProvider })}
             >
               {ASSISTANT_PROVIDERS.map((p) => (
@@ -236,6 +236,9 @@ export default function AssistantSettings() {
               ))}
             </select>
             <div className="muted small">{t(`settings.assistant.providerHint_${settings.provider}`)}</div>
+            {keySourceServer && (
+              <div className="muted small" style={{ marginTop: 4 }}>{t('settings.assistant.webProviderNote')}</div>
+            )}
           </div>
 
           <div className="form-group" style={{ minWidth: 240 }}>

@@ -42,22 +42,30 @@ export function createProviderForSettings(
      * over the environment — and it still never leaves the server.
      */
     apiKey?: string;
+    /**
+     * The provider the SERVER's key belongs to (the web Worker derives it from
+     * that same key). When it is given it wins over the shop's setting: a key
+     * and a provider that disagree fail with "401 invalid x-api-key" on every
+     * turn, and on the web the shop cannot paste a key of its own.
+     */
+    provider?: AssistantProvider;
   } = {}
 ): ProviderAdapter {
   if (providerOverride) return providerOverride;
   const settings = getAssistantSettings();
-  const apiKey = (options.apiKey ?? '').trim() || resolveAssistantApiKey(settings.provider);
+  const provider = options.provider ?? settings.provider;
+  const apiKey = (options.apiKey ?? '').trim() || resolveAssistantApiKey(provider);
   // An `auto` (or foreign-provider) model is resolved HERE so an adapter that
   // builds its own body can never send the literal word "auto" upstream. The
   // agent passes the routed model on every request anyway; this is the safety
   // net for the callers that only build an adapter.
-  const model = isAutoModel(settings.provider, settings.model)
-    ? ASSISTANT_DEFAULT_MODEL[settings.provider]
+  const model = isAutoModel(provider, settings.model)
+    ? ASSISTANT_DEFAULT_MODEL[provider]
     : settings.model;
   return createAssistantProvider({
     apiKey,
     model,
-    provider: settings.provider,
+    provider,
     timeoutMs: options.timeoutMs ?? 60_000,
     language: options.language ?? (settings.language === 'auto' ? 'en' : settings.language),
     fetchImpl: options.fetchImpl,

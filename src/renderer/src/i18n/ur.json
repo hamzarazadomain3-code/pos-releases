@@ -154,6 +154,7 @@
       "keyMissing": "ابھی کوئی کلید محفوظ نہیں۔",
       "keyCleared": "کلید ہٹا دی گئی۔",
       "webKeyNote": "براؤزر ورژن میں کلید سرور پر رہتی ہے (wrangler secret put ASSISTANT_API_KEY) — یہ دکان میں محفوظ نہیں ہوتی۔",
+      "webProviderNote": "کمپنی سرور کی کلید کے مطابق ہوتی ہے، اس لیے یہاں تبدیل نہیں ہو سکتی۔",
       "behaviour": "طرزِ کار",
       "provider": "AI کمپنی",
       "provider_anthropic": "اینٹروپک (Claude)",

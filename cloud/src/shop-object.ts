@@ -139,14 +139,24 @@ export class ShopObject {
    * is on at all.
    */
   private async handleAssistant(db: SqliteCompat, request: Request): Promise<Response> {
-    let body: { op?: unknown; apiKey?: unknown; payload?: unknown; sessionUser?: unknown };
+    let body: { op?: unknown; apiKey?: unknown; payload?: unknown; provider?: unknown; sessionUser?: unknown };
     try {
-      body = (await request.json()) as { op?: unknown; apiKey?: unknown; payload?: unknown; sessionUser?: unknown };
+      body = (await request.json()) as {
+        op?: unknown;
+        apiKey?: unknown;
+        payload?: unknown;
+        provider?: unknown;
+        sessionUser?: unknown;
+      };
     } catch {
       return json({ ok: false, error: 'Invalid JSON body' }, 400);
     }
     const op = typeof body.op === 'string' ? body.op : 'testConnection';
     const apiKey = typeof body.apiKey === 'string' ? body.apiKey : '';
+    // The provider the SERVER's key belongs to. On the web the key is the
+    // server's, so the shop's own provider setting cannot be trusted to match
+    // it — the Worker derives this from the key and hands it over.
+    const provider = body.provider === 'anthropic' || body.provider === 'nvidia' ? body.provider : undefined;
     const sessionUser = typeof body.sessionUser === 'number' ? body.sessionUser : null;
     try {
       setWebDb(db);
@@ -156,7 +166,7 @@ export class ShopObject {
       if (op === 'testConnection') {
         const settings = getAssistantSettings();
         if (!settings.enabled) return json({ ok: false, error: 'disabled' }, 403);
-        const result = await testAssistantConnection(apiKey, settings.model);
+        const result = await testAssistantConnection(apiKey, settings.model, { provider });
         return json({ ok: true, data: result });
       }
       if (op === 'send') {
@@ -167,7 +177,7 @@ export class ShopObject {
         const payload = (body.payload ?? { message: '' }) as AssistantTurnRequest;
         auth.setSessionUser(sessionUser);
         try {
-          const result = await runAssistantTurn(payload, { apiKey });
+          const result = await runAssistantTurn(payload, { apiKey, provider });
           return json({ ok: true, data: result });
         } finally {
           auth.setSessionUser(null);

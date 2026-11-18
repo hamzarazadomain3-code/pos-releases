@@ -155,6 +155,7 @@
       "keyMissing": "No key is saved yet.",
       "keyCleared": "The key was removed.",
       "webKeyNote": "In the browser version the key lives on the server (wrangler secret put ASSISTANT_API_KEY) — it is never stored in the shop.",
+      "webProviderNote": "The provider follows the server's key, so it cannot be changed here.",
       "behaviour": "Behaviour",
       "provider": "AI provider",
       "provider_anthropic": "Anthropic (Claude)",

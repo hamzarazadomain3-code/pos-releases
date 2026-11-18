@@ -428,6 +428,60 @@ async function run() {
   );
   runtime.setAssistantProviderOverride(null);
 
+  // ── 7b. the SERVER's provider wins (the web key lives on the server) ─────
+  section("The server's provider (the web key belongs to the server)");
+  // On the web the key is the SERVER's (one key for every shop), so the
+  // provider follows the KEY and not the shop's setting. A shop left on the
+  // shipped "anthropic" default used to send an NVIDIA key to Anthropic and
+  // got "401 invalid x-api-key" on every turn.
+  check('an NVIDIA key is NVIDIA', sharedProvider.providerForApiKey('nvapi-abcdef') === 'nvidia');
+  check('an Anthropic key is Anthropic', sharedProvider.providerForApiKey('sk-ant-abcdef') === 'anthropic');
+  check('the key is trimmed first', sharedProvider.providerForApiKey('  nvapi-abcdef  ') === 'nvidia');
+  check('an empty key is unknown', sharedProvider.providerForApiKey('') === null);
+  check('an unknown key is unknown', sharedProvider.providerForApiKey('some-other-key') === null);
+
+  // The shop's setting says anthropic, the SERVER's key says nvidia: the turn
+  // must use the server's provider AND its models.
+  agent.assistantRateLimiter().reset();
+  settingsService.saveAssistantSettings({ provider: 'anthropic', model: 'auto' });
+  const serverSeen = [];
+  const serverMock = new MockProvider([
+    {
+      respond: (request) => {
+        serverSeen.push(request);
+        return { text: 'ok', toolCalls: [], usage: { inputTokens: 1, outputTokens: 1 }, stopReason: 'end_turn' };
+      },
+    },
+  ]);
+  runtime.setAssistantProviderOverride(serverMock);
+  const serverTurn = await agent.runAssistantTurn(
+    { message: 'What is the total sale of today?', history: [], attachments: [] },
+    { apiKey: 'nvapi-server-key', provider: 'nvidia' }
+  );
+  check('the turn succeeds with the server provider', serverTurn.ok, serverTurn.failure && serverTurn.failure.message);
+  check(
+    "the server's provider decides the model",
+    serverSeen.length === 1 && serverSeen[0].model === fast,
+    serverSeen.map((r) => r.model).join(' -> ')
+  );
+  // A photo must still reach a model that can SEE it, even on the web.
+  const serverPhoto = await agent.runAssistantTurn(
+    {
+      message: 'What is in this photo?',
+      history: [],
+      attachments: [{ kind: 'image', mediaType: 'image/png', name: 'test.png', data: png }],
+    },
+    { apiKey: 'nvapi-server-key', provider: 'nvidia' }
+  );
+  check('the server photo turn succeeds', serverPhoto.ok, serverPhoto.failure && serverPhoto.failure.message);
+  check(
+    'the server photo turn sent the vision model',
+    serverSeen[serverSeen.length - 1].model === vision,
+    serverSeen.map((r) => r.model).join(' -> ')
+  );
+  check('the server photo source line says vision model', String(serverPhoto.source || '').includes('vision model'), serverPhoto.source);
+  runtime.setAssistantProviderOverride(null);
+
   // ── 8. the provider switch repairs the setting ───────────────────────────
   section('The provider switch');
   settingsService.saveAssistantSettings({ provider: 'anthropic', model: 'claude-sonnet-4-5' });

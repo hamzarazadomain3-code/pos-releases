@@ -261,10 +261,18 @@ async function run() {
   const shopObjectSource = fs.readFileSync(path.join(PROJECT_ROOT, 'cloud/src/shop-object.ts'), 'utf8');
   check(
     'the shop object runs the real turn with the key it was handed',
-    shopObjectSource.includes('runAssistantTurn(payload, { apiKey })')
+    /runAssistantTurn\(payload,\s*\{[^}]*apiKey[^}]*\}\)/.test(shopObjectSource)
+  );
+  check(
+    'the shop object also passes the provider that key belongs to',
+    /runAssistantTurn\(payload,\s*\{[^}]*provider[^}]*\}\)/.test(shopObjectSource)
   );
   const accountsSource = fs.readFileSync(path.join(PROJECT_ROOT, 'cloud/src/accounts.ts'), 'utf8');
   check('the Worker passes the signed-in user to the shop object', accountsSource.includes('sessionUser: session.user_id'));
+  check(
+    'the Worker derives the provider from its own key',
+    accountsSource.includes('providerForApiKey')
+  );
   const browserSource = fs.readFileSync(path.join(PROJECT_ROOT, 'cloud/web/electron-browser.ts'), 'utf8');
   check('the browser sends the turn to the secret route', browserSource.includes("webAssistant('send'"));
 

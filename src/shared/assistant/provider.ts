@@ -80,6 +80,25 @@ export function modelSupportsVision(provider: AssistantProvider, model: string):
 }
 
 /**
+ * Which provider a raw API key belongs to.
+ *
+ * On the web the key lives on the SERVER — one key for every shop — so the
+ * provider is a property of the KEY, not of the shop. A shop whose setting
+ * says "anthropic" while the server holds an NVIDIA key would send that key to
+ * the wrong API and get "401 invalid x-api-key" on every single turn. The two
+ * prefixes below are the providers' own documented key formats.
+ *
+ * `null` means "not recognised" — the caller then keeps its own provider.
+ */
+export function providerForApiKey(apiKey: string): AssistantProvider | null {
+  const key = String(apiKey ?? '').trim();
+  if (!key) return null;
+  if (key.startsWith('nvapi-')) return 'nvidia';
+  if (key.startsWith('sk-ant-')) return 'anthropic';
+  return null;
+}
+
+/**
  * The model that must be used when a photo is attached.
  *
  * `null` means "the shop's own model already sees photos" (Anthropic), so
