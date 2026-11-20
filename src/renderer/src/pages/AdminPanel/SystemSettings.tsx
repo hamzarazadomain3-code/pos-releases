@@ -53,6 +53,8 @@ const SECTIONS: Section[] = [
       { key: 'default_payment_mode', label: 'Default Payment Mode', type: 'select', options: ['Cash', 'Card', 'Easypaisa', 'JazzCash'] },
       { key: 'require_customer', label: 'Require Customer for Every Bill', type: 'toggle' },
       { key: 'refund_manager_threshold', label: 'Manager Refund Threshold', type: 'number', hint: 'Refunds above this amount need a manager (0 = off)' },
+      { key: 'amend_allow_manager', label: 'Allow Managers to Amend Bills', type: 'toggle', hint: 'Off = only the owner amends. A manager must still re-enter their PIN; a cashier can never amend.' },
+      { key: 'amend_max_days_back', label: 'Amend Bills — Max Days Back', type: 'number', hint: '0 = any old bill. A bill older than this many days is refused.' },
       { key: 'invoice_prefix', label: 'Invoice Prefix', type: 'text' },
       { key: 'invoice_start_number', label: 'Starting Invoice Number', type: 'number' },
       { key: 'max_discount_percent', label: 'Max Discount % Allowed', type: 'number' },

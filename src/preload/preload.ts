@@ -123,7 +123,7 @@ const bridge: PosBridge = {
   },
   printing: {
     // ── Documents ──
-    printSale: (saleId: number, template?: string, opts?: { copies?: number; duplicate?: boolean; kickDrawer?: boolean }) => ipcRenderer.invoke('printing:printSale', saleId, template, opts),
+    printSale: (saleId: number, template?: string, opts?: { copies?: number; duplicate?: boolean; amendedVersion?: boolean; kickDrawer?: boolean }) => ipcRenderer.invoke('printing:printSale', saleId, template, opts),
     printLabel: (productId: number, copies?: number) => ipcRenderer.invoke('printing:printLabel', productId, copies),
     printBarcodeLabel: (productId: number, copies?: number) => ipcRenderer.invoke('printing:printBarcodeLabel', productId, copies),
     printBarcodeBatch: (productIds: number[], size?: string, copies?: number) => ipcRenderer.invoke('printing:printBarcodeBatch', productIds, size, copies),

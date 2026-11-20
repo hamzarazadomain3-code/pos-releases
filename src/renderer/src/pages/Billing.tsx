@@ -4,6 +4,7 @@ import LiveClock from '../components/LiveClock';
 import { Modal } from '../components/Modal';
 import CustomerCombobox from '../components/CustomerCombobox';
 import QuickCustomerDialog from '../components/QuickCustomerDialog';
+import { BillAmendModal } from '../components/BillAmendModal';
 import { UdhaarCustomerModal } from '../components/UdhaarCustomerModal';
 import { DateInput } from '../components/DateInput';
 import { KeyboardInput } from '../components/KeyboardInput';
@@ -273,6 +274,8 @@ export default function Billing({
   const [datePreset, setDatePreset] = useState<'today' | 'yesterday' | 'week' | 'month' | 'lastmonth' | 'custom'>('today');
   const [cashiers, setCashiers] = useState<UserRow[]>([]);
   const [saleDetail, setSaleDetail] = useState<SaleDetail | null>(null);
+  /** The bill currently open in the "Amend bill" screen (null = closed). */
+  const [amendTarget, setAmendTarget] = useState<{ id: number; invoiceNo: string } | null>(null);
   const [paymentModes] = useState(['Cash', 'Card', 'Udhaar', 'Wholesale']);
   const [shift, setShift] = useState<ShiftRow | null>(null);
   const [openShiftModal, setOpenShiftModal] = useState(false);
@@ -2476,6 +2479,20 @@ setQuotationMode(false);
     onNavigate?.('returns');
   }
 
+  /** Only the owner and a manager may open the amendment screen at all. */
+  const canAmendBills = userRole === 'owner' || userRole === 'manager';
+
+  /** After a successful amendment, every number on screen is refetched. */
+  async function handleAmendSaved(result: { invoiceNo?: string; cashEffect: number; creditEffect: number }) {
+    const cash = Number(result.cashEffect) || 0;
+    const credit = Number(result.creditEffect) || 0;
+    setNotice(
+      `Bill amended. Drawer ${cash >= 0 ? '+' : ''}${cash.toFixed(2)}, udhaar ${credit >= 0 ? '+' : ''}${credit.toFixed(2)}.`
+    );
+    if (saleDetail) await openSaleDetail(saleDetail.id);
+    if (history) await loadHistory(historyFilters, historyPage);
+  }
+
   const handleDuplicateAsNewSale = async () => {
     if (!saleDetail) return;
     
@@ -4571,6 +4588,27 @@ const handleUnitChange = (newLevel: number) => {
                         <td>
                           <div style={{ display: 'flex', gap: '4px' }}>
                             <button className="btn btn-sm" onClick={(ev) => { ev.stopPropagation(); void openHistoryDetail(e.event_id); }}>View</button>
+                            {e.sale_id && (e.event_type === 'sale' || e.event_type === 'amend') && (
+                              <button
+                                className="btn btn-sm"
+                                data-testid="history-open-bill"
+                                onClick={(ev) => { ev.stopPropagation(); void openSaleDetail(e.sale_id as number); }}
+                              >
+                                Bill
+                              </button>
+                            )}
+                            {canAmendBills && e.sale_id && (e.event_type === 'sale' || e.event_type === 'amend') && e.status === 'completed' && (
+                              <button
+                                className="btn btn-sm"
+                                data-testid="history-amend"
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  setAmendTarget({ id: e.sale_id as number, invoiceNo: e.invoice_no ?? '' });
+                                }}
+                              >
+                                Amend
+                              </button>
+                            )}
                             {e.event_type === 'sale' && e.sale_id && e.status === 'completed' && (
                               <button
                                 className="btn btn-sm btn-danger"
@@ -4787,6 +4825,15 @@ const handleUnitChange = (newLevel: number) => {
         >
             <div style={{ display: 'flex', gap: '8px' }}>
               <button className="btn btn-secondary" onClick={handleConvertToReturn}>Convert to Return</button>
+              {canAmendBills && (
+                <button
+                  className="btn btn-secondary"
+                  data-testid="amend-open"
+                  onClick={() => setAmendTarget({ id: saleDetail.id, invoiceNo: saleDetail.invoice_no })}
+                >
+                  Amend Bill
+                </button>
+              )}
               <button className="btn btn-secondary" onClick={() => {
                 window.api.printing.printSale(saleDetail.id, undefined, { duplicate: true })
                   .then((r) => { if (r && r.ok === false) setNotice(r.message); })
@@ -4857,6 +4904,15 @@ const handleUnitChange = (newLevel: number) => {
 
             <div className="modal-actions" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
               <button className="btn btn-secondary" onClick={handleConvertToReturn}>Convert to Return</button>
+              {canAmendBills && (
+                <button
+                  className="btn btn-secondary"
+                  data-testid="amend-open"
+                  onClick={() => setAmendTarget({ id: saleDetail.id, invoiceNo: saleDetail.invoice_no })}
+                >
+                  Amend Bill
+                </button>
+              )}
               <button className="btn btn-secondary" onClick={() => {
                 window.api.printing.printSale(saleDetail.id, undefined, { duplicate: true })
                   .then((r) => { if (r && r.ok === false) setNotice(r.message); })
@@ -4866,6 +4922,29 @@ const handleUnitChange = (newLevel: number) => {
               <button className="btn" onClick={() => setSaleDetail(null)}>Close</button>
             </div>
         </Modal>
+      )}
+
+      {amendTarget && (
+        <BillAmendModal
+          saleId={amendTarget.id}
+          invoiceNo={amendTarget.invoiceNo}
+          role={userRole}
+          customers={customers}
+          onClose={() => setAmendTarget(null)}
+          onSaved={handleAmendSaved}
+          onReturnItems={(saleId) => {
+            setAmendTarget(null);
+            setSaleDetail(null);
+            localStorage.setItem('return_sale_id', String(saleId));
+            setNotice('Opening Returns page...');
+            onNavigate?.('returns');
+          }}
+          onReprint={(saleId) => {
+            window.api.printing.printSale(saleId, undefined, { duplicate: true, amendedVersion: true })
+              .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+              .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
+          }}
+        />
       )}
 
 {voidTarget && (

@@ -1,4 +1,4 @@
-import type { ReactNode, RefObject } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from 'react';
 import { Modal } from './Modal';
 
 export interface ModalShellTab {
@@ -25,6 +25,14 @@ export interface ModalShellProps {
   footerNote?: ReactNode;
   /** Prefer this element for the initial focus (e.g. the first field). */
   initialFocusRef?: RefObject<HTMLElement>;
+  /**
+   * Runs before the built-in form keyboard logic — call `preventDefault()` to
+   * claim a key. Used by the amendment screen so **Ctrl+Enter** saves from any
+   * tab, which is the chord the strict run pins.
+   */
+  onKeyDown?: (e: ReactKeyboardEvent<HTMLDivElement>) => void;
+  /** Hide the built-in Cancel / Back / Next / Save buttons (a read-only or blocked screen). */
+  hideActions?: boolean;
 }
 
 /**
@@ -49,6 +57,8 @@ export function ModalShell({
   label,
   footerNote,
   initialFocusRef,
+  onKeyDown,
+  hideActions = false,
 }: ModalShellProps) {
   const idx = Math.max(0, tabs.findIndex((t) => t.id === activeId));
   const tab = tabs[idx] ?? tabs[0];
@@ -61,6 +71,7 @@ export function ModalShell({
       className={className}
       label={label}
       initialFocusRef={initialFocusRef}
+      onKeyDown={onKeyDown}
       shortcuts={[{ action: 'save', label: submitLabel }]}
       actions={{ save: () => onSubmit() }}
     >
@@ -88,25 +99,27 @@ export function ModalShell({
         {children}
       </div>
 
-      <div className="modal-actions">
-        {footerNote && <div className="modal-actions-note">{footerNote}</div>}
-        <button type="button" className="btn" onClick={onClose}>
-          Cancel
-        </button>
-        {idx > 0 && (
-          <button type="button" className="btn" onClick={() => onSelect(tabs[idx - 1].id)}>
-            Back
+      {!hideActions && (
+        <div className="modal-actions">
+          {footerNote && <div className="modal-actions-note">{footerNote}</div>}
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
           </button>
-        )}
-        {idx < tabs.length - 1 && (
-          <button type="button" className="btn" onClick={() => onSelect(tabs[idx + 1].id)}>
-            Next
+          {idx > 0 && (
+            <button type="button" className="btn" onClick={() => onSelect(tabs[idx - 1].id)}>
+              Back
+            </button>
+          )}
+          {idx < tabs.length - 1 && (
+            <button type="button" className="btn" onClick={() => onSelect(tabs[idx + 1].id)}>
+              Next
+            </button>
+          )}
+          <button type="button" className="btn btn-primary" data-guide-id="modal.save" onClick={onSubmit}>
+            {submitLabel}
           </button>
-        )}
-        <button type="button" className="btn btn-primary" data-guide-id="modal.save" onClick={onSubmit}>
-          {submitLabel}
-        </button>
-      </div>
+        </div>
+      )}
     </Modal>
   );
 }

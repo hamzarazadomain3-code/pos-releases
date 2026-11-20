@@ -17,6 +17,7 @@
     "test:receiptdesigner": "npm run build:main && electron scripts/receipt_designer_check.js",
     "test:return": "npm run build:main && electron scripts/test_return_bill.js",
     "test:billAmend": "npm run build:main && electron scripts/test_billAmend.cjs",
+    "test:billAmendUi": "npm run build && electron scripts/test_billAmendUi.cjs",
     "test:negstock": "npm run build:main && electron scripts/test_negative_stock.js",
     "test:address": "npm run build:main && electron scripts/test_receipt_address.js",
     "test:purchaseimport": "npm run build:main && electron scripts/test_purchase_import.js",
