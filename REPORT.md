@@ -2782,4 +2782,72 @@ Nothing. The web Worker is redeployed and the fix is live; the desktop app is
 unaffected (its provider is still the shop's own setting, and its own key).
 
 
+---
+
+## Strict Build Run — Phase 3: the logo rule (branch `feature/bill-amend`)
+
+### The rule
+
+- **POS app UI** (login, 2FA, auto-lock, password recovery, sidebar) shows the **app's own logo** — never the shop's.
+- **Printed / exported documents** show the **shop's logo** — and when the shop has not uploaded one they print **nothing** in that spot: no app-logo fallback, no hardcoded text.
+- The **Shop Profile upload field stays**, and now says what it really does.
+- A designer's **print preview** is paper, so the shop logo may appear there (the Receipt Designer preview is rendered by the real print builder, so preview and paper agree by construction).
+
+### The audit — every surface, before -> after
+
+| Surface | File:line | Before | After |
+|---|---|---|---|
+| Login card | `src/renderer/src/App.tsx:386` | shop logo if set, else the app lockup | **the app lockup always** |
+| 2FA code card | `src/renderer/src/App.tsx:359` | shop logo if set | **the app lockup always** |
+| Auto-lock screen | `src/renderer/src/App.tsx:486` | shop logo if set, else the app lockup | **the app lockup always** |
+| Password recovery | `src/renderer/src/pages/LoginRecovery.tsx:202` | shop logo if set | **the app lockup always** |
+| Sidebar brand | `src/renderer/src/App.tsx:1194` | shop logo if set, else the app mark | **the app mark always** |
+| Session-restore spinner | `src/renderer/src/App.tsx:1084` | the app lockup | unchanged (already correct) |
+| App-logo source of truth | `src/renderer/src/utils/appLogo.ts:1` (new) | PNG assets imported ad hoc | **one module both screens import** |
+| Shop Profile upload | `src/renderer/src/pages/Settings.tsx:182-191` | hint: "receipt, login screen and sidebar" | field kept; hint: **"printed documents only … never in the app's own screens"** |
+| Thermal receipt (shipped layout) | `src/main/services/receiptTemplates.ts:511` | shop logo; nothing when empty | unchanged (correct) |
+| Designed receipt | `src/shared/renderDocument.ts:292-300` | shop logo; nothing when empty | unchanged (correct) |
+| Invoice / purchase order / credit slip | `src/main/services/printDocs.ts:159-169` -> `renderDocument` | shop logo; nothing when empty | unchanged (correct) |
+| Receipt Designer preview | `receipt:design:preview` -> the same builder as print | shop logo (it previews paper) | unchanged (correct) |
+| Invoice Designer preview | `src/renderer/src/components/InvoiceTemplatePreview.tsx:68-78` | a schematic coloured placeholder (neither logo) | unchanged — **OWNER DECISION**: it is a schematic, not a paper preview; printing the real invoice uses the shop logo |
+| Labels | `src/main/services/labelStudioPrinting.ts` | no automatic shop logo (only an `image` element the template itself carries) | unchanged — **OWNER DECISION**: labels were never a shop-logo surface, and adding one silently would change every existing label |
+| Cloud / web | `cloud/web/*` reuses `src/renderer` | the same renderer | the same rule, live after `npm run build:web` |
+
+Two deliberate removals: `App.tsx` no longer has a `shopLogo` state at all, and
+`LoginScreen` / `LockScreen` / `LoginRecovery` no longer accept a `logo` prop — so a
+future edit cannot pass the shop logo back in by accident without a type error.
+The only remaining `shop_logo` read in the renderer is the Shop Profile upload field
+(`Settings.tsx:185-186`), which is the control's own value.
+
+### The permanent test
+
+`scripts/test_logoRule.cjs` + `npm run test:logoRule` (builds first, then drives the
+REAL built renderer in a real BrowserWindow with the real preload and the real IPC
+handlers). It has two halves because the two failure modes are different:
+
+- **Print** — calls the real `dist` services: `buildReceiptJob` (the shipped roll),
+  `printDocs.buildInvoiceHtml`, `receiptDesigner.buildDesignedReceiptAsync`, and the
+  **real print path** `buildReceiptJobAsync` with the Receipt Designer switched on.
+  With a shop logo every one of them carries it; with `shop_logo = ''` **none** emits
+  a logo `<img>` and **none** carries a bundled Rokar asset name (the no-fallback rule).
+- **Screen** — seeds a distinctive shop-logo data URL, then asserts the login card has
+  exactly one image (the bundled app lockup, `alt="Rokar POS"`), the sidebar brand is
+  the bundled app mark, no image in the signed-in app is the shop logo, the Shop
+  Profile still has "Upload from PC", the hint says "printed documents only", and the
+  control still previews the uploaded logo.
+
+### Results (numbers are from the saved output, nothing typed by hand)
+
+- `npm run test:logoRule` — **30/30 PASS** (`E:\temp\proof\b3_logo_rule.txt`)
+- `npm run test:wallpaper` — 13/13 (`b3_wallpaper.txt`), `npm run test:keyboard` — 93/93 (`b3_keyboard.txt`), `npm run test:recovery:ui` — 26/26 (`b3_recovery_ui.txt`)
+- renderer typecheck exit 0 (`b3_typecheck_renderer.txt`), main typecheck exit 0 (`b3_typecheck_main.txt`)
+- `npm run build` exit 0 (`b3_build.txt`)
+
+### What the owner has to do for this phase
+
+- **Desktop:** nothing right now; the next installer carries it (this run does not bump the version).
+- **Web:** rebuild/redeploy (`npm run build:web` + wrangler) — the web app reuses this renderer, so it inherits the rule.
+- **Their own shop logo:** if they want it on paper, Shop Profile -> Shop Logo -> Upload from PC -> Save. If they do not upload one, the paper simply has no logo (that is intended).
+
+
 
