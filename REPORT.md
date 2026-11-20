@@ -2784,70 +2784,106 @@ unaffected (its provider is still the shop's own setting, and its own key).
 
 ---
 
-## Strict Build Run — Phase 3: the logo rule (branch `feature/bill-amend`)
+## Strict Build Run — Final Results (branch `feature/bill-amend`)
 
-### The rule
+Every test suite and the migration check ran against the **real `dist` services** (built
+after Phase 1/2/3 code changes). Each number below comes from the saved output in
+`E:\temp\proof\final_<name>.txt`.
 
-- **POS app UI** (login, 2FA, auto-lock, password recovery, sidebar) shows the **app's own logo** — never the shop's.
-- **Printed / exported documents** show the **shop's logo** — and when the shop has not uploaded one they print **nothing** in that spot: no app-logo fallback, no hardcoded text.
-- The **Shop Profile upload field stays**, and now says what it really does.
-- A designer's **print preview** is paper, so the shop logo may appear there (the Receipt Designer preview is rendered by the real print builder, so preview and paper agree by construction).
+| Suite | Result | Proof file |
+|---|---|---|
+| `test:print` | **138/138 PASS** | `final_print.txt` |
+| `test:receipt` | **68/68 PASS** | `final_receipt.txt` |
+| `test:receiptdesigner` | **ALL PASSED** | `final_receiptdesigner.txt` |
+| `test:return` | **29/29 PASS** | `final_return.txt` |
+| `test:billAmend` | **89/89 PASS** | `final_billAmend.txt` |
+| `test:billAmendUi` | **38/38 PASS** | `final_billAmendUi.txt` |
+| `test:logoRule` | **30/30 PASS** | `final_logoRule.txt` |
+| `test:negstock` | **All negative-stock checks passed** | `final_negstock.txt` |
+| `test:address` | **All address-resolution checks passed** | `final_address.txt` |
+| `test:purchaseimport` | **All purchase-import checks passed** | `final_purchaseimport.txt` |
+| `test:purchaseimportdata` | **All purchase-import-from-file checks passed** | `final_purchaseimportdata.txt` |
+| `test:purchaseimportui` | **All purchase-import UI checks passed** | `final_purchaseimportui.txt` |
+| `test:recovery` | **48/48 PASS** | `final_recovery.txt` |
+| `test:recovery:ui` | **26/26 PASS** | `final_recovery_ui.txt` |
+| `test:holdresume` | **26/26 PASS** | `final_holdresume.txt` |
+| `test:shortcuts` | **37/37 PASS** | `final_shortcuts.txt` |
+| `test:audit` | **ALL PASSED** | `final_audit.txt` |
+| `test:imageupload` | **23/23 PASS** | `final_imageupload.txt` |
+| `test:dateparse` | **ALL PASSED** | `final_dateparse.txt` |
+| `test:dashboardPeriod` | **ALL PASSED** | `final_dashboardPeriod.txt` |
+| `test:businessDay` | **ALL PASSED** | `final_businessDay.txt` |
+| `test:run13Pure` | **ALL PASSED** | `final_run13Pure.txt` |
+| `test:salesHistory` | **22/22 PASS** | `final_salesHistory.txt` |
+| `test:historyRoles` | **ALL PASSED** | `final_historyRoles.txt` |
+| `test:customerDiscount` | **12/12 PASS** | `final_customerDiscount.txt` |
+| `test:customerDiscountModel` | **ALL PASSED** | `final_customerDiscountModel.txt` |
+| `test:belowCost` | **ALL PASSED** | `final_belowCost.txt` |
+| `test:utf8Export` | **ALL PASSED** | `final_utf8Export.txt` |
+| `test:paymentreconciliation` | **ALL PASSED** | `final_paymentreconciliation.txt` |
+| `test:promotions` | **ALL PASSED** | `final_promotions.txt` |
+| `test:alerts` | **ALL PASSED** | `final_alerts.txt` |
+| `test:testdata` | **ALL PASSED** | `final_testdata.txt` |
+| `test:migration071` | **ALL PASSED** | `final_migration071.txt` |
+| `test:migration072` | **ALL PASSED** | `final_migration072.txt` |
+| `test:invoiceTemplateConfig` | **ALL PASSED** | `final_invoiceTemplateConfig.txt` |
+| `test:licensing` | **ALL LICENSING CHECKS PASSED** | `final_licensing.txt` |
+| `test:keyboard` | **93/93 PASS** | `final_keyboard.txt` |
+| `test:billingKeys` | **26/26 PASS** | `final_billingKeys.txt` |
+| `test:wallpaper` | **13/13 PASS** | `final_wallpaper.txt` |
+| `test:whatsappRecovery` | **15/15 PASS** | `final_whatsappRecovery.txt` |
+| `test:whatsappReceipt` | **ALL PASSED** | `final_whatsappReceipt.txt` |
+| `test:qtyJump` | **7/7 PASS** | `final_qtyJump.txt` |
+| `test:sidebarMenu` | **42/42 PASS** | `final_sidebarMenu.txt` |
+| `test:sidebarGuard` | **50/50 PASS** | `final_sidebarGuard.txt` |
+| `test:sidebarLanding` | **22/22 PASS** | `final_sidebarLanding.txt` |
+| `test:sidebarGroups` | **35/35 PASS** | `final_sidebarGroups.txt` |
+| `test:sidebarIcons` | **21/21 PASS** | `final_sidebarIcons.txt` |
+| `test:sidebarFooter` | **30/30 PASS** | `final_sidebarFooter.txt` |
+| `test:sidebarBadges` | **37/37 PASS** | `final_sidebarBadges.txt` |
+| `test:sidebarKeyboardNav` | **24/24 PASS** | `final_sidebarKeyboardNav.txt` |
+| `test:sidebarSearch` | **12/12 PASS** | `final_sidebarSearch.txt` |
+| `test:sidebarBrand` | **16/16 PASS** | `final_sidebarBrand.txt` |
+| `test:layoutMode` | **18/18 PASS** | `final_layoutMode.txt` |
+| `test:sidebarDrawer` | **8/8 PASS** | `final_sidebarDrawer.txt` |
+| `test:binaryTransfer` | **35/35 PASS** | `final_binaryTransfer.txt` |
+| `test:webImport` | **All web-import checks passed** | `final_webImport.txt` |
+| `test:assistantProvider` | **All assistant provider + key checks passed** | `final_assistantProvider.txt` |
+| `test:assistantAutoModel` | **All assistant auto-model checks passed** | `final_assistantAutoModel.txt` |
+| `test:assistantSettings` | **All assistant settings checks passed** | `final_assistantSettings.txt` |
+| `test:assistantTools` | **All assistant tool-registry checks passed** | `final_assistantTools.txt` |
+| `test:assistantAgent` | **All assistant agent-loop checks passed** | `final_assistantAgent.txt` |
+| `test:assistantPanel` | **All assistant panel checks passed** | `final_assistantPanel.txt` |
+| `test:assistantVerify` | **All assistant number-verification checks passed** | `final_assistantVerify.txt` |
+| `test:assistantGuide` | **All assistant guide-mode checks passed** | `final_assistantGuide.txt` |
+| `test:assistantPending` | **All assistant pending-action checks passed** | `final_assistantPending.txt` |
+| `test:assistantBillActions` | **All assistant billing-action checks passed** | `final_assistantBillActions.txt` |
+| `test:assistantBackOffice` | **All assistant back-office checks passed** | `final_assistantBackOffice.txt` |
+| `test:assistantProactive` | **All assistant proactive-insight checks passed** | `final_assistantProactive.txt` |
+| `test:assistantEval` | **All assistant evaluation cases passed** | `final_assistantEval.txt` |
+| `test:assistantPrivacy` | **All assistant privacy checks passed** | `final_assistantPrivacy.txt` |
+| `test:assistantA11y` | **81/81 PASS** | `final_assistantA11y.txt` |
+| `test:assistantUI` | **25/25 PASS** | `final_assistantUI.txt` |
+| `test:assistantNvidia` | **All assistant NVIDIA checks passed** | `final_assistantNvidia.txt` |
+| `test:assistantVoice` | **All assistant voice checks passed** | `final_assistantVoice.txt` |
+| `check:migrations` | **Integrity check: ok** | `final_check_migrations.txt` |
 
-### The audit — every surface, before -> after
+**All 74 test suites + `check:migrations` = 75/75 GREEN.**
 
-| Surface | File:line | Before | After |
-|---|---|---|---|
-| Login card | `src/renderer/src/App.tsx:386` | shop logo if set, else the app lockup | **the app lockup always** |
-| 2FA code card | `src/renderer/src/App.tsx:359` | shop logo if set | **the app lockup always** |
-| Auto-lock screen | `src/renderer/src/App.tsx:486` | shop logo if set, else the app lockup | **the app lockup always** |
-| Password recovery | `src/renderer/src/pages/LoginRecovery.tsx:202` | shop logo if set | **the app lockup always** |
-| Sidebar brand | `src/renderer/src/App.tsx:1194` | shop logo if set, else the app mark | **the app mark always** |
-| Session-restore spinner | `src/renderer/src/App.tsx:1084` | the app lockup | unchanged (already correct) |
-| App-logo source of truth | `src/renderer/src/utils/appLogo.ts:1` (new) | PNG assets imported ad hoc | **one module both screens import** |
-| Shop Profile upload | `src/renderer/src/pages/Settings.tsx:182-191` | hint: "receipt, login screen and sidebar" | field kept; hint: **"printed documents only … never in the app's own screens"** |
-| Thermal receipt (shipped layout) | `src/main/services/receiptTemplates.ts:511` | shop logo; nothing when empty | unchanged (correct) |
-| Designed receipt | `src/shared/renderDocument.ts:292-300` | shop logo; nothing when empty | unchanged (correct) |
-| Invoice / purchase order / credit slip | `src/main/services/printDocs.ts:159-169` -> `renderDocument` | shop logo; nothing when empty | unchanged (correct) |
-| Receipt Designer preview | `receipt:design:preview` -> the same builder as print | shop logo (it previews paper) | unchanged (correct) |
-| Invoice Designer preview | `src/renderer/src/components/InvoiceTemplatePreview.tsx:68-78` | a schematic coloured placeholder (neither logo) | unchanged — **OWNER DECISION**: it is a schematic, not a paper preview; printing the real invoice uses the shop logo |
-| Labels | `src/main/services/labelStudioPrinting.ts` | no automatic shop logo (only an `image` element the template itself carries) | unchanged — **OWNER DECISION**: labels were never a shop-logo surface, and adding one silently would change every existing label |
-| Cloud / web | `cloud/web/*` reuses `src/renderer` | the same renderer | the same rule, live after `npm run build:web` |
+### What the owner has to do
 
-Two deliberate removals: `App.tsx` no longer has a `shopLogo` state at all, and
-`LoginScreen` / `LockScreen` / `LoginRecovery` no longer accept a `logo` prop — so a
-future edit cannot pass the shop logo back in by accident without a type error.
-The only remaining `shop_logo` read in the renderer is the Shop Profile upload field
-(`Settings.tsx:185-186`), which is the control's own value.
+1. **Desktop rebuild & reinstall** — this run does not bump the version; the next
+   desktop installer will carry Phase 1/2/3.
+2. **Web redeploy** — `npm run build:web` + `wrangler deploy`; the web app reuses the
+   same renderer, so it inherits the amend UI, the logo rule, and every fix.
+3. **No version bump, no push to `main`, no release** — this is a feature branch
+   (`feature/bill-amend`); `main` stays untouched.
 
-### The permanent test
+### Non-DONE items (PROGRESS.md)
 
-`scripts/test_logoRule.cjs` + `npm run test:logoRule` (builds first, then drives the
-REAL built renderer in a real BrowserWindow with the real preload and the real IPC
-handlers). It has two halves because the two failure modes are different:
-
-- **Print** — calls the real `dist` services: `buildReceiptJob` (the shipped roll),
-  `printDocs.buildInvoiceHtml`, `receiptDesigner.buildDesignedReceiptAsync`, and the
-  **real print path** `buildReceiptJobAsync` with the Receipt Designer switched on.
-  With a shop logo every one of them carries it; with `shop_logo = ''` **none** emits
-  a logo `<img>` and **none** carries a bundled Rokar asset name (the no-fallback rule).
-- **Screen** — seeds a distinctive shop-logo data URL, then asserts the login card has
-  exactly one image (the bundled app lockup, `alt="Rokar POS"`), the sidebar brand is
-  the bundled app mark, no image in the signed-in app is the shop logo, the Shop
-  Profile still has "Upload from PC", the hint says "printed documents only", and the
-  control still previews the uploaded logo.
-
-### Results (numbers are from the saved output, nothing typed by hand)
-
-- `npm run test:logoRule` — **30/30 PASS** (`E:\temp\proof\b3_logo_rule.txt`)
-- `npm run test:wallpaper` — 13/13 (`b3_wallpaper.txt`), `npm run test:keyboard` — 93/93 (`b3_keyboard.txt`), `npm run test:recovery:ui` — 26/26 (`b3_recovery_ui.txt`)
-- renderer typecheck exit 0 (`b3_typecheck_renderer.txt`), main typecheck exit 0 (`b3_typecheck_main.txt`)
-- `npm run build` exit 0 (`b3_build.txt`)
-
-### What the owner has to do for this phase
-
-- **Desktop:** nothing right now; the next installer carries it (this run does not bump the version).
-- **Web:** rebuild/redeploy (`npm run build:web` + wrangler) — the web app reuses this renderer, so it inherits the rule.
-- **Their own shop logo:** if they want it on paper, Shop Profile -> Shop Logo -> Upload from PC -> Save. If they do not upload one, the paper simply has no logo (that is intended).
+- **Phase 1-F** (item 23b): change a bill's item/qty/price — NOT DONE (deliberate).
+- **Phase 2** (item 24b): Reports / Customer-profile Amend entry points — NOT DONE
+  (left for a follow-up to avoid untested duplicate buttons).
 
 
 
