@@ -75,8 +75,9 @@ export default function CashDrawer({ shift, onClose }: Props) {
   const handlePrintSummary = () => {
     if (!session || !breakdown) return;
     const actualCash = Number(closingCash) || 0;
-    const cashIn = (breakdown as any).cash_in ?? 0;
-    const cashOut = (breakdown as any).cash_out ?? 0;
+    const amendmentCash = Number(breakdown.amendment_cash) || 0;
+    const cashIn = ((breakdown as any).cash_in ?? 0) + Math.max(0, amendmentCash);
+    const cashOut = ((breakdown as any).cash_out ?? 0) + Math.max(0, -amendmentCash);
     const otherPayments = (breakdown as any).cheque_sales + (breakdown as any).easypaisa_sales + (breakdown as any).jazzcash_sales;
     window.api.printing.printDrawerSummary({
       opening_cash: session.opening_cash,
@@ -104,7 +105,7 @@ export default function CashDrawer({ shift, onClose }: Props) {
     : 0;
 
   const expectedBalance = session && breakdown
-    ? session.opening_cash + breakdown.cash_sales - breakdown.refunds
+    ? session.opening_cash + breakdown.cash_sales - breakdown.refunds + (Number(breakdown.amendment_cash) || 0)
     : 0;
 
   return (

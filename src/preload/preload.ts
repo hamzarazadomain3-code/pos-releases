@@ -316,6 +316,13 @@ const bridge: PosBridge = {
       ipcRenderer.invoke('returns:createCashRefund', amount, reason, mode),
     listCashRefunds: (from?: string, to?: string) => ipcRenderer.invoke('returns:listCashRefunds', from, to),
   },
+  billAmend: {
+    getView: (saleId: number) => ipcRenderer.invoke('billAmend:getView', saleId),
+    list: (saleId: number) => ipcRenderer.invoke('billAmend:list', saleId),
+    customer: (input) => ipcRenderer.invoke('billAmend:customer', input),
+    payments: (input) => ipcRenderer.invoke('billAmend:payments', input),
+    notes: (input) => ipcRenderer.invoke('billAmend:notes', input),
+  },
   audits: {
     create: () => ipcRenderer.invoke('audits:create'),
     list: () => ipcRenderer.invoke('audits:list'),

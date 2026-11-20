@@ -1,6 +1,12 @@
 ﻿import type { ReceiptDesign, ReceiptLibrary } from './receiptDesign';
 import type { SidebarBadge } from './sidebarBadges';
 import type {
+  BillAmendPaymentRow,
+  BillAmendRecord,
+  BillAmendSplit,
+  BillAmendState,
+} from './billAmend';
+import type {
   AssistantActivityRow,
   AssistantDataLevel,
   AssistantLanguage,
@@ -1171,6 +1177,54 @@ export interface CashRefundRow {
   username?: string | null;
 }
 
+/** One amendment row as the UI and the test see it. */
+export interface BillAmendRow {
+  id: number;
+  saleId: number;
+  userId: number | null;
+  username: string | null;
+  reason: string;
+  kind: string;
+  before: unknown;
+  after: unknown;
+  cashEffect: number;
+  creditEffect: number;
+  shiftId: number | null;
+  createdAt: string;
+}
+
+/** The whole amend screen's state. */
+export interface BillAmendView {
+  saleId: number;
+  invoiceNo: string;
+  total: number;
+  createdAt: string;
+  status: string;
+  customerId: number | null;
+  customerName: string | null;
+  notes: string | null;
+  payments: BillAmendPaymentRow[];
+  credit: number;
+  split: BillAmendSplit;
+  amendedCount: number;
+  lastAmendedAt: string | null;
+  amendments: BillAmendRow[];
+  allowed: boolean;
+  blockedReason: string | null;
+  maxDaysBack: number;
+  daysBack: number;
+  allowManager: boolean;
+}
+
+/** The result of one amendment. */
+export interface BillAmendResult {
+  ok: true;
+  amendment: BillAmendRecord;
+  state: BillAmendState;
+  cashEffect: number;
+  creditEffect: number;
+}
+
 export interface AuditRow {
   id: number;
   user_id: number;
@@ -1329,11 +1383,14 @@ export interface PrintResult {
  * Per-call options for printing / previewing a receipt (Phase 4).
  *  - `copies`   overrides the shop's `receipt_copies` setting for one job.
  *  - `duplicate` marks a reprint of an ALREADY-ISSUED sale → "DUPLICATE COPY".
+ *  - `amendedVersion` prints the CURRENT (amended) state and carries the
+ *    "AMENDED" marker with the amendment count.
  *  - `kickDrawer` pulses the cash drawer after a successful print.
  */
 export interface PrintSaleOptions {
   copies?: number;
   duplicate?: boolean;
+  amendedVersion?: boolean;
   kickDrawer?: boolean;
 }
 
@@ -1665,6 +1722,29 @@ export interface PosBridge {
     get: (id: number) => Promise<(ReturnRow & { items: ReturnItemRow[] }) | null>;
     createCashRefund: (amount: number, reason?: string, mode?: string) => Promise<CashRefundRow>;
     listCashRefunds: (from?: string, to?: string) => Promise<CashRefundRow[]>;
+  };
+  billAmend: {
+    /** The whole amend screen's state (the bill, its amendments, the permission). */
+    getView: (saleId: number) => Promise<BillAmendView | null>;
+    /** The amendment history of one bill. */
+    list: (saleId: number) => Promise<BillAmendRow[]>;
+    /** A) Move the bill to another customer (the udhaar follows). */
+    customer: (input: {
+      saleId: number;
+      customerId: number | null;
+      reason: string;
+      managerPin?: string;
+      overrideCreditLimit?: boolean;
+    }) => Promise<BillAmendResult>;
+    /** B) Change the payment split / the udhaar amount. */
+    payments: (input: {
+      saleId: number;
+      split: { cash?: number; card?: number; bank?: number; credit?: number };
+      reason: string;
+      managerPin?: string;
+    }) => Promise<BillAmendResult>;
+    /** C) Edit the notes / the invoice-level text. */
+    notes: (input: { saleId: number; notes: string | null; reason: string; managerPin?: string }) => Promise<BillAmendResult>;
   };
   audits: {
     create: () => Promise<AuditRow & { items: AuditItemRow[] }>;
@@ -2125,6 +2205,8 @@ export interface CashDrawerBreakdown {
   jazzcash_sales: number;
   udhaar_sales: number;
   refunds: number;
+  /** Cash an amendment moved into/out of this shift (positive = money in). */
+  amendment_cash: number;
   total_bills: number;
   average_bill: number;
 }

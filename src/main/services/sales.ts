@@ -8,6 +8,7 @@ import { currentShift } from './shifts';
 import { resolvePromotions } from './promotions';
 import { recordSaleEvent } from './salesHistory';
 import { summarizeHeldBill } from '../../shared/cartMath';
+import { effectiveBillState, type BillAmendPaymentRow, type BillAmendRecord, type BillAmendState } from '../../shared/billAmend';
 import type {
   BillLineInput,
   Customer,
@@ -405,6 +406,51 @@ export function createSale(input: SaleInput): SaleCreateResult {
   }
 }
 
+/**
+ * The amendments of a bill, as the pure chain the calculators understand.
+ *
+ * Read straight from the table (and never through the amendment service) so
+ * `sales.ts` keeps its one-way dependency and the service can use `getSale`
+ * without a cycle. A database without the table (an install that has not run
+ * migration 089 yet) simply has no amendments.
+ */
+function saleAmendmentChain(saleId: number): BillAmendRecord[] {
+  const db = getDb();
+  try {
+    const rows = db
+      .prepare(
+        `SELECT id, sale_id, user_id, reason, kind, before_json, after_json,
+                cash_effect, credit_effect, shift_id, created_at
+         FROM sale_amendments WHERE sale_id = ? ORDER BY id`
+      )
+      .all(saleId) as unknown as Array<Record<string, unknown>>;
+    const parse = (value: unknown): BillAmendState | null => {
+      if (value == null) return null;
+      if (typeof value !== 'string') return value as BillAmendState;
+      try {
+        return JSON.parse(value) as BillAmendState;
+      } catch {
+        return null;
+      }
+    };
+    return rows.map((r) => ({
+      id: Number(r.id),
+      saleId: Number(r.sale_id),
+      userId: r.user_id == null ? null : Number(r.user_id),
+      reason: String(r.reason ?? ''),
+      kind: String(r.kind ?? ''),
+      before: parse(r.before_json),
+      after: parse(r.after_json),
+      cashEffect: Number(r.cash_effect ?? 0),
+      creditEffect: Number(r.credit_effect ?? 0),
+      shiftId: r.shift_id == null ? null : Number(r.shift_id),
+      createdAt: String(r.created_at ?? ''),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export function getSale(id: number): (Sale & { items: SaleItem[]; payments: Payment[] }) | null {
   const db = getDb();
   const sale = db
@@ -425,6 +471,35 @@ export function getSale(id: number): (Sale & { items: SaleItem[]; payments: Paym
   const payments = db
     .prepare('SELECT * FROM payments WHERE sale_id = ?')
     .all(id) as unknown as Payment[];
+  // An amended bill shows its CURRENT payment split: the original rows are
+  // kept untouched (so a closed shift's totals never move), and the last
+  // amendment's split is what the bill means now.
+  const chain = saleAmendmentChain(id);
+  if (chain.length > 0) {
+    const original: BillAmendState = {
+      invoiceNo: sale.invoice_no,
+      total: Number(sale.total_amount ?? 0),
+      customerId: sale.customer_id ?? null,
+      customerName: (sale as unknown as { customer_name?: string | null }).customer_name ?? null,
+      notes: sale.notes ?? null,
+      payments: payments.map((p) => ({ mode: p.mode, amount: Number(p.amount ?? 0) })),
+      credit: 0,
+    };
+    const effective = effectiveBillState(original, chain);
+    const rows: BillAmendPaymentRow[] = effective.payments;
+    return {
+      ...sale,
+      items,
+      payments: rows.map((row, i) => ({
+        id: payments[i]?.id ?? 0,
+        sale_id: id,
+        mode: row.mode,
+        amount: row.amount,
+        reference: payments[i]?.reference ?? null,
+        created_at: payments[i]?.created_at ?? '',
+      })),
+    };
+  }
   return { ...sale, items, payments };
 }
 

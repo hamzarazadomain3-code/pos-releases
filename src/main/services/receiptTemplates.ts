@@ -160,7 +160,7 @@ function resolveOpts(): TemplateOpts {
 export function buildReceiptHtml(
   saleId: number,
   template?: ReceiptTemplate,
-  extra?: { duplicate?: boolean }
+  extra?: { duplicate?: boolean; amendmentLabel?: string | null }
 ): string {
   const sale = getSale(saleId);
   if (!sale) throw new Error('Sale not found');
@@ -185,7 +185,8 @@ export function buildReceiptHtml(
     paper,
     design,
     extra?.duplicate === true,
-    branchId
+    branchId,
+    extra?.amendmentLabel ?? null
   );
 }
 

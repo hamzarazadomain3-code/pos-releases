@@ -56,6 +56,13 @@ import {
 } from './services/salesHistory';
 import { getAllSettings, setSetting } from './services/settings';
 import {
+  amendCustomer,
+  amendNotes,
+  amendPayments,
+  getBillAmendView,
+  listAmendments,
+} from './services/billAmendments';
+import {
   getAssistantSettingsView,
   saveAssistantSettings,
   setAssistantApiKey,
@@ -911,6 +918,15 @@ export function registerIpcHandlers(): void {
     createCashRefund(amount, reason, mode)
   );
   ipcMain.handle('returns:listCashRefunds', (_e, from?: string, to?: string) => listCashRefunds(from, to));
+
+  // ── Amending a finished bill ───────────────────────────────────────────────
+  // The permissions live in the SERVICE (a cashier is refused there, a manager
+  // needs their PIN re-entered), not in the UI.
+  ipcMain.handle('billAmend:getView', (_e, saleId: number) => getBillAmendView(Number(saleId)));
+  ipcMain.handle('billAmend:list', (_e, saleId: number) => listAmendments(Number(saleId)));
+  ipcMain.handle('billAmend:customer', (_e, input) => amendCustomer(input));
+  ipcMain.handle('billAmend:payments', (_e, input) => amendPayments(input));
+  ipcMain.handle('billAmend:notes', (_e, input) => amendNotes(input));
 
   ipcMain.handle('audits:create', () => createAudit());
   ipcMain.handle('audits:list', () => listAudits());

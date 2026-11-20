@@ -17,6 +17,7 @@ export type HistoryEventType =
   | 'return'
   | 'cash_refund'
   | 'void'
+  | 'amend'
   | 'delete'
   | 'hold_created'
   | 'hold_resumed'
@@ -29,6 +30,7 @@ export const HISTORY_EVENT_TYPES: HistoryEventType[] = [
   'return',
   'cash_refund',
   'void',
+  'amend',
   'delete',
   'hold_created',
   'hold_resumed',
@@ -50,6 +52,7 @@ export const HISTORY_EVENT_LABELS: Record<HistoryEventType, string> = {
   return: 'Return',
   cash_refund: 'Cash Refund',
   void: 'Void',
+  amend: 'Amended',
   delete: 'Delete',
   hold_created: 'Held',
   hold_resumed: 'Resumed',
@@ -62,6 +65,7 @@ export const HISTORY_EVENT_CLASSES: Record<HistoryEventType, string> = {
   return: 'hist-type-return',
   cash_refund: 'hist-type-refund',
   void: 'hist-type-void',
+  amend: 'hist-type-void',
   delete: 'hist-type-delete',
   hold_created: 'hist-type-hold',
   hold_resumed: 'hist-type-resume',

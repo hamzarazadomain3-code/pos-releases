@@ -46,6 +46,7 @@ import type { PrintSaleOptions } from '../../shared/types';
 import { buildLabelBatchHtml, type LabelProduct } from './labelTemplates';
 import { getProduct } from './inventory';
 import { getAdminSetting } from './admin';
+import { amendmentStamp } from './billAmendments';
 import { getDb } from '../db';
 import {
   printDocument,
@@ -124,7 +125,12 @@ function resolveReceiptPaper(): PaperKind {
   return 'thermal80';
 }
 
-export function buildReceiptJob(saleId: number, template?: ReceiptTemplate, duplicate = false): PrintJob {
+export function buildReceiptJob(
+  saleId: number,
+  template?: ReceiptTemplate,
+  duplicate = false,
+  amendmentLabel?: string | null
+): PrintJob {
   const paper = resolveReceiptPaper();
   const requested: ReceiptTemplate = template || 'standard';
   const { template: fitted, adjusted } = fitTemplateToPaper(requested, paper);
@@ -139,7 +145,7 @@ export function buildReceiptJob(saleId: number, template?: ReceiptTemplate, dupl
   return {
     // `duplicate` stamps "DUPLICATE COPY"; default false keeps the shipped
     // layout byte-identical for every existing caller and the test harness.
-    html: buildReceiptHtml(saleId, fitted, { duplicate }),
+    html: buildReceiptHtml(saleId, fitted, { duplicate, amendmentLabel: amendmentLabel ?? null }),
     paper,
     printerKey: 'receipt',
     jobName: 'Receipt',
@@ -161,10 +167,14 @@ export async function buildReceiptJobAsync(
   opts: PrintSaleOptions = {}
 ): Promise<PrintJob> {
   const duplicate = !!opts.duplicate && duplicateLabelEnabled();
+  // A bill that has been amended says so on the paper, with the number of
+  // amendments. "Print amended version" forces the marker even when the shop
+  // has no amendments yet (the button is only offered on an amended bill).
+  const amendmentLabel = opts.amendedVersion ? amendmentStamp(saleId) ?? 'AMENDED' : amendmentStamp(saleId);
   if (isReceiptDesignEnabled()) {
     const paper = resolveReceiptPaper();
     try {
-      const html = await renderAppliedReceipt(saleId, paper, duplicate);
+      const html = await renderAppliedReceipt(saleId, paper, duplicate, amendmentLabel);
       if (html) {
         return { html, paper, printerKey: 'receipt', jobName: 'Receipt', warnings: [] };
       }
@@ -172,7 +182,7 @@ export async function buildReceiptJobAsync(
       log(`receipt design render failed, falling back to the shipped layout: ${e instanceof Error ? e.message : e}`);
     }
   }
-  return buildReceiptJob(saleId, template, duplicate);
+  return buildReceiptJob(saleId, template, duplicate, amendmentLabel);
 }
 
 export async function printSale(

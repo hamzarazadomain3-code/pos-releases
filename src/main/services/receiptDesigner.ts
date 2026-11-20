@@ -734,7 +734,8 @@ export async function buildDesignedReceiptAsync(
   paper: ReceiptPaper,
   designInput?: ReceiptDesign,
   duplicate = false,
-  branchId?: string | number | null
+  branchId?: string | number | null,
+  amendmentLabel?: string | null
 ): Promise<string> {
   const design = designInput ? normalizeReceiptDesign(designInput) : getReceiptDesign();
   const shop = toShopProfile(getPrintSettings());
@@ -802,6 +803,7 @@ export async function buildDesignedReceiptAsync(
     paper,
     assets,
     duplicate,
+    amendmentLabel: amendmentLabel ?? null,
     branchId,
     templateId: activeTemplateId(paper, branchId),
     urduFontUrl: getUrduFontUrl() || undefined,
@@ -822,7 +824,8 @@ export function buildDesignedReceipt(
   paper: ReceiptPaper,
   designInput?: ReceiptDesign,
   duplicate = false,
-  branchId?: string | number | null
+  branchId?: string | number | null,
+  amendmentLabel?: string | null
 ): string {
   const design = designInput ? normalizeReceiptDesign(designInput) : getReceiptDesign();
   const shop = toShopProfile(getPrintSettings());
@@ -831,6 +834,7 @@ export function buildDesignedReceipt(
   return renderDocument('receipt', saleData, docDesign, shop, {
     paper,
     duplicate,
+    amendmentLabel: amendmentLabel ?? null,
     branchId,
     templateId: activeTemplateId(paper, branchId),
     urduFontUrl: getUrduFontUrl() || undefined,
@@ -930,13 +934,25 @@ export async function renderReceiptForSale(
  * → the Phase-2 applied design). This is what the print path uses, so a template
  * the owner marks as default actually reaches the printer.
  */
-export async function renderAppliedReceipt(saleId: number, paper: ReceiptPaper, duplicate = false): Promise<string | null> {
+export async function renderAppliedReceipt(
+  saleId: number,
+  paper: ReceiptPaper,
+  duplicate = false,
+  amendmentLabel?: string | null
+): Promise<string | null> {
   const sale = getSale(saleId);
   if (!sale) return null;
   const branchId = (sale as { branch_id?: number | null }).branch_id ?? null;
   const design = resolveAppliedDesign(paper, branchId, 'receipt' as DocumentType);
   const cashierName = getUser(sale.user_id ?? 0)?.username ?? '';
-  return buildDesignedReceiptAsync(saleToSampleSale(sale, cashierName), paper, design, duplicate, branchId);
+  return buildDesignedReceiptAsync(
+    saleToSampleSale(sale, cashierName),
+    paper,
+    design,
+    duplicate,
+    branchId,
+    amendmentLabel ?? null
+  );
 }
 
 export { BLOCK_LABELS };

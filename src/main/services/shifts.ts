@@ -95,6 +95,26 @@ export function currentShift(): ShiftRow | null {
   return shift ? mapShift(shift) : null;
 }
 
+/**
+ * The cash an amendment moved INTO this shift.
+ *
+ * An amendment never rewrites the original payment rows of a bill that belongs
+ * to a closed shift — the money it moved is carried here instead, so the
+ * drawer's expected cash, the shift summary and the reports all agree.
+ */
+function shiftAmendmentCash(shiftId: number): number {
+  const db = getDb();
+  try {
+    const row = db
+      .prepare('SELECT COALESCE(SUM(cash_effect), 0) AS t FROM sale_amendments WHERE shift_id = ?')
+      .get(shiftId) as { t: number };
+    const total = Number(row?.t ?? 0);
+    return Number.isFinite(total) ? total : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function shiftTotals(shiftId: number): { cash_sales: number; cash_refunds: number; expected: number } {
   const db = getDb();
   const shift = db.prepare('SELECT * FROM shifts WHERE id = ?').get(shiftId) as
@@ -122,7 +142,12 @@ export function shiftTotals(shiftId: number): { cash_sales: number; cash_refunds
     .get(shiftId) as { t: number };
   const cashSalesN = Number(cashSales?.t ?? 0);
   const cashRefundsN = Number(cashRefunds?.t ?? 0) + Number(plainCashRefunds?.t ?? 0);
-  return { cash_sales: cashSalesN, cash_refunds: cashRefundsN, expected: shift.start_cash + cashSalesN - cashRefundsN };
+  const amendmentCash = shiftAmendmentCash(shiftId);
+  return {
+    cash_sales: cashSalesN,
+    cash_refunds: cashRefundsN,
+    expected: shift.start_cash + cashSalesN - cashRefundsN + amendmentCash,
+  };
 }
 
 export function closeShift(id: number, countedCash: number, notes?: string): ShiftRow {

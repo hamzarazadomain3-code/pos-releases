@@ -891,6 +891,12 @@ export function renderDocument(
     branchId?: string | number | null;
     assets?: Record<string, string>;
     duplicate?: boolean;
+    /**
+     * The "AMENDED" marker for a bill that has been amended (e.g.
+     * "AMENDED (1 amendment)"). It is printed ABOVE the duplicate stamp, so a
+     * reprinted amended bill says both things on the paper.
+     */
+    amendmentLabel?: string | null;
     /** Template id, only used by the dev-only provenance footer. */
     templateId?: string;
     /** Optional URL to an embedded Urdu font; when supplied an @font-face rule is
@@ -976,13 +982,17 @@ export function renderDocument(
     .filter(Boolean)
     .join('\n');
 
-  // Reprint stamp always sits at the very top
+  // Reprint stamp always sits at the very top; the amended marker sits right
+  // above it so a reprinted amended bill says both things on the paper.
+  const amendmentStamp = options.amendmentLabel
+    ? `<div class="blk"><div class="duplicate-banner">${esc(options.amendmentLabel)}</div></div>\n`
+    : '';
   const stamp = ctx.duplicate ? '<div class="blk"><div class="duplicate-banner">DUPLICATE COPY</div></div>\n' : '';
   const debug = renderDebugFooter(ctx, options.templateId || 'built-in');
 
   return `<!doctype html>
 <html><head><meta charset="utf-8" /><title>${docType}</title><style>${buildCss(ctx)}</style></head>
-<body>${stamp}${body}${debug}</body></html>`;
+<body>${amendmentStamp}${stamp}${body}${debug}</body></html>`;
 }
 
 /** Money formatter without currency symbol (for table cells) */

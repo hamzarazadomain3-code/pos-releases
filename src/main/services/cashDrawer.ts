@@ -25,6 +25,12 @@ export interface CashDrawerBreakdown {
   jazzcash_sales: number;
   udhaar_sales: number;
   refunds: number;
+  /**
+   * The cash an amendment moved into/out of this shift (positive = money in).
+   * An amended bill never rewrites its original payment rows, so this is the
+   * one line that makes the drawer agree with `shiftTotals().expected`.
+   */
+  amendment_cash: number;
   total_bills: number;
   average_bill: number;
 }
@@ -195,6 +201,10 @@ export function getBreakdown(shiftId: number): CashDrawerBreakdown {
 
   const totalRefunds = Number(refunds?.t ?? 0) + Number(plainCashRefunds?.t ?? 0);
 
+  const amendmentCash = db
+    .prepare('SELECT COALESCE(SUM(cash_effect), 0) AS t FROM sale_amendments WHERE shift_id = ?')
+    .get(shiftId) as { t: number };
+
   return {
     cash_sales: Number(cashSales?.t ?? 0),
     card_sales: Number(cardSales?.t ?? 0),
@@ -203,6 +213,7 @@ export function getBreakdown(shiftId: number): CashDrawerBreakdown {
     jazzcash_sales: Number(jazzcashSales?.t ?? 0),
     udhaar_sales: Number(udhaarSales?.t ?? 0),
     refunds: totalRefunds,
+    amendment_cash: Number(amendmentCash?.t ?? 0),
     total_bills: Number(totalBills?.t ?? 0),
     average_bill: totalBills?.t > 0 ? Number(totalSales?.t ?? 0) / Number(totalBills.t) : 0,
   };
