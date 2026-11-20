@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Product, Customer, Category } from '../../../shared/types';
 import { formatMoney } from '../utils/currency';
@@ -7,6 +7,7 @@ import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
 import { parseNegativeStockPolicy, checkNegativeStock, type NegativeStockPolicy } from '@shared/negativeStock';
 import { applyCustomerDiscount } from '@shared/customerDiscount';
+import { matchProducts } from '@shared/productSearch';
 
 interface CartItem {
   product_id: number;
@@ -78,17 +79,14 @@ export default function QuickSaleGrid() {
     }).catch(() => setLoading(false));
   }, []);
 
-  const filteredProducts = products.filter((p) => {
-    if (selectedCategory !== 'all' && Number(p.category_id) !== Number(selectedCategory)) return false;
-    if (search) {
-      const q = search.trim().toLowerCase();
-      const inName = p.name.toLowerCase().includes(q);
-      const inSku = (p.sku ?? '').toLowerCase().includes(q);
-      const inBarcode = (p.barcode ?? '').toLowerCase().includes(q);
-      if (!inName && !inSku && !inBarcode) return false;
-    }
-    return Number(p.active) === 1;
-  });
+  const filteredProducts = useMemo(() => {
+    const base = products.filter((p) => {
+      if (selectedCategory !== 'all' && Number(p.category_id) !== Number(selectedCategory)) return false;
+      return Number(p.active) === 1;
+    });
+    if (!search.trim()) return base;
+    return matchProducts(base, search, base.length);
+  }, [products, selectedCategory, search]);
 
   const selectedSearchProduct = () => {
     if (searchStage === 'idle') return undefined;

@@ -2885,5 +2885,45 @@ after Phase 1/2/3 code changes). Each number below comes from the saved output i
 - **Phase 2** (item 24b): Reports / Customer-profile Amend entry points — NOT DONE
   (left for a follow-up to avoid untested duplicate buttons).
 
+---
+
+## Strict Build Run — Product Search by Code (branch `feature/bill-amend`)
+
+### Feature
+Billing product search now matches product **code (SKU)** and **barcode** in addition to name.
+- **Exact code/barcode match** → immediate selection on Enter
+- **Code prefix match** → ranked first
+- **Name prefix match** → ranked second
+- **Name contains / code contains** → ranked lower
+- Case-insensitive, trims spaces, Urdu names work, null-safe
+
+### Implementation
+- **Pure function** `src/shared/productSearch.ts:1` — `matchProducts()`, `findExactCodeMatch()`, `getProductCode()`
+- **Billing.tsx:2063** — `handleSearchEnter()` uses shared function; Enter selects exact code match or single result
+- **QuickSaleGrid.tsx:82** — `filteredProducts` uses shared `matchProducts()`
+- **Dropdown** shows code beside name (small muted text via `psr-code` CSS class)
+- **Barcode scanner** behaviour unchanged
+
+### Files
+- `src/shared/productSearch.ts` (new)
+- `src/renderer/src/pages/Billing.tsx:22, 2063, 2655`
+- `src/renderer/src/pages/QuickSaleGrid.tsx:9, 82`
+- `src/renderer/src/styles.css:3021` (`.psr-code` styling)
+- `scripts/test_productSearch.cjs` (new)
+- `package.json` (`test:productSearch` script)
+
+### Tests (real `dist` services)
+- `npm run test:productSearch` — **36/36 PASS** (`E:\temp\proof\psearch_pure.txt`)
+  - Exact code/barcode first; code prefix; name prefix; name/code contains
+  - Case-insensitive; trims spaces; Urdu names; null/empty fields safe
+  - Duplicate codes: exact wins; limit respected; inactive filtered by caller
+  - `findExactCodeMatch()` for Enter behaviour; `getProductCode()` for display
+- Regression: `test:shortcuts` **37/37**, `test:keyboard` **93/93**
+- Typecheck: main + renderer **exit 0**
+
+### Status
+- **Pure function: DONE** (36/36 test output)
+- **UI wiring: PARTIAL (no test: UI)** — dropdown shows code, Enter logic wired, but no end-to-end UI test
+
 
 

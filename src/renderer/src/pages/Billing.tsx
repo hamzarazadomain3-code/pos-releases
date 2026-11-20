@@ -17,6 +17,7 @@ import { defaultCombo, hintRows, isActionAllowedOn, resolveCombo, resolveCombos 
 import { parseNegativeStockPolicy, checkNegativeStock, type NegativeStockPolicy } from '@shared/negativeStock';
 import { applyCustomerDiscount, customerDiscountBadge, describeDiscountSource, minBillHint } from '@shared/customerDiscount';
 import { shouldJumpToQty } from '@shared/qtyJump';
+import { matchProducts, findExactCodeMatch, getProductCode } from '@shared/productSearch';
 import { fileBytesFromResult } from '@shared/binaryTransfer';
 import { type AssistantBillCommand } from '@shared/assistant/billActions';
 import { downloadBytes } from '@utils/download';
@@ -1102,7 +1103,11 @@ useEffect(() => {
       window.api.inventory
         .list(search.trim() || undefined)
         .then((r) => {
-          if (!cancelled) { setResults(r); }
+          if (!cancelled) {
+            // Re-rank server results using shared search for consistent ordering
+            const ranked = matchProducts(r, search, 40);
+            setResults(ranked);
+          }
         })
         .catch((e) => {
           if (!cancelled) setNotice(e.message);
@@ -2058,13 +2063,22 @@ useEffect(() => {
   async function handleSearchEnter(index = 0) {
     const q = search.trim();
     if (!q) return;
-    const exact = results.find((r) => r.barcode === q || r.sku === q);
-    if (exact) {
-      addProduct(exact, undefined, 1, "dropdown");
+    // 1. Exact code/barcode match in current results -> select immediately
+    const exactInResults = findExactCodeMatch(results, q);
+    if (exactInResults) {
+      addProduct(exactInResults, undefined, 1, "dropdown");
       setSearch('');
       setActiveSearchIndex(0);
       return;
     }
+    // 2. Exactly one result -> select it
+    if (results.length === 1) {
+      addProduct(results[0], undefined, 1, "dropdown");
+      setSearch('');
+      setActiveSearchIndex(0);
+      return;
+    }
+    // 3. Try server lookup for exact barcode match (not in current results)
     try {
       const byBarcode = await window.api.inventory.getByBarcode(q);
       if (byBarcode) {
@@ -2076,6 +2090,7 @@ useEffect(() => {
     } catch {
       /* ignore */
     }
+    // 4. Fallback: select highlighted row
     const target = results.length > 0 ? results[Math.min(Math.max(0, index), results.length - 1)] : undefined;
     if (target) {
       addProduct(target, undefined, 1, "dropdown");
@@ -2637,7 +2652,10 @@ return (
                     onMouseEnter={() => setActiveSearchIndex(i)}
                     onClick={() => { addProduct(r, undefined, 1, "dropdown"); setSearch(''); setActiveSearchIndex(0); }}
                   >
-                    <span className="psr-name">{r.name}</span>
+                    <span className="psr-name">
+                      {r.name}
+                      {getProductCode(r) && <span className="psr-code">{getProductCode(r)}</span>}
+                    </span>
                     <span className="psr-meta">
                       {r.sale_price}
                       {r.wholesale_price != null ? ` • W ${r.wholesale_price}` : ''}
