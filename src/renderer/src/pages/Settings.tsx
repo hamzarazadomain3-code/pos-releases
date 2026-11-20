@@ -187,7 +187,7 @@ export default function Settings() {
                   maxDim={512}
                   buttonText="Upload from PC"
                   previewClassName="logo-preview"
-                  hint="Shows on the receipt, login screen and sidebar. Upload then click Save."
+                  hint="Shows on printed documents only (receipts, invoices, purchase orders and credit slips) — never in the app's own screens. Upload, then click Save."
                 />
               </label>
             <div className="modal-actions">

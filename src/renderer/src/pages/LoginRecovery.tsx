@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { APP_LOGO_LIGHT } from '../utils/appLogo';
 
 /**
  * Password recovery screens for the login flow.
@@ -18,13 +19,12 @@ type Step = 'username' | 'verify' | 'password' | 'done';
 
 interface Props {
   mode: 'self' | 'support';
-  logo?: string | null;
   initialUsername?: string;
   onClose: () => void;
   onDone: (username: string) => void;
 }
 
-export default function LoginRecovery({ mode, logo, initialUsername = '', onClose, onDone }: Props) {
+export default function LoginRecovery({ mode, initialUsername = '', onClose, onDone }: Props) {
   const isSupport = mode === 'support';
   const [step, setStep] = useState<Step>(isSupport ? 'verify' : 'username');
   const [username, setUsername] = useState(initialUsername);
@@ -199,7 +199,7 @@ export default function LoginRecovery({ mode, logo, initialUsername = '', onClos
   return (
     <div className="lock-overlay">
       <div className="lock-box">
-        {logo && <img src={logo} alt="Shop logo" className="lock-logo" />}
+        <img src={APP_LOGO_LIGHT} alt="Rokar POS" className="lock-logo lock-brand-logo" />
 
         {step === 'done' ? (
           <>

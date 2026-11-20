@@ -25,8 +25,9 @@ import {
 import FirstRunWizard from './components/FirstRunWizard';
 import AssistantPanel from './components/AssistantPanel';
 import GuideOverlay from './components/GuideOverlay';
-import rokarLogoLight from './assets/rokar-pos-logo-light.png';
-import rokarMarkDark from './assets/rokar-pos-mark-dark.png';
+// The APP's own logo. On-screen chrome never shows the shop logo — that one is
+// for printed/exported paper only (see `utils/appLogo.ts`).
+import { APP_LOGO_LIGHT as rokarLogoLight, APP_MARK_DARK as rokarMarkDark } from './utils/appLogo';
 import defaultWallpaper from './assets/wallpaper-default.webp';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Inventory = lazy(() => import('./pages/Inventory'));
@@ -264,14 +265,12 @@ function BranchSelector() {
 
 function LoginScreen({
   onLogin,
-  logo,
   shopName,
   onForgotPassword,
   onSupportRecovery,
   initialUsername = '',
 }: {
   onLogin: (user: UserRow, rememberMe: boolean) => void;
-  logo?: string | null;
   shopName?: string | null;
   onForgotPassword: () => void;
   onSupportRecovery: () => void;
@@ -357,7 +356,7 @@ const [capsLock, setCapsLock] = useState(false);
     return (
       <div className="lock-overlay">
         <div className="lock-box">
-          {logo && <img src={logo} alt="Shop logo" className="lock-logo" />}
+          <img src={rokarLogoLight} alt="Rokar POS" className="lock-logo lock-brand-logo" />
           <h2>Verification Code</h2>
           <p className="muted">{otpMessage || 'Enter the code sent to your email/phone'}</p>
           <input
@@ -384,11 +383,7 @@ const [capsLock, setCapsLock] = useState(false);
   return (
     <div className="lock-overlay">
       <div className="lock-box">
-        {logo ? (
-          <img src={logo} alt="Shop logo" className="lock-logo" />
-        ) : (
-          <img src={rokarLogoLight} alt="Rokar POS" className="lock-logo lock-brand-logo" />
-        )}
+        <img src={rokarLogoLight} alt="Rokar POS" className="lock-logo lock-brand-logo" />
         <h2>{shopName || 'Rokar POS'}</h2>
         <p className="muted">{t('messages.sign_in_to_continue')}</p>
         {!pinMode && (
@@ -466,7 +461,7 @@ const [capsLock, setCapsLock] = useState(false);
   );
 }
 
-function LockScreen({ user, onUnlock, logo }: { user: UserRow; onUnlock: () => void; logo?: string | null }) {
+function LockScreen({ user, onUnlock }: { user: UserRow; onUnlock: () => void }) {
   const { t } = useTranslation();
   const [pass, setPass] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -488,11 +483,7 @@ function LockScreen({ user, onUnlock, logo }: { user: UserRow; onUnlock: () => v
   return (
     <div className="lock-overlay">
       <div className="lock-box">
-        {logo ? (
-          <img src={logo} alt="Shop logo" className="lock-logo" />
-        ) : (
-          <img src={rokarLogoLight} alt="Rokar POS" className="lock-logo lock-brand-logo" />
-        )}
+        <img src={rokarLogoLight} alt="Rokar POS" className="lock-logo lock-brand-logo" />
         <h2>Rokar POS</h2>
         <p className="muted">
           {t('messages.locked')}{' '}— {user.username} ({user.role}). {t('messages.enter_password_or_pin')}
@@ -598,7 +589,6 @@ export default function App() {
   const [page, setPage] = useState<NavPage>('billing');
   const [locked, setLocked] = useState(false);
   const [mustChangePw, setMustChangePw] = useState(false);
-  const [shopLogo, setShopLogo] = useState<string | null>(null);
   const [shopName, setShopName] = useState<string | null>(null);
   const [branchName, setBranchName] = useState<string | null>(null);
   const [sessionRestoring, setSessionRestoring] = useState(true);
@@ -785,7 +775,6 @@ export default function App() {
     window.api.settings
       .getAll()
       .then((s) => {
-        setShopLogo(s.shop_logo ?? null);
         setShopName(s.shop_name ?? null);
       })
       .catch(() => undefined);
@@ -1123,7 +1112,6 @@ export default function App() {
           {recoveryMode ? (
             <LoginRecovery
               mode={recoveryMode}
-              logo={shopLogo}
               initialUsername={recoveryPrefill}
               onClose={() => setRecoveryMode(null)}
               onDone={(u) => {
@@ -1134,7 +1122,6 @@ export default function App() {
           ) : (
             <LoginScreen
               onLogin={handleLogin}
-              logo={shopLogo}
               shopName={shopName}
               initialUsername={recoveryPrefill}
               onForgotPassword={() => setRecoveryMode('self')}
@@ -1204,11 +1191,7 @@ export default function App() {
         className={`sidebar bilten-sidebar ${sidebarOpen ? 'open' : ''}`}
       >
         <div className="sidebar-brand">
-          {shopLogo ? (
-            <img src={shopLogo} alt="" className="brand-icon brand-logo" />
-          ) : (
-            <img src={rokarMarkDark} alt="" className="brand-icon" />
-          )}
+          <img src={rokarMarkDark} alt="" className="brand-icon" />
           <span className="nav-label sidebar-brand-info">
             <span className="sidebar-brand-label">{brandDisplayName(shopName)}</span>
             {brandSubtitle(multiBranch, branchName) && (
@@ -1463,7 +1446,7 @@ export default function App() {
         onClose={() => setActiveGuide(null)}
         onNavigate={(route) => navigate(route as NavPage)}
       />
-      {locked && <LockScreen user={user} onUnlock={() => setLocked(false)} logo={shopLogo} />}
+      {locked && <LockScreen user={user} onUnlock={() => setLocked(false)} />}
       {mustChangePw && (
         <ChangePasswordModal
           user={user}
