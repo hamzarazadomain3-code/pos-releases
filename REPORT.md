@@ -426,7 +426,7 @@ No incomplete implementations or TODO placeholders.
 | C1 mojibake repair | NOT DONE | No mojibake found in DB — repair would be speculative |
 | C5 duplicate-alert cleanup | NOT DONE | 5 duplicate groups exist but migration 070 dedup is forward-only; backward cleanup needs owner sign-off |
 | Per-route permission model (Inventory Manager) | NOT DONE | Requires architecture change beyond this audit run |
-| Log rotation/size cap | NOT DONE | Separate task as noted in owner checklist |
+| Log rotation/size cap | DONE | Implemented in this run (item 28). `src/shared/logRotation.ts` holds the pure rules; `src/main/logger.ts` caps the daily file, rolls over at midnight, rotates at the cap and prunes the days that are out of the retention window. Three admin settings (Settings → System) drive the limits: `log_max_size_mb` (5), `log_max_rotations` (3), `log_keep_days` (30). `npm run test:logRotation` 55/55 + `npm run test:logRotationFiles` 19/19. |
 
 All confirmed P0 items fixed with regression tests. Typecheck/build clean. Desktop rebuild/reinstall and web redeploy are **owner actions** — not performed by this run.
 
@@ -2882,8 +2882,6 @@ after Phase 1/2/3 code changes). Each number below comes from the saved output i
 ### Non-DONE items (PROGRESS.md)
 
 - **Phase 1-F** (item 23b): change a bill's item/qty/price — NOT DONE (deliberate).
-- **Phase 2** (item 24b): Reports / Customer-profile Amend entry points — NOT DONE
-  (left for a follow-up to avoid untested duplicate buttons).
 
 ---
 
@@ -2952,6 +2950,75 @@ Billing product search now matches product **code (SKU)** and **barcode** in add
 - **Pure function: DONE** (36/36 test output)
 - **UI wiring: DONE** (24/24 end-to-end test output — dropdown code display,
   Enter selection, Quick Sale filtering, empty state)
+
+
+---
+
+## Strict Build Run — Log Rotation / Size Cap (branch `feature/bill-amend`)
+
+### The problem
+The app wrote one log file per day (`app-YYYY-MM-DD.log`) into
+`<userData>/logs` and **never capped its size and never pruned it**. A noisy day
+(the WhatsApp gateway, the updater and the scheduler all write to it) could grow
+without bound, and the folder was never cleaned — so a shop that left the app
+running for a year accumulated every day's log forever.
+
+### What changed
+- **`src/shared/logRotation.ts`** (new) — the PURE rules, so they are testable
+  without Electron: the file names, the day/index readers, the size cap
+  (`shouldRotate` / `exceedsCap`), the day maths (`daysBetween`), the retention
+  plan (`planLogRetention`) and the rotation slots (`planRotation`).
+- **`src/main/logger.ts`** (rewritten) —
+  - **Size cap**: the live daily file is rotated when it reaches the cap. The
+    rotation happens **before** the write that would overflow it, so the file
+    never grows past the cap.
+  - **Midnight rollover**: the day is checked on every write, so a run that
+    crosses midnight starts a new day's file instead of appending to yesterday's.
+  - **Retention**: on start-up and on every rollover a pass deletes the days that
+    are older than the window (their rotated files included) and the rotations
+    beyond the per-day limit. A file that is **not** one of ours is never touched.
+  - **A copy+truncate fallback**: if the rename is blocked (a file locked by
+    another program) the content is copied to the rotated name and the live file
+    is truncated, so the cap still holds and nothing is lost.
+  - The limits come from three **admin settings** read out of `admin_settings`
+    (the table the Admin UI writes), with the legacy `settings` table as the
+    fallback: `log_max_size_mb` (5), `log_max_rotations` (3), `log_keep_days` (30).
+- **`src/renderer/src/pages/AdminPanel/SystemSettings.tsx`** — Settings → System
+  now exposes those three rows.
+
+### Two real defects found while building this
+1. **The open `WriteStream` broke the rotation on Windows.** The logger held the
+   log file open in a `WriteStream`, so the rename that moves it to
+   `app-DAY.log.1` failed while the handle was open — the cap silently stopped
+   working after the **first** rotation (the live file grew to 7 KB against a
+   2 KB cap). The logger now opens and closes the file per line
+   (`appendFileSync`): no handle is held between writes, so the rename always
+   works. The log volume is a few lines a minute — the cost is negligible.
+2. **The cap could be exceeded by one line.** The old check rotated *after* the
+   file was already full, so a single long line could push it past the cap.
+   `exceedsCap(current, incoming, max)` now decides **before** the write.
+
+### Verification
+- `npm run test:logRotation` — **55/55 PASS** (`E:\temp\proof\logRotation.txt`)
+  - the real `dist` module: names, day/index readers, a foreign file is never
+    ours, the size cap, the hard cap, the day maths, the retention plan (an old
+    day and its rotations go; a future day never goes; the day exactly
+    `keepDays` old stays; `keepDays=0` keeps only today; `maxRotations=0` keeps
+    only the live file; a foreign file is never listed), the rotation slots
+- `npm run test:logRotationFiles` — **19/19 PASS** (`E:\temp\proof\logRotationFiles.txt`)
+  - the REAL logger against a throwaway `userData` folder: the file lands in
+    `<userData>/logs` named for today with the start banner; writing past the
+    cap **rotates** it (the live file comes back under the cap, the rotated file
+    keeps the old lines, the live file carries the newest line); the retention
+    pass deletes an old day's log **and** its rotation and never touches a file
+    that is not ours; a second rotation takes the next free slot; the cap comes
+    from the **setting** (not a hard-coded 5 MB) and so does the retention
+    window (a file inside a 365-day window survives, one outside it is deleted)
+- Typecheck: main + renderer **exit 0**; `npm run build` **exit 0**
+
+### Status
+- **Log rotation / size cap: DONE** (55/55 pure + 19/19 file I/O)
+
 
 
 

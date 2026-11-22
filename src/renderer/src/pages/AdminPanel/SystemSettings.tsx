@@ -171,7 +171,11 @@ const SECTIONS: Section[] = [
   },
   {
     key: 'system', label: 'System',
-    settings: [],
+    settings: [
+      { key: 'log_max_size_mb', label: 'Log File Size Cap (MB)', type: 'number', hint: 'The daily app log is rotated when it reaches this size. 5 = default.' },
+      { key: 'log_max_rotations', label: 'Rotated Log Files Kept per Day', type: 'number', hint: 'How many rotated files (.log.1, .log.2, …) survive per day. 3 = default.' },
+      { key: 'log_keep_days', label: 'Keep Log Files (days)', type: 'number', hint: 'Log files older than this are deleted. 30 = default.' },
+    ],
   },
   {
     key: 'shift', label: 'Shift Management',

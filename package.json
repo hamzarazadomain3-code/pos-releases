@@ -52,6 +52,8 @@
     "test:productSearchUi": "npm run build && electron scripts/test_productSearchUi.cjs",
     "test:customerProfileAmendUi": "npm run build && electron scripts/test_customerProfileAmendUi.cjs",
     "test:reportsAmendUi": "npm run build && electron scripts/test_reportsAmendUi.cjs",
+    "test:logRotation": "npm run build:main && node scripts/test_logRotation.cjs",
+    "test:logRotationFiles": "npm run build:main && electron scripts/test_logRotationFiles.cjs",
     "gen:key": "node scripts/gen-support-key.js",
     "build:main": "npm run gen:key && tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
