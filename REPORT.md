@@ -3384,11 +3384,178 @@ right"):
 |---|---|---|
 | `npm run test:purchaseEnhance` | the REAL `dist/main/services/purchases.ts`, `inventory.ts`, `shifts.ts` and `dist/shared/purchaseCalc.js` against a throwaway database | 99 |
 | `npm run test:purchaseInventoryLink` | the REAL services: the last purchase info, the costing switch, the saved snapshot, the live row, the five settings | 39 |
-| `npm run test:purchaseOrderUi` | the REAL built renderer in a hidden `BrowserWindow` with the real preload + the real IPC (1280x720) | 55 |
+| `npm run test:purchaseOrderUi` | the REAL built renderer in a hidden `BrowserWindow` with the real preload + the real IPC (1280x720) — the sticky footer, the staged search, the per-row searchable cell, the live row, the warnings, the validation, the undo, the draft and the create | 60 |
 
 The three PO suites join the 82 suites that were already in `package.json`
 (`npm run test:purchaseOrderUi` is the only new `npm` script; the other two
 run their Electron suites the same way the existing ones do).
+
+---
+
+## Phase 3.3 — The full battery
+
+**Every** `test:*` script in `package.json` **plus** `check:migrations` was run
+against the FINAL build, each one saved on its own:
+
+```
+npm run <suite> > E:\temp\proof\final_<suite>.txt 2>&1
+```
+
+(`:` becomes `_` in the file name — e.g. `test:purchaseOrderUi` →
+`final_test_purchaseOrderUi.txt`). The table below is copied from those saved
+files only; the raw summary is `E:\temp\proof\final_battery_summary.txt`.
+
+**86 suites, 86 green.** Every row below is copied from the saved proof file
+named in the last column — the result column is the suite's own last summary
+line, read back out of that file.
+
+| Suite | Result (from the saved file) | Proof |
+|---|---|---|
+| `npm run check:migrations` | Done. Original DB untouched. | `final_check_migrations.txt` |
+| `npm run test:address` | All address-resolution checks passed. | `final_test_address.txt` |
+| `npm run test:alerts` | ALL PASSED | `final_test_alerts.txt` |
+| `npm run test:assistantA11y` | ALL PASSED: 81/81 checks passed | `final_test_assistantA11y.txt` |
+| `npm run test:assistantAgent` | All assistant agent-loop checks passed. | `final_test_assistantAgent.txt` |
+| `npm run test:assistantAutoModel` | All assistant auto-model checks passed. | `final_test_assistantAutoModel.txt` |
+| `npm run test:assistantBackOffice` | All assistant back-office checks passed. | `final_test_assistantBackOffice.txt` |
+| `npm run test:assistantBillActions` | All assistant billing-action checks passed. | `final_test_assistantBillActions.txt` |
+| `npm run test:assistantEval` | 81/81 checks passed (12 cases). | `final_test_assistantEval.txt` |
+| `npm run test:assistantGuide` | All assistant guide-mode checks passed. | `final_test_assistantGuide.txt` |
+| `npm run test:assistantNvidia` | All assistant NVIDIA checks passed. | `final_test_assistantNvidia.txt` |
+| `npm run test:assistantPanel` | All assistant panel checks passed. | `final_test_assistantPanel.txt` |
+| `npm run test:assistantPending` | All assistant pending-action checks passed. | `final_test_assistantPending.txt` |
+| `npm run test:assistantPrivacy` | All assistant privacy checks passed. | `final_test_assistantPrivacy.txt` |
+| `npm run test:assistantProactive` | All assistant proactive-insight checks passed. | `final_test_assistantProactive.txt` |
+| `npm run test:assistantProvider` | All assistant provider + key checks passed. | `final_test_assistantProvider.txt` |
+| `npm run test:assistantSettings` | All assistant settings checks passed. | `final_test_assistantSettings.txt` |
+| `npm run test:assistantTools` | All assistant tool-registry checks passed. | `final_test_assistantTools.txt` |
+| `npm run test:assistantUI` | ALL PASSED: 25/25 checks passed | `final_test_assistantUI.txt` |
+| `npm run test:assistantVerify` | All assistant number-verification checks passed. | `final_test_assistantVerify.txt` |
+| `npm run test:assistantVoice` | All assistant voice checks passed. | `final_test_assistantVoice.txt` |
+| `npm run test:audit` | ALL PASSED | `final_test_audit.txt` |
+| `npm run test:belowCost` | ALL PASSED | `final_test_belowCost.txt` |
+| `npm run test:billAmend` | ALL PASSED: 89/89 checks passed | `final_test_billAmend.txt` |
+| `npm run test:billAmendItems` | ALL PASSED: 115/115 checks passed | `final_test_billAmendItems.txt` |
+| `npm run test:billAmendItemsUi` | ALL PASSED: 27/27 checks passed | `final_test_billAmendItemsUi.txt` |
+| `npm run test:billAmendUi` | ALL PASSED: 38/38 checks passed | `final_test_billAmendUi.txt` |
+| `npm run test:billingKeys` | ALL PASSED: 26/26 checks passed | `final_test_billingKeys.txt` |
+| `npm run test:binaryTransfer` | ALL PASSED: 35/35 checks passed | `final_test_binaryTransfer.txt` |
+| `npm run test:businessDay` | ALL PASSED | `final_test_businessDay.txt` |
+| `npm run test:customerDiscount` | 12 passed, 0 failed | `final_test_customerDiscount.txt` |
+| `npm run test:customerDiscountModel` | ALL PASSED | `final_test_customerDiscountModel.txt` |
+| `npm run test:customerProfileAmendUi` | ALL PASSED: 13/13 checks passed | `final_test_customerProfileAmendUi.txt` |
+| `npm run test:dashboardPeriod` | ALL PASSED | `final_test_dashboardPeriod.txt` |
+| `npm run test:dateparse` | ALL PASSED | `final_test_dateparse.txt` |
+| `npm run test:historyRoles` | ALL PASSED | `final_test_historyRoles.txt` |
+| `npm run test:holdresume` | ALL PASSED: 26/26 checks passed | `final_test_holdresume.txt` |
+| `npm run test:imageupload` | ALL PASSED: 23/23 checks | `final_test_imageupload.txt` |
+| `npm run test:invoiceTemplateConfig` | ALL PASSED | `final_test_invoiceTemplateConfig.txt` |
+| `npm run test:keyboard` | ALL PASSED: 93/93 checks passed | `final_test_keyboard.txt` |
+| `npm run test:layoutMode` | ALL PASSED: 18/18 checks passed | `final_test_layoutMode.txt` |
+| `npm run test:licensing` | ALL LICENSING CHECKS PASSED | `final_test_licensing.txt` |
+| `npm run test:logoRule` | ALL PASSED: 30/30 checks passed | `final_test_logoRule.txt` |
+| `npm run test:logRotation` | ALL PASSED: 55/55 checks passed | `final_test_logRotation.txt` |
+| `npm run test:logRotationFiles` | ALL PASSED: 19/19 checks passed | `final_test_logRotationFiles.txt` |
+| `npm run test:migration071` | ALL PASSED | `final_test_migration071.txt` |
+| `npm run test:migration072` | ALL PASSED | `final_test_migration072.txt` |
+| `npm run test:negstock` | All negative-stock checks passed. | `final_test_negstock.txt` |
+| `npm run test:paymentreconciliation` | ALL PASSED | `final_test_paymentreconciliation.txt` |
+| `npm run test:print` | RESULT: PASS | `final_test_print.txt` |
+| `npm run test:productSearch` | ALL PASSED: 36/36 checks passed | `final_test_productSearch.txt` |
+| `npm run test:productSearchUi` | ALL PASSED: 24/24 checks passed | `final_test_productSearchUi.txt` |
+| `npm run test:promotions` | ALL PASSED | `final_test_promotions.txt` |
+| `npm run test:purchaseEnhance` | ALL PASSED: 99/99 checks passed | `final_test_purchaseEnhance.txt` |
+| `npm run test:purchaseimport` | All purchase-import checks passed. | `final_test_purchaseimport.txt` |
+| `npm run test:purchaseimportdata` | All purchase-import-from-file checks passed. | `final_test_purchaseimportdata.txt` |
+| `npm run test:purchaseimportui` | All purchase-import-from-file UI checks passed. | `final_test_purchaseimportui.txt` |
+| `npm run test:purchaseInventoryLink` | ALL PASSED: 39/39 checks passed | `final_test_purchaseInventoryLink.txt` |
+| `npm run test:purchaseOrderUi` | ALL PASSED: 60/60 checks passed | `final_test_purchaseOrderUi.txt` |
+| `npm run test:qtyJump` | === 7 tests passed === | `final_test_qtyJump.txt` |
+| `npm run test:receipt` | RESULT: PASS | `final_test_receipt.txt` |
+| `npm run test:receiptdesigner` | ALL PASSED | `final_test_receiptdesigner.txt` |
+| `npm run test:recovery` | ALL PASSED: 48/48 checks passed | `final_test_recovery.txt` |
+| `npm run test:recovery:ui` | ALL PASSED: 26/26 checks passed | `final_test_recovery_ui.txt` |
+| `npm run test:reportsAmendUi` | ALL PASSED: 14/14 checks passed | `final_test_reportsAmendUi.txt` |
+| `npm run test:return` | ALL PASSED: 29/29 checks passed | `final_test_return.txt` |
+| `npm run test:run13Pure` | ALL PASSED | `final_test_run13Pure.txt` |
+| `npm run test:salesHistory` | 22 passed, 0 failed | `final_test_salesHistory.txt` |
+| `npm run test:shortcuts` | ALL PASSED: 37/37 checks passed | `final_test_shortcuts.txt` |
+| `npm run test:sidebarBadges` | ALL PASSED: 37/37 checks passed | `final_test_sidebarBadges.txt` |
+| `npm run test:sidebarBrand` | ALL PASSED: 16/16 checks passed | `final_test_sidebarBrand.txt` |
+| `npm run test:sidebarDrawer` | ALL PASSED: 8/8 checks passed | `final_test_sidebarDrawer.txt` |
+| `npm run test:sidebarFooter` | ALL PASSED: 30/30 checks passed | `final_test_sidebarFooter.txt` |
+| `npm run test:sidebarGroups` | === 35 passed, 0 failed === | `final_test_sidebarGroups.txt` |
+| `npm run test:sidebarGuard` | === 50 passed, 0 failed === | `final_test_sidebarGuard.txt` |
+| `npm run test:sidebarIcons` | ALL PASSED: 21/21 checks passed | `final_test_sidebarIcons.txt` |
+| `npm run test:sidebarKeyboardNav` | ALL PASSED: 24/24 checks passed | `final_test_sidebarKeyboardNav.txt` |
+| `npm run test:sidebarLanding` | === 22 passed, 0 failed === | `final_test_sidebarLanding.txt` |
+| `npm run test:sidebarMenu` | === 42 passed, 0 failed === | `final_test_sidebarMenu.txt` |
+| `npm run test:sidebarSearch` | ALL PASSED: 12/12 checks passed | `final_test_sidebarSearch.txt` |
+| `npm run test:testdata` | ALL PASSED | `final_test_testdata.txt` |
+| `npm run test:utf8Export` | ALL PASSED | `final_test_utf8Export.txt` |
+| `npm run test:wallpaper` | ALL PASSED: 13/13 checks passed | `final_test_wallpaper.txt` |
+| `npm run test:webImport` | All web-import checks passed. | `final_test_webImport.txt` |
+| `npm run test:whatsappReceipt` | ALL PASSED | `final_test_whatsappReceipt.txt` |
+| `npm run test:whatsappRecovery` | === 15 tests passed === | `final_test_whatsappRecovery.txt` |
+
+Every suite exited **0**. None of the 86 saved files contains a `FAIL` line
+(the scan is in `E:\temp\proof\final_battery_summary.txt` as `FAILS=0`).
+
+### The one suite that failed on the first pass — and why
+
+`test:promotions` failed **once**, at 00:0x local on 2026-11-23, with:
+
+```
+FAIL  Promotion with start_date tomorrow is not applied
+10 passed, 1 failed
+```
+
+(saved as `E:\temp\proof\promotions_midnight_window.txt`).
+
+It is **not** caused by this run's code — it is a pre-existing clock bug in the
+suite's own fixture, and it was **reproduced on purpose** and then fixed:
+
+- The service compares a promotion's start/end date against the **LOCAL** date
+  (`today()` in `src/main/services/promotions.ts:10-14` — the same clock the
+  shop keeps its books on).
+- The suite's fixture built "tomorrow" from the **UTC** date
+  (`new Date(...).toISOString()`). Between local midnight and 05:00 (this
+  machine is UTC+5) the two are a day apart, so the fixture wrote **today**
+  where it meant **tomorrow**, and the service correctly applied a promotion
+  that starts today.
+
+The measured proof from the failing moment:
+
+```
+service today()  = 2026-11-23
+fixture tomorrow = 2026-11-23      <- the same day: the bug
+=> start_date <= service today ? true
+```
+
+The fix (`scripts/test_promotions.cjs`, commit `5cc0511`) replaces the UTC
+date arithmetic with one `localDate(days)` helper that uses the same local
+calendar as the service. **No assertion was changed** — `git diff` touches
+**0** assertion lines; only the date the fixture *writes* changed, and the
+same measurement after the fix reads:
+
+```
+service today()  = 2026-11-23
+fixture tomorrow = 2026-11-24      <- a real tomorrow, at every hour
+=> start_date <= service today ? false
+```
+
+The suite now passes at any hour of the day (`11 passed, 0 failed`,
+`final_test_promotions.txt`). The nightly failure window is gone for the owner.
+
+
+### The typecheck and the build
+
+| Check | Command | Result | Proof |
+|---|---|---|---|
+| The main process | `npx tsc -p tsconfig.main.json --noEmit` | exit 0 | `E:\temp\proof\po_typecheck_main.txt` |
+| The renderer | `npx tsc -p tsconfig.renderer.json --noEmit` | exit 0 | `E:\temp\proof\po_typecheck_renderer.txt` |
+| The whole app | `npm run build` | exit 0 | `E:\temp\proof\po_build.txt` |
+
 
 
 
