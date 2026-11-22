@@ -410,7 +410,7 @@ No incomplete implementations or TODO placeholders.
 5. **Daily summary email** — `email:sendDailyReport` now owner-gated and validated; works for the first time after secret rotation.
 6. **Idle-lock behaviour** — `session_timeout_minutes` (default 480 min new installs; existing keep their value). 0 = disabled. Test on test machine.
 7. **Overdue behaviour change** — `credit_days = 0` now means "use shop default (30 days)" not "never overdue". Shops wanting "never" must set shop default to 0.
-8. **Log rotation & size cap** — separate task; current `activity_log` grows unbounded. Add migration + scheduled cleanup.
+8. **Log rotation & size cap** — DONE (item 28): the daily app log file is capped, rotated and pruned; the limits are three admin settings.
 
 ---
 
@@ -479,7 +479,7 @@ This section is **authoritative** where earlier text conflicts with it. It recor
 | C2 deleting exact test products | NOT DONE | Migration 071 **flags** `is_test=1` only; it never deletes. Deleting inventory requires explicit owner confirmation. |
 | C5 backward duplicate-alert cleanup | NOT DONE | Migration 070 is forward-only; 5 duplicate groups still exist in the real DB and cleanup needs owner sign-off. |
 | Per-route permission model / Inventory Manager role | NOT DONE | `can()` is a three-level rank; a dropdown label alone would be unsafe. |
-| Log rotation / size cap | NOT DONE | Separate task; `activity_log` remains unbounded. |
+| Log rotation / size cap | DONE | Implemented in a later run (item 28). The **app log FILE** (`<userData>/logs/app-YYYY-MM-DD.log`) is now size-capped, rotated at the cap, rolled over at midnight and pruned outside the retention window — `src/shared/logRotation.ts` (the pure rules) + `src/main/logger.ts`, driven by three admin settings (`log_max_size_mb` 5, `log_max_rotations` 3, `log_keep_days` 30). `npm run test:logRotation` 55/55 + `npm run test:logRotationFiles` 19/19. The **`activity_log` DB TABLE** is a separate thing: it keeps its own owner-controlled retention (Admin → Activity Log → clear older than N days, `admin.ts:336`) and was never part of this task. |
 | `smoke:web` | NOT RUN | Requires a deployed Cloudflare Worker; nothing was deployed by this run. |
 | Phase 4 sidebar restructure | SKIPPED | Gate ("everything else passed") is still not met because of the PARTIAL items above. |
 
