@@ -49,6 +49,7 @@
     "test:migration072": "npm run build:main && node scripts/test_migration072.cjs",
     "test:invoiceTemplateConfig": "npm run build:main && node scripts/test_invoiceTemplateConfig.cjs",
     "test:productSearch": "npm run build:main && node scripts/test_productSearch.cjs",
+    "test:productSearchUi": "npm run build && electron scripts/test_productSearchUi.cjs",
     "gen:key": "node scripts/gen-support-key.js",
     "build:main": "npm run gen:key && tsc -p tsconfig.main.json",
     "build:renderer": "vite build",

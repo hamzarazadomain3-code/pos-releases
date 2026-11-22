@@ -2910,20 +2910,48 @@ Billing product search now matches product **code (SKU)** and **barcode** in add
 - `src/renderer/src/pages/QuickSaleGrid.tsx:9, 82`
 - `src/renderer/src/styles.css:3021` (`.psr-code` styling)
 - `scripts/test_productSearch.cjs` (new)
-- `package.json` (`test:productSearch` script)
+- `scripts/test_productSearchUi.cjs` (new — end-to-end UI suite)
+- `package.json` (`test:productSearch`, `test:productSearchUi` scripts)
 
-### Tests (real `dist` services)
+### Tests (real `dist` services + the real renderer)
 - `npm run test:productSearch` — **36/36 PASS** (`E:\temp\proof\psearch_pure.txt`)
   - Exact code/barcode first; code prefix; name prefix; name/code contains
   - Case-insensitive; trims spaces; Urdu names; null/empty fields safe
   - Duplicate codes: exact wins; limit respected; inactive filtered by caller
   - `findExactCodeMatch()` for Enter behaviour; `getProductCode()` for display
-- Regression: `test:shortcuts` **37/37**, `test:keyboard` **93/93**
+- `npm run test:productSearchUi` — **24/24 PASS** (`E:\temp\proof\psearch_ui.txt`)
+  - Drives the built renderer in a real `BrowserWindow` (real preload + real IPC),
+    signs in as the owner and types into the actual Billing search box
+  - Typing a SKU ranks the exact code first and **shows the code** (`.psr-code`)
+  - Enter on an exact code match → the product lands in the cart, search cleared
+  - Enter on an exact **barcode** → that product is selected (the row still shows
+    the product's own code, because `getProductCode` prefers `sku`)
+  - A name prefix ranks by name with the code still visible
+  - A single-result query is picked by Enter; clicking a row adds that product
+  - The Quick Sale grid filters by code (1 tile, counter reads "1 products") and
+    Enter stages the code match as the selection
+  - An unknown code shows the empty state (no rows)
+  - Regression inside the same run: `test:shortcuts` **37/37**, `test:keyboard` **93/93**,
+    `test:billingKeys` **26/26**
 - Typecheck: main + renderer **exit 0**
+
+### Two test-only defects found while writing the UI suite (not product bugs)
+1. **The customer dropdown shares `.product-search-dropdown` / `.product-search-result`**
+   with the product dropdown (`CustomerCombobox.tsx:166,174`). A bare
+   `document.querySelector('.product-search-dropdown .product-search-result')`
+   picks the always-present customer row ("No customer (Cash)"), so every ranking
+   assertion read the wrong row. The suite now scopes every query to
+   `.billing-search-wrap …`.
+2. **The debounced search effect races a stale "all products" set.** The query an
+   Enter just cleared briefly loads every product, so waiting only for the target
+   row to be *present* succeeds against that stale set (it contains everything).
+   `typeAndWait()` now waits for the exact **count AND the first row** before
+   pressing Enter.
 
 ### Status
 - **Pure function: DONE** (36/36 test output)
-- **UI wiring: PARTIAL (no test: UI)** — dropdown shows code, Enter logic wired, but no end-to-end UI test
+- **UI wiring: DONE** (24/24 end-to-end test output — dropdown code display,
+  Enter selection, Quick Sale filtering, empty state)
 
 
 
