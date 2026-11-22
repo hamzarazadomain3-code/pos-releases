@@ -3193,6 +3193,94 @@ the desktop installer, the Cloudflare web app and the marketing site.
 - Nothing is left on the owner's checklist except the reinstall on a shop's PC
   (the app's own updater picks v2.30.0 up on its own).
 
+---
+
+## Phase 0 — The inventory settings a Purchase Order row must show
+
+**The rule of this run:** the PO screen reads the inventory master data LIVE —
+the same source, never a copy. So the first job was to find out what the
+inventory master data actually IS, column by column, and to cite every line.
+
+Everything below is read from the code — nothing is guessed. "Does NOT exist"
+means a search over `src/`, `migrations/` and `scripts/` found no such column,
+setting or service.
+
+### The product master data
+
+| Setting | Column / setting key | file:line | Show in a PO row? |
+|---|---|---|---|
+| Purchase cost (the shop's own cost) | `products.cost_price` | created `migrations/001_initial.js:39`; written by the receiving path `src/main/services/purchases.ts:238-241`; read by `getProduct` (`src/main/services/inventory.ts`) | **YES** — the fallback unit cost when there is no last purchase cost |
+| Sale price | `products.sale_price` | `migrations/001_initial.js:40` | **YES** — the margin % is computed from it |
+| Wholesale price | `products.wholesale_price` | added `migrations/016_wholesale_shelf_service.js:10` | **YES** — the wholesale margin next to the retail one |
+| Stock right now | `products.stock_qty` | `migrations/001_initial.js:41` | **YES** — the stock column |
+| Low-stock alert (the legacy threshold) | `products.low_stock_threshold` | `migrations/001_initial.js:42` | **YES** — used when `min_stock_level` is 0 |
+| The reorder level (min stock) | `products.min_stock_level` | added `migrations/024_inventory_advanced.js:72` (back-filled from `low_stock_threshold` at `:82-87`) | **YES** — the "min" column; **RED** when `stock_qty <= min_stock_level` |
+| How much to order | `products.reorder_qty` | added `migrations/024_inventory_advanced.js:73` | **YES** — the suggested qty (first choice) |
+| A stock ceiling | `max_stock_level` | **DOES NOT EXIST** | no — the suggestion falls back to `min − stock` |
+| The last supplier | `products.last_supplier_id` | added `migrations/024_inventory_advanced.js:74` | **YES** — the default-supplier badge |
+| The tax of the product | `products.tax_rate` | `migrations/001_initial.js:43` | **YES** — auto-fills the line tax |
+| SKU | `products.sku` | `migrations/001_initial.js:34` | **YES** — in the searchable product cell |
+| Barcode | `products.barcode` | `migrations/001_initial.js:35` | **YES** — in the searchable product cell |
+| A scale / loose item | `products.is_loose` | added `migrations/053_label_product_fields.js:26` | **YES** — a "loose" badge, the qty is decimal |
+| The printed pack size | `products.net_weight` | `migrations/053_label_product_fields.js` (same migration) | no — it is a label field, not a PO field |
+| The pack / box conversion (legacy) | `products.units_per_box`, `products.box_price`, `products.box_barcode` | added `migrations/018_batches_boxes.js:32-40`; migrated into `product_units` by `migrations/019_flexible_units.js:27-58` | **YES** — through `product_units` (the live source) |
+| The units (piece / box / carton) | `product_units.quantity_in_base_units`, `.level`, `.name`, `.is_base` | table `migrations/019_flexible_units.js:10-19` (`quantity_in_base_units` at `:15`, `is_base` at `:18`) | **YES** — the purchase unit of the row and the "2 box = 24 pcs" line |
+| Batch / expiry tracking | `product_batches` (`.batch_number`, `.expiry_date`, `.quantity`, `.cost_price`) + the setting `batch_tracking_enabled` | table `migrations/018_batches_boxes.js:15-25`; the setting is seeded at `migrations/018_batches_boxes.js:88` and **is NOT read by any service** (searched `src/`) | **YES** — the batch + expiry inputs appear when the product has a batch/expiry OR the setting is on |
+| The product's own batch / expiry | `products.batch_no`, `products.mfg_date`, `products.expiry_date` | `migrations/053_label_product_fields.js`; `products.expiry_date` from `migrations/001_initial.js:44` | **YES** — they pre-fill the row's batch + expiry |
+| A PLU / scale code | `products.plu_code` | added `migrations/023_enhancements.js:14` | **YES** — another code the search finds |
+| The negative-stock policy | the settings `allow_negative_stock` (values: warn / block / allow) and `max_negative_qty` | read `src/main/services/billAmendments.ts:1032,1037`; the rules live in `src/shared/negativeStock.ts:7-62`; the Settings rows are `src/renderer/src/pages/Settings.tsx:213,229` | **YES** — a receiving hint when the policy blocks a negative stock |
+| The price floor (a sale under the cost) | the setting `price_floor_enabled` | seeded `migrations/016_wholesale_shelf_service.js:32`; enforced `src/main/services/sales.ts:114-123` | **YES** — the PO warns when the new cost puts the sale price under the cost |
+| The shop's own margin rule | the reports SQL `(sale_price - cost_price) * 100 / cost_price` | `src/main/services/reports.ts:392-394` (`margin_pct_retail`) | **YES** — the margin % and the "Update sale price" suggestion use THIS rule |
+
+### The supplier master data
+
+| Setting | Column / setting key | file:line | Show in a PO row? |
+|---|---|---|---|
+| The supplier's name | `suppliers.name` | `migrations/001_initial.js` | **YES** — the PO header |
+| The payment terms | `suppliers.payment_terms` (cash / credit 7/14/30 days) | added `migrations/024_inventory_advanced.js:26` | **YES** — the default payment method for this supplier |
+| The supplier's balance | `suppliers.balance` | `migrations/001_initial.js` (updated by the purchase path `src/main/services/purchases.ts:111`, the cancel path `:283`, the payment path `:321`) | **YES** — the header shows the outstanding balance |
+| The average rate | `suppliers.average_rate` | added `migrations/024_inventory_advanced.js:27` | no — it is a supplier score, not a PO field |
+| The reliability / on-time score | `suppliers.reliability_score`, `suppliers.on_time_delivery_pct` | `migrations/024_inventory_advanced.js:28,30` | no |
+
+### The purchase master data (what already exists — reused, never duplicated)
+
+| What | Column / setting key | file:line | Note |
+|---|---|---|---|
+| The order | `purchase_orders.status` | written `src/main/services/purchases.ts:81` | `draft` (new) / `ordered` (new; the old `pending` is still accepted) / `partial` / `received` / `cancelled` |
+| The order's reference | `purchase_orders.reference_no` | `src/main/services/purchases.ts:80` | reused as the supplier invoice / ref no |
+| The order's delivery date | `purchase_orders.delivery_date` | added `migrations/024_inventory_advanced.js:41` | **reused as the expected delivery date** — no duplicate `expected_date` column was added |
+| The order's notes | `purchase_orders.notes` | added `migrations/024_inventory_advanced.js:42` | reused |
+| The order's money | `purchase_orders.total_amount` | `src/main/services/purchases.ts:76` | the grand total |
+| A line | `purchase_items.qty`, `.unit_cost`, `.batch_no`, `.expiry_date`, `.discount_pct`, `.tax_pct`, `.received_qty`, `.sale_price`, `.wholesale_price` | `src/main/services/purchases.ts:92-109` | all reused |
+| The received part of a line | `purchase_items.received_qty` | `src/main/services/purchases.ts:248` | the partial-receipt counter |
+| The supplier ledger | `supplier_transactions` | `src/main/services/purchases.ts:112-114` | the ledger row of every order and every payment |
+| The last purchase cost of a product | `purchase_price_history` | written `src/main/services/purchases.ts:242-244`; read `src/main/services/purchases.ts:331-341` | the baseline of the cost-change warning |
+| The paid-now money | `supplier_transactions` with `type = 'payment:<method>'` | `src/main/services/purchases.ts:318-321` | the SAME function the supplier payment uses |
+
+### What does NOT exist (so the PO does not pretend it does)
+
+- **A "max stock" / ceiling column** — `max_stock_level` does NOT exist.
+- **A default supplier column on the product** — the PO uses the EXISTING
+  `products.last_supplier_id` (`migrations/024_inventory_advanced.js:74`).
+- **A per-product "track batches" flag** — the only switch is the global
+  `batch_tracking_enabled` setting, and no service reads it, so the PO decides
+  from the product's own `batch_no` / `expiry_date` + that setting.
+- **A costing setting that says whether `cost_price` follows the last
+  purchase** — the receiving path ALWAYS writes `cost_price`
+  (`src/main/services/purchases.ts:238-241`). Phase 2 adds the shop's switch,
+  and the receipt dialog says when the cost was left alone.
+- **A PO-specific payment method setting** — Phase 2 adds it.
+
+### The four settings this run adds (none of them exists today)
+
+| Setting key | Default | Where it lives | What it does |
+|---|---|---|---|
+| `po_cost_change_warn_pct` | `10` | `admin_settings` | the cost-change warning chip (old → new, +/- %) |
+| `po_min_margin_pct` | `0` (off) | `admin_settings` | the margin warning on a row |
+| `po_auto_suggest_low_stock` | `1` | `admin_settings` | offer the low-stock items when a PO opens |
+| `po_default_payment_method` | `cash` | `admin_settings` | the default "paid now" method |
+
+
 
 
 
