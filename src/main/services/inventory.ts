@@ -160,8 +160,8 @@ export function createProduct(input: ProductInput): Product {
     .prepare(
       `INSERT INTO products
         (sku, barcode, name, category_id, unit_id, cost_price, sale_price, wholesale_price, shelf_location,
-         stock_qty, low_stock_threshold, tax_rate, expiry_date, image, net_weight, is_loose, mfg_date, batch_no, active, is_test)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+         stock_qty, low_stock_threshold, tax_rate, expiry_date, image, net_weight, is_loose, mfg_date, batch_no, active, is_test, min_stock_level, reorder_qty)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
     )
     .run(
       sku,
@@ -181,7 +181,11 @@ export function createProduct(input: ProductInput): Product {
       input.is_loose ? 1 : 0,
       input.mfg_date ?? null,
       input.batch_no ?? null,
-      input.is_test ? 1 : 0
+      input.is_test ? 1 : 0,
+      // The reorder level: the new column first, the legacy threshold as the
+      // fallback, so a product without an explicit level still behaves.
+      input.min_stock_level ?? input.low_stock_threshold ?? 0,
+      input.reorder_qty ?? null
     );
 
   const id = Number(info.lastInsertRowid);
@@ -233,7 +237,7 @@ export function updateProduct(id: number, input: ProductInput): Product {
        sku = ?, barcode = ?, name = ?, category_id = ?, unit_id = ?,
        cost_price = ?, sale_price = ?, wholesale_price = ?, shelf_location = ?,
        low_stock_threshold = ?, tax_rate = ?, expiry_date = ?, image = ?,
-       net_weight = ?, is_loose = ?, is_test = ?, mfg_date = ?, batch_no = ?,
+       net_weight = ?, is_loose = ?, is_test = ?, mfg_date = ?, batch_no = ?, min_stock_level = ?, reorder_qty = ?,
        updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`
   ).run(
@@ -255,6 +259,10 @@ export function updateProduct(id: number, input: ProductInput): Product {
     input.is_test !== undefined ? (input.is_test ? 1 : 0) : existing.is_test ?? 0,
     input.mfg_date !== undefined ? input.mfg_date : existing.mfg_date ?? null,
     input.batch_no !== undefined ? input.batch_no : existing.batch_no ?? null,
+    // The reorder level: keep the product's own, fall back to the legacy
+    // threshold so a product never ends up with two different levels.
+    input.min_stock_level ?? existing.min_stock_level ?? input.low_stock_threshold ?? existing.low_stock_threshold ?? 0,
+    input.reorder_qty !== undefined ? input.reorder_qty : existing.reorder_qty ?? null,
     id
   );
 

@@ -347,6 +347,94 @@ export default function Settings() {
           </div>
         </div>
 
+        {/* -- Inventory & Purchases -- */}
+        <div className="panel">
+          <div className="panel-title">Inventory & Purchases</div>
+          <div className="settings-form">
+            <p className="muted small" style={{ marginBottom: 12 }}>
+              How the Purchase Order screen behaves. The order itself always reads the inventory master
+              data live — these settings only decide what it warns about and what it suggests.
+            </p>
+            <label className="field">
+              <span>Warn when the cost moves by more than (%)</span>
+              <KeyboardInput
+                type="text"
+                decimals
+                value={settings.po_cost_change_warn_pct ?? "10"}
+                onChange={(e) => setSettings({ ...settings, po_cost_change_warn_pct: e.target.value })}
+                data-testid="set-po-cost-warn"
+              />
+              <span className="muted small">
+                A purchase cost that differs from the last purchase cost by more than this shows a warning
+                chip on the row (old → new and the % change). 10 = the default.
+              </span>
+            </label>
+            <label className="field">
+              <span>Minimum margin on a purchase row (%) — 0 = off</span>
+              <KeyboardInput
+                type="text"
+                decimals
+                value={settings.po_min_margin_pct ?? "0"}
+                onChange={(e) => setSettings({ ...settings, po_min_margin_pct: e.target.value })}
+                data-testid="set-po-min-margin"
+              />
+              <span className="muted small">
+                When the new cost puts the row's margin under this, the row warns and offers an updated
+                sale price. It never changes a sale price by itself.
+              </span>
+            </label>
+            <label className="field">
+              <span>Auto-suggest low-stock items</span>
+              <select
+                value={settings.po_auto_suggest_low_stock === '0' ? "0" : "1"}
+                onChange={(e) => setSettings({ ...settings, po_auto_suggest_low_stock: e.target.value })}
+                data-testid="set-po-auto-suggest"
+              >
+                <option value="1">Enabled — offer the low-stock items (default)</option>
+                <option value="0">Disabled — the owner picks them</option>
+              </select>
+              <span className="muted small">
+                The low-stock items are always offered by the button — this only decides whether the
+                Purchase Order offers them by itself when it opens.
+              </span>
+            </label>
+            <label className="field">
+              <span>Default "paid now" method</span>
+              <select
+                value={settings.po_default_payment_method === 'bank' ? "bank" : "cash"}
+                onChange={(e) => setSettings({ ...settings, po_default_payment_method: e.target.value })}
+                data-testid="set-po-payment-method"
+              >
+                <option value="cash">Cash (leaves the open shift)</option>
+                <option value="bank">Bank</option>
+              </select>
+              <span className="muted small">
+                The method the Purchase Order starts with for the amount paid right now.
+              </span>
+            </label>
+            <label className="field">
+              <span>Receiving updates the product&apos;s cost price</span>
+              <select
+                value={settings.po_update_cost_price === '0' ? "0" : "1"}
+                onChange={(e) => setSettings({ ...settings, po_update_cost_price: e.target.value })}
+                data-testid="set-po-update-cost"
+              >
+                <option value="1">Enabled — the cost price follows the last purchase (default)</option>
+                <option value="0">Disabled — the cost price is left alone</option>
+              </select>
+              <span className="muted small">
+                When disabled, receiving a purchase leaves the product's cost price as it is and the
+                receipt says so. A sale price is NEVER changed by a purchase.
+              </span>
+            </label>
+            <div className="modal-actions">
+              <button className="btn btn-primary" onClick={saveShop}>
+                {saved ? 'Saved!' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Shop Profile (Extended) */}
 
 <div className="panel">

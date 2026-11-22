@@ -28,6 +28,7 @@ import { getPrintSettings, toShopProfile } from './printDocs';
 import { printDocument, previewDocument } from './printService';
 import { saveXlsx } from './export';
 import { normalizeBinaryPayload } from '../../shared/binaryTransfer';
+import { lineMoney, round2 } from '../../shared/purchaseCalc';
 import {
   defaultDocumentDesign,
   renderDocument,
@@ -476,31 +477,47 @@ function purchaseOrderToSaleData(id: number): SaleData {
   const po = getPurchaseOrder(id);
   if (!po) throw new Error('Purchase order not found');
   const supplierName = po.supplier_name || `Supplier #${po.supplier_id}`;
+  // The line maths comes from the shared pure module, so the printed order
+  // shows exactly the numbers the PO screen showed.
+  const money = (po.items || []).map((it) =>
+    lineMoney({
+      qty: Number(it.qty) || 0,
+      unit_cost: Number(it.unit_cost) || 0,
+      units_in_base: it.unit_multiplier,
+      discount_pct: it.discount_pct,
+      tax_pct: it.tax_pct,
+    })
+  );
+  const sumNet = money.reduce((s, m) => round2(s + m.net), 0);
+  const sumTax = money.reduce((s, m) => round2(s + m.tax), 0);
+  const paid = Number(po.paid_amount) || 0;
   return {
     invoice_no: po.reference_no || `PO-${String(id).padStart(5, '0')}`,
     created_at: po.created_at || new Date().toISOString(),
     customer_name: supplierName, // the counterparty row on the document
     cashier: '',
     status: po.status,
-    items: (po.items || []).map((it) => ({
+    items: (po.items || []).map((it, i) => ({
       product_name: it.product_name || `#${it.product_id}`,
       qty: Number(it.qty) || 0,
       unit_price: Number(it.unit_cost) || 0,
-      discount: 0,
+      discount: money[i]?.discount ?? 0,
       tax_rate: Number(it.tax_pct) || 0,
-      line_total:
-        Math.round(
-          (Number(it.qty) || 0) * (Number(it.unit_cost) || 0) * (1 - (Number(it.discount_pct) || 0) / 100) * 100
-        ) / 100,
+      line_total: money[i]?.total ?? 0,
     })),
-    subtotal: Number(po.total_amount) || 0,
-    discount_amount: 0,
-    tax_amount: 0,
+    // The document's parts add up: the lines (after their own discounts) minus
+    // the order discount, plus the tax and the freight = the order total.
+    subtotal: sumNet,
+    discount_amount: Number(po.discount_amount) || 0,
+    tax_amount: sumTax,
     service_charge: 0,
-    freight: 0,
+    freight: Number(po.freight) || 0,
     total_amount: Number(po.total_amount) || 0,
-    paid: 0,
-    payments: [],
+    paid,
+    payments:
+      paid > 0 && po.payment_method
+        ? [{ mode: String(po.payment_method), amount: paid }]
+        : [],
     returned_amount: 0,
     branch: '',
   };
@@ -514,15 +531,36 @@ export function buildPurchaseOrderHtml(id: number, paper: DocumentPaper = 'a4'):
   });
 }
 
-/** Print (opens the system print dialog via the shared print service). */
-export async function printPurchaseOrder(id: number): Promise<{ ok: boolean; message: string }> {
-  const job = { html: buildPurchaseOrderHtml(id), paper: 'a4' as DocumentPaper, printerKey: 'invoice', jobName: 'Purchase Order' };
+/**
+ * Print a purchase order (A4 or thermal) through the ONE print path.
+ *
+ * The shop profile comes from the print settings — there is no hard-coded
+ * shop name, address or logo anywhere in the document.
+ */
+export async function printPurchaseOrder(
+  id: number,
+  paper: DocumentPaper = 'a4'
+): Promise<{ ok: boolean; message: string }> {
+  const job = {
+    html: buildPurchaseOrderHtml(id, paper),
+    paper,
+    printerKey: paper === 'a4' ? 'invoice' : 'receipt',
+    jobName: 'Purchase Order',
+  };
   return printDocument(job as unknown as import('./printService').PrintJob);
 }
 
 /** Preview a purchase order in the shared preview window. */
-export async function previewPurchaseOrder(id: number): Promise<{ ok: boolean; message: string }> {
-  const job = { html: buildPurchaseOrderHtml(id), paper: 'a4' as DocumentPaper, printerKey: 'invoice', jobName: 'Purchase Order' };
+export async function previewPurchaseOrder(
+  id: number,
+  paper: DocumentPaper = 'a4'
+): Promise<{ ok: boolean; message: string }> {
+  const job = {
+    html: buildPurchaseOrderHtml(id, paper),
+    paper,
+    printerKey: paper === 'a4' ? 'invoice' : 'receipt',
+    jobName: 'Purchase Order',
+  };
   return previewDocument(job as unknown as import('./printService').PrintJob, { title: 'Purchase Order preview' });
 }
 

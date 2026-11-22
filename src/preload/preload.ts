@@ -285,14 +285,22 @@ const bridge: PosBridge = {
       ipcRenderer.invoke('purchases:createSupplier', name, phone, address),
     listOrders: (status?: string, from?: string, to?: string, supplierId?: number) => ipcRenderer.invoke('purchases:orders', status, from, to, supplierId),
     getOrder: (id: number) => ipcRenderer.invoke('purchases:getOrder', id),
-    createOrder: (supplierId: number, items) => ipcRenderer.invoke('purchases:createOrder', supplierId, items),
+    createOrder: (supplierId: number, items, options?) =>
+      ipcRenderer.invoke('purchases:createOrder', supplierId, items, options),
     receiveOrder: (id: number, lines?: { product_id: number; qty: number }[]) =>
       ipcRenderer.invoke('purchases:receiveOrder', id, lines),
-    cancelOrder: (id: number) => ipcRenderer.invoke('purchases:cancelOrder', id),
+    cancelOrder: (id: number, reason?: string) => ipcRenderer.invoke('purchases:cancelOrder', id, reason),
     ledger: (supplierId: number) => ipcRenderer.invoke('purchases:ledger', supplierId),
     paySupplier: (supplierId: number, amount: number, mode: string, note?: string) =>
       ipcRenderer.invoke('purchases:paySupplier', supplierId, amount, mode, note),
     priceHistory: (productId: number) => ipcRenderer.invoke('purchases:priceHistory', productId),
+    // ── the Purchase Order screen: the LIVE inventory master data ──
+    productRow: (productId: number) => ipcRenderer.invoke('purchases:productRow', productId),
+    lowStockProducts: (limit?: number) => ipcRenderer.invoke('purchases:lowStockProducts', limit),
+    supplierProducts: (supplierId: number, limit?: number) =>
+      ipcRenderer.invoke('purchases:supplierProducts', supplierId, limit),
+    lastPurchase: (productId: number) => ipcRenderer.invoke('purchases:lastPurchase', productId),
+    poSettings: () => ipcRenderer.invoke('purchases:poSettings'),
     // Phase 3 — import (Excel / CSV)
     importPickFile: () => ipcRenderer.invoke('purchases:importPickFile'),
     importParse: (filePath: string) => ipcRenderer.invoke('purchases:importParse', filePath),
@@ -302,8 +310,10 @@ const bridge: PosBridge = {
     importUndo: (importId?: number) => ipcRenderer.invoke('purchases:importUndo', importId),
     importLast: () => ipcRenderer.invoke('purchases:importLast'),
     importLog: (limit?: number) => ipcRenderer.invoke('purchases:importLog', limit),
-    printOrder: (id: number) => ipcRenderer.invoke('purchases:printOrder', id),
-    previewOrder: (id: number) => ipcRenderer.invoke('purchases:previewOrder', id),
+    printOrder: (id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58') =>
+      ipcRenderer.invoke('purchases:printOrder', id, paper),
+    previewOrder: (id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58') =>
+      ipcRenderer.invoke('purchases:previewOrder', id, paper),
     shareOrder: (id: number) => ipcRenderer.invoke('purchases:shareOrder', id),
     saveOrderText: (id: number) => ipcRenderer.invoke('purchases:saveOrderText', id),
   },

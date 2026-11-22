@@ -200,10 +200,19 @@ import {
   createPurchaseOrder,
   createSupplier,
   getPurchaseOrder,
+  listLowStockPurchaseProducts,
   listPurchaseOrders,
+  listSupplierPurchaseProducts,
   listSuppliers,
+  lastPurchaseInfo,
   paySupplier,
+  poAutoSuggestLowStock,
+  poCostChangeWarnPct,
+  poCostingUpdatesCostPrice,
+  poDefaultPaymentMethod,
+  poMinMarginPct,
   purchasePriceHistory,
+  purchaseProductRow,
   receivePurchaseOrder,
   supplierLedger,
 } from './services/purchases';
@@ -884,16 +893,32 @@ export function registerIpcHandlers(): void {
   );
   ipcMain.handle('purchases:orders', (_e, status?: string) => listPurchaseOrders(status));
   ipcMain.handle('purchases:getOrder', (_e, id: number) => getPurchaseOrder(id));
-  ipcMain.handle('purchases:createOrder', (_e, supplierId: number, items) => createPurchaseOrder(supplierId, items));
+  ipcMain.handle('purchases:createOrder', (_e, supplierId: number, items, options) =>
+    createPurchaseOrder(supplierId, items, options)
+  );
   ipcMain.handle('purchases:receiveOrder', (_e, id: number, lines?: { product_id: number; qty: number }[]) =>
     receivePurchaseOrder(id, lines)
   );
-  ipcMain.handle('purchases:cancelOrder', (_e, id: number) => cancelPurchaseOrder(id));
+  ipcMain.handle('purchases:cancelOrder', (_e, id: number, reason?: string) => cancelPurchaseOrder(id, reason));
   ipcMain.handle('purchases:ledger', (_e, supplierId: number) => supplierLedger(supplierId));
   ipcMain.handle('purchases:paySupplier', (_e, supplierId: number, amount: number, mode: string, note?: string) =>
     paySupplier(supplierId, amount, mode, note)
   );
   ipcMain.handle('purchases:priceHistory', (_e, productId: number) => purchasePriceHistory(productId));
+  // ── the Purchase Order screen: the LIVE inventory master data ──
+  ipcMain.handle('purchases:productRow', (_e, productId: number) => purchaseProductRow(productId));
+  ipcMain.handle('purchases:lowStockProducts', (_e, limit?: number) => listLowStockPurchaseProducts(limit));
+  ipcMain.handle('purchases:supplierProducts', (_e, supplierId: number, limit?: number) =>
+    listSupplierPurchaseProducts(supplierId, limit)
+  );
+  ipcMain.handle('purchases:lastPurchase', (_e, productId: number) => lastPurchaseInfo(productId));
+  ipcMain.handle('purchases:poSettings', () => ({
+    cost_change_warn_pct: poCostChangeWarnPct(),
+    min_margin_pct: poMinMarginPct(),
+    auto_suggest_low_stock: poAutoSuggestLowStock(),
+    default_payment_method: poDefaultPaymentMethod(),
+    update_cost_price: poCostingUpdatesCostPrice(),
+  }));
 
   // ── Phase 3: purchase import (Excel / CSV) ──
   ipcMain.handle('purchases:importPickFile', () => pickPurchaseImportFile(BrowserWindow.getFocusedWindow()));
@@ -906,8 +931,12 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('purchases:importUndo', (_e, importId?: number) => undoPurchaseImport(importId));
   ipcMain.handle('purchases:importLast', () => lastUndoableImport());
   ipcMain.handle('purchases:importLog', (_e, limit?: number) => listPurchaseImports(limit));
-  ipcMain.handle('purchases:printOrder', (_e, id: number) => printPurchaseOrder(id));
-  ipcMain.handle('purchases:previewOrder', (_e, id: number) => previewPurchaseOrder(id));
+  ipcMain.handle('purchases:printOrder', (_e, id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58') =>
+    printPurchaseOrder(id, paper ?? 'a4')
+  );
+  ipcMain.handle('purchases:previewOrder', (_e, id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58') =>
+    previewPurchaseOrder(id, paper ?? 'a4')
+  );
   ipcMain.handle('purchases:shareOrder', (_e, id: number) => buildPurchaseOrderHtml(id));
   ipcMain.handle('purchases:saveOrderText', (_e, id: number) => savePurchaseOrderText(id));
 

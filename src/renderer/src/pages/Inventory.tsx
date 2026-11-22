@@ -1,7 +1,7 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import bwipjs from 'bwip-js';
 import { formatDateTimeAdmin } from '../utils/dateUtils';
-import type { Category, ExpiringRow, Product, ProductImportResult, ProductInput, StockMovement, Unit } from '../../../shared/types';
+import type { Category, ExpiringRow, LastPurchaseInfo, Product, ProductImportResult, ProductInput, StockMovement, Unit } from '../../../shared/types';
 import { DateRangePicker, SearchInput, MultiSelectDropdown, FilterBar, FilterRow } from '../components/filters';
 import { useBarcodeScan } from '../hooks/useBarcodeScan';
 import { Modal } from '../components/Modal';
@@ -46,6 +46,8 @@ interface FormState {
   shelf_location: string;
   stock_qty: string;
   low_stock_threshold: string;
+  min_stock_level: string;
+  reorder_qty: string;
   tax_rate: string;
   expiry_date: string;
   net_weight: string;
@@ -69,6 +71,8 @@ const EMPTY_FORM: FormState = {
   shelf_location: '',
   stock_qty: '',
   low_stock_threshold: '',
+  min_stock_level: '',
+  reorder_qty: '',
   tax_rate: '',
   expiry_date: '',
   net_weight: '',
@@ -135,6 +139,8 @@ export default function Inventory() {
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
+  /** The last purchase of the product being edited (read-only). */
+  const [lastPurchase, setLastPurchase] = useState<LastPurchaseInfo | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [newCategory, setNewCategory] = useState('');
 
@@ -208,12 +214,20 @@ export default function Inventory() {
 
   function openCreate(prefillBarcode = '') {
     setEditing(null);
+    setLastPurchase(null);
     setForm(prefillBarcode ? { ...EMPTY_FORM, barcode: prefillBarcode } : EMPTY_FORM);
     setFormOpen(true);
   }
 
   async function openEdit(p: Product) {
     setEditing(p);
+    // The last purchase of this product — a READ-ONLY block the owner can
+    // trust (it comes from the purchases, never from a copy).
+    setLastPurchase(null);
+    window.api.purchases
+      .lastPurchase(p.id)
+      .then(setLastPurchase)
+      .catch(() => undefined);
     // Load product units
     const productUnits = await window.api.inventory.getUnits(p.id);
     const units: ProductUnit[] = productUnits.map(u => ({
@@ -237,6 +251,8 @@ export default function Inventory() {
       shelf_location: p.shelf_location ?? '',
       stock_qty: '',
       low_stock_threshold: p.low_stock_threshold != null ? String(p.low_stock_threshold) : '',
+      min_stock_level: p.min_stock_level != null ? String(p.min_stock_level) : '',
+      reorder_qty: p.reorder_qty != null ? String(p.reorder_qty) : '',
       tax_rate: p.tax_rate != null ? String(p.tax_rate) : '',
       expiry_date: p.expiry_date ?? '',
       net_weight: p.net_weight ?? '',
@@ -314,6 +330,8 @@ export default function Inventory() {
         wholesale_price: form.wholesale_price ? Number(form.wholesale_price) : null,
         shelf_location: form.shelf_location.trim() || null,
         low_stock_threshold: form.low_stock_threshold ? Number(form.low_stock_threshold) : 0,
+        min_stock_level: form.min_stock_level ? Number(form.min_stock_level) : form.low_stock_threshold ? Number(form.low_stock_threshold) : 0,
+        reorder_qty: form.reorder_qty ? Number(form.reorder_qty) : null,
         tax_rate: form.tax_rate ? Number(form.tax_rate) : 0,
         expiry_date: form.expiry_date || null,
         net_weight: form.net_weight.trim() || null,
@@ -1067,6 +1085,38 @@ export default function Inventory() {
                   onChange={(e) => setForm({ ...form, low_stock_threshold: e.target.value })}
                 />
               </label>
+              <label className="field">
+                <span>Reorder Level</span>
+                <KeyboardInput
+                  type="text"
+                  decimals
+                  value={form.min_stock_level}
+                  onChange={(e) => setForm({ ...form, min_stock_level: e.target.value })}
+                  placeholder="The stock at (or under) which the shop reorders"
+                  data-testid="inv-min-stock"
+                />
+              </label>
+              <label className="field">
+                <span>Reorder Qty</span>
+                <KeyboardInput
+                  type="text"
+                  decimals
+                  value={form.reorder_qty}
+                  onChange={(e) => setForm({ ...form, reorder_qty: e.target.value })}
+                  placeholder="How much to order when it is low"
+                  data-testid="inv-reorder-qty"
+                />
+              </label>
+              {editing && lastPurchase && (
+                <div className="field" style={{ gridColumn: '1 / -1' }} data-testid="inv-last-purchase">
+                  <span>Last purchase (read-only)</span>
+                  <div className="muted small">
+                    Cost: {lastPurchase.last_cost != null ? Number(lastPurchase.last_cost).toFixed(2) : '—'} · Supplier:{' '}
+                    {lastPurchase.last_supplier_name ?? '—'} · Received:{' '}
+                    {lastPurchase.last_received_at ? formatDateTimeAdmin(lastPurchase.last_received_at) : '—'}
+                  </div>
+                </div>
+              )}
               <label className="field">
                 <span>Tax %</span>
                 <KeyboardInput

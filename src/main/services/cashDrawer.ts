@@ -31,6 +31,13 @@ export interface CashDrawerBreakdown {
    * one line that makes the drawer agree with `shiftTotals().expected`.
    */
   amendment_cash: number;
+  /**
+   * The cash paid to a SUPPLIER from this shift (the money that LEFT the
+   * drawer). A purchase order's "paid now" amount in cash is tied to the
+   * shift it was paid from, so the drawer agrees with
+   * `shiftTotals().expected`.
+   */
+  supplier_cash_paid: number;
   total_bills: number;
   average_bill: number;
 }
@@ -205,6 +212,16 @@ export function getBreakdown(shiftId: number): CashDrawerBreakdown {
     .prepare('SELECT COALESCE(SUM(cash_effect), 0) AS t FROM sale_amendments WHERE shift_id = ?')
     .get(shiftId) as { t: number };
 
+  // Cash paid to a supplier from this shift (the money that LEFT the drawer).
+  // The ledger stores a payment as a negative amount, so the effect is its
+  // absolute value.
+  const supplierCash = db
+    .prepare(
+      `SELECT COALESCE(SUM(amount), 0) AS t FROM supplier_transactions
+       WHERE shift_id = ? AND type LIKE 'payment:cash%'`
+    )
+    .get(shiftId) as { t: number };
+
   return {
     cash_sales: Number(cashSales?.t ?? 0),
     card_sales: Number(cardSales?.t ?? 0),
@@ -214,6 +231,7 @@ export function getBreakdown(shiftId: number): CashDrawerBreakdown {
     udhaar_sales: Number(udhaarSales?.t ?? 0),
     refunds: totalRefunds,
     amendment_cash: Number(amendmentCash?.t ?? 0),
+    supplier_cash_paid: Math.abs(Number(supplierCash?.t ?? 0)),
     total_bills: Number(totalBills?.t ?? 0),
     average_bill: totalBills?.t > 0 ? Number(totalSales?.t ?? 0) / Number(totalBills.t) : 0,
   };

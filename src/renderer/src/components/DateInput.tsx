@@ -8,9 +8,19 @@ interface DateInputProps {
   placeholder?: string;
   title?: string;
   style?: any;
+  /** Test hook — the id the end-to-end suite looks for. */
+  'data-testid'?: string;
 }
 
-export function DateInput({ value, onChange, className = 'inp', placeholder, title, style }: DateInputProps) {
+export function DateInput({
+  value,
+  onChange,
+  className = 'inp',
+  placeholder,
+  title,
+  style,
+  'data-testid': testId,
+}: DateInputProps) {
   const [text, setText] = useState(formatInputDate(value));
   useEffect(() => {
     setText(formatInputDate(value));
@@ -33,6 +43,7 @@ export function DateInput({ value, onChange, className = 'inp', placeholder, tit
       className={className}
       title={title}
       style={style}
+      data-testid={testId}
       placeholder={placeholder || formatInputDate('2000-01-01')}
       value={text}
       onChange={(e) => setText(e.target.value)}

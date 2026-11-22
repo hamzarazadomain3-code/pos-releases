@@ -2,15 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Product, PurchaseItem, PurchaseOrder, PurchasePriceRow, Supplier, SupplierTransaction } from '../../../shared/types';
 import { DateRangePicker, SearchInput, FilterBar, FilterRow } from '../components/filters';
 import { formatDateTimeAdmin } from '../utils/dateUtils';
-import { useBarcodeScan } from '../hooks/useBarcodeScan';
 import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
 import { useListKeyboard } from '../hooks/useListKeyboard';
-import { useLineItemKeyboard } from '../hooks/useLineItemKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
+import PurchaseOrderModal from '../components/PurchaseOrderModal';
 import PurchaseImportWizard from '../components/PurchaseImportWizard';
 import { downloadBytes } from '../utils/download';
 import { fileBytesFromResult } from '../../../shared/binaryTransfer';
+import { lineMoney } from '../../../shared/purchaseCalc';
 
 type Tab = 'suppliers' | 'orders';
 
@@ -35,8 +35,6 @@ export default function Purchases() {
   const [payMode, setPayMode] = useState('cash');
 
   const [poModal, setPoModal] = useState(false);
-  const [poSupplier, setPoSupplier] = useState('');
-  const [lines, setLines] = useState<{ product_id: number; qty: string; unit_cost: string }[]>([]);
   const [poView, setPoView] = useState<{ order: PurchaseOrder; items: PurchaseItem[] } | null>(null);
 
   // ── Phase 3: import wizard, partial receive, undo ──
@@ -45,75 +43,11 @@ export default function Purchases() {
   const [importDragOver, setImportDragOver] = useState(false);
   const [receiveQty, setReceiveQty] = useState<Record<number, string>>({});
   const [undoInfo, setUndoInfo] = useState<{ id: number; imported_count: number } | null>(null);
-
-  // ── PO product search: staged Enter (1x select, 2x qty, 3x add) + barcode scan ──
-  const [poSearch, setPoSearch] = useState('');
-  const [poSearchStage, setPoSearchStage] = useState<'idle' | 'select' | 'qty'>('idle');
-  const [poSelIdx, setPoSelIdx] = useState(-1);
-  const [poQty, setPoQty] = useState('1');
-  const poQtyRef = useRef<HTMLInputElement>(null);
-
-  const poMatches = products.filter((p) => {
-    if (!poSearch) return true;
-    const q = poSearch.trim().toLowerCase();
-    return (
-      p.name.toLowerCase().includes(q) ||
-      (p.sku ?? '').toLowerCase().includes(q) ||
-      (p.barcode ?? '').toLowerCase().includes(q)
-    );
-  });
-
-  const selectedPoProduct = () => {
-    if (poSearchStage === 'idle') return undefined;
-    const sel = poSelIdx >= 0 && poSelIdx < poMatches.length ? poMatches[poSelIdx] : undefined;
-    if (sel) return sel;
-    return poMatches.length > 0 ? poMatches[0] : undefined;
-  };
-
-  const addLineForProduct = (p: Product, qty = 1) => {
-    const existing = lines.findIndex((l) => l.product_id === p.id);
-    if (existing >= 0) {
-      const n = [...lines];
-      n[existing] = { ...n[existing], qty: String((Number(n[existing].qty) || 0) + qty) };
-      setLines(n);
-    } else {
-      setLines([...lines, { product_id: p.id, qty: String(qty), unit_cost: String(p.cost_price || '') }]);
-    }
-  };
-
-  const confirmPoAdd = () => {
-    const p = selectedPoProduct();
-    if (!p) return;
-    addLineForProduct(p, Math.max(1, Math.floor(Number(poQty)) || 1));
-    setPoSearch('');
-    setPoSearchStage('idle');
-    setPoSelIdx(-1);
-    setPoQty('1');
-  };
-
-  useBarcodeScan({
-    enabled: poModal,
-    onScan: (code) => {
-      window.api.inventory
-        .getByBarcode(code.trim())
-        .then((p) => {
-          if (!p) return setErr(`No product found for barcode "${code}"`);
-          addLineForProduct(p, 1);
-          setPoSearch('');
-          setPoSearchStage('idle');
-          setPoSelIdx(-1);
-          setPoQty('1');
-        })
-        .catch((e) => setErr(String(e)));
-    },
-  });
-
-  // Focus the qty box the moment the staged search reaches the qty step.
-  useEffect(() => {
-    if (poSearchStage !== 'qty') return;
-    const t = window.setTimeout(() => poQtyRef.current?.focus(), 0);
-    return () => window.clearTimeout(t);
-  }, [poSearchStage]);
+  /** The order that is being cancelled + WHY. */
+  const [cancelTarget, setCancelTarget] = useState<number | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  /** What the receipt says about the product's cost price. */
+  const [receiveNote, setReceiveNote] = useState('');
 
   const [priceHist, setPriceHist] = useState<PurchasePriceRow[]>([]);
   const [priceProd, setPriceProd] = useState<{ id: number; name: string } | null>(null);
@@ -169,6 +103,18 @@ export default function Purchases() {
   const receivePo = async (id: number, linesToReceive?: { product_id: number; qty: number }[]) => {
     try {
       await window.api.purchases.receiveOrder(id, linesToReceive);
+      // The receipt says what happened to the product's cost price — the shop
+      // must never wonder why a cost did (or did not) change.
+      try {
+        const s = await window.api.purchases.poSettings();
+        setReceiveNote(
+          s.update_cost_price
+            ? 'Stock received. The products’ cost price now follows this purchase.'
+            : 'Stock received. The products’ cost price was left as it is (the shop’s costing setting says so).'
+        );
+      } catch {
+        setReceiveNote('Stock received.');
+      }
       setPoView(null);
       setReceiveQty({});
       await load();
@@ -209,10 +155,66 @@ export default function Purchases() {
     }
   };
 
-  const cancelPo = async (id: number) => {
-    await window.api.purchases.cancelOrder(id);
-    setPoView(null);
-    await load();
+  /** Ask WHY the order is being cancelled — the reason is stored with it. */
+  const askCancelPo = (id: number) => {
+    setCancelTarget(id);
+    setCancelReason('');
+  };
+
+  const cancelPo = async (id: number, reason?: string) => {
+    try {
+      await window.api.purchases.cancelOrder(id, reason);
+      setCancelTarget(null);
+      setCancelReason('');
+      setPoView(null);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  /** Print the order (A4 or thermal) through the ONE print path. */
+  const printPo = async (id: number, paper: 'a4' | 'thermal80') => {
+    try {
+      const r = await window.api.purchases.printOrder(id, paper);
+      if (!r?.ok) setErr(r?.message || 'The print did not go through.');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  /**
+   * Duplicate an order: the SAME lines, as a NEW order (a new number, a new
+   * date, nothing received yet). The copy keeps the costs and the units it
+   * was ordered with — the shop can edit them before creating it.
+   */
+  const duplicatePo = async (id: number) => {
+    try {
+      const full = await window.api.purchases.getOrder(id);
+      if (!full) throw new Error('Purchase order not found');
+      const items = full.items.map((it) => ({
+        product_id: it.product_id,
+        qty: Number(it.qty) || 0,
+        unit_cost: Number(it.unit_cost) || 0,
+        units_in_base: it.unit_multiplier ?? 1,
+        tax_pct: Number(it.tax_pct) || 0,
+        batch_no: it.batch_no ?? null,
+        expiry_date: it.expiry_date ?? null,
+      }));
+      if (!items.length) throw new Error('That order has no items to duplicate.');
+      const copy = await window.api.purchases.createOrder(full.supplier_id, items, {
+        status: 'draft',
+        reference_no: full.reference_no ?? null,
+        notes: full.notes ?? null,
+        discount_type: (full.discount_type as 'amount' | 'percent') ?? 'amount',
+        discount_value: Number(full.discount_value) || 0,
+        freight: Number(full.freight) || 0,
+      });
+      await load();
+      setErr(`Duplicated as PO-${String(copy.id).padStart(4, '0')} (a draft).`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const showPriceHist = async (p: Product) => {
@@ -220,41 +222,50 @@ export default function Purchases() {
     setPriceHist(await window.api.purchases.priceHistory(p.id));
   };
 
-  const poTotal = lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.unit_cost) || 0), 0);
+  // ── the order statuses ───────────────────────────────────────────────────
+  //   `pending` is the LEGACY name of `ordered` — both mean "the order is
+  //   open and the goods have not all arrived".
+  const statusLabel = (s: string) =>
+    s === 'received'
+      ? 'Received'
+      : s === 'cancelled'
+        ? 'Cancelled'
+        : s === 'draft'
+          ? 'Draft'
+          : s === 'partial'
+            ? 'Partial'
+            : 'Ordered';
 
-  const resetStagedSearch = () => {
-    setPoSearch('');
-    setPoSearchStage('idle');
-    setPoSelIdx(-1);
-    setPoQty('1');
-  };
+  const statusChip = (s: string) =>
+    s === 'received'
+      ? 'po-status-received'
+      : s === 'cancelled'
+        ? 'po-status-cancelled'
+        : s === 'draft'
+          ? 'po-status-draft'
+          : s === 'partial'
+            ? 'po-status-partial'
+            : 'po-status-ordered';
 
-  const savePo = async () => {
-    if (!poSupplier) return setErr('Select a supplier');
-    const items = lines
-      .filter((l) => l.product_id && Number(l.qty) > 0)
-      .map((l) => ({ product_id: l.product_id, qty: Number(l.qty), unit_cost: Number(l.unit_cost) || 0 }));
-    if (!items.length) return setErr('Add at least one item');
-    try {
-      await window.api.purchases.createOrder(Number(poSupplier), items);
-      setPoModal(false);
-      setPoSupplier('');
-      setLines([]);
-      resetStagedSearch();
-      await load();
-    } catch (e) {
-      setErr(String(e));
-    }
-  };
-
-  const statusLabel = (s: string) => (s === 'received' ? 'Received' : s === 'cancelled' ? 'Cancelled' : 'Pending');
+  /** An order that can still be received or cancelled. */
+  const isOpenOrder = (s: string) => s === 'pending' || s === 'ordered' || s === 'partial';
 
   const supplierOptions = suppliers.map(s => ({ value: s.id, label: s.name }));
   const statusOptions = [
-    { value: 'pending', label: 'Pending' },
+    { value: 'draft', label: 'Draft' },
+    { value: 'ordered', label: 'Ordered' },
+    { value: 'partial', label: 'Partial' },
     { value: 'received', label: 'Received' },
     { value: 'cancelled', label: 'Cancelled' },
   ];
+
+  // ── the totals of the FILTERED list ──────────────────────────────────────
+  const listTotal = orders.reduce((s, o) => s + (Number(o.total_amount) || 0), 0);
+  const listPaid = orders.reduce((s, o) => s + (Number(o.paid_amount) || 0), 0);
+  const listPayable = orders.reduce(
+    (s, o) => s + Math.max(0, (Number(o.total_amount) || 0) - (Number(o.paid_amount) || 0)),
+    0
+  );
 
   const handleClearPurchaseFilters = () => {
     setFrom('');
@@ -277,22 +288,13 @@ export default function Purchases() {
     onOpen: (i) => { const p = products[i]; if (p) showPriceHist(p); },
   });
 
-  // ── Keyboard: qty → unit cost cycle inside the PO lines ──
-  const poLinesKb = useLineItemKeyboard({
-    rowCount: lines.length,
-    columns: ['qty', 'cost'],
-    onRemoveRow: (row) => setLines(lines.filter((_, j) => j !== row)),
-    onSubmit: savePo,
-    enabled: poModal,
-  });
-
   useKeyboardScope({
     kind: 'page',
     label: 'Purchases & Suppliers',
     actions: {
       new_record: () => {
         if (tab === 'suppliers') setSupplierModal(true);
-        else { resetStagedSearch(); setPoModal(true); }
+        else setPoModal(true);
       },
     },
     shortcuts: [
@@ -425,7 +427,7 @@ export default function Purchases() {
               <button className="btn btn-sm" onClick={() => { setImportFile(null); setImportOpen(true); }}>
                 Import from file
               </button>
-              <button className="btn btn-primary" onClick={() => { resetStagedSearch(); setPoModal(true); }}>
+              <button className="btn btn-primary" onClick={() => setPoModal(true)}>
                 New Purchase Order
               </button>
             </FilterRow>
@@ -456,6 +458,24 @@ export default function Purchases() {
           >
             {importDragOver && <div className="muted small">Drop the Excel / CSV file to start the import…</div>}
           </div>
+          <div className="po-totals" style={{ marginBottom: 10 }} data-testid="po-list-totals">
+            <div>
+              <span>Orders</span>
+              <strong data-testid="po-list-count">{orders.length}</strong>
+            </div>
+            <div>
+              <span>Order value</span>
+              <strong data-testid="po-list-total">{listTotal.toFixed(2)}</strong>
+            </div>
+            <div>
+              <span>Paid now</span>
+              <strong data-testid="po-list-paid">{listPaid.toFixed(2)}</strong>
+            </div>
+            <div>
+              <span>Payable</span>
+              <strong data-testid="po-list-payable">{listPayable.toFixed(2)}</strong>
+            </div>
+          </div>
           <div {...orderList.getContainerProps()}>
           <table className="tbl">
             <thead>
@@ -464,6 +484,8 @@ export default function Purchases() {
                 <th>Supplier</th>
                 <th>Date</th>
                 <th>Total</th>
+                <th>Paid</th>
+                <th>Payable</th>
                 <th>Status</th>
                 <th></th>
               </tr>
@@ -474,32 +496,49 @@ export default function Purchases() {
                   <td>PO-{String(o.id).padStart(4, '0')}</td>
                   <td>{o.supplier_name ?? '—'}</td>
                   <td>{o.created_at ? formatDateTimeAdmin(o.created_at) : '—'}</td>
-                  <td>{o.total_amount.toFixed(2)}</td>
+                  <td>{(Number(o.total_amount) || 0).toFixed(2)}</td>
+                  <td>{(Number(o.paid_amount) || 0).toFixed(2)}</td>
                   <td>
-                    <span className={`badge ${o.status === 'received' ? 'ok' : o.status === 'cancelled' ? 'bad' : ''}`}>
+                    {(
+                      Math.max(0, (Number(o.total_amount) || 0) - (Number(o.paid_amount) || 0)) || 0
+                    ).toFixed(2)}
+                  </td>
+                  <td>
+                    <span className={`po-status-chip ${statusChip(o.status)}`} data-testid={`po-status-${o.id}`}>
                       {statusLabel(o.status)}
                     </span>
                   </td>
                   <td>
-                    <button className="btn btn-sm" onClick={() => openPo(o.id)}>
-                      View
-                    </button>
-                    {o.status === 'pending' && (
-                      <>
-                        <button className="btn btn-sm btn-primary" onClick={() => receivePo(o.id)}>
-                          Receive Stock
-                        </button>
-                        <button className="btn btn-sm" onClick={() => cancelPo(o.id)}>
-                          Cancel
-                        </button>
-                      </>
-                    )}
+                    <div className="po-quick-actions">
+                      <button className="btn btn-sm" onClick={() => openPo(o.id)}>
+                        View
+                      </button>
+                      {isOpenOrder(o.status) && (
+                        <>
+                          <button className="btn btn-sm btn-primary" onClick={() => receivePo(o.id)}>
+                            Receive
+                          </button>
+                          <button className="btn btn-sm" onClick={() => askCancelPo(o.id)}>
+                            Cancel
+                          </button>
+                        </>
+                      )}
+                      <button className="btn btn-sm" onClick={() => printPo(o.id, 'a4')}>
+                        Print
+                      </button>
+                      <button className="btn btn-sm" onClick={() => printPo(o.id, 'thermal80')}>
+                        Thermal
+                      </button>
+                      <button className="btn btn-sm" onClick={() => duplicatePo(o.id)}>
+                        Duplicate
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
               {!orders.length && (
                 <tr>
-                  <td colSpan={6} className="muted">
+                  <td colSpan={8} className="muted">
                     No purchase orders yet.
                   </td>
                 </tr>
@@ -508,6 +547,41 @@ export default function Purchases() {
           </table>
           </div>
         </div>
+      )}
+
+      {cancelTarget !== null && (
+        <Modal
+          onClose={() => setCancelTarget(null)}
+          onSubmit={() => void cancelPo(cancelTarget, cancelReason)}
+          title="Cancel this purchase order"
+          className="modal-sm"
+          label="Cancel purchase order"
+          shortcuts={[{ action: 'save', label: 'Cancel the order' }]}
+        >
+          <div className="notice warn" style={{ marginBottom: 10 }}>
+            The order is cancelled and the stock is NOT touched. The reason is stored with the order.
+          </div>
+          <label className="lbl">Reason</label>
+          <input
+            className="inp"
+            value={cancelReason}
+            onChange={(e) => setCancelReason(e.target.value)}
+            placeholder="Why is it cancelled?"
+            data-testid="po-cancel-reason"
+          />
+          <div className="row-btns">
+            <button
+              className="btn btn-primary"
+              onClick={() => void cancelPo(cancelTarget, cancelReason)}
+              data-testid="po-cancel-confirm"
+            >
+              Cancel the order
+            </button>
+            <button className="btn" onClick={() => setCancelTarget(null)}>
+              Keep it
+            </button>
+          </div>
+        </Modal>
       )}
 
       {supplierModal && (
@@ -537,240 +611,42 @@ export default function Purchases() {
       )}
 
       {poModal && (
-        <Modal
-          onClose={() => { resetStagedSearch(); setPoModal(false); }}
-          onSubmit={savePo}
-          title="New Purchase Order"
-          className="modal-wide"
-          label="New Purchase Order"
-          shortcuts={[{ action: 'save', label: 'Create purchase order' }]}
-        >
-            <label className="lbl">Supplier *</label>
-            <select className="inp" value={poSupplier} onChange={(e) => setPoSupplier(e.target.value)}>
-              <option value="">— select —</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-            <div style={{ marginTop: 12 }}>
-              <label className="lbl">Search / scan product (Enter 1× select, 2× qty, 3× add)</label>
-              <input
-                className="inp"
-                placeholder="Type name, SKU or barcode, or scan…"
-                value={poSearch}
-                onChange={(e) => {
-                  setPoSearch(e.target.value);
-                  setPoSearchStage('idle');
-                  setPoSelIdx(-1);
-                  setPoQty('1');
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                    const count = poMatches.length;
-                    if (count === 0) return;
-                    e.preventDefault();
-                    setPoSelIdx((prev) => {
-                      const base = prev < 0 ? 0 : prev;
-                      const next = e.key === 'ArrowDown' ? (base + 1) % count : (base - 1 + count) % count;
-                      const el = document.querySelector(`[data-po-index="${next}"]`);
-                      (el as HTMLElement | undefined)?.scrollIntoView({ block: 'nearest' });
-                      return next;
-                    });
-                    setPoSearchStage('idle');
-                    return;
-                  }
-                  if (e.key === 'Enter' || e.key === '\r' || e.key === '\n') {
-                    e.preventDefault();
-                    if (poMatches.length === 0) return;
-                    if (poSearchStage === 'select') {
-                      setPoSearchStage('qty');
-                      return;
-                    }
-                    const sel = poSelIdx >= 0 && poSelIdx < poMatches.length ? poSelIdx : 0;
-                    setPoSelIdx(sel);
-                    const el = document.querySelector(`[data-po-index="${sel}"]`);
-                    (el as HTMLElement | undefined)?.scrollIntoView({ block: 'nearest' });
-                    setPoSearchStage('select');
-                    return;
-                  }
-                  if (e.key === 'Escape' || e.key === 'Esc') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setPoSearch('');
-                    setPoSearchStage('idle');
-                    setPoSelIdx(-1);
-                    setPoQty('1');
-                  }
-                }}
-              />
-              {poSearch && poMatches.length > 0 && (
-                <div className="search-result-dropdown">
-                  {poMatches.slice(0, 30).map((p, i) => (
-                    <button
-                      key={p.id}
-                      data-po-index={i}
-                      type="button"
-                      className={`search-result-item${i === poSelIdx ? ' highlighted' : ''}${poSearchStage === 'select' && poSelIdx === i ? ' selected' : ''}`}
-                      onMouseEnter={() => setPoSelIdx(i)}
-                      onClick={() => {
-                        if (poSearchStage === 'select' && poSelIdx === i) setPoSearchStage('qty');
-                        else {
-                          setPoSelIdx(i);
-                          setPoSearchStage('qty');
-                        }
-                      }}
-                    >
-                      <span className="psr-name">{p.name}</span>
-                      <span className="psr-meta">
-                        cost {p.cost_price}
-                        {p.barcode ? ` • ${p.barcode}` : p.sku ? ` • ${p.sku}` : ''}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {poSearchStage === 'qty' && selectedPoProduct() && (
-                <div className="quantity-input-box">
-                  <span>{selectedPoProduct()!.name} — Qty:</span>
-                  <KeyboardInput
-                    ref={poQtyRef}
-                    type="text"
-                    decimals
-                    value={poQty}
-                    onChange={(e) => setPoQty(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === '\r' || e.key === '\n') {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        confirmPoAdd();
-                        return;
-                      }
-                      if (e.key === 'Escape' || e.key === 'Esc') {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setPoSearchStage('select');
-                      }
-                    }}
-                  />
-                  <button className="btn btn-sm btn-primary" onClick={confirmPoAdd}>
-                    Add {Math.max(1, Math.floor(Number(poQty)) || 1)}
-                  </button>
-                  <button className="btn btn-sm" onClick={() => setPoSearchStage('select')}>Cancel</button>
-                </div>
-              )}
-            </div>
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th style={{ width: 100 }}>Qty</th>
-                  <th style={{ width: 120 }}>Unit Cost</th>
-                  <th style={{ width: 40 }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((l, i) => (
-                  <tr key={i}>
-                    <td>
-                      <select
-                        className="inp"
-                        value={l.product_id}
-                        onChange={(e) => {
-                          const n = [...lines];
-                          n[i] = { ...n[i], product_id: Number(e.target.value) };
-                          setLines(n);
-                        }}
-                      >
-                        <option value={0}>— select —</option>
-                        {products.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name} (cost {p.cost_price})
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>
-                      <KeyboardInput
-                        {...poLinesKb.getCellProps(i, 0)}
-                        className="inp"
-                        type="text"
-                        decimals
-                        value={l.qty}
-                        onChange={(e) => {
-                          const n = [...lines];
-                          n[i] = { ...n[i], qty: e.target.value };
-                          setLines(n);
-                        }}
-                      />
-                    </td>
-                    <td>
-                      <KeyboardInput
-                        {...poLinesKb.getCellProps(i, 1)}
-                        className="inp"
-                        type="text"
-                        decimals
-                        value={l.unit_cost}
-                        onChange={(e) => {
-                          const n = [...lines];
-                          n[i] = { ...n[i], unit_cost: e.target.value };
-                          setLines(n);
-                        }}
-                      />
-                    </td>
-                    <td>
-                      <button
-                        className="btn btn-sm"
-                        onClick={() => setLines(lines.filter((_, j) => j !== i))}
-                      >
-                        X
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <button
-              className="btn btn-sm"
-              onClick={() => setLines([...lines, { product_id: 0, qty: '', unit_cost: '' }])}
-            >
-              + Add Item
-            </button>
-            <div className="total-bar">
-              Total: <strong>{poTotal.toFixed(2)}</strong>
-            </div>
-            <div className="row-btns">
-              <button className="btn btn-primary" onClick={savePo}>
-                Create (adds to payable)
-              </button>
-              <button
-                className="btn"
-                onClick={() => {
-                  setPoModal(false);
-                  setPoSupplier('');
-                  setLines([]);
-                  resetStagedSearch();
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-        </Modal>
+        <PurchaseOrderModal
+          suppliers={suppliers}
+          onClose={() => setPoModal(false)}
+          onSaved={async () => {
+            setPoModal(false);
+            await load();
+          }}
+        />
       )}
 
       {poView && (
         <Modal
           onClose={() => setPoView(null)}
           title={`PO-${String(poView.order.id).padStart(4, '0')} — ${poView.order.supplier_name ?? ''}`}
-          className="modal-wide"
+          className="modal-wide modal-scroll-body"
           label="Purchase Order"
         >
+          <div className="modal-body">
             <p className="muted small">
-              {formatDateTimeAdmin(poView.order.created_at ?? '')} | {statusLabel(poView.order.status)}
+              {formatDateTimeAdmin(poView.order.created_at ?? '')} |{' '}
+              <span className={`po-status-chip ${statusChip(poView.order.status)}`}>
+                {statusLabel(poView.order.status)}
+              </span>
+              {poView.order.delivery_date ? ` | Expected: ${poView.order.delivery_date}` : ''}
             </p>
             {poView.order.reference_no && (
               <p className="muted small">Reference: {poView.order.reference_no} {poView.order.document_type === 'purchase_invoice' ? '· Purchase Invoice' : ''}</p>
+            )}
+            {poView.order.notes && <p className="muted small">Notes: {poView.order.notes}</p>}
+            {poView.order.cancel_reason && (
+              <p className="muted small">Cancelled — reason: {poView.order.cancel_reason}</p>
+            )}
+            {receiveNote && (
+              <div className="notice" style={{ marginBottom: 8 }} data-testid="po-receive-note">
+                {receiveNote}
+              </div>
             )}
             <table className="tbl">
               <thead>
@@ -780,21 +656,36 @@ export default function Purchases() {
                   <th>Received</th>
                   <th>Unit Cost</th>
                   <th>Line Total</th>
-                  {(poView.order.status === 'pending' || poView.order.status === 'partial') && <th style={{ width: 110 }}>Receive Now</th>}
+                  {isOpenOrder(poView.order.status) && <th style={{ width: 110 }}>Receive Now</th>}
                 </tr>
               </thead>
               <tbody>
                 {poView.items.map((i) => {
                   const received = Number(i.received_qty) || 0;
                   const remaining = Math.max(0, Number(i.qty) - received);
+                  const money = lineMoney({
+                    qty: Number(i.qty) || 0,
+                    unit_cost: Number(i.unit_cost) || 0,
+                    units_in_base: i.unit_multiplier,
+                    discount_pct: i.discount_pct,
+                    tax_pct: i.tax_pct,
+                  });
+                  const multiplier = Number(i.unit_multiplier) || 1;
                   return (
                     <tr key={i.id}>
                       <td>{i.product_name ?? `#${i.product_id}`}</td>
-                      <td>{i.qty}{i.tax_pct ? ` (+${i.tax_pct}% tax)` : ''}</td>
+                      <td>
+                        {i.qty}
+                        {multiplier > 1 ? ` ${i.unit_name ?? ''} = ${money.baseQty} pcs` : ''}
+                        {i.tax_pct ? ` (+${i.tax_pct}% tax)` : ''}
+                      </td>
                       <td>{received}{remaining > 0 ? ` · ${remaining} left` : ''}</td>
-                      <td>{i.unit_cost.toFixed(2)}</td>
-                      <td>{(i.qty * i.unit_cost).toFixed(2)}</td>
-                      {(poView.order.status === 'pending' || poView.order.status === 'partial') && (
+                      <td>
+                        {i.unit_cost.toFixed(2)}
+                        {multiplier > 1 ? ` (${money.costPerBase.toFixed(2)} / base)` : ''}
+                      </td>
+                      <td>{money.total.toFixed(2)}</td>
+                      {isOpenOrder(poView.order.status) && (
                         <td>
                           <input
                             className="inp"
@@ -803,6 +694,7 @@ export default function Purchases() {
                             value={receiveQty[i.product_id] ?? ''}
                             disabled={remaining <= 0}
                             onChange={(e) => setReceiveQty((prev) => ({ ...prev, [i.product_id]: e.target.value }))}
+                            data-testid={`po-receive-qty-${i.product_id}`}
                           />
                         </td>
                       )}
@@ -811,18 +703,53 @@ export default function Purchases() {
                 })}
               </tbody>
             </table>
-            <div className="total-bar">
-              Total: <strong>{poView.order.total_amount.toFixed(2)}</strong>
+            <div className="po-totals" style={{ marginTop: 10 }}>
+              <div>
+                <span>Subtotal</span>
+                <strong>{(Number(poView.order.subtotal) || 0).toFixed(2)}</strong>
+              </div>
+              <div>
+                <span>Discount</span>
+                <strong>{(Number(poView.order.discount_amount) || 0).toFixed(2)}</strong>
+              </div>
+              <div>
+                <span>Tax</span>
+                <strong>{(Number(poView.order.tax_total) || 0).toFixed(2)}</strong>
+              </div>
+              <div>
+                <span>Freight</span>
+                <strong>{(Number(poView.order.freight) || 0).toFixed(2)}</strong>
+              </div>
+              <div className="po-total-grand">
+                <span>Total</span>
+                <strong data-testid="po-view-total">{poView.order.total_amount.toFixed(2)}</strong>
+              </div>
+              <div>
+                <span>Paid</span>
+                <strong data-testid="po-view-paid">{(Number(poView.order.paid_amount) || 0).toFixed(2)}</strong>
+              </div>
+              <div>
+                <span>Payable</span>
+                <strong data-testid="po-view-payable">
+                  {Math.max(0, poView.order.total_amount - (Number(poView.order.paid_amount) || 0)).toFixed(2)}
+                </strong>
+              </div>
             </div>
             <div className="row-btns" style={{ flexWrap: 'wrap' }}>
               <button className="btn btn-sm" onClick={() => window.api.purchases.previewOrder(poView.order.id).catch((e) => setErr(String(e)))}>
                 Preview / Print
               </button>
+              <button className="btn btn-sm" onClick={() => printPo(poView.order.id, 'a4')}>
+                Print A4
+              </button>
+              <button className="btn btn-sm" onClick={() => printPo(poView.order.id, 'thermal80')}>
+                Print thermal
+              </button>
               <button className="btn btn-sm" onClick={() => window.api.purchases.saveOrderText(poView.order.id).catch((e) => setErr(String(e)))}>
                 Save as text
               </button>
             </div>
-            {(poView.order.status === 'pending' || poView.order.status === 'partial') && (
+            {isOpenOrder(poView.order.status) && (
               <div className="row-btns" style={{ flexWrap: 'wrap' }}>
                 <button className="btn btn-primary" onClick={receivePartial}>
                   Receive typed quantities
@@ -830,16 +757,15 @@ export default function Purchases() {
                 <button className="btn" onClick={() => receivePo(poView.order.id)}>
                   Receive all remaining
                 </button>
-                {poView.order.status === 'pending' && (
-                  <button className="btn" onClick={() => cancelPo(poView.order.id)}>
-                    Cancel Order
-                  </button>
-                )}
+                <button className="btn" onClick={() => askCancelPo(poView.order.id)}>
+                  Cancel Order
+                </button>
               </div>
             )}
             <button className="btn" onClick={() => setPoView(null)}>
               Close
             </button>
+          </div>
         </Modal>
       )}
 

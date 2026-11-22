@@ -87,6 +87,12 @@ export interface Product {
   mfg_date?: string | null;
   /** Human batch / lot code shown as {batch}. */
   batch_no?: string | null;
+  /** The reorder level (migration 024) — the stock at (or under) which the shop reorders. */
+  min_stock_level?: number | null;
+  /** How much to order when the product is low (migration 024). */
+  reorder_qty?: number | null;
+  /** The supplier the shop buys this product from (migration 024). */
+  last_supplier_id?: number | null;
   units?: ProductUnit[];
 }
 
@@ -110,6 +116,10 @@ export interface ProductInput {
   is_test?: number | boolean | null;
   mfg_date?: string | null;
   batch_no?: string | null;
+  /** The reorder level — the stock at (or under) which the shop reorders. */
+  min_stock_level?: number;
+  /** How much to order when the product is low. */
+  reorder_qty?: number | null;
   units?: {
     level: 0 | 1 | 2;
     name: string;
@@ -1002,6 +1012,21 @@ export interface PurchaseOrder {
   document_type?: 'purchase_order' | 'purchase_invoice' | string;
   import_id?: number | null;
   invoice_date?: string | null;
+  /** The expected delivery date (the `delivery_date` column). */
+  delivery_date?: string | null;
+  notes?: string | null;
+  /** The header money of the order. */
+  subtotal?: number | null;
+  tax_total?: number | null;
+  discount_type?: 'amount' | 'percent' | string | null;
+  discount_value?: number | null;
+  discount_amount?: number | null;
+  freight?: number | null;
+  /** What was paid right now. */
+  paid_amount?: number | null;
+  payment_method?: 'cash' | 'bank' | string | null;
+  cancel_reason?: string | null;
+  updated_at?: string | null;
 }
 
 export interface PurchaseItem {
@@ -1019,6 +1044,13 @@ export interface PurchaseItem {
   received_qty?: number | null;
   sale_price?: number | null;
   wholesale_price?: number | null;
+  /** How many base units ONE purchase unit holds (1 = the piece / kg). */
+  unit_multiplier?: number | null;
+  /** The ordered quantity in BASE units (the unit the stock is kept in). */
+  base_qty?: number | null;
+  /** The cost of ONE base unit. */
+  cost_per_base?: number | null;
+  unit_name?: string | null;
 }
 
 export interface PurchaseLineInput {
@@ -1031,6 +1063,69 @@ export interface PurchaseLineInput {
   tax_pct?: number;
   sale_price?: number | null;
   wholesale_price?: number | null;
+  /** How many base units ONE purchase unit holds (1 = the piece / kg). */
+  units_in_base?: number | null;
+  unit_name?: string | null;
+}
+
+/** The header fields of a new / edited purchase order. */
+export interface PurchaseOrderOptions {
+  document_type?: 'purchase_order' | 'purchase_invoice';
+  reference_no?: string | null;
+  invoice_date?: string | null;
+  import_id?: number | null;
+  status?: 'draft' | 'ordered' | 'pending';
+  expected_date?: string | null;
+  notes?: string | null;
+  discount_type?: 'amount' | 'percent';
+  discount_value?: number;
+  freight?: number;
+  paid_amount?: number;
+  payment_method?: 'cash' | 'bank' | null;
+}
+
+/** A purchase unit (piece / box / carton) of a product. */
+export interface PurchaseProductUnit {
+  id: number;
+  product_id: number;
+  level: 0 | 1 | 2;
+  name: string;
+  quantity_in_base_units: number;
+  barcode: string | null;
+  price: number | null;
+  is_base: boolean;
+}
+
+/** The LIVE inventory data of a product, for one Purchase Order row. */
+export interface PurchaseProductRow {
+  product_id: number;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  stock_qty: number;
+  min_stock_level: number;
+  low_stock_threshold: number;
+  reorder_qty: number | null;
+  cost_price: number;
+  sale_price: number;
+  wholesale_price: number | null;
+  tax_rate: number;
+  is_loose: number | null;
+  batch_no: string | null;
+  expiry_date: string | null;
+  last_supplier_id: number | null;
+  last_supplier_name: string | null;
+  last_purchase_cost: number | null;
+  last_purchase_at: string | null;
+  units: PurchaseProductUnit[];
+}
+
+/** The last purchase of a product (the read-only block of the product form). */
+export interface LastPurchaseInfo {
+  last_cost: number | null;
+  last_supplier_id: number | null;
+  last_supplier_name: string | null;
+  last_received_at: string | null;
 }
 
 // ============ Phase 3: Purchase import (Excel / CSV) ============
@@ -1698,12 +1793,28 @@ export interface PosBridge {
     createSupplier: (name: string, phone?: string, address?: string) => Promise<Supplier>;
     listOrders: (status?: string, from?: string, to?: string, supplierId?: number) => Promise<PurchaseOrder[]>;
     getOrder: (id: number) => Promise<(PurchaseOrder & { items: PurchaseItem[] }) | null>;
-    createOrder: (supplierId: number, items: PurchaseLineInput[]) => Promise<PurchaseOrder>;
+    createOrder: (
+      supplierId: number,
+      items: PurchaseLineInput[],
+      options?: PurchaseOrderOptions
+    ) => Promise<PurchaseOrder>;
     receiveOrder: (id: number, lines?: { product_id: number; qty: number }[]) => Promise<PurchaseOrder>;
-    cancelOrder: (id: number) => Promise<boolean>;
+    cancelOrder: (id: number, reason?: string) => Promise<boolean>;
     ledger: (supplierId: number) => Promise<SupplierTransaction[]>;
     paySupplier: (supplierId: number, amount: number, mode: string, note?: string) => Promise<Supplier>;
     priceHistory: (productId: number) => Promise<PurchasePriceRow[]>;
+    /* ── the Purchase Order screen: the LIVE inventory master data ── */
+    productRow: (productId: number) => Promise<PurchaseProductRow | null>;
+    lowStockProducts: (limit?: number) => Promise<PurchaseProductRow[]>;
+    supplierProducts: (supplierId: number, limit?: number) => Promise<PurchaseProductRow[]>;
+    lastPurchase: (productId: number) => Promise<LastPurchaseInfo>;
+    poSettings: () => Promise<{
+      cost_change_warn_pct: number;
+      min_margin_pct: number;
+      auto_suggest_low_stock: boolean;
+      default_payment_method: 'cash' | 'bank';
+      update_cost_price: boolean;
+    }>;
     // Phase 3 — import (Excel / CSV)
     importPickFile: () => Promise<string | null>;
     importParse: (filePath: string) => Promise<PurchaseImportParseResult>;
@@ -1714,8 +1825,8 @@ export interface PosBridge {
     importUndo: (importId?: number) => Promise<{ ok: boolean; message: string }>;
     importLast: () => Promise<{ id: number; created_at: string; supplier_id: number | null; imported_count: number } | null>;
     importLog: (limit?: number) => Promise<PurchaseImportLogRow[]>;
-    printOrder: (id: number) => Promise<{ ok: boolean; message: string }>;
-    previewOrder: (id: number) => Promise<{ ok: boolean; message: string }>;
+    printOrder: (id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58') => Promise<{ ok: boolean; message: string }>;
+    previewOrder: (id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58') => Promise<{ ok: boolean; message: string }>;
     shareOrder: (id: number) => Promise<string>;
     saveOrderText: (id: number) => Promise<boolean>;
   };
@@ -2232,6 +2343,8 @@ export interface CashDrawerBreakdown {
   refunds: number;
   /** Cash an amendment moved into/out of this shift (positive = money in). */
   amendment_cash: number;
+  /** Cash paid to a SUPPLIER from this shift (the money that left the drawer). */
+  supplier_cash_paid: number;
   total_bills: number;
   average_bill: number;
 }

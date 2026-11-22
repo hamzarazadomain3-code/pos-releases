@@ -113,23 +113,27 @@ export interface PoLineMoney {
  *
  * The order of the operations matters and is the legacy order:
  *   gross → line discount → tax on the DISCOUNTED amount.
+ *
+ * The line is rounded ONCE, at the end, exactly like the legacy
+ * `purchaseLineTotal` did — so an imported invoice and a hand-made PO total
+ * identically to the cent.
  */
 export function lineMoney(line: PoLine): PoLineMoney {
   const qty = safeNumber(line?.qty, 0);
   const unitCost = safeNumber(line?.unit_cost, 0);
   const units = unitsInBase(line?.units_in_base);
-  const gross = round2(qty * unitCost);
-  const discount = round2(gross * (safeNumber(line?.discount_pct, 0) / 100));
-  const net = round2(gross - discount);
-  const tax = round2(net * (safeNumber(line?.tax_pct, 0) / 100));
+  const grossRaw = qty * unitCost;
+  const discountRaw = grossRaw * (safeNumber(line?.discount_pct, 0) / 100);
+  const netRaw = grossRaw - discountRaw;
+  const taxRaw = netRaw * (safeNumber(line?.tax_pct, 0) / 100);
   return {
     qty,
     baseQty: baseQty(qty, units),
-    gross,
-    discount,
-    net,
-    tax,
-    total: round2(net + tax),
+    gross: round2(grossRaw),
+    discount: round2(discountRaw),
+    net: round2(netRaw),
+    tax: round2(taxRaw),
+    total: round2(netRaw + taxRaw),
     costPerBase: costPerBaseUnit(unitCost, units),
   };
 }
@@ -276,10 +280,12 @@ export interface PoTotals {
   lineDiscount: number;
   /** The order-level discount, in money. */
   discount: number;
-  /** The sum of the line taxes. */
+  /** The tax of the lines — the number that makes the parts add up. */
   tax: number;
   freight: number;
-  /** subtotal − line discounts − order discount + tax + freight. */
+  /** The sum of the line totals (before the order discount and the freight). */
+  lineTotal: number;
+  /** lineTotal − the order discount + the freight. */
   grandTotal: number;
   paid: number;
   /** What is still owed. Never negative. */
@@ -289,6 +295,12 @@ export interface PoTotals {
 /**
  * The totals of the order.
  *
+ * The parts ALWAYS add up to the total: `subtotal − lineDiscount + tax` is
+ * exactly the sum of the line totals, and the grand total is that sum minus
+ * the order discount plus the freight. (The tax is derived from the line
+ * totals for exactly this reason — rounding a tax twice can otherwise leave a
+ * stray paisa that the owner cannot explain.)
+ *
  * `grandTotal` is never below 0 and `payable` is never below 0: an overpaid
  * order shows 0 payable, never a negative number the shop would have to
  * "take back".
@@ -297,21 +309,23 @@ export function computeTotals(input: PoTotalsInput): PoTotals {
   const lines = Array.isArray(input?.lines) ? input.lines : [];
   let subtotal = 0;
   let lineDiscount = 0;
-  let tax = 0;
+  let lineTotal = 0;
   for (const l of lines) {
     const m = lineMoney(l);
     subtotal = round2(subtotal + m.gross);
     lineDiscount = round2(lineDiscount + m.discount);
-    tax = round2(tax + m.tax);
+    lineTotal = round2(lineTotal + m.total);
   }
   const type: DiscountType = input?.discount_type === 'percent' ? 'percent' : 'amount';
   const value = safeNumber(input?.discount_value, 0);
   const discount = type === 'percent' ? round2((subtotal * value) / 100) : round2(value);
   const freight = round2(input?.freight);
-  const grandTotal = Math.max(0, round2(subtotal - lineDiscount - discount + tax + freight));
+  // The tax that makes subtotal − lineDiscount + tax === lineTotal.
+  const tax = round2(lineTotal - (subtotal - lineDiscount));
+  const grandTotal = Math.max(0, round2(lineTotal - discount + freight));
   const paid = Math.max(0, round2(input?.paid_amount));
   const payable = Math.max(0, round2(grandTotal - paid));
-  return { subtotal, lineDiscount, discount, tax, freight, grandTotal, paid, payable };
+  return { subtotal, lineDiscount, discount, tax, freight, lineTotal, grandTotal, paid, payable };
 }
 
 /* ── receiving ──────────────────────────────────────────────────────────── */

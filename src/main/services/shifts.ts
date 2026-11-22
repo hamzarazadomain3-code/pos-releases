@@ -115,6 +115,29 @@ function shiftAmendmentCash(shiftId: number): number {
   }
 }
 
+/**
+ * The cash paid to a SUPPLIER from this shift.
+ *
+ * A purchase order's "paid now" amount in CASH leaves the drawer, so the
+ * expected cash must come down by it. The ledger row carries the shift it was
+ * paid from (`supplier_transactions.shift_id`) and the amount is stored
+ * NEGATIVE (a payment), so the effect is its absolute value.
+ */
+function shiftSupplierCash(shiftId: number): number {
+  const db = getDb();
+  try {
+    const row = db
+      .prepare(
+        `SELECT COALESCE(SUM(amount), 0) AS t FROM supplier_transactions
+         WHERE shift_id = ? AND type LIKE 'payment:cash%'`
+      )
+      .get(shiftId) as { t: number };
+    return Math.abs(Number(row?.t ?? 0));
+  } catch {
+    return 0;
+  }
+}
+
 export function shiftTotals(shiftId: number): { cash_sales: number; cash_refunds: number; expected: number } {
   const db = getDb();
   const shift = db.prepare('SELECT * FROM shifts WHERE id = ?').get(shiftId) as
@@ -143,10 +166,11 @@ export function shiftTotals(shiftId: number): { cash_sales: number; cash_refunds
   const cashSalesN = Number(cashSales?.t ?? 0);
   const cashRefundsN = Number(cashRefunds?.t ?? 0) + Number(plainCashRefunds?.t ?? 0);
   const amendmentCash = shiftAmendmentCash(shiftId);
+  const supplierCash = shiftSupplierCash(shiftId);
   return {
     cash_sales: cashSalesN,
     cash_refunds: cashRefundsN,
-    expected: shift.start_cash + cashSalesN - cashRefundsN + amendmentCash,
+    expected: shift.start_cash + cashSalesN - cashRefundsN + amendmentCash - supplierCash,
   };
 }
 

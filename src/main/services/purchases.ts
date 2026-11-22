@@ -1,6 +1,16 @@
 import { getDb } from '../db';
 import { getProduct, recordMovement, createBatch } from './inventory';
 import { logActivity } from './activity';
+import { currentShift } from './shifts';
+import {
+  baseQty,
+  computeTotals,
+  costPerBaseUnit,
+  lineTotal,
+  round2,
+  safeNumber,
+  unitsInBase,
+} from '../../shared/purchaseCalc';
 import type { PurchaseOrder, PurchaseItem, Supplier, SupplierTransaction } from '../../shared/types';
 
 export interface PurchaseLineInput {
@@ -14,6 +24,10 @@ export interface PurchaseLineInput {
   tax_pct?: number;
   sale_price?: number | null;
   wholesale_price?: number | null;
+  /** How many base units ONE purchase unit holds (1 = the piece / kg). */
+  units_in_base?: number | null;
+  /** The name of the purchase unit, e.g. "box". */
+  unit_name?: string | null;
 }
 
 export interface PurchaseOrderOptions {
@@ -22,6 +36,33 @@ export interface PurchaseOrderOptions {
   reference_no?: string | null;
   invoice_date?: string | null;
   import_id?: number | null;
+  /**
+   * The status of the new order.
+   *   - 'draft'   — a saved draft; it costs nothing and touches no stock,
+   *   - 'ordered' — the order was created; it waits for the goods,
+   *   - 'pending' — the LEGACY name of 'ordered' (the import path still uses
+   *     it, and old rows keep it). Both names mean "open".
+   */
+  status?: 'draft' | 'ordered' | 'pending';
+  /** The expected delivery date (the `delivery_date` column). */
+  expected_date?: string | null;
+  /** The order's note. */
+  notes?: string | null;
+  /** A discount on the whole order: an amount or a percent. */
+  discount_type?: 'amount' | 'percent';
+  discount_value?: number;
+  /** Freight / other charges. */
+  freight?: number;
+  /** What was paid right now (cash or bank). */
+  paid_amount?: number;
+  /** How the paid amount was paid. */
+  payment_method?: 'cash' | 'bank' | null;
+}
+
+/** The statuses that mean "the order is still open". */
+export function isOpenPurchaseStatus(status: string | null | undefined): boolean {
+  const s = String(status ?? '').toLowerCase();
+  return s === 'pending' || s === 'ordered' || s === 'draft' || s === 'partial';
 }
 
 export function listSuppliers(): Supplier[] {
@@ -40,24 +81,32 @@ export function createSupplier(name: string, phone?: string, address?: string): 
   return db.prepare('SELECT * FROM suppliers WHERE id = ?').get(Number(info.lastInsertRowid)) as unknown as Supplier;
 }
 
-/** Money-safe add: never NaN, rounded to 2 dp. */
-function round2(n: number): number {
-  return Math.round((Number(n) || 0) * 100) / 100;
-}
-
-/** Line total including the import's discount/tax percentages (no NaN). */
+/**
+ * Line total including the import's discount/tax percentages (no NaN).
+ *
+ * The maths lives in the shared pure module, so the PO screen, the import
+ * wizard and this service can never disagree — and the legacy rounding (once,
+ * at the end of the line) is kept, so an imported invoice totals exactly what
+ * it totals today.
+ */
 export function purchaseLineTotal(it: PurchaseLineInput): number {
-  const qty = Number(it.qty) || 0;
-  const cost = Number(it.unit_cost) || 0;
-  const gross = qty * cost;
-  const afterDisc = gross - gross * ((Number(it.discount_pct) || 0) / 100);
-  const withTax = afterDisc + afterDisc * ((Number(it.tax_pct) || 0) / 100);
-  return round2(withTax);
+  return lineTotal({
+    qty: it.qty,
+    unit_cost: it.unit_cost,
+    units_in_base: it.units_in_base,
+    discount_pct: it.discount_pct,
+    tax_pct: it.tax_pct,
+  });
 }
 
 /**
  * Insert the purchase document + items + supplier ledger row.
  * The CALLER owns the transaction (imports wrap several writes in ONE tx).
+ *
+ * The money comes from the shared pure module (`computeTotals`), so the
+ * number the PO screen showed is the number that is stored. A DRAFT costs
+ * nothing: it does not touch the supplier's balance and it writes no ledger
+ * row — a draft is a note, not a debt.
  */
 export function insertPurchaseOrderCore(
   supplierId: number,
@@ -67,47 +116,91 @@ export function insertPurchaseOrderCore(
   const db = getDb();
   if (!items.length) throw new Error('Purchase order has no items');
   for (const it of items) {
+    if (!Number.isFinite(Number(it.qty)) || !Number.isFinite(Number(it.unit_cost))) {
+      throw new Error('Quantity and unit cost must be valid numbers');
+    }
     if (!(Number(it.qty) > 0)) throw new Error('Quantity must be positive');
+    if (Number(it.unit_cost) < 0) throw new Error('Unit cost cannot be negative');
     if (!getProduct(it.product_id)) throw new Error(`Product ${it.product_id} not found`);
   }
   const docType = opts.document_type === 'purchase_invoice' ? 'purchase_invoice' : 'purchase_order';
-  // Line totals honour discount % / tax % when present (import); plain orders
-  // have neither and keep the historical qty * unit_cost total.
-  const total = round2(items.reduce((s, i) => s + purchaseLineTotal(i), 0));
+  const isDraft = opts.status === 'draft';
+  const status = isDraft ? 'draft' : opts.status === 'ordered' ? 'ordered' : 'pending';
+  // The totals: the same pure maths the PO screen shows.
+  const totals = computeTotals({
+    lines: items.map((i) => ({
+      qty: i.qty,
+      unit_cost: i.unit_cost,
+      units_in_base: i.units_in_base,
+      discount_pct: i.discount_pct,
+      tax_pct: i.tax_pct,
+    })),
+    discount_type: opts.discount_type,
+    discount_value: opts.discount_value,
+    freight: opts.freight,
+    paid_amount: isDraft ? 0 : opts.paid_amount,
+  });
+  const total = isDraft ? 0 : totals.grandTotal;
+  const paid = isDraft ? 0 : totals.paid;
 
   const info = db
     .prepare(
-      `INSERT INTO purchase_orders (supplier_id, status, total_amount, reference_no, document_type, import_id, invoice_date)
-       VALUES (?, 'pending', ?, ?, ?, ?, ?)`
+      `INSERT INTO purchase_orders
+         (supplier_id, status, total_amount, reference_no, document_type, import_id, invoice_date,
+          delivery_date, notes, subtotal, tax_total, discount_type, discount_value, discount_amount,
+          freight, paid_amount, payment_method)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       supplierId,
+      status,
       total,
       opts.reference_no ?? null,
       docType,
       opts.import_id ?? null,
-      opts.invoice_date ?? null
+      opts.invoice_date ?? null,
+      opts.expected_date ?? null,
+      opts.notes ?? null,
+      isDraft ? 0 : totals.subtotal,
+      isDraft ? 0 : totals.tax,
+      opts.discount_type ?? 'amount',
+      isDraft ? 0 : safeNumber(opts.discount_value, 0),
+      isDraft ? 0 : totals.discount,
+      isDraft ? 0 : totals.freight,
+      paid,
+      opts.payment_method ?? null
     );
   const poId = Number(info.lastInsertRowid);
   const insItem = db.prepare(
     `INSERT INTO purchase_items
-       (purchase_order_id, product_id, qty, unit_cost, batch_no, expiry_date, discount_pct, tax_pct, received_qty, sale_price, wholesale_price)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+       (purchase_order_id, product_id, qty, unit_cost, batch_no, expiry_date, discount_pct, tax_pct,
+        received_qty, sale_price, wholesale_price, unit_multiplier, base_qty, cost_per_base)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`
   );
   for (const it of items) {
+    const multiplier = unitsInBase(it.units_in_base);
+    const qty = round2(safeNumber(it.qty, 0));
+    const unitCost = round2(safeNumber(it.unit_cost, 0));
     insItem.run(
       poId,
       it.product_id,
-      round2(Number(it.qty) || 0),
-      round2(Number(it.unit_cost) || 0),
+      qty,
+      unitCost,
       it.batch_no ?? null,
       it.expiry_date ?? null,
       Number(it.discount_pct) || 0,
       Number(it.tax_pct) || 0,
       it.sale_price ?? null,
-      it.wholesale_price ?? null
+      it.wholesale_price ?? null,
+      multiplier,
+      baseQty(qty, multiplier),
+      costPerBaseUnit(unitCost, multiplier)
     );
   }
+  if (isDraft) return { id: poId, total };
+
+  // The supplier owes the order total. A "paid now" amount is a SECOND ledger
+  // row (the payment) that comes off the balance — the caller adds it.
   db.prepare('UPDATE suppliers SET balance = balance + ? WHERE id = ?').run(total, supplierId);
   db.prepare(
     'INSERT INTO supplier_transactions (supplier_id, purchase_order_id, amount, type) VALUES (?, ?, ?, ?)'
@@ -124,9 +217,30 @@ export function createPurchaseOrder(
   db.exec('BEGIN');
   try {
     const { id: poId, total } = insertPurchaseOrderCore(supplierId, items, opts);
+    // The "paid now" money: the SAME supplier payment the supplier ledger
+    // already knows, tied to the OPEN shift when it was cash.
+    let shiftId: number | null = null;
+    const paid = safeNumber(opts.paid_amount, 0);
+    if (opts.status !== 'draft' && paid > 0) {
+      const method = opts.payment_method === 'bank' ? 'bank' : 'cash';
+      if (method === 'cash') {
+        const shift = currentShift();
+        if (!shift) throw new Error('Open a shift before paying a supplier in cash');
+        shiftId = shift.id;
+      }
+      db.prepare(
+        'INSERT INTO supplier_transactions (supplier_id, amount, type, purchase_order_id, shift_id) VALUES (?, ?, ?, ?, ?)'
+      ).run(supplierId, -paid, `payment:${method}`, poId, shiftId);
+      db.prepare('UPDATE suppliers SET balance = balance - ? WHERE id = ?').run(paid, supplierId);
+    }
     db.exec('COMMIT');
     const docType = opts.document_type === 'purchase_invoice' ? 'purchase_invoice' : 'purchase_order';
-    logActivity('purchase_created', 'purchase_order', poId, `supplier=${supplierId} | total=${total} | type=${docType}`);
+    logActivity(
+      'purchase_created',
+      'purchase_order',
+      poId,
+      `supplier=${supplierId} | total=${total} | type=${docType} | status=${opts.status ?? 'pending'}`
+    );
     const po = getPurchaseOrder(poId);
     if (!po) throw new Error('Failed to load purchase order');
     return po;
@@ -174,8 +288,14 @@ export function listPurchaseOrders(
   `;
   const params: (string | number)[] = [];
   if (status) {
-    sql += ' AND p.status = ?';
-    params.push(status);
+    if (status === 'ordered') {
+      // `ordered` is the current name of the legacy `pending` — the filter
+      // shows BOTH, so an old order is never lost from the list.
+      sql += " AND p.status IN ('ordered', 'pending')";
+    } else {
+      sql += ' AND p.status = ?';
+      params.push(status);
+    }
   }
   if (from) {
     sql += ' AND date(p.created_at) >= date(?)';
@@ -198,16 +318,21 @@ export function listPurchaseOrders(
  *
  * Phase 3: supports PARTIAL receive — pass `lines` ([{ product_id, qty }]) to
  * receive only some of what is outstanding; omit it to receive everything
- * remaining (the historical behaviour). The order stays `pending` until every
- * line is fully received, becomes `partial` while some remain, then `received`.
- * Stock-in only covers the received quantity, and the cost price update uses
- * the received cost.
+ * remaining (the historical behaviour). The order stays open (`pending` /
+ * `ordered`) until every line is fully received, becomes `partial` while some
+ * remain, then `received`.
+ *
+ * The stock-in is in BASE units: a line ordered in boxes adds
+ * boxes × quantity_in_base_units pieces, and the batch carries the cost of ONE
+ * base unit. The cost price follows the shop's costing setting.
  */
 export function receivePurchaseOrder(id: number, lines?: { product_id: number; qty: number }[]): PurchaseOrder {
   const db = getDb();
   const po = getPurchaseOrder(id);
   if (!po) throw new Error('Purchase order not found');
-  if (po.status !== 'pending' && po.status !== 'partial') throw new Error(`Order already ${po.status}`);
+  if (po.status !== 'pending' && po.status !== 'ordered' && po.status !== 'partial') {
+    throw new Error(`Order already ${po.status}`);
+  }
 
   // Work out how much to receive per line (default: everything outstanding).
   const wanted = new Map<number, number>();
@@ -232,19 +357,34 @@ export function receivePurchaseOrder(id: number, lines?: { product_id: number; q
     for (const p of plan) {
       const it = p.item;
       const batchNumber = it.batch_no || `PO-${id}-${it.product_id}-${Date.now()}`;
-      createBatch(it.product_id, batchNumber, p.qty, it.unit_cost, it.expiry_date ?? null);
+      // The stock is kept in BASE units (the piece / kg). A line ordered in
+      // boxes puts BOXES × quantity_in_base_units into the stock — 2 boxes of
+      // 12 must add 24 pieces, never 2.
+      const multiplier = unitsInBase((it as { unit_multiplier?: number | null }).unit_multiplier);
+      const baseReceived = baseQty(p.qty, multiplier);
+      // The batch carries the BASE quantity at the cost of ONE base unit, so
+      // the FIFO report and the cost of goods sold stay right.
+      const costPerBase = costPerBaseUnit(it.unit_cost, multiplier);
+      createBatch(it.product_id, batchNumber, baseReceived, costPerBase, it.expiry_date ?? null);
 
-      // Update product cost price + price history for the received cost
-      db.prepare('UPDATE products SET cost_price = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
-        it.unit_cost,
-        it.product_id
-      );
+      // The product's cost price + the price history follow the shop's costing
+      // setting. The history ALWAYS records the received cost (that is the
+      // "last purchase cost" the PO screen compares against).
+      const updateCost = poCostingUpdatesCostPrice();
+      if (updateCost) {
+        db.prepare('UPDATE products SET cost_price = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
+          costPerBase,
+          it.product_id
+        );
+      }
       db.prepare(
         'INSERT INTO purchase_price_history (product_id, unit_cost, purchase_order_id) VALUES (?, ?, ?)'
-      ).run(it.product_id, it.unit_cost, id);
+      ).run(it.product_id, costPerBase, id);
+      // The last supplier of the product.
+      db.prepare('UPDATE products SET last_supplier_id = ? WHERE id = ?').run(po.supplier_id, it.product_id);
       // Stock-in: batch already holds the qty, so recordMovement must NOT be given a batchId
       // (it would add the qty to the batch a second time). It updates product stock + movement log.
-      recordMovement(it.product_id, p.qty, 'Purchase stock-in', 'purchase', id);
+      recordMovement(it.product_id, baseReceived, 'Purchase stock-in', 'purchase', id);
       db.prepare('UPDATE purchase_items SET received_qty = COALESCE(received_qty, 0) + ? WHERE id = ?').run(
         p.qty,
         it.id
@@ -271,21 +411,44 @@ export function receivePurchaseOrder(id: number, lines?: { product_id: number; q
   }
 }
 
-export function cancelPurchaseOrder(id: number): boolean {
+/**
+ * Cancel an order.
+ *
+ * A cancelled order NEVER touches the stock (it never received anything) and
+ * it never changes a batch. What it reverses is the SUPPLIER's balance: the
+ * part of the order that was still payable. A "paid now" amount is NOT
+ * reversed here — it stays as the shop's credit with that supplier (the owner
+ * takes it back or uses it on the next order), so the ledger stays honest.
+ */
+export function cancelPurchaseOrder(id: number, reason?: string): boolean {
   const db = getDb();
   const po = getPurchaseOrder(id);
   if (!po) throw new Error('Purchase order not found');
-  if (po.status !== 'pending') throw new Error('Only pending orders can be cancelled');
+  if (po.status !== 'pending' && po.status !== 'ordered' && po.status !== 'draft') {
+    throw new Error(`Only an open order can be cancelled (this one is ${po.status})`);
+  }
+  const paid = safeNumber((po as { paid_amount?: number | null }).paid_amount, 0);
+  const payable = Math.max(0, round2(safeNumber(po.total_amount, 0) - paid));
 
   db.exec('BEGIN');
   try {
-    db.prepare("UPDATE purchase_orders SET status = 'cancelled' WHERE id = ?").run(id);
-    db.prepare('UPDATE suppliers SET balance = balance - ? WHERE id = ?').run(po.total_amount, po.supplier_id);
-    db.prepare(
-      'INSERT INTO supplier_transactions (supplier_id, purchase_order_id, amount, type) VALUES (?, ?, ?, ?)'
-    ).run(po.supplier_id, id, -po.total_amount, 'purchase_cancelled');
+    db.prepare("UPDATE purchase_orders SET status = 'cancelled', cancel_reason = ? WHERE id = ?").run(
+      reason?.trim() || null,
+      id
+    );
+    if (payable > 0) {
+      db.prepare('UPDATE suppliers SET balance = balance - ? WHERE id = ?').run(payable, po.supplier_id);
+      db.prepare(
+        'INSERT INTO supplier_transactions (supplier_id, purchase_order_id, amount, type) VALUES (?, ?, ?, ?)'
+      ).run(po.supplier_id, id, -payable, 'purchase_cancelled');
+    }
     db.exec('COMMIT');
-    logActivity('purchase_cancelled', 'purchase_order', id, `supplier=${po.supplier_id} | total=${po.total_amount}`);
+    logActivity(
+      'purchase_cancelled',
+      'purchase_order',
+      id,
+      `supplier=${po.supplier_id} | payable=${payable} | reason=${reason?.trim() || '-'}`
+    );
     return true;
   } catch (e) {
     db.exec('ROLLBACK');
@@ -338,4 +501,220 @@ export function purchasePriceHistory(productId: number): { id: number; unit_cost
        ORDER BY h.id DESC LIMIT 50`
     )
     .all(productId) as unknown as { id: number; unit_cost: number; created_at?: string; product_name?: string | null }[];
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   The Purchase Order screen — the LIVE inventory master data.
+
+   The rule of this screen: it READS the inventory master data, it never
+   copies it. Everything below is a query against the products / units /
+   purchases tables, so whatever the shop changed in Inventory shows up here
+   the moment the row is drawn.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Read a PO setting.
+ *
+ * The SHOP PROFILE first (the Settings > Inventory/Purchases rows write
+ * there), the admin table as a fallback, and the caller's default last.
+ */
+export function poSetting(key: string, fallback: string): string {
+  const db = getDb();
+  for (const table of ['settings', 'admin_settings']) {
+    try {
+      const row = db.prepare(`SELECT value FROM ${table} WHERE key = ?`).get(key) as
+        | { value: string | null }
+        | undefined;
+      const value = row?.value;
+      if (value !== undefined && value !== null && String(value) !== '') return String(value);
+    } catch {
+      /* the table may not exist in an old database */
+    }
+  }
+  return fallback;
+}
+
+/** The cost-change warning threshold, in percent (default 10). */
+export function poCostChangeWarnPct(): number {
+  const n = Number(poSetting('po_cost_change_warn_pct', '10'));
+  return Number.isFinite(n) && n >= 0 ? n : 10;
+}
+
+/** The minimum margin a row must keep (0 = off). */
+export function poMinMarginPct(): number {
+  const n = Number(poSetting('po_min_margin_pct', '0'));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Should the PO offer the low-stock items when it opens? */
+export function poAutoSuggestLowStock(): boolean {
+  return poSetting('po_auto_suggest_low_stock', '1') !== '0';
+}
+
+/** The default "paid now" method. */
+export function poDefaultPaymentMethod(): 'cash' | 'bank' {
+  return poSetting('po_default_payment_method', 'cash') === 'bank' ? 'bank' : 'cash';
+}
+
+/** Does receiving an order update the product's own `cost_price`? */
+export function poCostingUpdatesCostPrice(): boolean {
+  return poSetting('po_update_cost_price', '1') !== '0';
+}
+
+export interface PurchaseProductUnit {
+  id: number;
+  product_id: number;
+  level: number;
+  name: string;
+  quantity_in_base_units: number;
+  barcode: string | null;
+  price: number | null;
+  is_base: boolean;
+}
+
+export interface PurchaseProductRow {
+  product_id: number;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  stock_qty: number;
+  min_stock_level: number;
+  low_stock_threshold: number;
+  reorder_qty: number | null;
+  cost_price: number;
+  sale_price: number;
+  wholesale_price: number | null;
+  tax_rate: number;
+  is_loose: number | null;
+  batch_no: string | null;
+  expiry_date: string | null;
+  /** The supplier the shop buys this product from (the product's own field). */
+  last_supplier_id: number | null;
+  last_supplier_name: string | null;
+  /** The cost of the LAST purchase of this product (the warning baseline). */
+  last_purchase_cost: number | null;
+  last_purchase_at: string | null;
+  /** The purchase units (piece / box / carton). */
+  units: PurchaseProductUnit[];
+}
+
+const PRODUCT_ROW_SQL = `
+  SELECT p.id AS product_id, p.name, p.sku, p.barcode,
+         COALESCE(p.stock_qty, 0) AS stock_qty,
+         COALESCE(p.min_stock_level, 0) AS min_stock_level,
+         COALESCE(p.low_stock_threshold, 0) AS low_stock_threshold,
+         p.reorder_qty,
+         COALESCE(p.cost_price, 0) AS cost_price,
+         COALESCE(p.sale_price, 0) AS sale_price,
+         p.wholesale_price,
+         COALESCE(p.tax_rate, 0) AS tax_rate,
+         p.is_loose, p.batch_no, p.expiry_date,
+         p.last_supplier_id,
+         (SELECT s.name FROM suppliers s WHERE s.id = p.last_supplier_id) AS last_supplier_name,
+         (SELECT h.unit_cost FROM purchase_price_history h
+           WHERE h.product_id = p.id ORDER BY h.id DESC LIMIT 1) AS last_purchase_cost,
+         (SELECT h.created_at FROM purchase_price_history h
+           WHERE h.product_id = p.id ORDER BY h.id DESC LIMIT 1) AS last_purchase_at
+  FROM products p
+`;
+
+function unitsOf(db: ReturnType<typeof getDb>, productId: number): PurchaseProductUnit[] {
+  return db
+    .prepare(
+      `SELECT id, product_id, level, name, quantity_in_base_units, barcode, price, is_base
+       FROM product_units WHERE product_id = ?
+       ORDER BY level, id`
+    )
+    .all(productId) as unknown as PurchaseProductUnit[];
+}
+
+/** The LIVE inventory data of ONE product, for one PO row. */
+export function purchaseProductRow(productId: number): PurchaseProductRow | null {
+  const db = getDb();
+  const row = db.prepare(`${PRODUCT_ROW_SQL} WHERE p.id = ?`).get(productId) as unknown as PurchaseProductRow | undefined;
+  if (!row) return null;
+  return { ...row, units: unitsOf(db, productId) };
+}
+
+/**
+ * The products that are LOW on stock — the "Add low-stock items" list.
+ *
+ * The reorder level is the product's own `min_stock_level` when it has one,
+ * the legacy `low_stock_threshold` otherwise.
+ */
+export function listLowStockPurchaseProducts(limit = 100): PurchaseProductRow[] {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `${PRODUCT_ROW_SQL}
+       WHERE p.active = 1
+         AND COALESCE(p.is_test, 0) = 0
+         AND (CASE WHEN COALESCE(p.min_stock_level, 0) > 0
+                   THEN p.min_stock_level
+                   ELSE COALESCE(p.low_stock_threshold, 0) END) > 0
+         AND COALESCE(p.stock_qty, 0) <= (CASE WHEN COALESCE(p.min_stock_level, 0) > 0
+                                                THEN p.min_stock_level
+                                                ELSE COALESCE(p.low_stock_threshold, 0) END)
+       ORDER BY p.name COLLATE NOCASE
+       LIMIT ?`
+    )
+    .all(limit) as unknown as PurchaseProductRow[];
+  return rows.map((r) => ({ ...r, units: unitsOf(db, r.product_id) }));
+}
+
+/**
+ * The products the shop buys from ONE supplier — the "Add this supplier's
+ * products" list. The link is the product's own `last_supplier_id`, the same
+ * field the product form shows.
+ */
+export function listSupplierPurchaseProducts(supplierId: number, limit = 200): PurchaseProductRow[] {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `${PRODUCT_ROW_SQL}
+       WHERE p.active = 1
+         AND COALESCE(p.is_test, 0) = 0
+         AND p.last_supplier_id = ?
+       ORDER BY p.name COLLATE NOCASE
+       LIMIT ?`
+    )
+    .all(supplierId, limit) as unknown as PurchaseProductRow[];
+  return rows.map((r) => ({ ...r, units: unitsOf(db, r.product_id) }));
+}
+
+export interface LastPurchaseInfo {
+  /** The cost of the last purchase (per BASE unit). */
+  last_cost: number | null;
+  /** The supplier of that purchase. */
+  last_supplier_id: number | null;
+  last_supplier_name: string | null;
+  /** When it was received. */
+  last_received_at: string | null;
+}
+
+/**
+ * The last purchase of a product — the read-only block the product form
+ * shows ("Last purchase cost / last supplier / last received date").
+ */
+export function lastPurchaseInfo(productId: number): LastPurchaseInfo {
+  const db = getDb();
+  const row = db
+    .prepare(
+      `SELECT h.unit_cost, h.created_at, po.supplier_id, s.name AS supplier_name
+       FROM purchase_price_history h
+       LEFT JOIN purchase_orders po ON po.id = h.purchase_order_id
+       LEFT JOIN suppliers s ON s.id = po.supplier_id
+       WHERE h.product_id = ?
+       ORDER BY h.id DESC LIMIT 1`
+    )
+    .get(productId) as
+    | { unit_cost: number; created_at: string | null; supplier_id: number | null; supplier_name: string | null }
+    | undefined;
+  if (!row) return { last_cost: null, last_supplier_id: null, last_supplier_name: null, last_received_at: null };
+  return {
+    last_cost: safeNumber(row.unit_cost, 0),
+    last_supplier_id: row.supplier_id ?? null,
+    last_supplier_name: row.supplier_name ?? null,
+    last_received_at: row.created_at ?? null,
+  };
 }
