@@ -3266,19 +3266,130 @@ setting or service.
   `batch_tracking_enabled` setting, and no service reads it, so the PO decides
   from the product's own `batch_no` / `expiry_date` + that setting.
 - **A costing setting that says whether `cost_price` follows the last
-  purchase** — the receiving path ALWAYS writes `cost_price`
-  (`src/main/services/purchases.ts:238-241`). Phase 2 adds the shop's switch,
-  and the receipt dialog says when the cost was left alone.
-- **A PO-specific payment method setting** — Phase 2 adds it.
+  purchase** — it did NOT exist: the receiving path ALWAYS wrote `cost_price`
+  (`src/main/services/purchases.ts:238-241`). **This run adds it**
+  (`po_update_cost_price`, the shop profile) — when it is off the cost price
+  is left alone and the receipt dialog says so.
+- **A PO-specific payment method setting** — **this run adds it**
+  (`po_default_payment_method`).
 
-### The four settings this run adds (none of them exists today)
+### The five settings this run adds (none of them exists today)
+
+They live in the **shop profile** table (`settings`) — the same table the
+Settings → Inventory & Purchases panel writes — so the owner edits them on the
+screen that owns them. `poSetting()` reads the shop profile first and the
+`admin_settings` table as a fallback, so a value saved from either place works.
 
 | Setting key | Default | Where it lives | What it does |
 |---|---|---|---|
-| `po_cost_change_warn_pct` | `10` | `admin_settings` | the cost-change warning chip (old → new, +/- %) |
-| `po_min_margin_pct` | `0` (off) | `admin_settings` | the margin warning on a row |
-| `po_auto_suggest_low_stock` | `1` | `admin_settings` | offer the low-stock items when a PO opens |
-| `po_default_payment_method` | `cash` | `admin_settings` | the default "paid now" method |
+| `po_cost_change_warn_pct` | `10` | `settings` (the shop profile) | the cost-change warning chip (old → new, +/- %) |
+| `po_min_margin_pct` | `0` (off) | `settings` | the margin warning on a row |
+| `po_auto_suggest_low_stock` | `1` | `settings` | offer the low-stock items when a PO opens |
+| `po_default_payment_method` | `cash` | `settings` | the default "paid now" method |
+| `po_update_cost_price` | `1` | `settings` | receiving updates the product's `cost_price` (off = leave it alone, and the receipt says so) |
+
+All five are seeded by `migrations/090_purchase_orders_enhance.js` with
+`INSERT OR IGNORE` — an owner who already chose a value keeps it, and running
+the migration twice changes nothing (`npm run test:purchaseEnhance`, part i).
+
+---
+
+## Purchase Enhance — what changed, and why
+
+**The branch:** `feature/purchase-enhance` (from `feature/bill-amend` @ `4734394`).
+**No release, no version bump, no push, no deploy in this run.**
+
+### The rules this run kept
+
+| Rule | Where it lives | Why it matters |
+|---|---|---|
+| **ONE money implementation** | `src/shared/purchaseCalc.ts` (the pure module) — the service (`src/main/services/purchases.ts:49-64`), the PO screen and the printed order all call it | the import wizard and the PO screen can never disagree about a total; the legacy per-line rounding is kept (rounded once, at the line end) so an imported invoice still totals the same |
+| **The header parts add up exactly** | `computeTotals` (`src/shared/purchaseCalc.ts:308`) — the tax is DERIVED from the line totals (`tax = lineTotal − (subtotal − lineDiscount)`), so there is never a stray paisa | `grandTotal = lineTotal − discount + freight`; `payable` is never negative |
+| **No NaN, ever** | `safeNumber` in the pure module; every service entry point re-validates | a junk qty is refused with a sentence, never written |
+| **The stock goes in through the EXISTING functions** | `src/main/services/purchases.ts:329-420` (the receipt calls `createBatch` + `recordMovement`) | the FIFO, the batch and the movement log stay one path for every source of stock |
+| **A purchase never changes a sale price silently** | the "Update sale price" button only SUGGESTS (`src/renderer/src/components/PurchaseOrderModal.tsx:620-632`) | the owner decides; the app never rewrites a price behind their back |
+| **The saved order keeps its own snapshot** | the line stores `unit_multiplier` / `base_qty` / `cost_per_base` (`src/main/services/purchases.ts:111-190`) | changing the product tomorrow never rewrites yesterday's order |
+| **The migration is additive + idempotent** | `migrations/090_purchase_orders_enhance.js` (`PRAGMA table_info` guards, `INSERT OR IGNORE`) | an old database upgrades in place; running it twice changes nothing |
+
+### The new statuses
+
+`draft` → `ordered` → `partial` → `received`, plus `cancelled`. The **legacy
+`pending` is still accepted** everywhere (it is the old name of `ordered`): the
+list's "Ordered" filter matches BOTH, and the old rows keep working. No data
+migration of the old rows was needed.
+
+### What the PO screen shows now
+
+- **The row** — the live stock (red when it is at or under the reorder level),
+  the **last purchase cost** next to the product's own cost price, the sale
+  price, the purchase unit with the pack conversion (`2 Carton = 24 pcs · cost
+  100.00 per base unit`), the tax, the default-supplier badge, the batch and
+  expiry fields when the product needs them, the margin %, and the cost-change
+  warning chip (`cost changed 1200.00 → 1500.00 (+25%)`).
+- **The header** — the supplier, the expected delivery date, the supplier's
+  invoice/ref no, the notes, the discount (amount or %), the freight, the tax,
+  the amount **paid now** (cash or bank) and the payable.
+- **The footer** — the total and the payable, `Save draft`, `Create`, `Cancel`.
+  The body scrolls and the footer NEVER clips (this was the layout bug).
+
+### The Inventory ↔ Purchase live link
+
+- The PO row reads the product **live** (`purchaseProductRow`), so a change in
+  Inventory shows up in an open order — and a banner offers a refresh.
+- Receiving an order records the **last purchase cost, the supplier and the
+  date** (`lastPurchaseInfo`) — the Inventory product form shows them read-only.
+- The product's own `cost_price` follows the last purchase **only** when the
+  shop's `po_update_cost_price` switch is on; when it is off the cost price
+  stays and the receipt dialog says so.
+
+### The owner manual checklist
+
+Ten things to try by hand (the automated suites cannot judge "does this feel
+right"):
+
+1. **Purchases → Purchase Orders → New Purchase Order.** The modal opens with
+   the supplier, the date, the ref no, the notes and the money across the top,
+   and a **search box** under it. The footer (Total / Save draft / Create /
+   Cancel) sits at the bottom and stays there.
+2. **Make the window small (or maximize it).** The body scrolls; the footer is
+   always visible. Nothing is cut off.
+3. **Pick a supplier → "Add low-stock items".** The list shows each product
+   with its live stock, its min level and the **suggested quantity**. Nothing
+   is added until you press *Add all* (or a single *Add*).
+4. **Search a product** (name, SKU or barcode). Enter once selects it, Enter
+   again opens the qty box, Enter a third time adds the line. The cost, the qty
+   and the tax fill themselves in and stay editable.
+5. **Pick a pack (Carton) instead of the piece.** The line shows
+   `2 Carton = 24 pcs · cost 100.00 per base unit`.
+6. **Raise the unit cost by more than 10%.** A warning chip appears with the
+   old cost, the new cost and the % change. Set it in Settings → Inventory &
+   Purchases to change the threshold.
+7. **Set the qty to 0.** *Create* greys out and the reason is written under the
+   totals — no silent failure.
+8. **Ctrl+S**, then open the list: the order is there with a **Draft** chip and
+   a zero total (a draft costs nothing). **Ctrl+Enter** creates it instead and
+   the chip becomes **Ordered**.
+9. **Receive half of it.** Open the order, type the received qty per line and
+   press *Receive typed quantities*: the stock goes up by the **base** quantity
+   (24 pieces, not 2 cartons), the batch carries the per-base cost, the line
+   keeps the remainder open and the chip becomes **Partial**. Cancel the order
+   and ask for a reason — the stock does NOT move.
+10. **Pay cash now.** Open a shift first, then pay part of the order in cash:
+    the shift's expected cash comes down by exactly that amount. With no open
+    shift the app refuses the cash payment instead of losing the money.
+
+### The permanent tests this run added
+
+| Test | What it drives | Checks |
+|---|---|---|
+| `npm run test:purchaseEnhance` | the REAL `dist/main/services/purchases.ts`, `inventory.ts`, `shifts.ts` and `dist/shared/purchaseCalc.js` against a throwaway database | 99 |
+| `npm run test:purchaseInventoryLink` | the REAL services: the last purchase info, the costing switch, the saved snapshot, the live row, the five settings | 39 |
+| `npm run test:purchaseOrderUi` | the REAL built renderer in a hidden `BrowserWindow` with the real preload + the real IPC (1280x720) | 55 |
+
+The three PO suites join the 82 suites that were already in `package.json`
+(`npm run test:purchaseOrderUi` is the only new `npm` script; the other two
+run their Electron suites the same way the existing ones do).
+
 
 
 
