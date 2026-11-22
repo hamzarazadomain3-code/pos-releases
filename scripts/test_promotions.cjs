@@ -29,6 +29,26 @@ function assertDeepEqual(actual, expected, message) {
 let passed = 0;
 let failed = 0;
 
+/**
+ * The LOCAL calendar date, `daysFromNow` days from today.
+ *
+ * The service compares a promotion's start/end date against the LOCAL date
+ * (`today()` in `dist/main/services/promotions.js` — the same clock the shop
+ * keeps its books on). This fixture used `toISOString()`, which is the UTC
+ * date: between local midnight and 05:00 (UTC+5) the two are a day apart, so
+ * "tomorrow" was written as TODAY and the "a future promotion is not applied"
+ * case failed every night.
+ *
+ * Only the date the fixture WRITES changes — the assertions below are exactly
+ * the same as before.
+ */
+function localDate(daysFromNow = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + daysFromNow);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function test(name, fn) {
   try {
     fn();
@@ -121,9 +141,9 @@ console.log('\n=== promotions tests ===');
 test('Expired promotion not applied by resolvePromotions', () => {
   runWithDb(() => {
     const db = require('../dist/main/db.js').getDb();
-    const today = new Date().toISOString().split('T')[0];
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const today = localDate();
+    const yesterday = localDate(-1);
+    const tomorrow = localDate(1);
     
     // Create an expired promotion
     const promoId = db.prepare(`
@@ -151,8 +171,8 @@ test('Expired promotion not applied by resolvePromotions', () => {
 test('Promotion with end_date yesterday is not applied', () => {
   runWithDb(() => {
     const db = require('../dist/main/db.js').getDb();
-    const today = new Date().toISOString().split('T')[0];
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const today = localDate();
+    const yesterday = localDate(-1);
     
     db.prepare(`
       INSERT INTO promotions (name, type, scope, product_id, discount_value, start_date, end_date, active)
@@ -171,9 +191,9 @@ test('Promotion with end_date yesterday is not applied', () => {
 test('Promotion with start_date tomorrow is not applied', () => {
   runWithDb(() => {
     const db = require('../dist/main/db.js').getDb();
-    const today = new Date().toISOString().split('T')[0];
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const dayAfter = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const today = localDate();
+    const tomorrow = localDate(1);
+    const dayAfter = localDate(2);
     
     db.prepare(`
       INSERT INTO promotions (name, type, scope, product_id, discount_value, start_date, end_date, active)
@@ -192,8 +212,8 @@ test('Promotion with start_date tomorrow is not applied', () => {
 test('listPromotions is read-only (no mutations)', () => {
   runWithDb(() => {
     const db = require('../dist/main/db.js').getDb();
-    const today = new Date().toISOString().split('T')[0];
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const today = localDate();
+    const tomorrow = localDate(1);
     
     // Insert a test promotion
     db.prepare(`
@@ -226,8 +246,8 @@ test('listPromotions is read-only (no mutations)', () => {
 test('expirePromotions is idempotent', () => {
   runWithDb(() => {
     const db = require('../dist/main/db.js').getDb();
-    const today = new Date().toISOString().split('T')[0];
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const today = localDate();
+    const yesterday = localDate(-1);
     
     // Insert expired promotions
     const id1 = db.prepare(`
@@ -266,9 +286,9 @@ test('expirePromotions is idempotent', () => {
 test('Active promotion within date range is applied', () => {
   runWithDb(() => {
     const db = require('../dist/main/db.js').getDb();
-    const today = new Date().toISOString().split('T')[0];
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const today = localDate();
+    const yesterday = localDate(-1);
+    const tomorrow = localDate(1);
     
     db.prepare(`
       INSERT INTO promotions (name, type, scope, product_id, discount_value, start_date, end_date, active)
@@ -287,9 +307,9 @@ test('Active promotion within date range is applied', () => {
 test('Category-scoped promotion applies to products in category', () => {
   runWithDb(() => {
     const db = require('../dist/main/db.js').getDb();
-    const today = new Date().toISOString().split('T')[0];
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const today = localDate();
+    const yesterday = localDate(-1);
+    const tomorrow = localDate(1);
     
     // Create a category
     const catId = db.prepare('INSERT INTO categories (name) VALUES (?)').run('Test Category').lastInsertRowid;
@@ -321,9 +341,9 @@ test('Category-scoped promotion applies to products in category', () => {
 test('BOGO promotion calculates free items correctly', () => {
   runWithDb(() => {
     const db = require('../dist/main/db.js').getDb();
-    const today = new Date().toISOString().split('T')[0];
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const today = localDate();
+    const yesterday = localDate(-1);
+    const tomorrow = localDate(1);
     
     db.prepare(`
       INSERT INTO promotions (name, type, scope, product_id, discount_value, buy_qty, free_qty, start_date, end_date, active)
@@ -341,9 +361,9 @@ test('BOGO promotion calculates free items correctly', () => {
 test('expirePromotions only affects active promotions with end_date', () => {
   runWithDb(() => {
     const db = require('../dist/main/db.js').getDb();
-    const today = new Date().toISOString().split('T')[0];
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const today = localDate();
+    const tomorrow = localDate(1);
+    const nextWeek = localDate(7);
     
     // Active with future end_date - should NOT expire
     const id1 = db.prepare(`
@@ -380,8 +400,8 @@ test('expirePromotions only affects active promotions with end_date', () => {
 test('Promotion with no end_date never expires', () => {
   runWithDb(() => {
     const db = require('../dist/main/db.js').getDb();
-    const today = new Date().toISOString().split('T')[0];
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const today = localDate();
+    const yesterday = localDate(-1);
     
     db.prepare(`
       INSERT INTO promotions (name, type, scope, product_id, discount_value, start_date, end_date, active)
@@ -401,9 +421,9 @@ test('Promotion with no end_date never expires', () => {
 test('resolvePromotions picks best promotion (lowest effective price)', () => {
   runWithDb(() => {
     const db = require('../dist/main/db.js').getDb();
-    const today = new Date().toISOString().split('T')[0];
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const today = localDate();
+    const yesterday = localDate(-1);
+    const tomorrow = localDate(1);
     
     // 10% off
     db.prepare(`
