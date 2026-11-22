@@ -151,6 +151,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
 
   /* ── the product search (the live inventory list) ──────────────────────── */
   const [catalog, setCatalog] = useState<PurchaseProductRow[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
   useEffect(() => {
     let alive = true;
     Promise.all([window.api.inventory.list(), window.api.purchases.lowStockProducts(500)])
@@ -185,8 +186,12 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
         // cost, the units, the last supplier) — it is the richer source.
         for (const l of low) byId.set(l.product_id, l);
         setCatalog([...byId.values()]);
+        setCatalogLoading(false);
       })
-      .catch((e) => setErr(String(e)));
+      .catch((e) => {
+        setErr(String(e));
+        setCatalogLoading(false);
+      });
     return () => {
       alive = false;
     };
@@ -664,7 +669,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
       onSubmit={() => void save('ordered')}
       onKeyDown={onModalKeyDown}
       title="New Purchase Order"
-      className="modal-wide modal-scroll-body"
+      className="modal-wide modal-scroll-body modal-po"
       label="New Purchase Order"
       actions={{ save: () => void save('ordered') }}
       footer={footer}
@@ -789,6 +794,16 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
         {/* ── the product search ─────────────────────────────────────────── */}
         <div className="po-search-wrap">
           <label className="lbl">Search / scan product (Enter 1× select, 2× qty, 3× add)</label>
+          {catalogLoading && (
+            <div className="muted small" data-testid="po-catalog-loading">
+              Loading the inventory…
+            </div>
+          )}
+          {!catalogLoading && catalog.length === 0 && (
+            <div className="muted small" data-testid="po-catalog-empty">
+              The inventory is empty — add a product in Inventory first.
+            </div>
+          )}
           <input
             ref={searchRef}
             className="inp"

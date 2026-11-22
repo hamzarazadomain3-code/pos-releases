@@ -1905,6 +1905,12 @@ body.theme-dark .bilten-bill-summary-item {
   padding: 16px 18px;
 }
 
+/* The Purchase Order is a wide screen — it gets its own width so the row
+   grid is never squeezed at 1280x720. */
+.modal.modal-po {
+  width: min(1120px, 96vw);
+}
+
 /* ── the header grid ── */
 .po-header-grid {
   display: grid;
@@ -1931,7 +1937,11 @@ body.theme-dark .bilten-bill-summary-item {
 
 /* ── the search ── */
 .po-search-wrap {
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: #fff;
+  padding-bottom: 6px;
   margin-bottom: 12px;
 }
 
@@ -2000,9 +2010,9 @@ body.theme-dark .bilten-bill-summary-item {
 .po-line-name {
   font-weight: 600;
   font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Urdu-safe: a long name wraps instead of being cut off. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .po-line-meta {
