@@ -38,6 +38,8 @@ import type {
   DailySnapshotResult,
   OversoldItemRow,
   BelowCostItemRow,
+  Customer,
+  Sale,
 } from '../../../shared/types';
 import { formatDateAdmin, toLocalDateString } from '../utils/dateUtils';
 import { formatMoney, getCurrencySymbol } from '../utils/currency';
@@ -47,6 +49,13 @@ import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 import { downloadBytes } from '../utils/download';
 import { fileBytesFromResult } from '../../../shared/binaryTransfer';
+import { BillAmendModal } from '../components/BillAmendModal';
+import type { NavPage } from '@shared/types';
+
+export interface ReportsProps {
+  /** Hand a bill to the Returns page from the Amend modal (same as Billing). */
+  onNavigate?: (page: NavPage) => void;
+}
 
 type Tab =
   | 'sales'
@@ -69,7 +78,7 @@ const today = (): string => toLocalDateString(new Date());
 
 const PIE_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#a4de6c'];
 
-export default function Reports() {
+export default function Reports({ onNavigate }: ReportsProps = {}) {
   const [tab, setTab] = useState<Tab>('sales');
   const [from, setFrom] = useState(daysAgo(30));
   const [to, setTo] = useState(today());
@@ -108,6 +117,14 @@ export default function Reports() {
 
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [snapshotResult, setSnapshotResult] = useState<DailySnapshotResult | null>(null);
+
+  // ── Phase 2: the period's bills + the Amend opener ─────────────────────
+  const [recentBills, setRecentBills] = useState<Sale[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [role, setRole] = useState<string | null>(null);
+  const [amendTarget, setAmendTarget] = useState<{ id: number; invoiceNo: string } | null>(null);
+  /** The same gate Billing's History rows use — the service re-checks server-side. */
+  const canAmendBills = role === 'owner' || role === 'manager';
 
   const fmt = (n: number | null | undefined): string =>
     (n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -163,6 +180,14 @@ export default function Reports() {
       switch (tab) {
         case 'sales':
           setSalesAnalysis(await window.api.reports.getSalesAnalysis(from, to));
+          // The period's own bills, so the owner can amend one from the report
+          // they are looking at (the same opener Billing → History offers).
+          try {
+            const bills = await window.api.sales.list(from, to);
+            setRecentBills(bills.slice(0, 100));
+          } catch {
+            setRecentBills([]);
+          }
           break;
         case 'products':
           setProductPerf(await window.api.reports.getProductPerformance(from, to));
@@ -225,6 +250,16 @@ export default function Reports() {
   useEffect(() => {
     loadTab();
   }, [loadTab]);
+
+  // The Amend opener needs the role (owner/manager) and the customer list the
+  // modal's Customer tab offers.
+  useEffect(() => {
+    window.api.auth
+      .currentUser()
+      .then((u) => setRole(u?.role ?? null))
+      .catch(() => setRole(null));
+    window.api.customers.list().then(setCustomers).catch(() => setCustomers([]));
+  }, []);
 
   async function exportPdf(reportType: string, data: unknown) {
     try {
@@ -308,6 +343,14 @@ export default function Reports() {
   const breakEvenList = useListKeyboard({ count: breakEven?.length ?? 0 });
   const lowProfitList = useListKeyboard({ count: lowProfitData?.length ?? 0 });
   const worstProductsList = useListKeyboard({ count: worstProducts?.length ?? 0 });
+  // The bills table: ↑/↓ to walk it, Enter to open the Amend modal.
+  const billsList = useListKeyboard({
+    count: recentBills.length,
+    onOpen: (i) => {
+      const s = recentBills[i];
+      if (s && s.status === 'completed') setAmendTarget({ id: s.id, invoiceNo: s.invoice_no });
+    },
+  });
 
   useKeyboardScope({
     kind: 'page',
@@ -446,6 +489,61 @@ export default function Reports() {
                   <Line type="monotone" dataKey="total" stroke="#8884d8" strokeWidth={2} name={`Sales (${getCurrencySymbol()})`} />
                </LineChart>
              </ResponsiveContainer>
+           </div>
+         </div>
+
+         {/* Phase 2: the period's own bills, with the Amend opener — so the
+             owner can amend a bill from the report they are already looking at
+             instead of hunting for it in Billing → History. */}
+         <div className="panel" style={{ marginTop: 12 }}>
+           <div className="panel-title">Bills in this period ({recentBills.length})</div>
+           <div className="table-wrap" {...billsList.getContainerProps()}>
+             <table className="data-table">
+               <thead>
+                 <tr>
+                   <th>Invoice</th>
+                   <th>Date</th>
+                   <th>Customer</th>
+                   <th className="num">Total</th>
+                   <th>Status</th>
+                   {canAmendBills && <th aria-label="Actions" />}
+                 </tr>
+               </thead>
+               <tbody>
+                 {recentBills.map((s, i) => (
+                   <tr key={s.id} {...billsList.getRowProps(i)}>
+                     <td>{s.invoice_no}</td>
+                     <td>{s.created_at ? formatDateAdmin(s.created_at) : '—'}</td>
+                     <td>{s.customer_name ?? 'Walk-in'}</td>
+                     <td className="num">{fmt(s.total_amount)}</td>
+                     <td>{s.status}</td>
+                     {canAmendBills && (
+                       <td>
+                         {/* Only a completed bill can be amended — the service refuses
+                             anything else, so the button is not offered. */}
+                         {s.status === 'completed' ? (
+                           <button
+                             type="button"
+                             className="btn btn-sm"
+                             data-testid="reports-amend"
+                             onClick={() => setAmendTarget({ id: s.id, invoiceNo: s.invoice_no })}
+                           >
+                             Amend
+                           </button>
+                         ) : null}
+                       </td>
+                     )}
+                   </tr>
+                 ))}
+                 {recentBills.length === 0 && (
+                   <tr>
+                     <td colSpan={canAmendBills ? 6 : 5} className="muted center">
+                       No bills in this period.
+                     </td>
+                   </tr>
+                 )}
+               </tbody>
+             </table>
            </div>
          </div>
        </div>
@@ -1735,6 +1833,31 @@ export default function Reports() {
           )}
         </div>
        )}
+
+      {amendTarget && (
+        <BillAmendModal
+          saleId={amendTarget.id}
+          invoiceNo={amendTarget.invoiceNo}
+          role={role}
+          customers={customers}
+          onClose={() => setAmendTarget(null)}
+          onSaved={() => {
+            setAmendTarget(null);
+            loadTab();
+          }}
+          onReturnItems={(saleId) => {
+            setAmendTarget(null);
+            localStorage.setItem('return_sale_id', String(saleId));
+            setNotice('Opening Returns page...');
+            onNavigate?.('returns');
+          }}
+          onReprint={(saleId) => {
+            window.api.printing.printSale(saleId, undefined, { duplicate: true, amendedVersion: true })
+              .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+              .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
+          }}
+        />
+      )}
     </div>
   );
 }

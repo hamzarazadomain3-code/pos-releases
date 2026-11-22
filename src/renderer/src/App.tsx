@@ -1402,10 +1402,10 @@ export default function App() {
           {page === 'audits' && <Audits />}
           {page === 'promotions' && <Promotions />}
           {page === 'purchases' && <Purchases />}
-          {page === 'udhaar' && <Udhaar />}
+          {page === 'udhaar' && <Udhaar onNavigate={(key) => navigate(key as NavPage)} />}
           {page === 'returns' && <Returns />}
           {page === 'shifts' && <Shifts />}
-          {page === 'reports' && <Reports />}
+          {page === 'reports' && <Reports onNavigate={(key) => navigate(key as NavPage)} />}
           {page === 'expenses' && <Expenses />}
           {page === 'commissions' && <Commissions />}
           {page === 'customReports' && <CustomReports />}

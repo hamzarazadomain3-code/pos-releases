@@ -6,22 +6,29 @@ import { UdhaarEntryModal } from '../components/UdhaarEntryModal';
 import { UdhaarCustomerModal } from '../components/UdhaarCustomerModal';
 import { CustomerProfileModal } from '../components/CustomerProfileModal';
 import { ReceivePaymentModal } from '../components/ReceivePaymentModal';
+import { BillAmendModal } from '../components/BillAmendModal';
 import { formatMoney, getCurrencySymbol } from '../utils/currency';
 import { formatCustomerDiscount, hasCustomerDiscount } from '@shared/customerDiscount';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
 import { downloadBytes } from '../utils/download';
 import { fileBytesFromResult } from '../../../shared/binaryTransfer';
+import type { NavPage } from '@shared/types';
 
 type Notice = { text: string; kind: 'ok' | 'error' };
 type View = 'list' | 'aging';
+
+export interface UdhaarProps {
+  /** Hand a bill to the Returns page from the Amend modal (same as Billing). */
+  onNavigate?: (page: NavPage) => void;
+}
 
 /** 'YYYY-MM-DD HH:MM:SS' → 'YYYY-MM-DD' (for range compare). */
 const dateOnly = (ts?: string | null): string => (ts ? String(ts).slice(0, 10) : '');
 const fmt = (n: number): string =>
   (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export default function Udhaar() {
+export default function Udhaar({ onNavigate }: UdhaarProps) {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [aging, setAging] = useState<UdhaarAging | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,6 +41,9 @@ export default function Udhaar() {
   const [ledgerCustomerId, setLedgerCustomerId] = useState<number | null>(null);
   const [entryCustomer, setEntryCustomer] = useState<Customer | null>(null);
   const [receiveCustomer, setReceiveCustomer] = useState<Customer | null>(null);
+  /** The bill opened from a customer-profile ledger row. */
+  const [amendTarget, setAmendTarget] = useState<{ id: number; invoiceNo: string } | null>(null);
+  const [role, setRole] = useState<string | null>(null);
 
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -48,6 +58,14 @@ export default function Udhaar() {
     (e: unknown) => flash(e instanceof Error ? e.message : String(e), 'error'),
     [flash]
   );
+
+  // The Amend opener is owner/manager only; the service re-checks server-side.
+  useEffect(() => {
+    window.api.auth
+      .currentUser()
+      .then((u) => setRole(u?.role ?? null))
+      .catch(() => setRole(null));
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -450,6 +468,36 @@ export default function Udhaar() {
           onOpenLedger={(id) => {
             setProfileId(null);
             setLedgerCustomerId(id);
+          }}
+          onAmend={(saleId, invoiceNo) => {
+            setProfileId(null);
+            setAmendTarget({ id: saleId, invoiceNo });
+          }}
+        />
+      )}
+
+      {amendTarget && (
+        <BillAmendModal
+          saleId={amendTarget.id}
+          invoiceNo={amendTarget.invoiceNo}
+          role={role}
+          customers={customers}
+          onClose={() => setAmendTarget(null)}
+          onSaved={(result) => {
+            setAmendTarget(null);
+            load().catch(() => undefined);
+            setNotice({ text: `Amended ${amendTarget.invoiceNo ?? 'bill'}`, kind: 'ok' });
+          }}
+          onReturnItems={(saleId) => {
+            setAmendTarget(null);
+            localStorage.setItem('return_sale_id', String(saleId));
+            setNotice({ text: 'Opening Returns page...', kind: 'ok' });
+            onNavigate?.('returns');
+          }}
+          onReprint={(saleId) => {
+            window.api.printing.printSale(saleId, undefined, { duplicate: true, amendedVersion: true })
+              .then((r) => { if (r && r.ok === false) setNotice({ text: r.message, kind: 'error' }); })
+              .catch((e) => setNotice({ text: e instanceof Error ? e.message : String(e), kind: 'error' }));
           }}
         />
       )}

@@ -13,6 +13,12 @@ export interface CustomerProfileModalProps {
   onChanged: () => void;
   /** Open the full Udhaar ledger modal. */
   onOpenLedger: (customerId: number) => void;
+  /**
+   * Open the Amend Bill modal for a ledger row that came from a real sale.
+   * Only offered on rows carrying a `sale_id` (a manual udhaar entry has none),
+   * and only when the caller can actually render the modal.
+   */
+  onAmend?: (saleId: number, invoiceNo: string) => void;
 }
 
 type TabId = 'details' | 'ledger' | 'items' | 'payments' | 'documents';
@@ -55,6 +61,7 @@ export function CustomerProfileModal({
   onEdit,
   onChanged,
   onOpenLedger,
+  onAmend,
 }: CustomerProfileModalProps) {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [ledger, setLedger] = useState<UdhaarLedger | null>(null);
@@ -68,6 +75,8 @@ export function CustomerProfileModal({
   const [mergeOpen, setMergeOpen] = useState(false);
 
   const isOwner = role === 'owner';
+  /** The same gate Billing's History rows use — the service re-checks it server-side. */
+  const canAmend = !!onAmend && (role === 'owner' || role === 'manager');
 
   useEffect(() => {
     window.api.auth
@@ -302,6 +311,7 @@ export function CustomerProfileModal({
                   <th>Particulars</th>
                   <th className="num">Amount</th>
                   <th className="num">Remaining</th>
+                  {canAmend && <th aria-label="Actions" />}
                 </tr>
               </thead>
               <tbody>
@@ -319,11 +329,27 @@ export function CustomerProfileModal({
                       {money(r.amount)}
                     </td>
                     <td className="num">{money(r.remaining)}</td>
+                    {canAmend && (
+                      <td>
+                        {/* A manual udhaar entry has no sale_id — only a real bill can be amended. */}
+                        {r.sale_id ? (
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            data-testid="profile-amend"
+                            title={`Amend ${r.invoice_no ?? 'bill'}`}
+                            onClick={() => onAmend?.(r.sale_id as number, r.invoice_no ?? '')}
+                          >
+                            Amend
+                          </button>
+                        ) : null}
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {(ledger?.rows.length ?? 0) === 0 && (
                   <tr>
-                    <td colSpan={4} className="muted center">
+                    <td colSpan={canAmend ? 5 : 4} className="muted center">
                       No ledger entries yet.
                     </td>
                   </tr>
