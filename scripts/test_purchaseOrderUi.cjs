@@ -506,6 +506,30 @@ async function run() {
   await waitUntil("window.__po.count('[data-po-line]') === 1", 'the restored row', 10000);
   check('the undo restored the row', (await js("window.__po.count('[data-po-line]')")) === 1);
 
+  // ── The per-row searchable product cell ──────────────────────────────────
+  section("The row's product cell is searchable");
+  await js("window.__po.click('[data-testid=\"po-pick-open-0\"]')");
+  await waitUntil("window.__po.exists('[data-testid=\"po-pick-0\"]')", 'the per-row search', 10000);
+  check('the product cell opens a search INSIDE the row', true);
+  await js("window.__po.setVal('[data-testid=\"po-pick-search-0\"]', 'UI Sugar')");
+  await waitUntil("window.__po.count('[data-testid=\"po-pick-option-0-0\"]') > 0", 'the pick options', 10000);
+  const pickName = await js("window.__po.textOf('[data-testid=\"po-pick-option-0-0\"] .psr-name')");
+  check('the row search finds the product by its name', pickName === 'UI Sugar', String(pickName));
+  await js("window.__po.click('[data-testid=\"po-pick-option-0-0\"]')");
+  await waitUntil("!window.__po.exists('[data-testid=\"po-pick-0\"]')", 'the picker to close', 10000);
+  const pickedName = await js("window.__po.textOf('[data-testid=\"po-pick-open-0\"]')");
+  check('the row now shows the picked product', pickedName === 'UI Sugar', String(pickedName));
+  const pickedCost = await js("window.__po.valueOf('[data-testid=\"po-cost-0\"]')");
+  check('the picked product re-fills the cost from its LAST purchase', Number(pickedCost) === 140, String(pickedCost));
+  // Back to the oil, so the draft below is the oil order.
+  await js("window.__po.click('[data-testid=\"po-pick-open-0\"]')");
+  await js("window.__po.setVal('[data-testid=\"po-pick-search-0\"]', 'UI Cooking Oil')");
+  await waitUntil("window.__po.exists('[data-testid=\"po-pick-option-0-0\"]')", 'the oil option', 10000);
+  await js("window.__po.click('[data-testid=\"po-pick-option-0-0\"]')");
+  await waitUntil("!window.__po.exists('[data-testid=\"po-pick-0\"]')", 'the picker to close again', 10000);
+  const backCost = await js("window.__po.valueOf('[data-testid=\"po-cost-0\"]')");
+  check('switching back re-fills the product cost', Number(backCost) === 1200, String(backCost));
+
   // ── Ctrl+S = Save draft ──────────────────────────────────────────────────
   section('Ctrl+S saves a draft');
   // The key is pressed INSIDE the modal: the modal's own handler claims it

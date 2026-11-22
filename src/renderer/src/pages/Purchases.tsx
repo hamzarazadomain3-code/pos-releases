@@ -250,6 +250,15 @@ export default function Purchases() {
   /** An order that can still be received or cancelled. */
   const isOpenOrder = (s: string) => s === 'pending' || s === 'ordered' || s === 'partial';
 
+  /**
+   * An order that can still be CANCELLED.
+   *
+   * A partially received order cannot: its stock is already in the shop, so
+   * cancelling it would hide stock that has to be adjusted separately. The
+   * service refuses it too ("Only an open order can be cancelled").
+   */
+  const canCancelOrder = (s: string) => s === 'pending' || s === 'ordered' || s === 'draft';
+
   const supplierOptions = suppliers.map(s => ({ value: s.id, label: s.name }));
   const statusOptions = [
     { value: 'draft', label: 'Draft' },
@@ -514,14 +523,14 @@ export default function Purchases() {
                         View
                       </button>
                       {isOpenOrder(o.status) && (
-                        <>
-                          <button className="btn btn-sm btn-primary" onClick={() => receivePo(o.id)}>
-                            Receive
-                          </button>
-                          <button className="btn btn-sm" onClick={() => askCancelPo(o.id)}>
-                            Cancel
-                          </button>
-                        </>
+                        <button className="btn btn-sm btn-primary" onClick={() => receivePo(o.id)}>
+                          Receive
+                        </button>
+                      )}
+                      {canCancelOrder(o.status) && (
+                        <button className="btn btn-sm" onClick={() => askCancelPo(o.id)}>
+                          Cancel
+                        </button>
                       )}
                       <button className="btn btn-sm" onClick={() => printPo(o.id, 'a4')}>
                         Print
@@ -757,6 +766,10 @@ export default function Purchases() {
                 <button className="btn" onClick={() => receivePo(poView.order.id)}>
                   Receive all remaining
                 </button>
+              </div>
+            )}
+            {canCancelOrder(poView.order.status) && (
+              <div className="row-btns" style={{ flexWrap: 'wrap' }}>
                 <button className="btn" onClick={() => askCancelPo(poView.order.id)}>
                   Cancel Order
                 </button>

@@ -127,6 +127,9 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
   const [suggestions, setSuggestions] = useState<PurchaseProductRow[] | null>(null);
   const [stale, setStale] = useState(false);
   const [undo, setUndo] = useState<{ line: PoLine; index: number } | null>(null);
+  /** The line whose product cell is open (the searchable per-row cell). */
+  const [pickingFor, setPickingFor] = useState<string | null>(null);
+  const [pickQuery, setPickQuery] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -203,27 +206,44 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
     return purchaseUnits(row?.units ?? null);
   }, [catalog]);
 
+  /**
+   * The catalog in the shape the SHARED search helper expects.
+   *
+   * The per-row product cell and the search box use the SAME helper
+   * (`src/shared/productSearch.ts`), so a product is found the same way in both
+   * places — by name, SKU, barcode, the Urdu name or the PLU code.
+   */
+  const catalogAsProducts = useMemo(
+    () =>
+      catalog.map((c) => ({
+        id: c.product_id,
+        sku: c.sku,
+        barcode: c.barcode,
+        name: c.name,
+        category_id: null,
+        unit_id: null,
+        cost_price: c.cost_price,
+        sale_price: c.sale_price,
+        wholesale_price: c.wholesale_price,
+        shelf_location: null,
+        stock_qty: c.stock_qty,
+        low_stock_threshold: c.low_stock_threshold,
+        tax_rate: c.tax_rate,
+        expiry_date: c.expiry_date,
+        active: 1,
+        is_test: 0,
+      })),
+    [catalog]
+  );
+
   const matches = useMemo(() => {
-    const products = catalog.map((c) => ({
-      id: c.product_id,
-      sku: c.sku,
-      barcode: c.barcode,
-      name: c.name,
-      category_id: null,
-      unit_id: null,
-      cost_price: c.cost_price,
-      sale_price: c.sale_price,
-      wholesale_price: c.wholesale_price,
-      shelf_location: null,
-      stock_qty: c.stock_qty,
-      low_stock_threshold: c.low_stock_threshold,
-      tax_rate: c.tax_rate,
-      expiry_date: c.expiry_date,
-      active: 1,
-      is_test: 0,
-    }));
-    return matchProducts(products as never, search, 30).map((p) => catalog.find((c) => c.product_id === p.id)!);
-  }, [catalog, search]);
+    return matchProducts(catalogAsProducts as never, search, 30).map((p) => catalog.find((c) => c.product_id === p.id)!);
+  }, [catalog, catalogAsProducts, search]);
+
+  /** The matches of the per-row product cell. */
+  const pickMatches = useMemo(() => {
+    return matchProducts(catalogAsProducts as never, pickQuery, 8).map((p) => catalog.find((c) => c.product_id === p.id)!);
+  }, [catalog, catalogAsProducts, pickQuery]);
 
   const selectedProduct = useCallback((): PurchaseProductRow | undefined => {
     if (stage === 'idle') return undefined;
@@ -307,6 +327,47 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
     // The focus goes back to the search box: the next line is one keypress away.
     window.setTimeout(() => searchRef.current?.focus(), 0);
   }, [addLineForProduct, qty, selectedProduct]);
+
+  /**
+   * Change the product of a row — the per-row searchable cell.
+   *
+   * The row keeps its own quantity, but the product's live data (the unit,
+   * the last purchase cost, the tax, the batch) is re-read, exactly like a
+   * freshly added line.
+   */
+  const setLineProduct = useCallback(
+    (key: string, product: PurchaseProductRow) => {
+      const live = catalog.find((c) => c.product_id === product.product_id) ?? product;
+      const units = purchaseUnits(live.units ?? null);
+      const base = units.find((u) => u.is_base) ?? units[0];
+      const pack = units.find((u) => !u.is_base) ?? base;
+      const unit = pack ?? base;
+      const multiplier = safeNumber(unit?.quantity_in_base_units, 1) || 1;
+      const baseline = live.last_purchase_cost ?? live.cost_price;
+      const needsBatch = Boolean(live.batch_no) || Boolean(live.expiry_date);
+      setLines((prev) =>
+        prev.map((l) =>
+          l.key === key
+            ? {
+                ...l,
+                product_id: live.product_id,
+                product: live,
+                unit_cost: String(round2(baseline)),
+                tax_pct: String(safeNumber(live.tax_rate, 0)),
+                unit_id: unit?.id ?? null,
+                units_in_base: multiplier,
+                unit_name: unit?.name ?? '',
+                batch_no: needsBatch ? live.batch_no ?? '' : '',
+                expiry_date: needsBatch ? live.expiry_date ?? '' : '',
+              }
+            : l
+        )
+      );
+      setPickingFor(null);
+      setPickQuery('');
+    },
+    [catalog]
+  );
 
   useBarcodeScan({
     enabled: true,
@@ -936,7 +997,66 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
                 <div className="po-line" key={l.key} data-po-line={l.key} data-testid={`po-line-${index}`}>
                   <div className="po-line-main">
                     <div className="po-line-product">
-                      <div className="po-line-name">{p?.name ?? 'Unknown product'}</div>
+                      {pickingFor === l.key ? (
+                        <div className="po-pick" data-testid={`po-pick-${index}`}>
+                          <input
+                            className="inp inp-sm"
+                            autoFocus
+                            value={pickQuery}
+                            placeholder="Search name, SKU, barcode…"
+                            onChange={(e) => setPickQuery(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Escape' || e.key === 'Esc') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setPickingFor(null);
+                                setPickQuery('');
+                                return;
+                              }
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const first = pickMatches[0];
+                                if (first) setLineProduct(l.key, first);
+                              }
+                            }}
+                            data-testid={`po-pick-search-${index}`}
+                          />
+                          <div className="po-pick-list">
+                            {pickMatches.map((m, i) => (
+                              <button
+                                key={m.product_id}
+                                type="button"
+                                className="po-pick-item"
+                                onClick={() => setLineProduct(l.key, m)}
+                                data-testid={`po-pick-option-${index}-${i}`}
+                              >
+                                <span className="psr-name">{m.name}</span>
+                                <span className="psr-meta">
+                                  stock {m.stock_qty}
+                                  {m.barcode ? ` • ${m.barcode}` : m.sku ? ` • ${m.sku}` : ''}
+                                </span>
+                              </button>
+                            ))}
+                            {pickMatches.length === 0 && (
+                              <div className="muted small">No product found.</div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="po-line-name po-line-pick-open"
+                          title="Change the product"
+                          onClick={() => {
+                            setPickingFor(l.key);
+                            setPickQuery('');
+                          }}
+                          data-testid={`po-pick-open-${index}`}
+                        >
+                          {p?.name ?? 'Unknown product'}
+                        </button>
+                      )}
                       <div className="po-line-meta muted small">
                         {(p?.sku || p?.barcode || '') && <span>{p?.sku || p?.barcode}</span>}
                         {p && (

@@ -2015,6 +2015,64 @@ body.theme-dark .bilten-bill-summary-item {
   word-break: break-word;
 }
 
+/* The per-row searchable product cell: the product name is a button that
+   opens the search IN the row (the same shared search as the search box). */
+.po-line-pick-open {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 1px 4px;
+  margin: -1px -4px;
+  cursor: pointer;
+  color: inherit;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: inherit;
+}
+
+.po-line-pick-open:hover {
+  border-color: var(--border);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.po-pick {
+  min-width: 0;
+}
+
+.po-pick-list {
+  max-height: 190px;
+  overflow-y: auto;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.po-pick-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.po-pick-item:last-child {
+  border-bottom: none;
+}
+
+.po-pick-item:hover {
+  background: rgba(11, 93, 75, 0.08);
+}
+
 .po-line-meta {
   display: flex;
   flex-wrap: wrap;
