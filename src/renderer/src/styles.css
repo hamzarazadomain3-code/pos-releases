@@ -7460,6 +7460,72 @@ body.theme-dark .bill-items .bill-summary-icon { background: rgba(139, 92, 246, 
   font-variant-numeric: tabular-nums;
 }
 
+.amend-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.amend-items-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) 84px 104px 92px auto;
+  gap: 8px;
+  align-items: end;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.amend-items-name {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-bottom: 6px;
+}
+
+.amend-items-qty input,
+.amend-items-price input {
+  font-variant-numeric: tabular-nums;
+}
+
+.amend-items-amount {
+  padding-bottom: 6px;
+  text-align: right;
+}
+
+.amend-item-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 190px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.amend-item-result {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.amend-item-result:hover {
+  background: var(--hover, rgba(127, 127, 127, 0.12));
+}
+
 .amend-preview {
   margin-top: 12px;
   padding: 10px 12px;

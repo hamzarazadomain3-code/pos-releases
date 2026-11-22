@@ -2881,7 +2881,10 @@ after Phase 1/2/3 code changes). Each number below comes from the saved output i
 
 ### Non-DONE items (PROGRESS.md)
 
-- **Phase 1-F** (item 23b): change a bill's item/qty/price — NOT DONE (deliberate).
+- **None.** Every item in the owner's checklist is now DONE: 23b (change a
+  finished bill's item / qty / price, with the stock and the FIFO following),
+  24b (the Customer-profile and Reports Amend entry points), 27 (product search
+  by code) and 28 (the log rotation / size cap).
 
 ---
 
@@ -3018,6 +3021,96 @@ running for a year accumulated every day's log forever.
 
 ### Status
 - **Log rotation / size cap: DONE** (55/55 pure + 19/19 file I/O)
+
+---
+
+## Strict Build Run — Change a finished bill's item / qty / price (branch `feature/bill-amend`)
+
+### The gap
+A finished bill could be amended for its **customer**, its **payment split** and
+its **notes** — but not for the **item, the quantity or the price**. The reason
+it was left alone was not laziness but the risk: a `sale_items` row is read by
+`stock_movements`, by `fifo_allocations`, by `return_items.returned_qty`, by
+`sales.subtotal/tax_amount/total_amount` and by every report that joins it. A
+naive "just edit the row" would silently desync the FIFO costing and the refund
+path — and the reports would never say so.
+
+### What it does now
+The Amend modal grew an **Items** tab. The owner changes the quantity, the
+price, removes a line or adds a product, sees a live *Before → After* preview
+(the new bill total and what the stock does), and saves. The service then does
+the rest, in ONE transaction.
+
+### The rules (all in the service, none in the UI)
+- **The quantity moves the stock and the FIFO.**
+  - A line that loses units gives them back to the **shelf** *and* to the FIFO
+    **batch they came from** — the newest allocation first, so the oldest batch
+    keeps its history untouched. The `fifo_allocations` row is shortened with
+    it, so the batch's available quantity grows back exactly.
+  - A line that gains units takes them from the **oldest batch first** (the same
+    order `createSale` uses) and writes the matching `fifo_allocations` row.
+  - A line that only changes its **price** moves **no stock at all** — the goods
+    left the shop exactly as they did.
+  - Every movement is a real `stock_movements` row with
+    `ref_type = 'sale_amend'`, so the stock ledger explains itself.
+- **The money follows the bill's own rules.**
+  - The bill's **paid rows never change** — the money that physically changed
+    hands when the bill was made is what it is.
+  - The bill's totals are recomputed with the **exact maths `createSale` uses**
+    (`computeLines` / `computeTotals`, including the bill discount, the service
+    charge and the freight), so an amended bill and a fresh bill of the same
+    items agree to the cent. The `sale_items` rows are re-spread over the
+    per-batch rows so `SUM(line_total)` matches the bill.
+  - The **udhaar** part follows the customer's ledger; the **cash** part follows
+    the **open** shift (a closed shift is never touched). A bigger bill with a
+    customer puts the extra on the ledger; a walk-in bill takes the extra in
+    cash; a smaller fully-paid bill gives the difference back from the drawer.
+  - A refund the drawer cannot make (the bill was paid by card) is **refused**
+    with the amount — it is not silently swallowed.
+- **The refusals are the service's, not the UI's.** A cashier can never amend;
+  every amendment needs a reason; a qty of 0, a negative price, the same
+  product twice, a price below the cost price, a missing product and too much
+  stock are all refused. A **manager** may amend bills but may **not** break the
+  shop's "no negative stock" policy — only the owner may.
+- **A refunded bill is left alone.** The refund is its own record (a negative
+  sale) and its `returned_qty` is read against these very rows, so the Items tab
+  is locked and says why.
+- **One transaction.** A failure anywhere leaves the stock, the bill, the
+  ledger and the amendment history exactly as they were.
+
+### The files
+- `src/shared/billAmendItems.ts` (new) — the pure rules: `lineMoney`,
+  `recomputeSaleTotals`, `distributeAmount`, `planItemStockDeltas`,
+  `validateItemLines`, `planItemsSplit`, `summarizeItemChanges`.
+- `src/shared/billAmend.ts` — `BillAmendItemLine` + the `items` field on the
+  bill state, so the amendment history shows what changed.
+- `src/main/services/billAmendments.ts` — `amendItems`, `billItemLines`,
+  `itemsBlockedReason`, `restoreLineStock`, `takeMoreStock`; the view grew
+  `items` / `itemsAllowed` / `itemsBlockedReason` + the bill-level numbers the
+  preview needs.
+- `src/renderer/src/components/BillAmendModal.tsx` — the **Items** tab.
+- `src/main/ipc.ts` + `src/preload/preload.ts` — `billAmend:items`.
+- `src/shared/types.ts` — `BillAmendView.items` + the `billAmend.items` API.
+
+### Verification
+- `npm run test:billAmendItems` — **115/115 PASS**
+  (`E:\temp\proof\billAmendItems.txt`) — the REAL `dist` service and the REAL
+  pure module against a throwaway DB: the pure rules; the FIFO delta in both
+  directions; a price-only change moving no stock; a removed line; the totals
+  and the items adding up; the paid rows never changing; the ledger and the
+  drawer following; every refusal; the transaction.
+- `npm run test:billAmendItemsUi` — **27/27 PASS**
+  (`E:\temp\proof\billAmendItemsUi.txt`) — the REAL built renderer + the REAL
+  preload + REAL IPC: the tab renders the bill's lines, the preview shows the
+  new total and the stock delta, saving really moves the stock, a product can be
+  searched and added, a line can be removed, and a refunded bill locks its items.
+- Regressions: `test:billAmend` 89/89, `test:billAmendUi` 38/38,
+  `test:shortcuts` 37/37, `test:keyboard` 93/93, `test:billingKeys` 26/26,
+  `test:print` exit 0, `test:receipt` exit 0.
+- Typecheck: main + renderer **exit 0**; `npm run build` **exit 0**.
+
+### Status
+- **Phase 1-F (item 23b): DONE** (115/115 service + 27/27 UI)
 
 
 

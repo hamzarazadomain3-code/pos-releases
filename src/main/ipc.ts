@@ -57,6 +57,7 @@ import {
 import { getAllSettings, setSetting } from './services/settings';
 import {
   amendCustomer,
+  amendItems,
   amendNotes,
   amendPayments,
   getBillAmendView,
@@ -927,6 +928,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('billAmend:customer', (_e, input) => amendCustomer(input));
   ipcMain.handle('billAmend:payments', (_e, input) => amendPayments(input));
   ipcMain.handle('billAmend:notes', (_e, input) => amendNotes(input));
+  ipcMain.handle('billAmend:items', (_e, input) => amendItems(input));
 
   ipcMain.handle('audits:create', () => createAudit());
   ipcMain.handle('audits:list', () => listAudits());

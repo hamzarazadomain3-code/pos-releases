@@ -322,6 +322,7 @@ const bridge: PosBridge = {
     customer: (input) => ipcRenderer.invoke('billAmend:customer', input),
     payments: (input) => ipcRenderer.invoke('billAmend:payments', input),
     notes: (input) => ipcRenderer.invoke('billAmend:notes', input),
+    items: (input) => ipcRenderer.invoke('billAmend:items', input),
   },
   audits: {
     create: () => ipcRenderer.invoke('audits:create'),

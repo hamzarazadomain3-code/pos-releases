@@ -26,6 +26,14 @@ import { currentShift } from './shifts';
 import { recordSaleEvent } from './salesHistory';
 import { stripCostFields } from '../../shared/historyPrivacy';
 import {
+  deductStockFIFO,
+  getProduct,
+  recordFIFOAllocations,
+  recordMovement,
+  roundStock,
+} from './inventory';
+import { getSetting } from './settings';
+import {
   amendMoney,
   amendRound2,
   amendmentWindow,
@@ -40,12 +48,22 @@ import {
   splitToRows,
   summarizeAmendment,
   validatePaymentSplit,
+  type BillAmendItemLine,
   type BillAmendKind,
   type BillAmendPaymentRow,
   type BillAmendRecord,
   type BillAmendSplit,
   type BillAmendState,
 } from '../../shared/billAmend';
+import {
+  distributeAmount,
+  lineMoney,
+  planItemStockDeltas,
+  planItemsSplit,
+  recomputeSaleTotals,
+  summarizeItemChanges,
+  validateItemLines,
+} from '../../shared/billAmendItems';
 
 /** The amendment kinds the service writes. */
 export type AmendmentKind = BillAmendKind;
@@ -80,6 +98,25 @@ export interface AmendNotesInput {
   notes: string | null;
   reason: string;
   managerPin?: string;
+}
+
+/** One line of the new bill the owner wants. */
+export interface AmendItemLineInput {
+  productId: number;
+  qty: number;
+  unitPrice: number;
+}
+
+export interface AmendItemsInput {
+  saleId: number;
+  /** The FULL new set of lines of the bill. */
+  lines: AmendItemLineInput[];
+  reason: string;
+  managerPin?: string;
+  /** Only the owner may go over the customer's credit limit. */
+  overrideCreditLimit?: boolean;
+  /** Only the owner may set a price below the cost price. */
+  priceFloorOverride?: boolean;
 }
 
 export interface AmendmentResult {
@@ -121,6 +158,21 @@ export interface BillAmendView {
   payments: BillAmendPaymentRow[];
   credit: number;
   split: BillAmendSplit;
+  /** The lines of the bill — the Items tab edits these. */
+  items: BillAmendItemLine[];
+  /**
+   * The bill-level numbers the total is made of, so the Items tab can show
+   * the NEW total before the amendment is saved (and not guess at it).
+   */
+  billDiscount: number;
+  discountType: 'amount' | 'percent';
+  serviceCharge: number;
+  serviceChargeType: 'amount' | 'percent';
+  freight: number;
+  /** Whether this bill may have its items changed at all. */
+  itemsAllowed: boolean;
+  /** Why the items cannot be changed (the message the owner reads). */
+  itemsBlockedReason: string | null;
   amendedCount: number;
   lastAmendedAt: string | null;
   amendments: AmendmentRow[];
@@ -312,7 +364,22 @@ export function getBillAmendView(saleId: number): BillAmendView | null {
     if (!window.allowed) blockedReason = window.message;
     else allowed = true;
   }
+  const items = billItemLines(saleId);
+  const itemsBlocked = itemsBlockedReason(saleId);
   const amendments = listAmendments(saleId);
+  const billRow = db
+    .prepare(
+      'SELECT bill_discount, discount_type, service_charge, service_charge_type, freight FROM sales WHERE id = ?'
+    )
+    .get(saleId) as
+    | {
+        bill_discount: number | null;
+        discount_type: string | null;
+        service_charge: number | null;
+        service_charge_type: string | null;
+        freight: number | null;
+      }
+    | undefined;
   return {
     saleId,
     invoiceNo: state.invoiceNo,
@@ -325,6 +392,14 @@ export function getBillAmendView(saleId: number): BillAmendView | null {
     payments: state.payments,
     credit: state.credit,
     split: billSplit(state.total, state.payments),
+    items,
+    billDiscount: Number(billRow?.bill_discount ?? 0),
+    discountType: billRow?.discount_type === 'percent' ? 'percent' : 'amount',
+    serviceCharge: Number(billRow?.service_charge ?? 0),
+    serviceChargeType: billRow?.service_charge_type === 'percent' ? 'percent' : 'amount',
+    freight: Number(billRow?.freight ?? 0),
+    itemsAllowed: allowed && itemsBlocked === null,
+    itemsBlockedReason: itemsBlocked,
     amendedCount: Number(saleRow?.amended_count ?? amendments.length),
     lastAmendedAt: saleRow?.last_amended_at ?? null,
     // A cashier never sees cost or profit in an amendment view.
@@ -346,6 +421,94 @@ function customerRow(customerId: number | null): { id: number; name: string; bal
     | { id: number; name: string; balance: number; credit_limit: number | null }
     | undefined;
   return row ?? null;
+}
+
+/** One `sale_items` row — the per-batch rows a line is made of. */
+interface SaleItemRow {
+  id: number;
+  product_id: number;
+  qty: number;
+  unit_price: number;
+  discount: number;
+  tax_rate: number;
+  line_total: number;
+  batch_id: number | null;
+  returned_qty: number;
+  promo_id: number | null;
+  promo_name: string | null;
+  box_qty: number | null;
+  unit_name: string | null;
+  display_qty: number | null;
+}
+
+/** The `sale_items` rows of a bill, oldest first. */
+function saleItemRows(saleId: number): SaleItemRow[] {
+  return getDb()
+    .prepare('SELECT * FROM sale_items WHERE sale_id = ? ORDER BY id')
+    .all(saleId) as unknown as SaleItemRow[];
+}
+
+/**
+ * The bill's lines, one per product.
+ *
+ * A line can be several `sale_items` rows (one per FIFO batch), so the rows
+ * are merged: the qty and the discount are added up, the price and the tax
+ * rate are the ones of the first row (they are the same on every row).
+ */
+export function billItemLines(saleId: number): BillAmendItemLine[] {
+  const db = getDb();
+  const rows = saleItemRows(saleId);
+  const byProduct = new Map<number, BillAmendItemLine>();
+  for (const r of rows) {
+    const name =
+      (db.prepare('SELECT name FROM products WHERE id = ?').get(r.product_id) as
+        | { name: string }
+        | undefined)?.name ?? `#${r.product_id}`;
+    const line = byProduct.get(r.product_id);
+    if (!line) {
+      byProduct.set(r.product_id, {
+        productId: r.product_id,
+        name,
+        qty: Number(r.qty) || 0,
+        unitPrice: Number(r.unit_price) || 0,
+        lineDiscount: amendRound2(Number(r.discount) || 0),
+        taxRate: Number(r.tax_rate) || 0,
+      });
+    } else {
+      line.qty = roundStock(line.qty + (Number(r.qty) || 0));
+      line.lineDiscount = amendRound2(line.lineDiscount + (Number(r.discount) || 0));
+    }
+  }
+  return [...byProduct.values()];
+}
+
+/**
+ * Why the items of a bill may not be changed (null = they may).
+ *
+ * A refunded bill is left alone: the refund is its own record (a negative
+ * sale) and its `returned_qty` is read against these very rows, so moving
+ * them under the refund would quietly rewrite the money the customer already
+ * got back.
+ */
+function itemsBlockedReason(saleId: number): string | null {
+  const db = getDb();
+  try {
+    const row = db
+      .prepare('SELECT COUNT(*) AS c FROM returns WHERE sale_id = ?')
+      .get(saleId) as { c: number } | undefined;
+    if (Number(row?.c ?? 0) > 0) {
+      return 'This bill has a return — the refund is its own record. Amend its payments or notes instead.';
+    }
+    const sale = db.prepare('SELECT returned_amount FROM sales WHERE id = ?').get(saleId) as
+      | { returned_amount: number | null }
+      | undefined;
+    if (Number(sale?.returned_amount ?? 0) > 0) {
+      return 'This bill has a return — the refund is its own record. Amend its payments or notes instead.';
+    }
+  } catch {
+    /* the table may not exist yet — do not block the amendment over it */
+  }
+  return null;
 }
 
 /**
@@ -700,6 +863,393 @@ export function amendNotes(input: AmendNotesInput): AmendmentResult {
     });
     db.exec('COMMIT');
     logActivity('sale_amended', 'sale', saleId, `kind=notes | invoice=${before.invoiceNo} | reason=${reason}`);
+    return result;
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
+
+/**
+ * Give `take` units of a sale line back to the shelf.
+ *
+ * The units go back to the FIFO batch they were taken from, and the
+ * allocation rows are shortened so the batch's available quantity grows with
+ * them. Units that were sold while the stock was already negative have no
+ * batch — they come back to the product only.
+ */
+function restoreLineStock(
+  db: ReturnType<typeof getDb>,
+  saleId: number,
+  row: SaleItemRow,
+  take: number
+): void {
+  const allocations = db
+    .prepare(
+      'SELECT id, product_batch_id, allocated_qty FROM fifo_allocations WHERE sale_item_id = ? ORDER BY id DESC'
+    )
+    .all(row.id) as unknown as { id: number; product_batch_id: number; allocated_qty: number }[];
+  let remaining = roundStock(take);
+  for (const alloc of allocations) {
+    if (remaining <= 0) break;
+    const back = Math.min(remaining, Number(alloc.allocated_qty) || 0);
+    if (back <= 0) continue;
+    recordMovement(row.product_id, back, 'Sale Amend', 'sale_amend', saleId, alloc.product_batch_id);
+    const left = roundStock((Number(alloc.allocated_qty) || 0) - back);
+    if (left <= 0) db.prepare('DELETE FROM fifo_allocations WHERE id = ?').run(alloc.id);
+    else db.prepare('UPDATE fifo_allocations SET allocated_qty = ? WHERE id = ?').run(left, alloc.id);
+    remaining = roundStock(remaining - back);
+  }
+  if (remaining > 0) {
+    // These units were sold when the stock was already negative — there is no
+    // batch to give them back to.
+    recordMovement(row.product_id, remaining, 'Sale Amend', 'sale_amend', saleId, null);
+  }
+}
+
+/**
+ * Take `qty` more units of a product out of the stock (FIFO, oldest batch
+ * first) and return the allocations, so the caller can write the matching
+ * `fifo_allocations` rows.
+ */
+function takeMoreStock(
+  db: ReturnType<typeof getDb>,
+  saleId: number,
+  productId: number,
+  qty: number,
+  allowNegative: boolean
+): { batchId: number; qty: number }[] {
+  const allocations = deductStockFIFO(productId, qty, allowNegative);
+  let taken = 0;
+  for (const alloc of allocations) {
+    recordMovement(productId, -alloc.qty, 'Sale Amend', 'sale_amend', saleId, alloc.batchId);
+    taken = roundStock(taken + alloc.qty);
+  }
+  const shortfall = roundStock(qty - taken);
+  if (shortfall > 0) {
+    // The stock was not there — the product goes negative, as it may.
+    recordMovement(productId, -shortfall, 'Sale Amend', 'sale_amend', saleId, null);
+  }
+  return allocations;
+}
+
+/**
+ * F) Change the items of a finished bill (the item, the quantity, the price).
+ *
+ * This is the one amendment that moves STOCK:
+ *   - a line that loses units gives them back to the shelf AND to the FIFO
+ *     batch they came from (the newest allocation first),
+ *   - a line that gains units takes them from the oldest batch first,
+ *   - a line that only changes its PRICE moves no stock at all.
+ *
+ * The money follows the bill's own rules: the paid rows never change, the
+ * udhaar part follows the customer's ledger, and the cash part follows the
+ * open shift. The bill's totals are recomputed with the exact maths a fresh
+ * sale of the same items uses, so the amended bill and a fresh bill agree.
+ */
+export function amendItems(input: AmendItemsInput): AmendmentResult {
+  const who = assertCanAmend(input.managerPin);
+  const reason = requireReason(input.reason);
+  const saleId = Number(input.saleId);
+  requireCompletedSale(saleId);
+  requireWithinWindow(saleId);
+
+  const db = getDb();
+  const sale = db.prepare('SELECT * FROM sales WHERE id = ?').get(saleId) as
+    | Record<string, unknown>
+    | undefined;
+  if (!sale) throw new Error('Sale not found');
+
+  const blocked = itemsBlockedReason(saleId);
+  if (blocked) throw new Error(blocked);
+
+  const beforeLines = billItemLines(saleId);
+  if (beforeLines.length === 0) throw new Error('This bill has no items to amend');
+
+  // ── the new lines ─────────────────────────────────────────────────────────
+  const oldByProduct = new Map(beforeLines.map((l) => [l.productId, l]));
+  const afterLines: BillAmendItemLine[] = [];
+  for (const raw of input.lines ?? []) {
+    const productId = Number(raw.productId);
+    if (!Number.isFinite(productId) || productId <= 0) throw new Error('A line has no product');
+    const product = getProduct(productId);
+    if (!product) throw new Error(`Product ${productId} not found`);
+    const existing = oldByProduct.get(productId);
+    afterLines.push({
+      productId,
+      name: product.name ?? existing?.name ?? `#${productId}`,
+      qty: roundStock(Number(raw.qty) || 0),
+      unitPrice: amendRound2(Number(raw.unitPrice) || 0),
+      // The line's discount and tax rate are the bill's own — an amendment
+      // changes WHAT was sold, not the discount that was given.
+      lineDiscount: existing?.lineDiscount ?? 0,
+      taxRate: existing?.taxRate ?? Number(product.tax_rate ?? 0),
+    });
+  }
+  const lineProblem = validateItemLines(afterLines);
+  if (lineProblem) throw new Error(lineProblem);
+
+  // ── the price floor (the same rule a fresh sale obeys) ────────────────────
+  if (getSetting('price_floor_enabled') !== '0' && !input.priceFloorOverride) {
+    const belowCost: string[] = [];
+    for (const line of afterLines) {
+      const product = getProduct(line.productId);
+      const cost = Number(product?.cost_price ?? 0);
+      if (cost > 0 && line.unitPrice < cost) belowCost.push(product?.name ?? `#${line.productId}`);
+    }
+    if (belowCost.length > 0) {
+      throw new Error(`Below cost items: ${belowCost.join(', ')}`);
+    }
+  }
+
+  // ── the totals ────────────────────────────────────────────────────────────
+  const totalsOptions = {
+    billDiscount: Number(sale.bill_discount ?? 0),
+    discountType: sale.discount_type === 'percent' ? ('percent' as const) : ('amount' as const),
+    serviceCharge: Number(sale.service_charge ?? 0),
+    serviceChargeType:
+      sale.service_charge_type === 'percent' ? ('percent' as const) : ('amount' as const),
+    freight: Number(sale.freight ?? 0),
+  };
+  const beforeTotals = recomputeSaleTotals(beforeLines, totalsOptions);
+  const storedTotal = amendRound2(sale.total_amount);
+  if (Math.abs(beforeTotals.finalTotal - storedTotal) > 0.011) {
+    // The bill's stored total does not match its items — refuse rather than
+    // quietly changing the bill's money.
+    throw new Error(
+      `This bill's stored total (${storedTotal.toFixed(2)}) does not match its items (${beforeTotals.finalTotal.toFixed(
+        2
+      )}) — amend its payments or notes instead.`
+    );
+  }
+  const afterTotals = recomputeSaleTotals(afterLines, totalsOptions);
+
+  const stockPlan = planItemStockDeltas(beforeLines, afterLines);
+  const changes = summarizeItemChanges(beforeLines, afterLines);
+  if (!changes) throw new Error('Nothing to change — the items are the same');
+
+  // ── the stock rules (the same ones a fresh sale obeys) ───────────────────
+  const allowNegativeStock = getSetting('allow_negative_stock') ?? 'warn';
+  // A MANAGER may amend bills but may not break the "no negative stock"
+  // policy — only the owner may. (A fresh sale lets any manager override it,
+  // but an amendment rewrites a record that is already on the books.)
+  const mayOverrideNegativeBlock = who.role === 'owner';
+  const maxNegative = parseFloat(getSetting('max_negative_qty') ?? '0') || 0;
+  for (const delta of stockPlan) {
+    if (delta.delta >= 0) continue; // the stock comes back (or stays) — never a problem
+    const product = getProduct(delta.productId);
+    if (!product) throw new Error(`Product ${delta.productId} not found`);
+    const available = Number(product.stock_qty ?? 0);
+    const needed = Math.abs(delta.delta);
+    if (available < needed && allowNegativeStock === 'no' && !mayOverrideNegativeBlock) {
+      throw new Error(`Insufficient stock: ${product.name} (${available} available)`);
+    }
+    if (maxNegative > 0 && available - needed < -maxNegative) {
+      throw new Error(
+        `Cannot sell ${product.name}: would exceed max negative qty of ${maxNegative} (would be ${
+          available - needed
+        })`
+      );
+    }
+  }
+  const allowNegative = allowNegativeStock !== 'no' || mayOverrideNegativeBlock;
+
+  // ── the money ─────────────────────────────────────────────────────────────
+  const before = currentBillState(saleId);
+  if (!before) throw new Error('Sale not found');
+  const currentSplit = billSplit(before.total, before.payments);
+  const hasCustomer = before.customerId != null;
+  const splitPlan = planItemsSplit(before.total, afterTotals.finalTotal, currentSplit, hasCustomer);
+  if (splitPlan.problem) throw new Error(splitPlan.problem);
+
+  if (splitPlan.creditEffect > 0 && hasCustomer) {
+    const customer = customerRow(before.customerId);
+    const limit = Number(customer?.credit_limit ?? 0);
+    if (limit > 0 && customer && customer.balance + splitPlan.creditEffect > limit) {
+      if (!input.overrideCreditLimit) {
+        throw new Error(
+          `Credit limit exceeded — ${customer.name} would owe ${(customer.balance + splitPlan.creditEffect).toFixed(
+            2
+          )} (limit ${limit.toFixed(2)})`
+        );
+      }
+      if (who.role !== 'owner') throw new Error('Only the owner may go over a credit limit');
+    }
+  }
+
+  let shiftId: number | null = null;
+  if (splitPlan.cashEffect !== 0) {
+    const shift = currentShift();
+    if (!shift) {
+      throw new Error('Open a shift before changing the cash of a bill — a closed shift is never changed');
+    }
+    shiftId = shift.id;
+  }
+
+  const nowIso = new Date().toISOString();
+  db.exec('BEGIN');
+  try {
+    // ── 1. the stock and the rows ───────────────────────────────────────────
+    const rows = saleItemRows(saleId);
+    const rowsByProduct = new Map<number, SaleItemRow[]>();
+    for (const r of rows) {
+      const list = rowsByProduct.get(r.product_id) ?? [];
+      list.push(r);
+      rowsByProduct.set(r.product_id, list);
+    }
+    const afterByProduct = new Map(afterLines.map((l) => [l.productId, l]));
+
+    for (const delta of stockPlan) {
+      const line = afterByProduct.get(delta.productId);
+      const newQty = line ? line.qty : 0;
+      const oldQty = delta.oldQty;
+      const lineRows = rowsByProduct.get(delta.productId) ?? [];
+
+      if (newQty < oldQty) {
+        // The units come back — from the newest allocation first.
+        let remaining = roundStock(oldQty - newQty);
+        for (let i = lineRows.length - 1; i >= 0 && remaining > 0; i--) {
+          const row = lineRows[i];
+          const take = Math.min(remaining, Number(row.qty) || 0);
+          if (take <= 0) continue;
+          restoreLineStock(db, saleId, row, take);
+          const left = roundStock((Number(row.qty) || 0) - take);
+          row.qty = left;
+          db.prepare('UPDATE sale_items SET qty = ? WHERE id = ?').run(left, row.id);
+          remaining = roundStock(remaining - take);
+        }
+      } else if (newQty > oldQty) {
+        // The extra units go out — from the oldest batch first.
+        const extra = roundStock(newQty - oldQty);
+        const allocations = takeMoreStock(db, saleId, delta.productId, extra, allowNegative);
+        const template = lineRows[0];
+        const ins = db.prepare(
+          `INSERT INTO sale_items
+            (sale_id, product_id, qty, unit_price, discount, tax_rate, line_total, promo_id, promo_name, batch_id, box_qty, unit_name, display_qty)
+           VALUES (?, ?, ?, ?, 0, ?, 0, ?, ?, ?, ?, ?, ?)`
+        );
+        let left = extra;
+        const parts = allocations.map((a) => ({ qty: a.qty, batchId: a.batchId as number | null }));
+        const allocated = parts.reduce((s, p) => s + p.qty, 0);
+        if (roundStock(extra - allocated) > 0) parts.push({ qty: roundStock(extra - allocated), batchId: null });
+        if (parts.length === 0) parts.push({ qty: extra, batchId: null });
+        for (const part of parts) {
+          if (part.qty <= 0) continue;
+          const res = ins.run(
+            saleId,
+            delta.productId,
+            part.qty,
+            line?.unitPrice ?? 0,
+            line?.taxRate ?? 0,
+            template?.promo_id ?? null,
+            template?.promo_name ?? null,
+            part.batchId,
+            template?.box_qty ?? null,
+            template?.unit_name ?? null,
+            null
+          );
+          const newRowId = Number(res.lastInsertRowid);
+          if (part.batchId != null) {
+            recordFIFOAllocations(newRowId, delta.productId, [{ batchId: part.batchId, qty: part.qty }]);
+          }
+          left = roundStock(left - part.qty);
+        }
+        void left;
+      }
+    }
+
+    // The rows of a REMOVED line go away (their allocations were already
+    // shortened when the units came back), and so does a row that was
+    // emptied by a smaller quantity.
+    for (const delta of stockPlan) {
+      if (delta.newQty > 0) continue;
+      for (const row of rowsByProduct.get(delta.productId) ?? []) {
+        db.prepare('DELETE FROM fifo_allocations WHERE sale_item_id = ?').run(row.id);
+        db.prepare('DELETE FROM sale_items WHERE id = ?').run(row.id);
+      }
+    }
+    for (const row of saleItemRows(saleId)) {
+      if ((Number(row.qty) || 0) > 0) continue;
+      db.prepare('DELETE FROM fifo_allocations WHERE sale_item_id = ?').run(row.id);
+      db.prepare('DELETE FROM sale_items WHERE id = ?').run(row.id);
+    }
+
+    // ── 2. the rows' money ──────────────────────────────────────────────────
+    const finalRows = saleItemRows(saleId);
+    const finalByProduct = new Map<number, SaleItemRow[]>();
+    for (const r of finalRows) {
+      const list = finalByProduct.get(r.product_id) ?? [];
+      list.push(r);
+      finalByProduct.set(r.product_id, list);
+    }
+    for (const line of afterLines) {
+      const lineRows = finalByProduct.get(line.productId) ?? [];
+      if (lineRows.length === 0) continue;
+      const weights = lineRows.map((r) => Number(r.qty) || 0);
+      const money = lineMoney(line);
+      const lineTotals = distributeAmount(amendRound2(money.total), weights);
+      const lineDiscounts = distributeAmount(amendRound2(line.lineDiscount), weights);
+      lineRows.forEach((row, i) => {
+        db.prepare(
+          'UPDATE sale_items SET unit_price = ?, discount = ?, tax_rate = ?, line_total = ? WHERE id = ?'
+        ).run(line.unitPrice, lineDiscounts[i], line.taxRate, lineTotals[i], row.id);
+      });
+    }
+
+    // ── 3. the bill's totals ────────────────────────────────────────────────
+    const priceChanged = stockPlan.some((d) => d.priceChanged);
+    const priceOverridden = Number(sale.price_overridden ?? 0) === 1 || priceChanged;
+    db.prepare(
+      'UPDATE sales SET subtotal = ?, tax_amount = ?, discount_amount = ?, total_amount = ?, price_overridden = ? WHERE id = ?'
+    ).run(
+      afterTotals.subtotal,
+      afterTotals.taxAmount,
+      afterTotals.discountAmount,
+      afterTotals.finalTotal,
+      priceOverridden ? 1 : 0,
+      saleId
+    );
+
+    // ── 4. the customer's ledger ────────────────────────────────────────────
+    if (splitPlan.creditEffect !== 0 && before.customerId != null) {
+      db.prepare('UPDATE customers SET balance = balance + ? WHERE id = ?').run(
+        splitPlan.creditEffect,
+        before.customerId
+      );
+      db.prepare(
+        'INSERT INTO customer_transactions (customer_id, sale_id, amount, type, created_at) VALUES (?, ?, ?, ?, ?)'
+      ).run(before.customerId, saleId, splitPlan.creditEffect, 'amend', nowIso);
+    }
+
+    // ── 5. the amendment row, the timeline event and the audit log ──────────
+    const after: BillAmendState = {
+      ...before,
+      total: amendRound2(afterTotals.finalTotal),
+      payments: splitToRows(splitPlan.after),
+      credit: splitPlan.after.credit,
+      items: afterLines.map((l) => ({ ...l })),
+    };
+    const result = writeAmendment(db, {
+      saleId,
+      who,
+      reason,
+      kind: 'items',
+      before: { ...before, items: beforeLines.map((l) => ({ ...l })) },
+      after,
+      cashEffect: splitPlan.cashEffect,
+      creditEffect: splitPlan.creditEffect,
+      shiftId,
+      createdAt: nowIso,
+    });
+    db.exec('COMMIT');
+    logActivity(
+      'sale_amended',
+      'sale',
+      saleId,
+      `kind=items | invoice=${before.invoiceNo} | ${changes} | cash ${splitPlan.cashEffect.toFixed(
+        2
+      )} | udhaar ${splitPlan.creditEffect.toFixed(2)} | reason=${reason}`
+    );
     return result;
   } catch (e) {
     db.exec('ROLLBACK');

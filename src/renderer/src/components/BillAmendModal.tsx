@@ -7,10 +7,16 @@ import {
   amendRound2,
   normalizeSplit,
   splitTotal,
+  type BillAmendItemLine,
   type BillAmendSplit,
 } from '@shared/billAmend';
+import {
+  lineMoney,
+  planItemStockDeltas,
+  recomputeSaleTotals,
+} from '@shared/billAmendItems';
 import { formatMoney } from '../utils/currency';
-import type { BillAmendResult, BillAmendView, Customer } from '../../../shared/types';
+import type { BillAmendResult, BillAmendView, Customer, Product } from '../../../shared/types';
 
 /**
  * "Amend bill" — the one screen that changes a FINISHED bill.
@@ -25,10 +31,21 @@ import type { BillAmendResult, BillAmendView, Customer } from '../../../shared/t
 const TABS: ModalShellTab[] = [
   { id: 'customer', label: 'Customer' },
   { id: 'payments', label: 'Payments & Udhaar' },
+  { id: 'items', label: 'Items' },
   { id: 'notes', label: 'Notes' },
   { id: 'returns', label: 'Return items' },
   { id: 'reprint', label: 'Reprint' },
 ];
+
+/** One line of the bill while it is being edited (the inputs hold text). */
+interface EditableItemLine {
+  productId: number;
+  name: string;
+  qty: string;
+  unitPrice: string;
+  lineDiscount: number;
+  taxRate: number;
+}
 
 export interface BillAmendModalProps {
   saleId: number;
@@ -70,6 +87,13 @@ export function BillAmendModal({
   const [reason, setReason] = useState('');
   const [managerPin, setManagerPin] = useState('');
 
+  /** The Items tab: the lines of the bill while they are being edited. */
+  const [itemLines, setItemLines] = useState<EditableItemLine[]>([]);
+  /** The product search that adds a line to the bill. */
+  const [productQuery, setProductQuery] = useState('');
+  const [productResults, setProductResults] = useState<Product[]>([]);
+  const [productBusy, setProductBusy] = useState(false);
+
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   /** Set once the service accepted an amendment; the history refreshes with it. */
@@ -88,6 +112,16 @@ export function BillAmendModal({
       setCustomerId(fresh.customerId == null ? '' : String(fresh.customerId));
       setSplit(splitFromView(fresh));
       setNotes(fresh.notes ?? '');
+      setItemLines(
+        (fresh.items ?? []).map((l) => ({
+          productId: l.productId,
+          name: l.name,
+          qty: String(l.qty),
+          unitPrice: String(l.unitPrice),
+          lineDiscount: l.lineDiscount,
+          taxRate: l.taxRate,
+        }))
+      );
       setLoadError(null);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
@@ -97,6 +131,32 @@ export function BillAmendModal({
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  /** The product search that adds a line to the bill (only while the Items tab is open). */
+  useEffect(() => {
+    if (tab !== 'items') return;
+    const query = productQuery.trim();
+    if (!query) {
+      setProductResults([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setProductBusy(true);
+      try {
+        const found = await window.api.inventory.list(query);
+        if (!cancelled) setProductResults((found ?? []).slice(0, 12));
+      } catch {
+        if (!cancelled) setProductResults([]);
+      } finally {
+        if (!cancelled) setProductBusy(false);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [productQuery, tab]);
 
   const isOwner = role === 'owner';
   const needsPin = !isOwner;
@@ -118,16 +178,97 @@ export function BillAmendModal({
   const customerChanged = (view?.customerId == null ? '' : String(view.customerId)) !== customerId;
   const notesChanged = (view?.notes ?? '') !== notes;
 
+  // ── the Items tab ──────────────────────────────────────────────────────────
+  /** The edited lines as the pure rules want them. */
+  const editedLines: BillAmendItemLine[] = itemLines.map((l) => ({
+    productId: l.productId,
+    name: l.name,
+    qty: Number(l.qty) || 0,
+    unitPrice: Number(l.unitPrice) || 0,
+    lineDiscount: l.lineDiscount,
+    taxRate: l.taxRate,
+  }));
+
+  /** The NEW bill total — computed with the same maths the service uses. */
+  const editedTotals = recomputeSaleTotals(editedLines, {
+    billDiscount: view?.billDiscount ?? 0,
+    discountType: view?.discountType ?? 'amount',
+    serviceCharge: view?.serviceCharge ?? 0,
+    serviceChargeType: view?.serviceChargeType ?? 'amount',
+    freight: view?.freight ?? 0,
+  });
+
+  /** What the stock and the FIFO do. */
+  const editedStock = planItemStockDeltas(view?.items ?? [], editedLines);
+
+  /** Has the owner actually changed anything? */
+  const itemsChanged = useMemo(() => {
+    const before = view?.items ?? [];
+    if (before.length !== itemLines.length) return true;
+    for (let i = 0; i < before.length; i++) {
+      const b = before[i];
+      const a = itemLines[i];
+      if (!b || a.productId !== b.productId) return true;
+      if (Math.round((Number(a.qty) || 0) * 1000) / 1000 !== Math.round((Number(b.qty) || 0) * 1000) / 1000)
+        return true;
+      if (
+        Math.round((Number(a.unitPrice) || 0) * 100) / 100 !==
+        Math.round((Number(b.unitPrice) || 0) * 100) / 100
+      )
+        return true;
+    }
+    return false;
+  }, [view, itemLines]);
+
+  const setItemLine = useCallback((index: number, patch: Partial<EditableItemLine>) => {
+    setItemLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+  }, []);
+
+  const addItemLine = useCallback((product: Product) => {
+    setItemLines((prev) => {
+      if (prev.some((l) => l.productId === product.id)) return prev;
+      return [
+        ...prev,
+        {
+          productId: product.id,
+          name: product.name,
+          qty: '1',
+          unitPrice: String(product.sale_price ?? 0),
+          lineDiscount: 0,
+          taxRate: Number(product.tax_rate ?? 0),
+        },
+      ];
+    });
+    setProductQuery('');
+    setProductResults([]);
+  }, []);
+
+  const removeItemLine = useCallback((productId: number) => {
+    setItemLines((prev) => prev.filter((l) => l.productId !== productId));
+  }, []);
+
   const needsMoneyChange =
     amendRound2(afterSplit.cash) !== amendRound2(beforeSplit.cash) ||
     amendRound2(afterSplit.card) !== amendRound2(beforeSplit.card) ||
     amendRound2(afterSplit.bank) !== amendRound2(beforeSplit.bank) ||
     amendRound2(afterSplit.credit) !== amendRound2(beforeSplit.credit);
 
-  const canSaveTab = tab === 'customer' || tab === 'payments' || tab === 'notes';
+  const canSaveTab =
+    tab === 'customer' ||
+    tab === 'payments' ||
+    tab === 'notes' ||
+    (tab === 'items' && !!view?.itemsAllowed);
 
   const submitLabel =
-    tab === 'customer' ? 'Save Customer' : tab === 'payments' ? 'Save Split' : tab === 'notes' ? 'Save Notes' : 'Close';
+    tab === 'customer'
+      ? 'Save Customer'
+      : tab === 'payments'
+        ? 'Save Split'
+        : tab === 'items'
+          ? 'Save Items'
+          : tab === 'notes'
+            ? 'Save Notes'
+            : 'Close';
 
   const submit = useCallback(async () => {
     if (!view || blocked) return;
@@ -157,6 +298,16 @@ export function BillAmendModal({
       setError('The notes are unchanged.');
       return;
     }
+    if (tab === 'items') {
+      if (!itemsChanged) {
+        setError('The items are unchanged.');
+        return;
+      }
+      if (itemLines.length === 0) {
+        setError('A bill must have at least one item.');
+        return;
+      }
+    }
 
     setBusy(true);
     try {
@@ -171,7 +322,16 @@ export function BillAmendModal({
             })
           : tab === 'payments'
             ? await window.api.billAmend.payments({ ...base, split: normalizeSplit(split) })
-            : await window.api.billAmend.notes({ ...base, notes });
+            : tab === 'items'
+              ? await window.api.billAmend.items({
+                  ...base,
+                  lines: editedLines.map((l) => ({
+                    productId: l.productId,
+                    qty: l.qty,
+                    unitPrice: l.unitPrice,
+                  })),
+                })
+              : await window.api.billAmend.notes({ ...base, notes });
 
       setAmended(result);
       setReason('');
@@ -197,6 +357,9 @@ export function BillAmendModal({
     enteredTotal,
     customerChanged,
     notesChanged,
+    itemsChanged,
+    itemLines,
+    editedLines,
     saleId,
     customerId,
     isOwner,
@@ -325,6 +488,92 @@ export function BillAmendModal({
             </div>
           )}
 
+          {tab === 'items' && (
+            <div className="amend-tab-body" data-testid="amend-items-tab">
+              {view.itemsBlockedReason && (
+                <div className="notice error" data-testid="amend-items-blocked">
+                  {view.itemsBlockedReason}
+                </div>
+              )}
+              <p className="muted small">
+                Change the item, the quantity or the price of a finished bill. The quantity moves the stock
+                (and the FIFO batch it came from); the price only moves the money. The bill&apos;s total,
+                udhaar and drawer follow automatically.
+              </p>
+              <div className="amend-items-list" data-testid="amend-items-list">
+                {itemLines.length === 0 && (
+                  <div className="muted small">This bill has no items — add one below.</div>
+                )}
+                {itemLines.map((line, index) => (
+                  <div className="amend-items-row" key={line.productId} data-testid={`amend-item-${line.productId}`}>
+                    <span className="amend-items-name" title={line.name}>
+                      {line.name}
+                    </span>
+                    <label className="field amend-items-qty">
+                      <span>Qty</span>
+                      <input
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        value={line.qty}
+                        data-testid={`amend-item-qty-${line.productId}`}
+                        onChange={(e) => setItemLine(index, { qty: e.target.value })}
+                      />
+                    </label>
+                    <label className="field amend-items-price">
+                      <span>Price</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={line.unitPrice}
+                        data-testid={`amend-item-price-${line.productId}`}
+                        onChange={(e) => setItemLine(index, { unitPrice: e.target.value })}
+                      />
+                    </label>
+                    <span className="muted small amend-items-amount">
+                      {formatMoney(amendRound2(lineMoney(editedLines[index]).total))}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      data-testid={`amend-item-remove-${line.productId}`}
+                      onClick={() => removeItemLine(line.productId)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <Field label="Add an item" hint="Search the shop's products and add a line to this bill.">
+                <input
+                  value={productQuery}
+                  data-testid="amend-item-search"
+                  onChange={(e) => setProductQuery(e.target.value)}
+                  placeholder="e.g. soap, 12"
+                />
+              </Field>
+              {productBusy && <div className="muted small">Searching…</div>}
+              {productResults.length > 0 && (
+                <div className="amend-item-results" data-testid="amend-item-results">
+                  {productResults.map((p) => (
+                    <button
+                      type="button"
+                      className="amend-item-result"
+                      key={p.id}
+                      data-testid={`amend-item-add-${p.id}`}
+                      onClick={() => addItemLine(p)}
+                    >
+                      <span>{p.name}</span>
+                      <span className="muted small">{formatMoney(p.sale_price)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {tab === 'notes' && (
             <div className="amend-tab-body">
               <Field label="Notes / remarks" hint="Printed on the amended copy and kept in the amendment history.">
@@ -434,6 +683,36 @@ export function BillAmendModal({
                   </span>
                 </div>
               )}
+            </div>
+          )}
+
+          {tab === 'items' && itemsChanged && (
+            <div className="amend-preview" data-testid="amend-preview">
+              <div className="amend-preview-title">Before → After</div>
+              <div className="amend-preview-row">
+                <span>Bill total</span>
+                <span>{formatMoney(view.total)}</span>
+                <span>→</span>
+                <span data-testid="amend-items-new-total">{formatMoney(editedTotals.finalTotal)}</span>
+              </div>
+              {editedStock
+                .filter((d) => d.delta !== 0 || d.priceChanged)
+                .map((d) => (
+                  <div className="amend-preview-row" key={d.productId} data-testid={`amend-stock-${d.productId}`}>
+                    <span>{d.name}</span>
+                    <span>
+                      {d.oldQty} → {d.newQty}
+                    </span>
+                    <span>·</span>
+                    <span className={d.delta === 0 ? 'muted' : d.delta > 0 ? 'text-ok' : 'text-warn'}>
+                      {d.delta === 0
+                        ? 'price only'
+                        : d.delta > 0
+                          ? `stock +${d.delta}`
+                          : `stock ${d.delta}`}
+                    </span>
+                  </div>
+                ))}
             </div>
           )}
 

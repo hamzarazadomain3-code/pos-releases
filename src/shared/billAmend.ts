@@ -35,6 +35,18 @@ export interface BillAmendSplit {
   credit: number;
 }
 
+/** One line of a bill (the items an amendment may change). */
+export interface BillAmendItemLine {
+  productId: number;
+  name: string;
+  qty: number;
+  unitPrice: number;
+  /** The flat discount that was given on this line. */
+  lineDiscount: number;
+  /** The tax rate of the line (percent). */
+  taxRate: number;
+}
+
 /** The state of a bill that an amendment reads and writes. */
 export interface BillAmendState {
   invoiceNo: string;
@@ -46,6 +58,11 @@ export interface BillAmendState {
   payments: BillAmendPaymentRow[];
   /** The udhaar part of the bill. */
   credit: number;
+  /**
+   * The lines of the bill. Only the ITEMS amendments carry them — the other
+   * kinds leave the items exactly as they were.
+   */
+  items?: BillAmendItemLine[];
 }
 
 /** One amendment row, as it is stored. */
@@ -278,6 +295,7 @@ export function effectiveBillState(
       notes: amendment.after.notes ?? null,
       payments: (amendment.after.payments ?? []).map((p) => ({ mode: p.mode, amount: amendMoney(p.amount) })),
       credit: amendMoney(amendment.after.credit ?? state.credit),
+      items: amendment.after.items ?? state.items,
     };
   }
   return state;

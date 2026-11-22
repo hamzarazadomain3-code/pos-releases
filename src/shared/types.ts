@@ -1,6 +1,7 @@
 ﻿import type { ReceiptDesign, ReceiptLibrary } from './receiptDesign';
 import type { SidebarBadge } from './sidebarBadges';
 import type {
+  BillAmendItemLine,
   BillAmendPaymentRow,
   BillAmendRecord,
   BillAmendSplit,
@@ -1206,6 +1207,21 @@ export interface BillAmendView {
   payments: BillAmendPaymentRow[];
   credit: number;
   split: BillAmendSplit;
+  /** The lines of the bill — the Items tab edits these. */
+  items: BillAmendItemLine[];
+  /**
+   * The bill-level numbers the total is made of, so the Items tab can show
+   * the NEW total before the amendment is saved (and not guess at it).
+   */
+  billDiscount: number;
+  discountType: 'amount' | 'percent';
+  serviceCharge: number;
+  serviceChargeType: 'amount' | 'percent';
+  freight: number;
+  /** Whether this bill may have its items changed at all. */
+  itemsAllowed: boolean;
+  /** Why the items cannot be changed (the message the owner reads). */
+  itemsBlockedReason: string | null;
   amendedCount: number;
   lastAmendedAt: string | null;
   amendments: BillAmendRow[];
@@ -1745,6 +1761,15 @@ export interface PosBridge {
     }) => Promise<BillAmendResult>;
     /** C) Edit the notes / the invoice-level text. */
     notes: (input: { saleId: number; notes: string | null; reason: string; managerPin?: string }) => Promise<BillAmendResult>;
+    /** F) Change the items / the quantities / the prices (the stock and the FIFO follow). */
+    items: (input: {
+      saleId: number;
+      lines: { productId: number; qty: number; unitPrice: number }[];
+      reason: string;
+      managerPin?: string;
+      overrideCreditLimit?: boolean;
+      priceFloorOverride?: boolean;
+    }) => Promise<BillAmendResult>;
   };
   audits: {
     create: () => Promise<AuditRow & { items: AuditItemRow[] }>;
