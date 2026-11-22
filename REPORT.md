@@ -3112,6 +3112,88 @@ the rest, in ONE transaction.
 ### Status
 - **Phase 1-F (item 23b): DONE** (115/115 service + 27/27 UI)
 
+---
+
+## Deploy — v2.30.0 (2026-11-22)
+
+The owner said *"ab sab deploy kardo"*, so everything that ships was shipped:
+the desktop installer, the Cloudflare web app and the marketing site.
+
+### The version
+- `package.json`: **2.29.1 -> 2.30.0** — a MINOR bump, because this run added
+  features (the bill item/qty/price amendment with the stock + FIFO delta, the
+  two new Amend entry points, the log rotation and the product search by code).
+  The shops that already run 2.29.1 are therefore offered the update.
+- `AGENTS.md`: the Version line at the top.
+- Commit `569c491` — the branch `feature/bill-amend` was **fast-forwarded into
+  `main`** (187 commits + the version bump) and pushed to `origin`
+  (`hamzarazadomain3-code/pos-releases`, the repo that holds both the source and
+  the releases). The local `main` now sits on the same commit.
+
+### The desktop release
+- `npm run release` = `npm run build` + `electron-builder --publish always` +
+  `scripts/finalize-release.js`. Everything in one run, exit 0.
+- The release **v2.30.0 is PUBLISHED** (not a draft, not a prerelease):
+  <https://github.com/hamzarazadomain3-code/pos-releases/releases/tag/v2.30.0>
+- The tag sits on the commit the build ran from (`569c491`) — the finalize step
+  creates the tag at the built commit, so the snapshot is the code that shipped.
+- The assets, all of them:
+  - `RokarPOS-Setup-2.30.0.exe` — 121 895 032 bytes (the installer)
+  - `RokarPOS-Portable-2.30.0.exe` — 121 483 790 bytes
+  - `RokarPOS-Setup-2.30.0.exe.blockmap` — 128 017 bytes
+  - `latest.yml` — rebuilt by the finalize step from the installer's OWN bytes
+    (NSIS embeds a build timestamp, so a manifest from an earlier build would
+    fail every client's checksum check)
+  - `RokarPOS-Setup.exe` — the version-less alias the website's
+    `/releases/latest/download/` link points at forever
+- `npm run verify:release -- v2.30.0` — **9 passed / 0 failed**: the manifest,
+  the downloaded installer's sha512 byte for byte, the blockmap, the alias and
+  the CDN feed.
+- The version-less alias starts with `MZ` (`4D-5A-3F-00`) and its sha256 is
+  byte-identical to the versioned installer, so the website's download button
+  serves THIS release and not the previous one.
+
+### The web app (Cloudflare Worker)
+- The `main` push triggered the repo's own `.git/hooks/pre-push` ->
+  `scripts/deploy-cloud.ps1` -> `npm run deploy` in `cloud/` (the worker
+  `rokar-pos`, the D1 database `rokar-accounts` and the Durable Object `SHOP`).
+- **deploy OK** -> <https://rokar-pos.bakery-saas.workers.dev/app>
+  (version id `fb1d8c45-e87f-412f-bbfa-7c5edf6c8b7e`).
+- Verified live: `/app` answers 200 and its bundle (`index-m6sGavpX.js`)
+  contains the 23b `BillAmendModal` chunk — the new code is really being served.
+- The log: `.git/deploy-cloud.log`.
+
+### The marketing site (Vercel)
+- `E:\antigravty\rokar-site`: `src/content.json` now carries
+  `site.latestVersion: 2.30.0` and a new changelog entry for 2.30.0 (the bill
+  item amendment, the new Amend entry points, the log rotation and the product
+  search by code), in the site's own plain Roman Urdu.
+- `npm run typecheck` exit 0, `npm run build` exit 0.
+- Deployed with the Vercel CLI (the machine's own OAuth session):
+  deployment `rokar-site-l7750i32t-hamzarazadomain3-code.vercel.app` —
+  **Ready / Production**, aliased to `https://rokarpos.co.uk`,
+  `https://www.rokarpos.co.uk` and `https://rokar-site.vercel.app`.
+- Verified live: `https://rokarpos.co.uk` answers 200 and its deployed bundle
+  contains `2.30.0` and the new changelog text.
+- The site's commit `bed4cd2` was pushed to `hamzarazadomain3-code/rokar-pos-site`.
+
+### The proof
+- `E:\temp\proof\release_v2.30.0.txt` — the whole release run (build, upload,
+  the tag, the publish, the stable asset, the rebuilt manifest, the final
+  asset check).
+- `E:\temp\proof\verify_release_v2.30.0.txt` — 9/9.
+- `E:\temp\proof\release_view_v2.30.0.json` — `isDraft: false`,
+  `isPrerelease: false`, `publishedAt: 2026-11-22T15:56:51Z`, every asset.
+- `E:\temp\proof\cloud_worker_deploy_v2.30.0.txt`,
+  `E:\temp\proof\web_site_deploy_v2.30.0.txt`,
+  `E:\temp\proof\vercel_site_v2.30.0.txt`.
+
+### The status
+- **Item 29 (the release + the deploy): DONE.**
+- Nothing is left on the owner's checklist except the reinstall on a shop's PC
+  (the app's own updater picks v2.30.0 up on its own).
+
+
 
 
 
