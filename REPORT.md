@@ -3675,6 +3675,111 @@ shipped: the desktop installer, the Cloudflare web app and the marketing site.
 - Nothing is left on the owner's checklist except the reinstall on a shop's PC
   (the app's own updater picks v2.31.0 up on its own).
 
+---
+
+## The date picker — a calendar on every date field (2026-11-23)
+
+The owner said *"jab date pe click karon to clander open ho jai jo recomend karo"*
+— so the date fields got a real calendar, and **every** date field in the app
+got it at once.
+
+### The recommendation, and why
+
+A native `<input type="date">` was the cheap option. It was rejected for three
+reasons:
+
+1. **It cannot be tested.** The picker is a native OS/Chromium widget, not DOM.
+   The repo's rule is that a feature is DONE only with a permanent test that
+   drives the REAL app — a native widget would have made this
+   "PARTIAL (no test: UI)" forever.
+2. **It looks foreign.** It renders in the OS's own grey chrome inside a green
+   POS app, and its text format follows the OS locale, not the admin's
+   `date_format` setting that the rest of the app obeys.
+3. **It cannot be themed** for the dark theme or the Urdu (RTL) layout.
+
+The custom calendar is themed from the app's own CSS variables (`--primary`,
+`--card-bg`, `--border`), works in dark mode, follows the app language
+(English and Urdu month / weekday names), and is fully drivable by the suite.
+
+It lives inside `DateInput.tsx`, so **all 30 date fields** (Purchase Orders,
+Inventory, Udhaar, Billing history, Reports, Expenses, Promotions, Commissions,
+Transfers, Audits, DateRangePicker, …) get it with **zero call-site edits** —
+and the text input keeps working exactly as before, because the calendar and
+the typed text both go through the same `parseInputDate()` /
+`formatInputDate()` helpers.
+
+### The pure grid — `src/shared/calendarGrid.ts`
+
+One dependency-free module, so the popup and the tests can never disagree:
+
+- `monthMatrix(year, month)` — the **6 x 7** grid (always 42 cells, so the
+  popup never changes height while the owner pages), Sunday-first, with the
+  neighbouring months' days marked `inMonth: false`.
+- `shiftMonth` — ±N months, crossing the year in both directions (`2026-12` +1
+  is `2027-01`; `2026-01` −1 is `2025-12`).
+- `todayIso()` / `addDays()` — **local** dates, never UTC: a shop at 23:30
+  local is still on today's date after UTC has rolled over (the same class of
+  bug the promotions fixture had).
+- `isValidIso()` / `isoParts()` / `monthViewOf()` — the strict `yyyy-mm-dd`
+  contract; `2026-02-29` is rejected, `2024-02-29` accepted.
+- `monthLabel()` and the Sunday-first weekday labels, with the i18n arrays
+  (English or Urdu) passed in — and an English fallback for a bad array.
+
+### The popup — `DateInput.tsx`
+
+- **A click opens it.** It is portalled to `document.body` with
+  `position: fixed`, so the scrolling body of the Purchase Order modal (or any
+  `overflow: hidden` ancestor) can never clip it. It flips **above** the field
+  when there is no room below, and clamps inside the viewport on a 430 px-tall
+  window.
+- **It never opens on focus.** Only a click (or ArrowDown / ArrowUp) opens it,
+  so tabbing through a form — and the forms' Enter-to-next-field behaviour —
+  is completely untouched. The date field's Enter still commits and still
+  advances, exactly as before.
+- **Esc closes the calendar first**, not the modal (the key is consumed before
+  the modal's form keyboard sees it). An outside click closes it too.
+- **Picking a day** fills the field with the ISO date (displayed in the admin's
+  own date format), closes the popup, and returns the focus to the field.
+- **Today** jumps to today; **Clear** empties the field.
+- **Keyboard**: ArrowDown / ArrowUp opens; ←/→ move a day, ↑/↓ a week;
+  PageUp / PageDown change the month; Enter picks the highlighted day only for
+  a keyboard-opened calendar with no typed date (so a typed date always wins).
+- The selected day, the keyboard cursor and today all carry their own style
+  (`.datecal-sel`, `.datecal-focus`, `.datecal-today`).
+
+### The tests
+
+| Suite | What it proves | Result | Proof |
+|---|---|---|---|
+| `npm run test:calendar` | the REAL `dist/shared/calendarGrid.js` + `dist/shared/dateParse.js`: 72 months of grid shape, the leap years, the year boundaries, the LOCAL clock, the arrow arithmetic, the validation, and every clicked date round-tripping through all three admin date formats | **64/64** | `E:\temp\proof\calendar_pure_final.txt` (re-run on the final code) |
+| `npm run test:dateCalendarUi` | the REAL renderer end to end: the click opens the calendar, the portal, the month paging, a pick, Today/Clear, Esc vs the modal, the outside click, the 1280x430 flip, the keyboard path, the typed date, and the picked date landing in the **saved** order's `delivery_date` | **38/38** | `E:\temp\proof\calendar_final_dateCalendarUi.txt` (the final code; the first run is `calendar_ui_test.txt`) |
+
+### What did NOT change
+
+- No schema change, no migration, no service change: the picker produces the
+  same `yyyy-mm-dd` strings the app already stored, and the saved order's
+  `delivery_date` is asserted from the database.
+- The typed-date path is untouched: `parseInputDate()` / `formatInputDate()`
+  remain the only parser and formatter, and the admin's `date_format` setting
+  is still respected.
+
+### The regressions (the shared field touches 30 screens)
+
+Every suite that drives the real renderer or the real services was re-run
+against the final code, each on its own saved file:
+
+| Suite | Result | Proof |
+|---|---|---|
+| `npm run test:purchaseOrderUi` | **60/60** | `E:\temp\proof\calendar_final_purchaseOrderUi.txt` |
+| `npm run test:keyboard` | **93/93** | `E:\temp\proof\calendar_final_keyboard.txt` |
+| `npm run test:billAmendUi` | **38/38** | `E:\temp\proof\calendar_final_billAmendUi.txt` |
+| `npm run test:purchaseEnhance` | **99/99** | `E:\temp\proof\calendar_final_purchaseEnhance.txt` |
+| `npm run test:purchaseInventoryLink` | **39/39** | `E:\temp\proof\calendar_final_purchaseInventoryLink.txt` |
+| `npm run test:negstock` | all passed | `E:\temp\proof\calendar_regress_negstock.txt` |
+| `npm run test:purchaseimport` | all passed | `E:\temp\proof\calendar_regress_purchaseimport.txt` |
+| `npm run test:shortcuts` | **37/37** | `E:\temp\proof\calendar_regress_shortcuts.txt` |
+| `npm run test:promotions` | ALL PASSED | `E:\temp\proof\calendar_regress_promotions.txt` |
+
 
 
 

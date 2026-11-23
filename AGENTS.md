@@ -1,7 +1,7 @@
 # Rokar POS — Agent Guide
 
 ## Version
-**v2.31.0** (Perpetual one-time licence: no expiry, device-locked, revocable)
+**v2.32.0** (Perpetual one-time licence: no expiry, device-locked, revocable)
 
 ## Environment
 - Node.js v24.18.0 (portable at `C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64`)
@@ -503,6 +503,7 @@ of it (13 checks).
 - `src/renderer/src/pages/QuickSaleGrid.tsx` — staged search Enter flow (1× select, 2× qty box, 3× add) + shared scanner hook; mirrors Billing keyboard nav / qty dialog
 - `src/renderer/src/pages/Purchases.tsx` — the Purchases & Suppliers screen (the suppliers tab + the purchase orders tab: the status chips, the filtered totals and the quick actions — View / Receive / Cancel / Print / Duplicate).
 - `src/renderer/src/components/PurchaseOrderModal.tsx` — the **New Purchase Order** modal (the whole PO screen): the header (the supplier, the expected date, the ref no, the notes, the discount / freight / tax / paid-now), the staged search (Enter 1x select, 2x qty, 3x add) + the barcode scanner, the **per-row searchable product cell** (the shared `matchProducts`), the live inventory on every row (the stock, the last purchase cost, the unit + the pack conversion, the margin, the cost-change warning), the suggestion list (the low-stock / the supplier's products), the totals block, the sticky footer (`Save draft` / `Create` / `Cancel`) and the keyboard (`Ctrl+Enter` = create, `Ctrl+S` = draft, `Delete` = remove the row + undo). The body scrolls and the footer never clips (`.modal-scroll-body` + `.modal-po`).
+- `src/renderer/src/components/DateInput.tsx` — the date field EVERY screen uses (30 call sites). Clicking it opens a themed **calendar** (not the browser's OS widget) drawn from the pure `src/shared/calendarGrid.ts`; the popup is portalled to `document.body` with `position: fixed`, so a modal's scrolling body can never clip it, and it flips above the field when there is no room below. The typed `dd/mm/yyyy` path is unchanged (Enter still commits and still advances the form), ArrowDown/arrows/Enter are the keyboard path, Esc closes the calendar (`stopPropagation`, so the modal stays open), and the admin's `date_format` setting still decides how the date is displayed. Month/weekday names come from the `calendar` section of `i18n/en.json` + `ur.json`. Covered by `npm run test:calendar` (the pure grid) and `npm run test:dateCalendarUi` (the real renderer).
 - `src/shared/purchaseCalc.ts` — the **ONE** purchase maths (the line money, the unit conversion, the suggested qty, the cost-change %, the margin %, the header totals, the validation). The service, the screen and the printed order all call it, so they can never disagree.
 - `npm run test:purchaseEnhance` / `test:purchaseInventoryLink` / `test:purchaseOrderUi` — the three permanent Purchase Order suites (the services + the pure maths, the Inventory <-> Purchase live link, and the REAL renderer driven end to end).
 - `src/renderer/src/pages/Inventory.tsx` — staged search (1× select highlight, 2× open Edit) + always-enabled barcode scan (found → highlight + auto-edit; not found → prompt "add new product with barcode")
