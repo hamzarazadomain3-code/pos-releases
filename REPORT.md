@@ -3604,11 +3604,13 @@ shipped: the desktop installer, the Cloudflare web app and the marketing site.
   `scripts/deploy-cloud.ps1` -> `npm run deploy` in `cloud/` (the worker
   `rokar-pos`, the D1 database `rokar-accounts` and the Durable Object `SHOP`).
 - **deploy OK** -> <https://rokar-pos.bakery-saas.workers.dev/app>
-  (version id `ba040016-93a4-4481-aed7-a7e48324a56b`).
+  (version id `ba040016-93a4-4481-aed7-a7e48324a56b`; the later docs push
+  redeployed the SAME code as `3d0c801a-fdd7-4f60-81a8-4188913ce2da`).
 - Verified live: the `Purchases-C3x2t2Lb.js` chunk answers **200** and carries
   the new PO code — `po-grand-total`, `po-pick-open`, `po-cost-warning` and
   `po-supplier` are all in the served bundle, so the new code is really being
-  served and not just built.
+  served and not just built. (`/app` answers a 307 to `/app/`, which is the
+  trailing-slash redirect; `/app/` is 200.)
 - The log: `.git/deploy-cloud.log`.
 
 ### The marketing site (Vercel)
@@ -3664,6 +3666,9 @@ shipped: the desktop installer, the Cloudflare web app and the marketing site.
 - `E:\temp\proof\release_test_purchaseEnhance.txt`,
   `release_test_purchaseInventoryLink.txt`, `release_test_purchaseOrderUi.txt`
   — the three PO suites against the final build.
+- `E:\temp\proof\deploy_final_check_v2.31.0.txt` — the final live round: the
+  release (the API, the assets, the tag), the updater's feed, the Worker, the
+  site (both aliases) and the version-less alias's `MZ` bytes.
 
 ### The status
 - **The release + the deploy: DONE.**
