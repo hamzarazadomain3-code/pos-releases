@@ -3780,6 +3780,46 @@ against the final code, each on its own saved file:
 | `npm run test:shortcuts` | **37/37** | `E:\temp\proof\calendar_regress_shortcuts.txt` |
 | `npm run test:promotions` | ALL PASSED | `E:\temp\proof\calendar_regress_promotions.txt` |
 
+### The release and the deploy (v2.32.0)
+
+- **Version:** 2.31.0 -> **2.32.0** in `package.json` + the `AGENTS.md`
+  Version line. Pushed to `main` as `ad6ccd4..ed16708`; the push itself
+  deployed the Cloudflare Worker (version id
+  `8525759f-c7a2-4bb9-b2c7-4c2168bf8399`).
+- **The desktop release:** `npm run release` built the app, the NSIS
+  installer and the portable exe, published the GitHub release and re-wrote
+  `latest.yml` from the installer's own bytes. The release **v2.32.0** is
+  published (not a draft, not a prerelease) with every asset the updater
+  needs:
+  - `RokarPOS-Setup-2.32.0.exe` — 121 969 907 bytes
+  - `RokarPOS-Portable-2.32.0.exe` — 121 558 674 bytes
+  - `RokarPOS-Setup-2.32.0.exe.blockmap` — 128 219 bytes
+  - `latest.yml` — 348 bytes (version `2.32.0`, the real sha512 + size)
+  - `RokarPOS-Setup.exe` — 121 969 907 bytes (the stable filename)
+- **The release check:** `npm run verify:release -- v2.32.0` ->
+  **9 passed, 0 failed**: it downloads the installer from GitHub and its
+  sha512 matches the manifest byte for byte, the blockmap and the stable
+  asset are downloadable, and the generic CDN feed serves `2.32.0`.
+- **The live web app:** the Worker's `/app` serves the calendar — the
+  `DateInput-B3cAZVem.js` chunk (6 335 bytes) contains `datecal` (1 of 43
+  chunks scanned, `E:\temp\proof\cloud_live_calendar_v2.32.0.txt`).
+- **The marketing site:** `src/content.json` got `site.latestVersion` =
+  `2.32.0` and a 7-note changelog entry; pushed to the site repo
+  (`53b43c5..1073d3a`). Its Vercel Git integration built and promoted it:
+  the production alias `rokarpos.co.uk` serves the deployment created at
+  13:42:18, and the served bundle `index-Cusx_FVZ.js` (261 571 bytes) is
+  byte-identical to the local `npm run build` output, carrying `2.32.0` and
+  the new changelog title.
+  - The Vercel CLI's "age" column mislabels that deployment as `7h`; its
+    `createdAt` is 13:42:18 (the push time) and the alias -> deployment
+    mapping plus the bundle hash prove it is the v2.32.0 build.
+- **The site's claim check:** `verify:claims` (with `ROKAR_APP_DIR` set)
+  still reports only the **2 pre-existing failures** in the old 2.25.0
+  entry; the new 2.32.0 notes pass every rule.
+- **What the owner must do:** nothing for the web app or the site. A shop PC
+  on an older version gets v2.32.0 through the app's own updater; a fresh
+  install uses the installer above.
+
 
 
 
