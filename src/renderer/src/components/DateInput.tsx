@@ -324,6 +324,7 @@ export function DateInput({
               // the forms' Enter-to-next-field still works.
               if (parseInputDate(e.currentTarget.value)) {
                 commit(e.currentTarget.value);
+                setOpen(false);
                 return;
               }
               if (openedByKeyboard && isValidIso(focusIso)) {
