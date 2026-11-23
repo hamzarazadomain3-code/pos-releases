@@ -3556,6 +3556,121 @@ The suite now passes at any hour of the day (`11 passed, 0 failed`,
 | The renderer | `npx tsc -p tsconfig.renderer.json --noEmit` | exit 0 | `E:\temp\proof\po_typecheck_renderer.txt` |
 | The whole app | `npm run build` | exit 0 | `E:\temp\proof\po_build.txt` |
 
+---
+
+## Deploy — v2.31.0 (2026-11-23)
+
+The owner said *"ye bhi kar ke deploy kardo"*, so everything that ships was
+shipped: the desktop installer, the Cloudflare web app and the marketing site.
+
+### The version
+- `package.json`: **2.30.0 -> 2.31.0** — a MINOR bump, because this run added
+  features (the whole Purchase Order screen, the Inventory ↔ Purchase live link
+  and the five PO settings). The shops that already run 2.30.0 are therefore
+  offered the update.
+- `AGENTS.md`: the Version line at the top.
+- Commit `ec4cc67` — the branch `feature/purchase-enhance` was **fast-forwarded
+  into `main`** and pushed to `origin`
+  (`hamzarazadomain3-code/pos-releases`, the repo that holds both the source and
+  the releases): `4734394..ec4cc67`. The local `main` now sits on the same commit.
+
+### The desktop release
+- `npm run release` = `npm run build` + `electron-builder --publish always` +
+  `scripts/finalize-release.js`. Everything in one run, **exit 0**.
+- The release **v2.31.0 is PUBLISHED** (not a draft, not a prerelease):
+  <https://github.com/hamzarazadomain3-code/pos-releases/releases/tag/v2.31.0>
+- The tag sits on the commit the build ran from (`ec4cc67`) — the finalize step
+  creates the tag at the built commit, so the snapshot is the code that shipped.
+- The assets, all of them:
+  - `RokarPOS-Setup-2.31.0.exe` — 121 975 874 bytes (the installer)
+  - `RokarPOS-Portable-2.31.0.exe` — 121 564 723 bytes
+  - `RokarPOS-Setup-2.31.0.exe.blockmap` — 128 153 bytes
+  - `latest.yml` — rebuilt by the finalize step from the installer's OWN bytes
+    (NSIS embeds a build timestamp, so a manifest from an earlier build would
+    fail every client's checksum check)
+  - `RokarPOS-Setup.exe` — the version-less alias the website's
+    `/releases/latest/download/` link points at forever
+- `npm run verify:release -- v2.31.0` — **9 passed / 0 failed**: the manifest,
+  the downloaded installer's sha512 byte for byte, the blockmap, the alias and
+  the CDN feed.
+- The version-less alias starts with `MZ` (`4D-5A`) — it is a real PE file, not a
+  truncated upload.
+- The three Purchase Order suites were run again against the final build:
+  `test:purchaseEnhance` 99/99, `test:purchaseInventoryLink` 39/39,
+  `test:purchaseOrderUi` 60/60 — all exit 0.
+
+### The web app (Cloudflare Worker)
+- The `main` push triggered the repo's own `.git/hooks/pre-push` ->
+  `scripts/deploy-cloud.ps1` -> `npm run deploy` in `cloud/` (the worker
+  `rokar-pos`, the D1 database `rokar-accounts` and the Durable Object `SHOP`).
+- **deploy OK** -> <https://rokar-pos.bakery-saas.workers.dev/app>
+  (version id `ba040016-93a4-4481-aed7-a7e48324a56b`).
+- Verified live: the `Purchases-C3x2t2Lb.js` chunk answers **200** and carries
+  the new PO code — `po-grand-total`, `po-pick-open`, `po-cost-warning` and
+  `po-supplier` are all in the served bundle, so the new code is really being
+  served and not just built.
+- The log: `.git/deploy-cloud.log`.
+
+### The marketing site (Vercel)
+- `E:\antigravty\rokar-site`: `src/content.json` now carries
+  `site.latestVersion: 2.31.0` and a new changelog entry for 2.31.0 (the new
+  Purchase Order screen, the live stock/units/margin/cost warnings, the drafts,
+  the receive and the cancel), in the site's own plain Roman Urdu.
+- The site's gates: `typecheck`, `verify:content`, `verify:industries`,
+  `verify:contrast`, `verify:ssr`, `verify:fonts`, `build` and `verify:bundle`
+  — **all exit 0**.
+- **One pre-existing bug in the site's own checker was fixed**: the changelog
+  date rule compared `cur >= prev`, so two releases that shipped on the SAME
+  day (2.26.0 and 2.27.0, both 2026-11-13) were reported as false positives.
+  It now compares `cur > prev` (`build/verify-claims.mjs:284-292`), which is
+  what "the dates must follow the version order" actually means.
+- **Two pre-existing failures remain in `verify:claims`**, both in the OLD
+  2.25.0 changelog entry (not in the new one): the "1-3 second" WhatsApp QR
+  note and the "10 second" polling note. The second one is TRUE — the polling
+  interval really is 10 s (`src/renderer/src/pages/Settings.tsx:70`,
+  `setInterval(..., 10000)`) — but the checker cannot measure it, because its
+  rule bans every seconds figure unless the app records a duration. The old
+  release notes were NOT rewritten to satisfy the checker, and the rule was NOT
+  loosened to let them through; they are recorded here instead. The rule does
+  not block the deploy (Vercel runs `npm run build`, not the whole verify chain).
+- The site is deployed by its own **Vercel Git integration** (the push to
+  `main` builds and promotes it): deployment
+  `rokar-site-7t6yg1lxi-hamzarazadomain3-code.vercel.app` — **Ready /
+  Production**, aliased to `https://rokarpos.co.uk`,
+  `https://www.rokarpos.co.uk` and `https://rokar-site.vercel.app`.
+- Verified live: `https://rokarpos.co.uk` answers **200** and its deployed
+  bundle (`/assets/index-2FoMK6LX.js`) contains `2.31.0` and the new changelog
+  text; `https://www.rokarpos.co.uk` answers **200** too.
+- The CLI's own `vercel deploy --prod` refused with `Not authorized`: the token
+  in `%APPDATA%\com.vercel.cli\Data\auth.json` can READ the teams and the
+  projects but may not create deployments. The Git integration deploys with the
+  account's own credentials, so the production alias is already on the new
+  deployment (verified above).
+- The site's commit `53b43c5` was pushed to
+  `hamzarazadomain3-code/rokar-pos-site`.
+
+### The proof
+- `E:\temp\proof\release_v2.31.0.txt` — the whole release run (build, upload,
+  the tag, the publish, the stable asset, the rebuilt manifest, the final
+  asset check).
+- `E:\temp\proof\verify_release_v2.31.0.txt` — 9/9.
+- `E:\temp\proof\release_view_v2.31.0.json` — `draft: false`,
+  `prerelease: false`, `publishedAt: 2026-11-23T01:34:34Z`, every asset.
+- `E:\temp\proof\cloud_worker_deploy_v2.31.0.txt` (the deploy log),
+  `E:\temp\proof\cloud_worker_po_chunk_v2.31.0.txt` (the served chunk),
+  `E:\temp\proof\web_site_build_v2.31.0.txt` (the site's gates),
+  `E:\temp\proof\web_site_deploy_v2.31.0.txt` (the live check),
+  `E:\temp\proof\vercel_site_v2.31.0.txt` (the deployment list).
+- `E:\temp\proof\release_test_purchaseEnhance.txt`,
+  `release_test_purchaseInventoryLink.txt`, `release_test_purchaseOrderUi.txt`
+  — the three PO suites against the final build.
+
+### The status
+- **The release + the deploy: DONE.**
+- Nothing is left on the owner's checklist except the reinstall on a shop's PC
+  (the app's own updater picks v2.31.0 up on its own).
+
+
 
 
 
