@@ -8031,4 +8031,145 @@ body.theme-dark .bill-items .bill-summary-icon { background: rgba(139, 92, 246, 
   }
 }
 
+/* ── The date picker ────────────────────────────────────────────────────────
+   The calendar that opens when the owner clicks ANY date field. It is
+   rendered in a portal on document.body with position:fixed, so the
+   scrolling body of a modal can never clip it. */
+.datecal {
+  position: fixed;
+  z-index: 2000;
+  width: 272px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--card-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.22);
+  font-size: 13px;
+  user-select: none;
+}
+
+body.theme-dark .datecal {
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+}
+
+.datecal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 2px 2px 6px;
+}
+
+.datecal-title {
+  font-weight: 700;
+  font-size: 13px;
+  text-align: center;
+  flex: 1;
+}
+
+.datecal-nav {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.datecal-nav:hover {
+  border-color: var(--primary-light);
+  background: rgba(11, 93, 75, 0.08);
+  color: var(--primary);
+}
+
+.datecal-week,
+.datecal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.datecal-wd {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 3px 0;
+}
+
+.datecal-day {
+  height: 30px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12.5px;
+  font-family: inherit;
+}
+
+.datecal-day:hover {
+  background: rgba(11, 93, 75, 0.12);
+}
+
+.datecal-out {
+  color: var(--muted);
+  opacity: 0.5;
+}
+
+.datecal-today {
+  box-shadow: inset 0 0 0 1px var(--primary-light);
+  font-weight: 700;
+}
+
+.datecal-focus {
+  outline: 2px solid var(--brand-gold);
+  outline-offset: -2px;
+}
+
+.datecal-sel {
+  background: var(--primary);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.datecal-sel:hover {
+  background: var(--primary-dark);
+}
+
+.datecal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
+}
+
+.datecal-foot button {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.datecal-foot button:hover {
+  border-color: var(--primary-light);
+  color: var(--primary);
+}
+
 

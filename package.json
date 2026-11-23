@@ -27,6 +27,8 @@
     "test:purchaseEnhance": "npm run build:main && electron scripts/test_purchaseEnhance.cjs",
     "test:purchaseInventoryLink": "npm run build:main && electron scripts/test_purchaseInventoryLink.cjs",
     "test:purchaseOrderUi": "npm run build && electron scripts/test_purchaseOrderUi.cjs",
+    "test:calendar": "npm run build:main && node scripts/test_calendar.cjs",
+    "test:dateCalendarUi": "npm run build && electron scripts/test_dateCalendarUi.cjs",
     "test:purchaseimportdata": "npm run build:main && electron scripts/test_purchaseImportData.js",
     "test:purchaseimportui": "npm run build && electron scripts/test_purchaseImportUi.js",
     "test:recovery": "npm run build:main && electron scripts/test_recovery.js",
