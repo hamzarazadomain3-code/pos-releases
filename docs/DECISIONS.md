@@ -153,3 +153,81 @@ both MERGE the quantity into the row that keeps the product instead of adding a
 twin — the same rule the PO modal already applied at save time (with a prompt).
 The cart's normal "add the same product again" path is unchanged: it already
 increases the quantity of the existing row.
+
+---
+
+# Phase 1 — the product / inventory data model
+
+## D17 — "Expired" means BEFORE today, and there is ONE rule (1.5)
+
+The expiry question was answered in four places with two different answers: the
+sale, Billing and the held-bill list used `date < today` (a product expiring
+today was sellable) while the inventory report used `days_until_expiry <= 0`
+(a product expiring today was EXPIRED). **Decision:** the rule lives in
+`src/shared/expiry.ts` and nowhere else.
+
+**THE RULE:** a date is expired when it is **before** today. A date that falls
+on today is still sellable — the shop sells through the expiry date and it
+becomes expired at midnight. A missing or unreadable date is **never** expired
+(we never block a sale on a value we do not understand); an unambiguous
+`DD/MM/YYYY` date is understood, an ambiguous `03/05/2026` is not.
+
+## D18 — An expired BATCH is not sellable, but a manager may still sell it (1.6)
+
+The sale only ever looked at the product's own expiry date, so a batch that was
+past its expiry could leave the shelf silently, and a product whose product
+level date was past was blocked even when a fresh batch was sitting there.
+**Decision:** the batch that would actually be consumed decides. FIFO **skips**
+the expired batches; if the fresh stock cannot cover the line and expired stock
+is all that is left, the line is blocked as expired. The existing manager
+override (PIN + reason + an activity-log row) still applies — and an approved
+expired line is sold from the expired batch, exactly as the manager asked.
+
+## D19 — The FIFO deduction is all-or-nothing (1.1)
+
+`deductStockFIFO()` wrote `batch.quantity -= take` for every batch it touched
+and only then checked whether it had enough. The error was thrown with the
+batches already short, and `adjustStock()` has no transaction of its own — so a
+refused manual adjustment silently destroyed batch stock while the product
+stock and the ledger stayed untouched. **Decision:** the deduction is atomic.
+The batches are given back before the error is thrown, and the manual
+adjustment runs inside a **SAVEPOINT** (not `BEGIN` — the caller may already
+own a transaction, the udhaar write-off does).
+
+## D20 — The stock ledger records WHO and WHERE (1.8)
+
+`recordMovement()` could not write `user_id` or `branch_id` at all, so every
+sale, purchase, return, void, audit correction and manual adjustment was an
+anonymous line and the branch columns were dead. **Decision:** the ONE writer
+of `stock_movements` takes the user and the branch, and every caller passes
+them. The branch is read from the `current_branch_id` setting (the same one
+the branches screen writes) — the stock ledger never depends on the branches
+service, which would be an import cycle.
+
+## D21 — One unit-conversion rule, and the stock is in BASE units (1.12)
+
+The conversion lived in `purchaseCalc.ts` and rounded to FOUR decimals while
+the stock itself rounds to THREE, so a batch quantity and `products.stock_qty`
+could drift apart by 0.0001. **Decision:** `src/shared/units.ts` owns the rule
+(`baseQty = qty × quantity_in_base_units`, `costPerBase = cost ÷ factor`, the
+quantity rounded to the app's 3-decimal stock precision). A missing or zero
+factor means **1**, never zero.
+
+The purchase import is part of the same rule: the wizard resolves the file's
+`unit` column against the product's own units and sends the factor, so
+"2 box" of a 12-piece box puts **24 pieces** on the shelf (and the undo takes
+all 24 off again — it used to take off 2). An unknown unit name is never
+guessed: the line stays in base units.
+
+## D22 — The purchase line snapshot is COMPLETE (1.10 / 1.11)
+
+`purchase_items` carries both a modern pair (`batch_no`, `received_qty`) and a
+legacy pair (`batch_number`, `quantity_received`), and the canonical purchase
+wrote only the modern one — so the purchase-expiry alert (which reads the
+legacy pair) never saw a normal purchase. The same insert also dropped
+`unit_name` and `total_cost`. **Decision:** the canonical purchase writes
+**both** pairs plus the unit and the line total, and the reports read the
+columns that actually exist (`COALESCE(received_qty, quantity_received, 0)`).
+The two broken report queries (they selected `pi.quantity_ordered`, a column
+that has never existed) are fixed and now covered by a permanent test.
+

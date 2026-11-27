@@ -185,3 +185,55 @@ in `E:\temp\proof\p0_regr_summary.txt`). The phase report is
 - **Timezone.** Store UTC, display Asia/Karachi (setting `clock_timezone`);
   never use `new Date(iso).toISOString().slice(0,10)` for “today”.
 - **No new dependencies** without a `DECISIONS.md` entry.
+
+---
+
+# Phase 1 — the product / inventory data model (2026-11-27)
+
+Baseline `v2.32.0` (`main` @ `4578947`). The phase report is
+`docs/PHASE1_REPORT.md`; the proofs are in `E:\temp\proof\p1_*`.
+
+## 8. Phase 1 scope
+
+The prompt's Phase 1 is the **product / inventory data model**: the units, the
+batch & expiry rules and the stock ledger, with the same "one rule, one place"
+rule the settings bridge already follows. The items below were **found in the
+code** (an explore pass over the services, the migrations and the tests), not
+guessed from the prompt's wording.
+
+## 9. Phase 1 status (as run)
+
+| # | Item | Status | The defect that was fixed | Proof |
+|---|---|---|---|---|
+| 1.1 | the FIFO deduction was not all-or-nothing | **DONE (new)** | the batches were left short when the stock was not enough; the manual adjustment had no transaction | `test:inventoryModel` 4 checks |
+| 1.2 | two lines of one product → wrong allocations | **DONE (new)** | the allocations lived in a `Map<product_id, …>`; the second line overwrote the first | 8 checks |
+| 1.3 | the FIFO report was empty | **DONE (new)** | `createBatch()` never wrote `quantity_received`; the engine filters on it | 2 checks |
+| 1.4 | a return kept its allocation | **DONE (new)** | the batch and the stock came back, the `fifo_allocations` row did not | 4 checks |
+| 1.5 | four expiry rules, two answers | **DONE (new)** | `src/shared/expiry.ts` — expired means BEFORE today; the till and the report agree | 9 checks |
+| 1.6 | an expired batch could be sold | **DONE (new)** | the sale checked the product's date, never the batch it consumed; the amendment had no check at all | 7 checks |
+| 1.7 | a quotation ignored the stock rules | **DONE (new)** | the conversion decremented the stock directly — no refusal, no FIFO, no expiry | 3 checks |
+| 1.8 | the ledger was anonymous | **DONE (new)** | `recordMovement()` could not write `user_id` / `branch_id` | 3 checks |
+| 1.9 | two report queries were dead | **DONE (new)** | they selected `pi.quantity_ordered`, a column that never existed | 3 checks |
+| 1.10 | the purchase snapshot was incomplete | **DONE (new)** | the legacy `batch_number` / `quantity_received` twins stayed null, so the expiry alert saw nothing | 5 checks |
+| 1.11 | the import's undo removed nothing | **DONE (new)** | the generated batch name was never stored; the undo reversed the purchase qty, not the base qty | 9 checks (with 1.12) |
+| 1.12 | one unit-conversion rule | **DONE (new)** | `src/shared/units.ts`; the import resolves the file's `unit` column and adds base units | 6 checks |
+
+**The whole phase: `npm run test:inventoryModel` 70/70.**
+
+**The whole phase: `npm run test:inventoryModel` 70/70.**
+
+### Two rules that moved into one place
+- `src/shared/expiry.ts` — "expired means before today" (D17).
+- `src/shared/units.ts` — "the stock is in base units, rounded to 3 decimals" (D21).
+
+### What Phase 1 did NOT do (and why)
+- **Per-branch stock** — `products` has no `branch_id`; the branch is now
+  recorded on every movement (1.8), which is the first step, but the stock is
+  still one number per product.
+- **A database constraint on the units** — "exactly one base unit per product"
+  is enforced in code, not by SQLite (a schema change to a live shop's table
+  is a separate risk decision).
+- **The variant stock** — `product_variants.stock_qty` is still outside the
+  canonical model.
+- **Money as integer paisa** — still deferred (D3).
+

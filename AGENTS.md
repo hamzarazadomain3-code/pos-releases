@@ -74,7 +74,38 @@ npm run test:audits          # 13/13 - audits:discard (owner only)
 npm run test:security        # 24/24 - the secret vault + the enforced password policy
 npm run test:ui              # 30/30 - the four UI defects, in the REAL renderer (+ 6 screenshots)
 npm run test:billingSmoke    # 46/46 - the phase's billing smoke test
+npm run test:inventoryModel  # 70/70 - the Phase 1 product/inventory data model
 ```
+
+### Phase 1 suite (the master-prompt run, 2026-11-27)
+
+`npm run test:inventoryModel` (70 checks) is the permanent guard for the
+product / inventory data model. It runs the REAL services against a throwaway
+DB and covers: the FIFO deduction being all-or-nothing (a refused adjustment
+leaves the batch, the stock and the ledger untouched), two lines of the SAME
+product keeping their own FIFO allocations, `quantity_received` being written
+(the FIFO Stock Report used to be empty), a return releasing its allocation,
+the ONE expiry rule (expired = before today; the till and the report agree),
+an expired batch never being sold (and the bill amendment refusing it), a
+quotation conversion obeying the stock policy, the ledger recording the user +
+the branch, the two inventory-report queries that used to select a column that
+never existed, the complete purchase line snapshot, and the import converting a
+pack into base units (and its undo taking all of it off again).
+
+**Two rules now live in shared modules — use them, do not write a third copy:**
+
+- `src/shared/expiry.ts` — `isExpiredOn(date, today)`, `daysUntilExpiry()`,
+  `expiryBucket()`. **Expired means BEFORE today** (a date that falls on today
+  is still sellable). An unreadable date is never expired. Use it in the main
+  process AND in the renderer.
+- `src/shared/units.ts` — `unitsInBase()`, `baseQty()`, `costPerBaseUnit()`,
+  `roundQty()`. The stock is kept in BASE units and rounded to 3 decimals.
+  `purchaseCalc.ts` re-exports the first three, so the purchase maths and the
+  stock can never drift apart.
+
+One more gotcha for this area: **the FIFO allocations are per LINE, never per
+product.** A `Map<product_id, …>` silently gives two lines of the same product
+the same batch — the ledger then names the wrong batch (Phase 1, item 1.2).
 
 `test:utf8` runs in **pure Node** (no Electron) - keep it that way, it is the
 cheapest permanent guard in the repo. Every other suite runs under Electron and

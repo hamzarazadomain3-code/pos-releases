@@ -1,7 +1,48 @@
 # CHANGELOG
 
-Newest first. Phase 0 entries cite the master-prompt item number. A DONE entry
-means code + a regression test + a saved proof run.
+Newest first. Phase 0 entries cite the master-prompt item number; the Phase 1
+entries cite the phase item number. A DONE entry means code + a regression test
++ a saved proof run.
+
+## Phase 1 — the product / inventory data model (2026-11-27, baseline v2.32.0)
+
+- **1.1** A refused stock adjustment no longer destroys the batch stock — the
+  FIFO deduction is all-or-nothing (the batches are given back before the
+  error) and the manual adjustment runs inside a savepoint.
+- **1.2** A bill with two lines of the SAME product now records its OWN FIFO
+  allocations — the allocations used to live in a map keyed by product, so the
+  second line overwrote the first and the ledger named the wrong batch.
+- **1.3** The batches remember what they received (`quantity_received`) — it
+  stayed 0, so the FIFO Stock Report showed every real batch as empty.
+- **1.4** Returning a line RELEASES its FIFO allocation — the shelf and the
+  FIFO report now agree.
+- **1.5** The expiry rule is ONE rule (`src/shared/expiry.ts`): expired means
+  BEFORE today, so the till and the inventory report can no longer disagree
+  about a product that expires today.
+- **1.6** An expired BATCH is never sold — FIFO skips it, a line that only
+  expired stock could cover is blocked (a manager may still approve it), and
+  the bill amendment refuses to add expired stock too.
+- **1.7** A quotation conversion obeys the stock rules — it used to decrement
+  the stock directly, with no negative-stock refusal, no FIFO and no expiry
+  check.
+- **1.8** The stock ledger records WHO moved the stock and from WHICH branch —
+  every sale, purchase, return, void, audit correction and manual adjustment
+  used to be an anonymous line.
+- **1.9** The two inventory-report queries that selected a column which never
+  existed (`pi.quantity_ordered`) run again — the Purchase History and the
+  Product Purchase Summary panels were dead.
+- **1.10** The purchase line snapshot is COMPLETE — the unit name, the line
+  total and the legacy batch/received columns are written, so the
+  purchase-expiry alert sees a normal purchase.
+- **1.11** The purchase import writes `quantity_received` and stores the batch
+  number it generated — the undo used to delete nothing (the batch survived)
+  and took off only the purchase quantity instead of the base quantity.
+- **1.12** ONE unit-conversion rule (`src/shared/units.ts`, base units, the
+  app's 3-decimal stock precision): the import wizard resolves the file's
+  `unit` column against the product's own units, so "2 box" of a 12-piece box
+  puts 24 pieces on the shelf — and the undo takes all 24 off again.
+  `npm run test:inventoryModel` **70/70**. Proof:
+  `E:\temp\proof\p1_inventoryModel_out.txt`.
 
 ## Phase 0 — Stabilize (2026-11-26, baseline v2.32.0)
 

@@ -173,4 +173,32 @@ The phase report is `docs/PHASE0_REPORT.md`; the status matrix is `docs/PLAN.md`
 | 0.16 - the phase's BILLING SMOKE TEST | DONE (new, the prompt's closing checklist) | the drawer, discount+tax, weight, wholesale, split payment, udhaar, hold/resume, return+restock, the below-cost + expired blocks, the cross-screen number equality, backup/restore, the drawer close and "a failed sale leaves no half-written bill" | `scripts/test_billingSmoke.cjs` (new) | `test:billingSmoke` 46/46 - `p0_smoke_out.txt` | a001ddb |
 | 0.17 - the phase close-out | DONE | the full regression battery (32 suites, every output saved), the verdict table, the phase report, the status matrix, the decisions D11-D16, the changelog and the AGENTS entries (the three gotchas) | `docs/PHASE0_REPORT.md`, `docs/PLAN.md`, `docs/DECISIONS.md`, `CHANGELOG.md`, `AGENTS.md` | **32 suites, 32 GREEN** (`E:\temp\proof\p0_regr_*.txt`, the one-line verdict in `p0_regr_verdict.txt`); the typecheck + the build exit 0; `check:migrations` - "Integrity check: ok" on a copy, the original DB untouched | 6c35254 |
 
+---
+
+# Phase 1 - the product / inventory data model (master-prompt run, 2026-11-27)
+
+Baseline `v2.32.0` (`main` @ `4578947`). The prompt's Phase 1 is the units, the
+batch & expiry rules and the stock ledger, with the same "one rule, one place"
+rule the settings bridge follows.
+Every item below has code + a permanent regression test + a saved proof under
+`E:\temp\proof\p1_*`. The phase report is `docs/PHASE1_REPORT.md`; the status
+matrix is `docs/PLAN.md` (section 9).
+
+| Item | Status | Scope | File:line | Test / proof | Commit |
+|------|--------|-------|-----------|--------------|--------|
+| 1.1 - the FIFO deduction was not all-or-nothing | DONE (new) | the batches are given back before the error; the manual adjustment runs in a SAVEPOINT | `src/main/services/inventory.ts` (`deductStockFIFO`, `adjustStock`) | `test:inventoryModel` 4 checks - `p1_inventoryModel_out.txt` | (phase commit) |
+| 1.2 - two lines of one product -> wrong allocations | DONE (new) | the allocations are kept PER LINE, not per product | `src/main/services/sales.ts` | 8 checks | (phase commit) |
+| 1.3 - the FIFO report was empty | DONE (new) | `createBatch()` writes `quantity_received` | `src/main/services/inventory.ts` | 2 checks | (phase commit) |
+| 1.4 - a return kept its allocation | DONE (new) | the allocation is shortened (or deleted) when the line comes back | `src/main/services/returns.ts` (`restockLine`) | 4 checks | (phase commit) |
+| 1.5 - four expiry rules, two answers | DONE (new) | `src/shared/expiry.ts` - expired means BEFORE today; the sale, Billing, the held-bill list and the report use it | `src/shared/expiry.ts` (new), `sales.ts`, `reports.ts`, `src/renderer/src/pages/Billing.tsx`, `src/shared/cartMath.ts` | 9 checks | (phase commit) |
+| 1.6 - an expired batch could be sold | DONE (new) | FIFO skips the expired batches; a line only expired stock could cover is blocked; the amendment refuses too | `src/main/services/inventory.ts`, `sales.ts`, `billAmendments.ts` | 7 checks | (phase commit) |
+| 1.7 - a quotation ignored the stock rules | DONE (new) | a conversion obeys the negative-stock policy, the max-negative cap, the expiry rule and the FIFO | `src/main/services/quotations.ts` (`convertToSale`) | 3 checks | (phase commit) |
+| 1.8 - the ledger was anonymous | DONE (new) | every movement records the user and the branch | `src/main/services/inventory.ts` (`recordMovement`) + the callers | 3 checks | (phase commit) |
+| 1.9 - two report queries were dead | DONE (new) | they selected `pi.quantity_ordered`, a column that never existed | `src/main/services/inventoryReports.ts` | 3 checks | (phase commit) |
+| 1.10 - the purchase snapshot was incomplete | DONE (new) | the unit name, the line total and the legacy batch/received columns are written (the expiry alert sees the purchase) | `src/main/services/purchases.ts` (`insertPurchaseOrderCore`) | 5 checks | (phase commit) |
+| 1.11 - the import's undo removed nothing | DONE (new) | the generated batch name is stored on the line; the undo reverses the BASE quantity | `src/main/services/purchaseImport.ts` | (with 1.12) | (phase commit) |
+| 1.12 - one unit-conversion rule | DONE (new) | `src/shared/units.ts`; the import wizard resolves the file's `unit` column against the product's units, so "2 box" of 12 adds 24 pieces | `src/shared/units.ts` (new), `src/shared/purchaseCalc.ts`, `src/main/services/purchaseImport.ts`, `src/renderer/src/components/PurchaseImportWizard.tsx`, `src/shared/types.ts` | 9 + 6 checks | (phase commit) |
+| 1.13 - the phase close-out | DONE | the regression battery (24 suites, every output saved), the phase report, the status matrix, the decisions D17-D22, the changelog and the AGENTS entry | `docs/PHASE1_REPORT.md`, `docs/PLAN.md`, `docs/DECISIONS.md`, `CHANGELOG.md`, `AGENTS.md` | `test:inventoryModel` **70/70** + the battery (`E:\temp\proof\p1_regr_*.txt`, the one-line verdict in `p1_regr_summary.txt`) | (phase commit) |
+
+
 
