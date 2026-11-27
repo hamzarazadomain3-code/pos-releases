@@ -20,8 +20,8 @@ import { dialog, BrowserWindow } from 'electron';
 import fs from 'node:fs';
 import * as XLSX from 'xlsx';
 import { getDb } from '../db';
-import { getProduct, createProduct, roundStock, recordMovement, createBatch } from './inventory';
-import { getPurchaseOrder, insertPurchaseOrderCore, type PurchaseLineInput } from './purchases';
+import { getProduct, createProduct, roundStock, recordMovement, addToBatch } from './inventory';
+import { getPurchaseOrder, insertPurchaseOrderCore, RECEIVED_QTY_SQL, type PurchaseLineInput } from './purchases';
 import { logActivity } from './activity';
 import { can, getSessionUserId } from './auth';
 import { getPrintSettings, toShopProfile } from './printDocs';
@@ -55,6 +55,11 @@ export function safeNumber(v: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Phase 3, item 5 — the import is a MANAGER action and the check lives in the
+ * SERVICE. The message names the permission id the app already uses
+ * (`can_import_purchase`) so the owner knows what to ask for.
+ */
 function requireImportPermission(): void {
   if (!can('manager')) {
     throw new Error('Importing purchases needs a manager/owner (can_import_purchase).');
@@ -350,7 +355,10 @@ export function importPurchaseOrders(payload: PurchaseImportPayload): PurchaseIm
         // raw INSERT left it at 0, so the FIFO report showed these batches as
         // empty), and the batch number is now STORED on the purchase line so
         // the undo below can delete exactly this batch.
-        createBatch(r.product_id, batchNumber, baseReceived, costPerBase, r.expiry ?? null);
+        //
+        // Phase 3, item 12 — a batch number IS the batch: the same number
+        // adds to the existing row instead of creating a second one.
+        addToBatch(r.product_id, batchNumber, baseReceived, costPerBase, r.expiry ?? null);
         db.prepare('UPDATE purchase_items SET batch_no = ?, batch_number = ? WHERE purchase_order_id = ? AND product_id = ?').run(
           batchNumber,
           batchNumber,
@@ -447,6 +455,26 @@ export function undoPurchaseImport(importId?: number): { ok: boolean; message: s
         // would leave 22 of the 24 pieces on the shelf.
         const receivedBase = baseQty(Number(it.received_qty), it.unit_multiplier);
         recordMovement(it.product_id, -receivedBase, 'Import undone', 'purchase_undo', po.id);
+      }
+    } else {
+      // Phase 3, item 4 — a PO that was RECEIVED cannot be undone.
+      //
+      // The old code reversed the stock only for a purchase invoice, but it
+      // deleted the purchase document for BOTH kinds. Undoing a received PO
+      // therefore removed the order and its ledger row while the stock and
+      // the batches stayed on the shelf: the goods were in the shop with no
+      // order behind them, and the supplier's balance no longer matched.
+      // The undo is refused until the receipt itself is reversed.
+      const received = db
+        .prepare(
+          `SELECT COALESCE(SUM(${RECEIVED_QTY_SQL}), 0) AS received FROM purchase_items WHERE purchase_order_id = ?`
+        )
+        .get(po.id) as { received?: number } | undefined;
+      const receivedQty = Number(received?.received) || 0;
+      if (receivedQty > 0) {
+        throw new Error(
+          `This import's order already received ${receivedQty} — reverse the receipt first, then undo the import.`
+        );
       }
     }
     // Reverse the ledger EXACTLY. The original ledger row references the PO via

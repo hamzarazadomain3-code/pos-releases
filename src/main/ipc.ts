@@ -911,8 +911,13 @@ export function registerIpcHandlers(): void {
   handle('purchases:createOrder', (_e, supplierId: number, items, options) =>
     createPurchaseOrder(supplierId, items, options)
   );
-  handle('purchases:receiveOrder', (_e, id: number, lines?: { product_id: number; qty: number }[]) =>
-    receivePurchaseOrder(id, lines)
+  handle(
+    'purchases:receiveOrder',
+    (
+      _e,
+      id: number,
+      lines?: { item_id?: number; product_id?: number; qty: number }[]
+    ) => receivePurchaseOrder(id, lines)
   );
   handle('purchases:cancelOrder', (_e, id: number, reason?: string) => cancelPurchaseOrder(id, reason));
   handle('purchases:ledger', (_e, supplierId: number) => supplierLedger(supplierId));

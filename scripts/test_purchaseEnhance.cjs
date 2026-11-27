@@ -353,14 +353,36 @@ async function run() {
   section('f) the paid-now cash leaves the open shift');
   // ═══════════════════════════════════════════════════════════════════════════
   {
+    // The amount here must be VALID (the order total is 130), otherwise the
+    // refusal would come from the money rule and never reach the shift rule
+    // this section is about. The over-payment case has its own check below.
     const noShift = throws(() =>
       purchases.createPurchaseOrder(supplier.id, [{ product_id: sugar.id, qty: 1, unit_cost: 130 }], {
         status: 'ordered',
-        paid_amount: 500,
+        paid_amount: 100,
         payment_method: 'cash',
       })
     );
     check('a cash payment without an open shift is refused', noShift !== null && /shift/i.test(noShift), String(noShift));
+
+    // Phase 3, item 6 — the paid-now amount can never be more than the order
+    // total. The screen has always refused it; the service now refuses it too
+    // (a bank payment is used here, so the SHIFT rule cannot be the reason).
+    const poCountBefore = db
+      .prepare('SELECT COUNT(*) AS c FROM purchase_orders WHERE supplier_id = ?')
+      .get(supplier.id).c;
+    const overPaid = throws(() =>
+      purchases.createPurchaseOrder(supplier.id, [{ product_id: sugar.id, qty: 1, unit_cost: 130 }], {
+        status: 'ordered',
+        paid_amount: 500,
+        payment_method: 'bank',
+      })
+    );
+    check('an over-payment is refused', overPaid !== null && /paid/i.test(overPaid), String(overPaid));
+    const poCountAfter = db
+      .prepare('SELECT COUNT(*) AS c FROM purchase_orders WHERE supplier_id = ?')
+      .get(supplier.id).c;
+    check('the refused order left nothing behind', poCountAfter === poCountBefore, `${poCountBefore} -> ${poCountAfter}`);
 
     const shift = shifts.openShift(1000);
     const expectedBefore = shifts.shiftTotals(shift.id).expected;

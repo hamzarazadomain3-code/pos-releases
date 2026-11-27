@@ -1,7 +1,8 @@
 import { getDb } from '../db';
-import { getProduct, recordMovement, createBatch } from './inventory';
+import { getProduct, recordMovement, addToBatch as createBatchOrAdd } from './inventory';
 import { logActivity } from './activity';
 import { currentShift } from './shifts';
+import { can, getSessionUserId } from './auth';
 import {
   baseQty,
   computeTotals,
@@ -10,6 +11,8 @@ import {
   round2,
   safeNumber,
   unitsInBase,
+  validatePo,
+  VALIDATION_MESSAGES,
 } from '../../shared/purchaseCalc';
 import type { PurchaseOrder, PurchaseItem, Supplier, SupplierTransaction } from '../../shared/types';
 
@@ -64,6 +67,55 @@ export function isOpenPurchaseStatus(status: string | null | undefined): boolean
   const s = String(status ?? '').toLowerCase();
   return s === 'pending' || s === 'ordered' || s === 'draft' || s === 'partial';
 }
+
+/**
+ * Phase 3, item 5 — the purchases screen is a MANAGER screen, so the SERVICE
+ * enforces it.
+ *
+ * Before this the rule lived ONLY in the sidebar (`minRole: 'manager'`): a
+ * cashier could not see the Purchases page, but the IPC handlers were still
+ * open, so anyone with a dev-tools console could create a purchase order, put
+ * stock on the shelf or cancel an order. The role check now lives where the
+ * money moves — in the service — and it reads the SAME role map the menu
+ * reads (`src/shared/roles.ts`).
+ */
+export function requirePurchasePermission(action = 'manage purchases'): void {
+  if (!can('manager')) {
+    throw new Error(`You do not have permission to ${action}.`);
+  }
+}
+
+/** The branch the till is on right now (null when the shop has no branches). */
+function currentBranchId(): number | null {
+  try {
+    const row = getDb()
+      .prepare("SELECT value FROM settings WHERE key = 'current_branch_id'")
+      .get() as { value?: string } | undefined;
+    const id = Number(row?.value);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The received quantity of a purchase line — the LEGACY counter included.
+ *
+ * Phase 3, item 8 — `received_qty` (migration 064) and `quantity_received`
+ * (migration 024) are the same number in two columns. Rows written before
+ * migration 064 carry the truth only in the LEGACY column, so a plain
+ * `COALESCE(received_qty, quantity_received)` would read 0 for them (the new
+ * column exists and is 0 — it is not NULL) and the shop would be told that
+ * nothing had been received while the goods were on the shelf.
+ *
+ * The rule is the same everywhere: the NEW counter wins whenever it holds a
+ * number; the legacy one fills in only when the new one is still empty.
+ */
+export const RECEIVED_QTY_SQL = `CASE
+      WHEN COALESCE(received_qty, 0) = 0 AND COALESCE(quantity_received, 0) > 0
+        THEN quantity_received
+      ELSE COALESCE(received_qty, 0)
+    END`;
 
 export function listSuppliers(): Supplier[] {
   const db = getDb();
@@ -121,7 +173,40 @@ export function insertPurchaseOrderCore(
     }
     if (!(Number(it.qty) > 0)) throw new Error('Quantity must be positive');
     if (Number(it.unit_cost) < 0) throw new Error('Unit cost cannot be negative');
+    // Phase 3, item 6 — the tax on a line can never be negative. A negative
+    // tax is a silent discount the shop never asked for.
+    if (Number(it.tax_pct ?? 0) < 0) throw new Error('Tax cannot be negative');
+    if (Number(it.discount_pct ?? 0) < 0 || Number(it.discount_pct ?? 0) > 100) {
+      throw new Error('Line discount must be between 0 and 100 percent');
+    }
     if (!getProduct(it.product_id)) throw new Error(`Product ${it.product_id} not found`);
+  }
+  // Phase 3, item 6 — the header money is validated by the SAME rules the
+  // screen shows (`validatePo` in the shared pure module), so a service call
+  // can never store an order the screen would refuse.
+  const headerCheck = validatePo({
+    supplierId,
+    lines: items.map((i) => ({
+      product_id: i.product_id,
+      qty: i.qty,
+      unit_cost: i.unit_cost,
+      units_in_base: i.units_in_base,
+      discount_pct: i.discount_pct,
+      tax_pct: i.tax_pct,
+    })),
+    discount_type: opts.discount_type,
+    discount_value: opts.discount_value,
+    freight: opts.freight,
+    paid_amount: opts.status === 'draft' ? 0 : opts.paid_amount,
+  });
+  if (!headerCheck.ok) {
+    // The duplicate-product rule is a SCREEN rule (the screen merges the two
+    // lines for the owner); the service accepts them because a line may
+    // legitimately be split by batch.
+    const blocking = headerCheck.errors.filter((e) => e !== 'duplicate_product');
+    if (blocking.length) {
+      throw new Error(blocking.map((e) => VALIDATION_MESSAGES[e]).join(' '));
+    }
   }
   const docType = opts.document_type === 'purchase_invoice' ? 'purchase_invoice' : 'purchase_order';
   const isDraft = opts.status === 'draft';
@@ -148,8 +233,8 @@ export function insertPurchaseOrderCore(
       `INSERT INTO purchase_orders
          (supplier_id, status, total_amount, reference_no, document_type, import_id, invoice_date,
           delivery_date, notes, subtotal, tax_total, discount_type, discount_value, discount_amount,
-          freight, paid_amount, payment_method)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          freight, paid_amount, payment_method, branch_id, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
     )
     .run(
       supplierId,
@@ -168,7 +253,11 @@ export function insertPurchaseOrderCore(
       isDraft ? 0 : totals.discount,
       isDraft ? 0 : totals.freight,
       paid,
-      opts.payment_method ?? null
+      opts.payment_method ?? null,
+      // Phase 3, item 9 — the branch the order was made at. The column
+      // existed (migration 038) but was never written, so every PO looked
+      // like it belonged to no branch.
+      currentBranchId()
     );
   const poId = Number(info.lastInsertRowid);
   // Phase 1, item 1.10 — the line snapshot is COMPLETE.
@@ -184,9 +273,11 @@ export function insertPurchaseOrderCore(
     `INSERT INTO purchase_items
        (purchase_order_id, product_id, qty, unit_cost, unit_name, total_cost,
         batch_no, batch_number, expiry_date, discount_pct, tax_pct,
-        received_qty, quantity_received, sale_price, wholesale_price, unit_multiplier, base_qty, cost_per_base)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?)`
+        received_qty, quantity_received, sale_price, wholesale_price, unit_multiplier, base_qty, cost_per_base,
+        branch_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?)`
   );
+  const branchId = currentBranchId();
   for (const it of items) {
     const multiplier = unitsInBase(it.units_in_base);
     const qty = round2(safeNumber(it.qty, 0));
@@ -208,7 +299,8 @@ export function insertPurchaseOrderCore(
       it.wholesale_price ?? null,
       multiplier,
       baseQty(qty, multiplier),
-      costPerBaseUnit(unitCost, multiplier)
+      costPerBaseUnit(unitCost, multiplier),
+      branchId
     );
   }
   if (isDraft) return { id: poId, total };
@@ -227,6 +319,8 @@ export function createPurchaseOrder(
   items: PurchaseLineInput[],
   opts: PurchaseOrderOptions = {}
 ): PurchaseOrder {
+  // Phase 3, item 5 — the permission is checked in the SERVICE.
+  requirePurchasePermission('create a purchase order');
   const db = getDb();
   db.exec('BEGIN');
   try {
@@ -280,7 +374,9 @@ export function getPurchaseOrder(id: number): (PurchaseOrder & { items: Purchase
   if (!po) return null;
   const items = db
     .prepare(
-      `SELECT i.*, pr.name AS product_name
+      `SELECT i.*,
+              ${RECEIVED_QTY_SQL} AS received_qty,
+              pr.name AS product_name
        FROM purchase_items i LEFT JOIN products pr ON pr.id = i.product_id
        WHERE i.purchase_order_id = ?`
     )
@@ -340,7 +436,26 @@ export function listPurchaseOrders(
  * boxes × quantity_in_base_units pieces, and the batch carries the cost of ONE
  * base unit. The cost price follows the shop's costing setting.
  */
-export function receivePurchaseOrder(id: number, lines?: { product_id: number; qty: number }[]): PurchaseOrder {
+/**
+ * Receive a purchase order (fully or partially).
+ *
+ * Phase 3, item 3 — the receipt is addressed to a LINE (`item_id`), never to
+ * a product.
+ *
+ * The old code aggregated the requested quantities into a `Map<product_id, …>`
+ * and then read that map for EVERY line of the product. An order with TWO
+ * lines of the same product (two batches, two prices) therefore received the
+ * requested amount TWICE — the shop got more stock than it paid for, and the
+ * order closed as fully received while the second line was never touched.
+ * `item_id` addresses the exact line; the product id is still accepted for the
+ * old callers, but then it is applied to the FIRST outstanding line only.
+ */
+export function receivePurchaseOrder(
+  id: number,
+  lines?: { item_id?: number; product_id?: number; qty: number }[]
+): PurchaseOrder {
+  // Phase 3, item 5 — the permission is checked in the SERVICE.
+  requirePurchasePermission('receive a purchase order');
   const db = getDb();
   const po = getPurchaseOrder(id);
   if (!po) throw new Error('Purchase order not found');
@@ -348,18 +463,34 @@ export function receivePurchaseOrder(id: number, lines?: { product_id: number; q
     throw new Error(`Order already ${po.status}`);
   }
 
-  // Work out how much to receive per line (default: everything outstanding).
+  // How much to receive per LINE (the line id is the key).
   const wanted = new Map<number, number>();
   for (const l of lines ?? []) {
     const qty = Number(l.qty) || 0;
-    if (qty > 0) wanted.set(l.product_id, (wanted.get(l.product_id) ?? 0) + qty);
+    if (qty <= 0) continue;
+    const lineId = Number(l.item_id);
+    if (Number.isFinite(lineId) && lineId > 0) {
+      wanted.set(lineId, (wanted.get(lineId) ?? 0) + qty);
+      continue;
+    }
+    // The legacy shape (product id only): the FIRST outstanding line of that
+    // product takes the quantity — never every line of the same product.
+    const pid = Number(l.product_id) || 0;
+    if (!pid) continue;
+    const first = po.items.find(
+      (it) =>
+        it.product_id === pid &&
+        round2(Number(it.qty) - (Number(it.received_qty) || 0)) > 0 &&
+        !wanted.has(it.id)
+    );
+    if (first) wanted.set(first.id, (wanted.get(first.id) ?? 0) + qty);
   }
   const plan: { item: PurchaseItem & { received_qty?: number | null }; qty: number }[] = [];
   for (const it of po.items) {
     const already = Number(it.received_qty) || 0;
     const outstanding = round2(Number(it.qty) - already);
     if (outstanding <= 0) continue;
-    const want = lines ? wanted.get(it.product_id) ?? 0 : outstanding;
+    const want = lines ? wanted.get(it.id) ?? 0 : outstanding;
     const qty = round2(Math.min(want, outstanding));
     if (qty > 0) plan.push({ item: it, qty });
   }
@@ -370,7 +501,12 @@ export function receivePurchaseOrder(id: number, lines?: { product_id: number; q
   try {
     for (const p of plan) {
       const it = p.item;
-      const batchNumber = it.batch_no || `PO-${id}-${it.product_id}-${Date.now()}`;
+      // Phase 3, item 12 — the batch number is UNIQUE per line. The old code
+      // built it from the product id + a timestamp, so two lines of the SAME
+      // product received in the same millisecond shared a batch number and
+      // the FIFO report merged them.
+      const batchNumber =
+        it.batch_no || `PO-${id}-${it.id}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       // The stock is kept in BASE units (the piece / kg). A line ordered in
       // boxes puts BOXES × quantity_in_base_units into the stock — 2 boxes of
       // 12 must add 24 pieces, never 2.
@@ -379,7 +515,7 @@ export function receivePurchaseOrder(id: number, lines?: { product_id: number; q
       // The batch carries the BASE quantity at the cost of ONE base unit, so
       // the FIFO report and the cost of goods sold stay right.
       const costPerBase = costPerBaseUnit(it.unit_cost, multiplier);
-      createBatch(it.product_id, batchNumber, baseReceived, costPerBase, it.expiry_date ?? null);
+      createBatchOrAdd(it.product_id, batchNumber, baseReceived, costPerBase, it.expiry_date ?? null);
 
       // The product's cost price + the price history follow the shop's costing
       // setting. The history ALWAYS records the received cost (that is the
@@ -409,7 +545,11 @@ export function receivePurchaseOrder(id: number, lines?: { product_id: number; q
       .prepare('SELECT qty, COALESCE(received_qty, 0) AS received_qty FROM purchase_items WHERE purchase_order_id = ?')
       .all(id) as { qty: number; received_qty: number }[];
     const fullyReceived = rows.every((r) => Number(r.received_qty) >= Number(r.qty) - 1e-9);
-    db.prepare('UPDATE purchase_orders SET status = ? WHERE id = ?').run(fullyReceived ? 'received' : 'partial', id);
+    // Phase 3, item 9 — the order's `updated_at` moves with its status.
+    db.prepare('UPDATE purchase_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
+      fullyReceived ? 'received' : 'partial',
+      id
+    );
     db.exec('COMMIT');
     logActivity(
       'purchase_received',
@@ -436,21 +576,39 @@ export function receivePurchaseOrder(id: number, lines?: { product_id: number; q
  * takes it back or uses it on the next order), so the ledger stays honest.
  */
 export function cancelPurchaseOrder(id: number, reason?: string): boolean {
+  // Phase 3, item 5 — the permission is checked in the SERVICE.
+  requirePurchasePermission('cancel a purchase order');
   const db = getDb();
   const po = getPurchaseOrder(id);
   if (!po) throw new Error('Purchase order not found');
   if (po.status !== 'pending' && po.status !== 'ordered' && po.status !== 'draft') {
     throw new Error(`Only an open order can be cancelled (this one is ${po.status})`);
   }
+  // Phase 3, item 7 — the status alone is NOT enough.
+  //
+  // A legacy row can carry a status of 'ordered' while its lines were already
+  // received. Cancelling it then reversed the payable while the stock stayed
+  // in the shop: the supplier's ledger said the goods were never bought, but
+  // the shelf said they were. The received quantity is the truth.
+  const receivedRow = db
+    .prepare(
+      `SELECT COALESCE(SUM(${RECEIVED_QTY_SQL}), 0) AS received FROM purchase_items WHERE purchase_order_id = ?`
+    )
+    .get(id) as { received?: number } | undefined;
+  const received = Number(receivedRow?.received) || 0;
+  if (received > 0) {
+    throw new Error(
+      `This order already received ${received} — reverse the receipt first, then cancel the rest.`
+    );
+  }
   const paid = safeNumber((po as { paid_amount?: number | null }).paid_amount, 0);
   const payable = Math.max(0, round2(safeNumber(po.total_amount, 0) - paid));
 
   db.exec('BEGIN');
   try {
-    db.prepare("UPDATE purchase_orders SET status = 'cancelled', cancel_reason = ? WHERE id = ?").run(
-      reason?.trim() || null,
-      id
-    );
+    db.prepare(
+      "UPDATE purchase_orders SET status = 'cancelled', cancel_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    ).run(reason?.trim() || null, id);
     if (payable > 0) {
       db.prepare('UPDATE suppliers SET balance = balance - ? WHERE id = ?').run(payable, po.supplier_id);
       db.prepare(
@@ -485,6 +643,8 @@ export function supplierLedger(supplierId: number): SupplierTransaction[] {
 }
 
 export function paySupplier(supplierId: number, amount: number, mode: string, note?: string): Supplier {
+  // Phase 3, item 5 — the permission is checked in the SERVICE.
+  requirePurchasePermission('pay a supplier');
   const db = getDb();
   const sup = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(supplierId) as unknown as Supplier | undefined;
   if (!sup) throw new Error('Supplier not found');

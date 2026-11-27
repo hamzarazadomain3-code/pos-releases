@@ -26,6 +26,7 @@
     "test:purchaseimport": "npm run build:main && electron scripts/test_purchase_import.js",
     "test:purchaseEnhance": "npm run build:main && electron scripts/test_purchaseEnhance.cjs",
     "test:purchaseInventoryLink": "npm run build:main && electron scripts/test_purchaseInventoryLink.cjs",
+    "test:purchaseOrderHardening": "npm run build:main && electron scripts/test_purchaseOrderHardening.cjs",
     "test:purchaseOrderUi": "npm run build && electron scripts/test_purchaseOrderUi.cjs",
     "test:utf8": "node scripts/test_mojibake.cjs",
     "test:ipcError": "npm run build:main && node scripts/test_ipcError.cjs",

@@ -1812,7 +1812,19 @@ export interface PosBridge {
       items: PurchaseLineInput[],
       options?: PurchaseOrderOptions
     ) => Promise<PurchaseOrder>;
-    receiveOrder: (id: number, lines?: { product_id: number; qty: number }[]) => Promise<PurchaseOrder>;
+    /**
+     * Receive a purchase order.
+     *
+     * Phase 3, item 3 — a partial receipt is addressed to the LINE
+     * (`item_id` = `purchase_items.id`), never to the product: an order with
+     * two lines of the same product must be able to receive one of them.
+     * `product_id` is still accepted for the old callers (it then applies to
+     * the FIRST outstanding line of that product).
+     */
+    receiveOrder: (
+      id: number,
+      lines?: { item_id?: number; product_id?: number; qty: number }[]
+    ) => Promise<PurchaseOrder>;
     cancelOrder: (id: number, reason?: string) => Promise<boolean>;
     ledger: (supplierId: number) => Promise<SupplierTransaction[]>;
     paySupplier: (supplierId: number, amount: number, mode: string, note?: string) => Promise<Supplier>;

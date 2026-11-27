@@ -19,6 +19,15 @@
  *   - Ctrl+S saves a draft, Ctrl+Enter creates the order,
  *   - the created order shows up in the list with its status chip.
  *
+ * Phase 3 (the hardening) adds:
+ *   - BACKSPACE never removes a row (the owner was erasing a digit and the
+ *     whole line vanished),
+ *   - a product that is NOT low on stock still carries its units,
+ *   - the supplier-switch guard keeps the ORIGINAL supplier after two
+ *     changes,
+ *   - the "Stock received" note belongs to its own order,
+ *   - the screen speaks Urdu (the sidebar toggle really switches it).
+ *
  * The service + pure maths are covered by `npm run test:purchaseEnhance` and
  * `npm run test:purchaseInventoryLink`; this suite covers the SCREEN.
  *
@@ -273,6 +282,10 @@ async function run() {
   auth.setSessionUser(1);
 
   const supplier = purchases.createSupplier('UI Wholesale', '0300-3333333', 'Lahore');
+  // Phase 3, item 11 — the supplier-switch guard needs a THIRD supplier, so
+  // the test can prove it still points at the FIRST one after two changes.
+  const supplierB = purchases.createSupplier('UI Supplier B', '0300-4444444', 'Karachi');
+  const supplierC = purchases.createSupplier('UI Supplier C', '0300-5555555', 'Lahore');
   // The costing switch is OFF for this suite, so a received purchase records
   // the LAST purchase cost but leaves the product's own cost_price alone —
   // exactly what the live link has to show.
@@ -304,8 +317,26 @@ async function run() {
     reorder_qty: 50,
     tax_rate: 0,
   });
+  // Phase 3, item 1 — a product that is NOT low on stock. It used to come
+  // back from the catalog with an EMPTY unit list (the extra fields only
+  // came from the low-stock feed), so its unit dropdown was blank.
+  const flour = inventory.createProduct({
+    name: 'UI Flour',
+    sku: 'UI-FLOUR',
+    barcode: '8100000000003',
+    cost_price: 400,
+    sale_price: 500,
+    low_stock_threshold: 5,
+    min_stock_level: 5,
+    tax_rate: 0,
+    units: [
+      { level: 0, name: 'Piece', quantity_in_base_units: 1, is_base: true },
+      { level: 1, name: 'Bag', quantity_in_base_units: 20, is_base: false },
+    ],
+  });
   inventory.recordMovement(oil.id, 4, 'Opening stock', 'manual', null);
   inventory.recordMovement(sugar.id, 4, 'Opening stock', 'manual', null);
+  inventory.recordMovement(flour.id, 500, 'Opening stock', 'manual', null);
 
   // The sugar has a purchase history: its LAST purchase cost (140) differs
   // from the product's own cost price (130) — the row must show BOTH.
@@ -497,8 +528,36 @@ async function run() {
 
   // ── Delete + undo ────────────────────────────────────────────────────────
   section('Delete removes the row and the undo brings it back');
+  // Phase 3, item 2 — BACKSPACE never removes the row.
+  //
+  // The owner was editing the quantity (or the cost, or the batch) and
+  // pressed Backspace to erase a digit — the whole line vanished. Backspace
+  // is now ignored by the row handler, so a number can be edited safely.
+  await js("window.__po.focus('[data-testid=\"po-qty-0\"]')");
+  await js("window.__po.press('[data-testid=\"po-qty-0\"]', 'Backspace', { code: 'Backspace' })");
+  await new Promise((r) => setTimeout(r, 400));
+  check(
+    'Backspace in the qty field does NOT remove the row',
+    (await js("window.__po.count('[data-po-line]')")) === 1,
+    String(await js("window.__po.count('[data-po-line]')"))
+  );
+  const qtyAfterBackspace = await js("window.__po.valueOf('[data-testid=\"po-qty-0\"]')");
+  check('the qty is still there after the Backspace', qtyAfterBackspace !== null, String(qtyAfterBackspace));
+
+  // Delete removes the row — but only when the focus is NOT inside a text
+  // field (in a field, Delete still erases a character).
   await js("window.__po.focus('[data-testid=\"po-qty-0\"]')");
   await js("window.__po.press('[data-testid=\"po-qty-0\"]', 'Delete', { code: 'Delete' })");
+  await new Promise((r) => setTimeout(r, 400));
+  check(
+    'Delete inside a text field does NOT remove the row',
+    (await js("window.__po.count('[data-po-line]')")) === 1,
+    String(await js("window.__po.count('[data-po-line]')"))
+  );
+
+  // With the focus on the row itself (not a field), Delete removes it.
+  await js("window.__po.focus('[data-testid=\"po-pick-open-0\"]')");
+  await js("window.__po.press('[data-testid=\"po-pick-open-0\"]', 'Delete', { code: 'Delete' })");
   await waitUntil("window.__po.count('[data-po-line]') === 0", 'the removed row', 10000);
   check('Delete removed the row', (await js("window.__po.count('[data-po-line]')")) === 0);
   check('the undo banner is shown', !!(await js("window.__po.exists('[data-testid=\"po-undo-banner\"]')")));
@@ -579,6 +638,150 @@ async function run() {
   check('the list shows the draft chip too', chips.indexOf('Draft') >= 0, JSON.stringify(chips));
   const listTotal = await js("window.__po.textOf('[data-testid=\"po-list-total\"]')");
   check('the list shows the order total', !!listTotal && Number(listTotal) > 0, String(listTotal));
+
+  // ── Phase 3, item 1: every product carries its units ────────────────────
+  section('Phase 3 - a product that is NOT low on stock still carries its units');
+  {
+    await js("window.__po.clickText('button', 'New Purchase Order')");
+    await waitUntil("window.__po.exists('.modal.modal-po')", 'the modal for the units check', 15000);
+    await js(`window.__po.setSelect('[data-testid="po-supplier"]', '${supplier.id}')`);
+    await js("window.__po.setVal('[data-testid=\"po-search\"]', 'UI Flour')");
+    await waitUntil("window.__po.count('.search-result-item') > 0", 'the flour dropdown', 10000);
+    await js("window.__po.press('[data-testid=\"po-search\"]', 'Enter')");
+    await js("window.__po.press('[data-testid=\"po-search\"]', 'Enter')");
+    await waitUntil("window.__po.exists('.quantity-input-box')", 'the flour qty box', 10000);
+    await js("window.__po.setVal('.quantity-input-box input', '3')");
+    await js("window.__po.press('.quantity-input-box input', 'Enter')");
+    await waitUntil("window.__po.count('[data-po-line]') === 1", 'the flour line', 10000);
+
+    const flourUnits = await js(
+      "Array.from(document.querySelectorAll('[data-testid=\"po-unit-0\"] option')).map((o) => o.textContent.trim())"
+    );
+    check('the NOT-low-stock product offers its units', flourUnits.length >= 2, JSON.stringify(flourUnits));
+    check('the pack (Bag) is offered', flourUnits.some((u) => /bag/i.test(u)), JSON.stringify(flourUnits));
+    const flourCost = await js("window.__po.valueOf('[data-testid=\"po-cost-0\"]')");
+    check('the cost was auto-filled for the not-low-stock product', Number(flourCost) === 400, String(flourCost));
+    await js("window.__po.click('[data-testid=\"po-cancel\"]')");
+    await waitUntil("!window.__po.exists('.modal.modal-po')", 'the modal to close', 10000);
+  }
+
+  // ── Phase 3, item 11: the supplier-switch guard ─────────────────────────
+  section('Phase 3 - the supplier switch keeps the ORIGINAL supplier');
+  {
+    await js("window.__po.clickText('button', 'New Purchase Order')");
+    await waitUntil("window.__po.exists('.modal.modal-po')", 'the modal for the switch check', 15000);
+    await js(`window.__po.setSelect('[data-testid="po-supplier"]', '${supplier.id}')`);
+    await js("window.__po.setVal('[data-testid=\"po-search\"]', 'UI Sugar')");
+    await waitUntil("window.__po.count('.search-result-item') > 0", 'the sugar dropdown', 10000);
+    await js("window.__po.press('[data-testid=\"po-search\"]', 'Enter')");
+    await js("window.__po.press('[data-testid=\"po-search\"]', 'Enter')");
+    await waitUntil("window.__po.exists('.quantity-input-box')", 'the sugar qty box', 10000);
+    await js("window.__po.setVal('.quantity-input-box input', '4')");
+    await js("window.__po.press('.quantity-input-box input', 'Enter')");
+    await waitUntil("window.__po.count('[data-po-line]') === 1", 'the sugar line', 10000);
+
+    // A -> B: the guard appears and names the ORIGINAL supplier (A).
+    await js(`window.__po.setSelect('[data-testid="po-supplier"]', '${supplierB.id}')`);
+    await waitUntil("window.__po.exists('[data-testid=\"po-supplier-switch\"]')", 'the switch guard', 10000);
+    const guard1 = await js("window.__po.textOf('[data-testid=\"po-supplier-switch\"]')");
+    check('the guard names the ORIGINAL supplier (A)', /UI Wholesale/.test(guard1), String(guard1).slice(0, 200));
+    check(
+      'the "Go back" button points at the ORIGINAL supplier (A)',
+      /Go back to UI Wholesale/.test(guard1),
+      String(guard1).slice(0, 200)
+    );
+    check(
+      'the "Go back" button does NOT point at the new supplier (B)',
+      !/Go back to UI Supplier B/.test(guard1),
+      String(guard1).slice(0, 200)
+    );
+
+    // A -> B -> C: the guard must STILL name A (it used to be re-pointed to B).
+    await js(`window.__po.setSelect('[data-testid="po-supplier"]', '${supplierC.id}')`);
+    await new Promise((r) => setTimeout(r, 400));
+    const guard2 = await js("window.__po.textOf('[data-testid=\"po-supplier-switch\"]')");
+    check('after a second change the guard STILL names A', /UI Wholesale/.test(guard2), String(guard2).slice(0, 200));
+    check('after a second change the guard does NOT name B', !/UI Supplier B/.test(guard2), String(guard2).slice(0, 200));
+    check('the guard names the NEW supplier (C)', /UI Supplier C/.test(guard2), String(guard2).slice(0, 200));
+
+    // "Go back to A" returns the dropdown to A.
+    await js("window.__po.click('[data-testid=\"po-supplier-revert\"]')");
+    await waitUntil("!window.__po.exists('[data-testid=\"po-supplier-switch\"]')", 'the guard to close', 10000);
+    const supplierNow = await js("window.__po.valueOf('[data-testid=\"po-supplier\"]')");
+    check('"Go back" returned the dropdown to the ORIGINAL supplier', String(supplierNow) === String(supplier.id), String(supplierNow));
+    check('the line was NOT thrown away', (await js("window.__po.count('[data-po-line]')")) === 1);
+
+    await js("window.__po.click('[data-testid=\"po-cancel\"]')");
+    await waitUntil("!window.__po.exists('.modal.modal-po')", 'the modal to close', 10000);
+  }
+
+  // ── Phase 3, item 16: the stale "Stock received" note ───────────────────
+  section('Phase 3 - the "Stock received" note belongs to its own order');
+  {
+    const openOrder = db
+      .prepare("SELECT id FROM purchase_orders WHERE status = 'ordered' ORDER BY id DESC LIMIT 1")
+      .get();
+    const otherOrder = db
+      .prepare("SELECT id FROM purchase_orders WHERE status = 'draft' ORDER BY id LIMIT 1")
+      .get();
+    check('there is an open order and another order to open', !!openOrder && !!otherOrder, `${openOrder?.id} / ${otherOrder?.id}`);
+
+    // Receive the open order — the note is written for THAT order.
+    await js(`window.__po.click('[data-testid="po-receive-${openOrder.id}"]')`);
+    await waitUntil(
+      `!window.__po.exists('[data-testid="po-receive-note"]') || true`,
+      'the receive to settle',
+      15000
+    );
+    await new Promise((r) => setTimeout(r, 1200));
+
+    // Now open ANOTHER order: the old note must not be there.
+    await js(`window.__po.click('[data-testid="po-view-${otherOrder.id}"]')`);
+    await waitUntil("window.__po.exists('.modal')", 'the other order to open', 15000);
+    await new Promise((r) => setTimeout(r, 500));
+    const staleNote = await js("window.__po.exists('[data-testid=\"po-receive-note\"]')");
+    check('the other order does NOT show the previous receipt note', staleNote === false, String(staleNote));
+    await js("window.__po.clickText('.modal button', 'Close')");
+    await waitUntil("!window.__po.exists('.modal')", 'the order to close', 10000);
+  }
+
+  // ── Phase 3, item 15: the screen speaks Urdu too ────────────────────────
+  section('Phase 3 - the Purchase Order screen speaks Urdu too');
+  {
+    const headingBefore = await js("document.querySelector('.page-head h1') ? document.querySelector('.page-head h1').innerText : ''");
+    check('the screen starts in English', /Purchases/.test(headingBefore), String(headingBefore));
+
+    // The sidebar's language toggle offers the OTHER language. The label is
+    // matched on the aria-label (the visible label can be hidden by CSS, and
+    // `innerText` then comes back empty).
+    await js(
+      "(() => { const b = Array.from(document.querySelectorAll('.sidebar-footer-btn')).find((x) => (x.getAttribute('aria-label') || '').trim() === 'اردو'); if (!b) throw new Error('no language toggle'); b.click(); return true; })()"
+    );
+    await waitUntil(
+      "document.documentElement.lang === 'ur'",
+      'the UI to switch to Urdu',
+      15000
+    );
+    const headingUr = await js("document.querySelector('.page-head h1') ? document.querySelector('.page-head h1').innerText : ''");
+    check('the page heading is in Urdu', /خریداری/.test(headingUr), String(headingUr));
+
+    await js("window.__po.clickText('button', 'نیا خریداری آرڈر')");
+    await waitUntil("window.__po.exists('.modal.modal-po')", 'the Urdu modal', 15000);
+    const modalTitle = await js("window.__po.textOf('.modal.modal-po .modal-header') || ''");
+    check('the Purchase Order modal is in Urdu', /نیا خریداری آرڈر/.test(modalTitle), String(modalTitle).slice(0, 160));
+    const supplierLabel = await js("window.__po.textOf('.modal.modal-po .po-header-grid .lbl') || ''");
+    check('the supplier label is in Urdu', /سپلائر/.test(supplierLabel), String(supplierLabel).slice(0, 120));
+    await js("window.__po.click('[data-testid=\"po-cancel\"]')");
+    await waitUntil("!window.__po.exists('.modal.modal-po')", 'the Urdu modal to close', 10000);
+
+    // Back to English for the rest of the suite.
+    await js(
+      "(() => { const b = Array.from(document.querySelectorAll('.sidebar-footer-btn')).find((x) => (x.getAttribute('aria-label') || '').trim() === 'English'); if (!b) throw new Error('no language toggle back'); b.click(); return true; })()"
+    );
+    await waitUntil("document.documentElement.lang === 'en'", 'the UI to switch back to English', 15000);
+    const headingBack = await js("document.querySelector('.page-head h1') ? document.querySelector('.page-head h1').innerText : ''");
+    check('the screen is back in English', /Purchases/.test(headingBack), String(headingBack));
+  }
 
   console.log(`\n${failures === 0 ? 'ALL PASSED' : 'FAILURES'}: ${checks - failures}/${checks} checks passed`);
 

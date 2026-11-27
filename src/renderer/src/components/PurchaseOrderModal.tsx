@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type {
   PurchaseOrder,
   PurchaseProductRow,
@@ -23,6 +24,7 @@ import {
   suggestedQty,
   suggestedSalePrice,
   validatePo,
+  VALIDATION_MESSAGE_KEYS,
 } from '../../../shared/purchaseCalc';
 import { Modal } from './Modal';
 import { KeyboardInput } from './KeyboardInput';
@@ -102,6 +104,9 @@ function rowSignature(p: PurchaseProductRow | null): string {
  * to keep in sync.
  */
 export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: PurchaseOrderModalProps) {
+  // Phase 3, item 15 — the PO screen is bilingual: every word the owner
+  // reads comes from the locale files (en + ur).
+  const { t } = useTranslation();
   const [supplierId, setSupplierId] = useState<number | ''>('');
   const [lines, setLines] = useState<PoLine[]>([]);
   const [expectedDate, setExpectedDate] = useState('');
@@ -139,8 +144,18 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
    * owner had added for supplier A were created against supplier B. Nothing
    * was lost, but the order was wrong. The owner must now say what should
    * happen to those lines before the order can be created.
+   *
+   * Phase 3, item 11 — the guard keeps the ORIGINAL supplier.
+   *
+   * It used to overwrite `{from, to}` on every change, so A → B → C left the
+   * guard pointing at B: "Go back" took the owner to B (not to A, the
+   * supplier the lines really belong to) and "Keep them" named C while the
+   * banner said the items were for B. The original supplier is now kept in a
+   * ref and only the TARGET changes.
    */
   const [supplierSwitch, setSupplierSwitch] = useState<{ from: number; to: number } | null>(null);
+  /** The supplier the lines really belong to (the guard's fixed "from"). */
+  const switchFromRef = useRef<number | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -149,6 +164,12 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
   const supplierName = useCallback(
     (id: number) => suppliers.find((s) => s.id === id)?.name ?? `supplier #${id}`,
     [suppliers]
+  );
+
+  /** "1 item" / "3 items" — the count in the shop's language. */
+  const itemCount = useCallback(
+    (n: number) => t('purchases.po.suggestionsHead', { count: n }),
+    [t]
   );
 
   /* ── the settings of the PO screen ─────────────────────────────────────── */
@@ -177,6 +198,12 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
         if (!alive) return;
         const byId = new Map<number, PurchaseProductRow>();
         for (const p of products) {
+          // Phase 3, item 1 — every product gets its live units + last purchase
+          // cost from inventory.list(). The low-stock feed only OVERRIDES for
+          // those rows; it is NOT the only source. Before this, non-low-stock
+          // products had `units: []` and `last_purchase_cost: null`, so the
+          // unit dropdown was empty and auto-fill fell back to stale cost_price.
+          const units = (p as { units?: PurchaseProductUnit[] }).units ?? [];
           byId.set(p.id, {
             product_id: p.id,
             name: p.name,
@@ -197,11 +224,11 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
             last_supplier_name: null,
             last_purchase_cost: null,
             last_purchase_at: null,
-            units: [],
+            units,
           });
         }
         // The low-stock list carries the extra live fields (the last purchase
-        // cost, the units, the last supplier) — it is the richer source.
+        // cost, the units, the last supplier) — it OVERRIDES for those rows.
         for (const l of low) byId.set(l.product_id, l);
         setCatalog([...byId.values()]);
         setCatalogLoading(false);
@@ -402,7 +429,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
           (c.sku ?? '').toLowerCase() === code.trim().toLowerCase()
       );
       if (!found) {
-        setErr(`No product found for barcode "${code}"`);
+        setErr(t('purchases.po.errBarcodeNotFound', { code }));
         return;
       }
       addLineForProduct(found);
@@ -423,12 +450,12 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
   const addSupplierProducts = useCallback(async () => {
     const sid = safeNumber(supplierId, 0);
     if (!sid) {
-      setErr('Select a supplier first.');
+      setErr(t('purchases.po.errSelectSupplier'));
       return;
     }
     const rows = await window.api.purchases.supplierProducts(sid);
     setSuggestions(rows);
-  }, [supplierId]);
+  }, [supplierId, t]);
 
   const addLowStockProducts = useCallback(async () => {
     const rows = await window.api.purchases.lowStockProducts(200);
@@ -519,6 +546,18 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
     [supplierId, lines, totals]
   );
 
+  /**
+   * The reason the order cannot be created — in the shop's language.
+   *
+   * The shared validator returns the error CODES (so the screen and the
+   * service agree on WHAT is wrong); the renderer maps each code to its
+   * i18n key and asks i18next for the sentence.
+   */
+  const validationMessages = useMemo(
+    () => validation.errors.map((e) => t(VALIDATION_MESSAGE_KEYS[e])),
+    [validation.errors, t]
+  );
+
   /* ── saving ────────────────────────────────────────────────────────────── */
 
   const buildPayload = useCallback(
@@ -561,7 +600,10 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
       // owner never picked for those items.
       if (supplierSwitch) {
         setErr(
-          `The supplier changed and this order still has ${lines.length} item${lines.length === 1 ? '' : 's'} from ${supplierName(supplierSwitch.from)}. Choose what to do with them first.`
+          t('purchases.po.errSupplierChanged', {
+            count: lines.length,
+            supplier: supplierName(supplierSwitch.from),
+          })
         );
         return;
       }
@@ -584,22 +626,22 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
             }
             return n;
           });
-          setErr('The same product was in the list twice — the quantities were merged. Check it and save again.');
+          setErr(t('purchases.po.errDuplicateMerged'));
           return;
         }
         if (!validation.ok) {
-          setErr(validation.messages.join(' '));
+          setErr(validationMessages.join(' '));
           return;
         }
       } else if (!safeNumber(supplierId, 0)) {
-        setErr('Select a supplier before saving a draft.');
+        setErr(t('purchases.po.errSelectSupplierDraft'));
         return;
       }
       setBusy(true);
       try {
         const { items, options } = buildPayload(status);
         if (!items.length) {
-          setErr('Add at least one item with a quantity.');
+          setErr(t('purchases.po.errNoItems'));
           setBusy(false);
           return;
         }
@@ -611,7 +653,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
         setBusy(false);
       }
     },
-    [buildPayload, lines, onSaved, supplierId, supplierName, supplierSwitch, validation]
+    [buildPayload, lines, onSaved, supplierId, supplierName, supplierSwitch, t, validation, validationMessages]
   );
 
   /* ── the keyboard ──────────────────────────────────────────────────────── */
@@ -631,11 +673,17 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
         void save('draft');
         return;
       }
-      // Del on a row removes it — with an undo.
-      if (e.key === 'Delete' || e.key === 'Backspace') {
+      // Phase 3, item 2 — only Delete removes the row. Backspace is ignored
+      // when focus is inside an input/textarea/select so the user can edit
+      // numbers without accidentally deleting the whole line. Before this,
+      // pressing Backspace while editing qty/cost/batch deleted the entire row.
+      if (e.key === 'Delete') {
         const active = document.activeElement as HTMLElement | null;
         const row = active?.closest?.('[data-po-line]') as HTMLElement | null;
-        if (row) {
+        // Ignore Delete when typing in a field
+        const tag = active?.tagName?.toLowerCase();
+        const typing = tag === 'input' || tag === 'textarea' || tag === 'select' || active?.isContentEditable;
+        if (row && !typing) {
           e.preventDefault();
           e.stopPropagation();
           const key = row.getAttribute('data-po-line');
@@ -720,10 +768,13 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
       // NEVER silent: the sale price is NOT written here. The order carries
       // the suggested price and the owner confirms it when the goods arrive.
       setErr(
-        `Suggested sale price for ${p.name}: ${suggestion.toFixed(2)} (the current margin kept). It is NOT saved automatically — set it in Inventory or on the receipt.`
+        t('purchases.po.errSuggestedSalePrice', {
+          name: p.name,
+          price: suggestion.toFixed(2),
+        })
       );
     },
-    []
+    [t]
   );
 
   /* ── the render ────────────────────────────────────────────────────────── */
@@ -731,17 +782,17 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
   const footer = (
     <>
       <div className="po-totals-inline">
-        <span>Total</span>
+        <span>{t('purchases.po.totalShort')}</span>
         <strong data-testid="po-grand-total">{totals.grandTotal.toFixed(2)}</strong>
         {totals.paid > 0 && (
           <>
-            <span>Payable</span>
+            <span>{t('purchases.po.payable')}</span>
             <strong data-testid="po-payable">{totals.payable.toFixed(2)}</strong>
           </>
         )}
       </div>
       <button className="btn" onClick={() => void save('draft')} disabled={busy || !!supplierSwitch} data-testid="po-save-draft">
-        Save draft
+        {t('purchases.po.saveDraft')}
       </button>
       <button
         className="btn btn-primary"
@@ -749,17 +800,17 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
         disabled={busy || !validation.ok || !!supplierSwitch}
         title={
           supplierSwitch
-            ? 'The supplier changed — choose what to do with the items first.'
+            ? t('purchases.po.errCreateBlocked')
             : validation.ok
               ? ''
-              : validation.messages.join(' ')
+              : validationMessages.join(' ')
         }
         data-testid="po-create"
       >
-        Create
+        {t('purchases.po.create')}
       </button>
       <button className="btn" onClick={onClose} disabled={busy} data-testid="po-cancel">
-        Cancel
+        {t('purchases.po.cancel')}
       </button>
     </>
   );
@@ -769,9 +820,9 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
       onClose={onClose}
       onSubmit={() => void save('ordered')}
       onKeyDown={onModalKeyDown}
-      title="New Purchase Order"
+      title={t('purchases.po.title')}
       className="modal-wide modal-scroll-body modal-po"
-      label="New Purchase Order"
+      label={t('purchases.po.title')}
       actions={{ save: () => void save('ordered') }}
       footer={footer}
     >
@@ -783,54 +834,61 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
         )}
         {stale && (
           <div className="po-stale-banner" data-testid="po-stale-banner">
-            <span>The inventory changed while this order was open.</span>
+            <span>{t('purchases.po.stale')}</span>
             <button className="btn btn-sm" onClick={() => void refreshRows()} data-testid="po-refresh">
-              Refresh
+              {t('purchases.po.refresh')}
             </button>
           </div>
         )}
         {supplierSwitch && (
           <div className="po-stale-banner" data-testid="po-supplier-switch">
             <span>
-              The supplier changed, but this order still has {lines.length} item{lines.length === 1 ? '' : 's'} added
-              for {supplierName(supplierSwitch.from)}. Choose what should happen to them.
+              {t('purchases.po.supplierSwitch', {
+                count: lines.length,
+                supplier: supplierName(supplierSwitch.from),
+              })}
             </span>
             <span className="po-supplier-switch-actions">
               <button
                 className="btn btn-sm btn-primary"
-                onClick={() => setSupplierSwitch(null)}
+                onClick={() => {
+                  setSupplierSwitch(null);
+                  switchFromRef.current = null;
+                }}
                 data-testid="po-supplier-keep-new"
               >
-                Keep them for {supplierName(supplierSwitch.to)}
+                {t('purchases.po.keepThemFor', { supplier: supplierName(supplierSwitch.to) })}
               </button>
               <button
                 className="btn btn-sm"
                 onClick={() => {
                   setSupplierId(supplierSwitch.from);
                   setSupplierSwitch(null);
+                  switchFromRef.current = null;
                 }}
                 data-testid="po-supplier-revert"
               >
-                Go back to {supplierName(supplierSwitch.from)}
+                {t('purchases.po.goBackTo', { supplier: supplierName(supplierSwitch.from) })}
               </button>
               <button
                 className="btn btn-sm"
                 onClick={() => {
                   setLines([]);
                   setSupplierSwitch(null);
+                  switchFromRef.current = null;
                 }}
                 data-testid="po-supplier-clear"
               >
-                Remove the items
+                {t('purchases.po.removeTheItems')}
               </button>
             </span>
           </div>
         )}
         {undo && (
           <div className="po-undo-banner" data-testid="po-undo-banner">
-            <span>Line removed.</span>
+            <span>{t('purchases.po.lineRemoved')}</span>
             <button className="btn btn-sm" onClick={undoRemove} data-testid="po-undo">
-              Undo
+              {t('purchases.po.undo')}
             </button>
           </div>
         )}
@@ -838,7 +896,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
         {/* ── the header ─────────────────────────────────────────────────── */}
         <div className="po-header-grid">
           <label className="lbl">
-            Supplier *
+            {t('purchases.po.supplier')}
             <select
               className="inp"
               value={supplierId}
@@ -849,16 +907,23 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
                 // order is a decision, not a typo: the owner is asked what to
                 // do with those lines instead of the order being re-labelled
                 // behind their back.
+                //
+                // Phase 3, item 11 — the guard keeps the ORIGINAL supplier: the
+                // lines still belong to it, so "Go back" must return there no
+                // matter how many times the dropdown was changed.
                 if (next !== '' && prev && next !== prev && lines.length > 0) {
-                  setSupplierSwitch({ from: prev, to: next });
+                  const from = switchFromRef.current ?? prev;
+                  switchFromRef.current = from;
+                  setSupplierSwitch({ from, to: next });
                 } else {
                   setSupplierSwitch(null);
+                  switchFromRef.current = null;
                 }
                 setSupplierId(next);
               }}
               data-testid="po-supplier"
             >
-              <option value="">— select —</option>
+              <option value="">{t('purchases.po.selectSupplier')}</option>
               {suppliers.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -867,11 +932,11 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
             </select>
           </label>
           <label className="lbl">
-            Expected delivery
+            {t('purchases.po.expectedDelivery')}
             <DateInput value={expectedDate} onChange={setExpectedDate} data-testid="po-expected-date" />
           </label>
           <label className="lbl">
-            Supplier invoice / ref no
+            {t('purchases.po.refNo')}
             <input
               className="inp"
               value={refNo}
@@ -880,36 +945,34 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
             />
           </label>
           <label className="lbl">
-            Notes
+            {t('purchases.po.notes')}
             <input className="inp" value={notes} onChange={(e) => setNotes(e.target.value)} data-testid="po-notes" />
           </label>
         </div>
 
         <div className="po-supplier-actions">
           <button className="btn btn-sm" onClick={() => void addSupplierProducts()} data-testid="po-add-supplier-products">
-            Add this supplier's products
+            {t('purchases.po.addSupplierProducts')}
           </button>
           <button className="btn btn-sm" onClick={() => void addLowStockProducts()} data-testid="po-add-low-stock">
-            Add low-stock items
+            {t('purchases.po.addLowStock')}
           </button>
         </div>
 
         {suggestions && (
           <div className="po-suggestions" data-testid="po-suggestions">
             <div className="po-suggestions-head">
-              <span>
-                {suggestions.length} item{suggestions.length === 1 ? '' : 's'} — confirm the ones you want.
-              </span>
+              <span>{itemCount(suggestions.length)}</span>
               <div>
                 <button
                   className="btn btn-sm btn-primary"
                   onClick={() => confirmSuggestions(suggestions)}
                   data-testid="po-suggestions-confirm"
                 >
-                  Add all
+                  {t('purchases.po.addAll')}
                 </button>
                 <button className="btn btn-sm" onClick={() => setSuggestions(null)}>
-                  Close
+                  {t('purchases.po.close')}
                 </button>
               </div>
             </div>
@@ -918,13 +981,17 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
                 <div key={r.product_id} className="po-suggestion-row">
                   <span>{r.name}</span>
                   <span className="muted small">
-                    stock {r.stock_qty} / min {minStockLevel(r)} · suggested{' '}
-                    {suggestedQty({
-                      stock_qty: r.stock_qty,
-                      min_stock_level: r.min_stock_level,
-                      low_stock_threshold: r.low_stock_threshold,
-                      reorder_qty: r.reorder_qty,
-                    }) || 1}
+                    {t('purchases.po.stockMinSuggested', {
+                      stock: r.stock_qty,
+                      min: minStockLevel(r),
+                      suggested:
+                        suggestedQty({
+                          stock_qty: r.stock_qty,
+                          min_stock_level: r.min_stock_level,
+                          low_stock_threshold: r.low_stock_threshold,
+                          reorder_qty: r.reorder_qty,
+                        }) || 1,
+                    })}
                   </span>
                   <button
                     className="btn btn-sm"
@@ -933,32 +1000,32 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
                       setSuggestions((prev) => (prev ? prev.filter((x) => x.product_id !== r.product_id) : prev));
                     }}
                   >
-                    Add
+                    {t('purchases.po.add')}
                   </button>
                 </div>
               ))}
-              {suggestions.length === 0 && <div className="muted small">Nothing to suggest.</div>}
+              {suggestions.length === 0 && <div className="muted small">{t('purchases.po.nothingToSuggest')}</div>}
             </div>
           </div>
         )}
 
         {/* ── the product search ─────────────────────────────────────────── */}
         <div className="po-search-wrap">
-          <label className="lbl">Search / scan product (Enter 1× select, 2× qty, 3× add)</label>
+          <label className="lbl">{t('purchases.po.searchLabel')}</label>
           {catalogLoading && (
             <div className="muted small" data-testid="po-catalog-loading">
-              Loading the inventory…
+              {t('purchases.po.loadingInventory')}
             </div>
           )}
           {!catalogLoading && catalog.length === 0 && (
             <div className="muted small" data-testid="po-catalog-empty">
-              The inventory is empty — add a product in Inventory first.
+              {t('purchases.po.inventoryEmpty')}
             </div>
           )}
           <input
             ref={searchRef}
             className="inp"
-            placeholder="Type name, SKU or barcode, or scan…"
+            placeholder={t('purchases.po.searchPlaceholder')}
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -1020,7 +1087,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
                 >
                   <span className="psr-name">{p.name}</span>
                   <span className="psr-meta">
-                    stock {p.stock_qty}
+                    {t('purchases.po.stock', { qty: p.stock_qty })}
                     {p.barcode ? ` • ${p.barcode}` : p.sku ? ` • ${p.sku}` : ''}
                   </span>
                 </button>
@@ -1029,7 +1096,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
           )}
           {stage === 'qty' && selectedProduct() && (
             <div className="quantity-input-box">
-              <span>{selectedProduct()!.name} — Qty:</span>
+              <span>{t('purchases.po.qtyPrompt', { name: selectedProduct()!.name })}</span>
               <KeyboardInput
                 ref={qtyRef}
                 type="text"
@@ -1051,10 +1118,10 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
                 }}
               />
               <button className="btn btn-sm btn-primary" onClick={confirmAdd}>
-                Add {Math.max(1, safeNumber(qty, 1))}
+                {t('purchases.po.addQty', { qty: Math.max(1, safeNumber(qty, 1)) })}
               </button>
               <button className="btn btn-sm" onClick={() => setStage('select')}>
-                Cancel
+                {t('purchases.po.cancel')}
               </button>
             </div>
           )}
@@ -1064,7 +1131,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
         <div className="po-lines" data-testid="po-lines">
           {lines.length === 0 ? (
             <div className="po-empty" data-testid="po-empty">
-              No items yet. Search a product above, or use “Add low-stock items”.
+              {t('purchases.po.empty')}
             </div>
           ) : (
             lines.map((l, index) => {
@@ -1093,7 +1160,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
                             className="inp inp-sm"
                             autoFocus
                             value={pickQuery}
-                            placeholder="Search name, SKU, barcode…"
+                            placeholder={t('purchases.po.pickPlaceholder')}
                             onChange={(e) => setPickQuery(e.target.value)}
                             onKeyDown={(e) => {
                               if (e.key === 'Escape' || e.key === 'Esc') {
@@ -1123,13 +1190,13 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
                               >
                                 <span className="psr-name">{m.name}</span>
                                 <span className="psr-meta">
-                                  stock {m.stock_qty}
+                                  {t('purchases.po.stock', { qty: m.stock_qty })}
                                   {m.barcode ? ` • ${m.barcode}` : m.sku ? ` • ${m.sku}` : ''}
                                 </span>
                               </button>
                             ))}
                             {pickMatches.length === 0 && (
-                              <div className="muted small">No product found.</div>
+                              <div className="muted small">{t('purchases.po.noProductFound')}</div>
                             )}
                           </div>
                         </div>
@@ -1137,37 +1204,39 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
                         <button
                           type="button"
                           className="po-line-name po-line-pick-open"
-                          title="Change the product"
+                          title={t('purchases.po.changeProduct')}
                           onClick={() => {
                             setPickingFor(l.key);
                             setPickQuery('');
                           }}
                           data-testid={`po-pick-open-${index}`}
                         >
-                          {p?.name ?? 'Unknown product'}
+                          {p?.name ?? t('purchases.po.unknownProduct')}
                         </button>
                       )}
                       <div className="po-line-meta muted small">
                         {(p?.sku || p?.barcode || '') && <span>{p?.sku || p?.barcode}</span>}
                         {p && (
                           <span className={low ? 'po-stock-low' : ''}>
-                            stock {p.stock_qty}
+                            {t('purchases.po.stock', { qty: p.stock_qty })}
                             {min > 0 ? ` / min ${min}` : ''}
-                            {low ? ' — LOW' : ''}
+                            {low ? t('purchases.po.lowStock') : ''}
                           </span>
                         )}
-                        {p?.last_purchase_cost != null && <span>last cost {p.last_purchase_cost}</span>}
-                        {p && <span>cost {p.cost_price}</span>}
-                        {p && <span>sale {p.sale_price}</span>}
+                        {p?.last_purchase_cost != null && (
+                          <span>{t('purchases.po.lastCost', { cost: p.last_purchase_cost })}</span>
+                        )}
+                        {p && <span>{t('purchases.po.cost', { cost: p.cost_price })}</span>}
+                        {p && <span>{t('purchases.po.sale', { price: p.sale_price })}</span>}
                         {p?.last_supplier_name && (
                           <span className="po-supplier-badge">{p.last_supplier_name}</span>
                         )}
-                        {p?.is_loose ? <span className="po-badge">loose</span> : null}
+                        {p?.is_loose ? <span className="po-badge">{t('purchases.po.loose')}</span> : null}
                       </div>
                     </div>
 
                     <label className="po-cell">
-                      <span className="lbl-sm">Unit</span>
+                      <span className="lbl-sm">{t('purchases.po.unit')}</span>
                       <select
                         className="inp inp-sm"
                         value={l.unit_id ?? ''}
@@ -1187,7 +1256,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
                     </label>
 
                     <label className="po-cell">
-                      <span className="lbl-sm">Qty</span>
+                      <span className="lbl-sm">{t('purchases.po.qty')}</span>
                       <KeyboardInput
                         className="inp inp-sm"
                         type="text"
@@ -1199,7 +1268,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
                     </label>
 
                     <label className="po-cell">
-                      <span className="lbl-sm">Unit cost</span>
+                      <span className="lbl-sm">{t('purchases.po.unitCost')}</span>
                       <KeyboardInput
                         className="inp inp-sm"
                         type="text"
@@ -1211,7 +1280,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
                     </label>
 
                     <label className="po-cell">
-                      <span className="lbl-sm">Tax %</span>
+                      <span className="lbl-sm">{t('purchases.po.taxPct')}</span>
                       <KeyboardInput
                         className="inp inp-sm"
                         type="text"
@@ -1223,14 +1292,14 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
                     </label>
 
                     <div className="po-cell po-line-total">
-                      <span className="lbl-sm">Total</span>
+                      <span className="lbl-sm">{t('purchases.po.total')}</span>
                       <strong data-testid={`po-line-total-${index}`}>{money.total.toFixed(2)}</strong>
                     </div>
 
                     <button
                       className="btn btn-sm"
                       onClick={() => removeLine(l.key)}
-                      title="Remove the line (Del)"
+                      title={t('purchases.po.removeLine')}
                       data-testid={`po-remove-${index}`}
                     >
                       ✕
@@ -1240,19 +1309,27 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
                   <div className="po-line-sub muted small">
                     {l.units_in_base > 1 && (
                       <span data-testid={`po-conversion-${index}`}>
-                        {l.qty || 0} {l.unit_name || 'unit'} = {inBase} pcs · cost {perBase.toFixed(2)} per base unit
+                        {t('purchases.po.conversion', {
+                          qty: l.qty || 0,
+                          unit: l.unit_name || t('purchases.po.unit'),
+                          base: inBase,
+                          cost: perBase.toFixed(2),
+                        })}
                       </span>
                     )}
                     {p && (
                       <span className={mw ? 'po-warn' : ''} data-testid={`po-margin-${index}`}>
-                        margin {marginOf(l).toFixed(1)}%
-                        {mw && ' — below the limit'}
+                        {t('purchases.po.margin', { pct: marginOf(l).toFixed(1) })}
+                        {mw && t('purchases.po.marginLow')}
                       </span>
                     )}
                     {cc.warn && (
                       <span className="po-warn" data-testid={`po-cost-warning-${index}`}>
-                        cost changed {cc.oldCost.toFixed(2)} → {cc.newCost.toFixed(2)} ({cc.pct > 0 ? '+' : ''}
-                        {cc.pct}%)
+                        {t('purchases.po.costChanged', {
+                          old: cc.oldCost.toFixed(2),
+                          new: cc.newCost.toFixed(2),
+                          pct: `${cc.pct > 0 ? '+' : ''}${cc.pct}`,
+                        })}
                       </span>
                     )}
                     {mw && p && (
@@ -1261,7 +1338,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
                         onClick={() => applySuggestedSalePrice(l)}
                         data-testid={`po-update-price-${index}`}
                       >
-                        Update sale price
+                        {t('purchases.po.updateSalePrice')}
                       </button>
                     )}
                   </div>
@@ -1269,7 +1346,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
                   {needsBatch && (
                     <div className="po-line-batch">
                       <label className="po-cell">
-                        <span className="lbl-sm">Batch no</span>
+                        <span className="lbl-sm">{t('purchases.po.batchNo')}</span>
                         <input
                           className="inp inp-sm"
                           value={l.batch_no}
@@ -1278,7 +1355,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
                         />
                       </label>
                       <label className="po-cell">
-                        <span className="lbl-sm">Expiry</span>
+                        <span className="lbl-sm">{t('purchases.po.expiry')}</span>
                         <DateInput
                           value={l.expiry_date}
                           onChange={(v) => updateLine(l.key, { expiry_date: v })}
@@ -1295,7 +1372,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
         {/* ── the money ──────────────────────────────────────────────────── */}
         <div className="po-money-grid">
           <label className="lbl">
-            Discount
+            {t('purchases.po.discount')}
             <span className="po-discount-row">
               <select
                 className="inp inp-sm"
@@ -1303,8 +1380,8 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
                 onChange={(e) => setDiscountType(e.target.value === 'percent' ? 'percent' : 'amount')}
                 data-testid="po-discount-type"
               >
-                <option value="amount">Amount</option>
-                <option value="percent">Percent</option>
+                <option value="amount">{t('purchases.po.discountAmount')}</option>
+                <option value="percent">{t('purchases.po.discountPercent')}</option>
               </select>
               <KeyboardInput
                 className="inp inp-sm"
@@ -1317,7 +1394,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
             </span>
           </label>
           <label className="lbl">
-            Freight / other charges
+            {t('purchases.po.freight')}
             <KeyboardInput
               className="inp"
               type="text"
@@ -1328,7 +1405,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
             />
           </label>
           <label className="lbl">
-            Paid now
+            {t('purchases.po.paidNow')}
             <KeyboardInput
               className="inp"
               type="text"
@@ -1339,56 +1416,56 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
             />
           </label>
           <label className="lbl">
-            Payment method
+            {t('purchases.po.paymentMethod')}
             <select
               className="inp"
               value={paymentMethod}
               onChange={(e) => setPaymentMethod(e.target.value === 'bank' ? 'bank' : 'cash')}
               data-testid="po-payment-method"
             >
-              <option value="cash">Cash</option>
-              <option value="bank">Bank</option>
+              <option value="cash">{t('purchases.po.cash')}</option>
+              <option value="bank">{t('purchases.po.bank')}</option>
             </select>
           </label>
         </div>
 
         <div className="po-totals" data-testid="po-totals">
           <div>
-            <span>Subtotal</span>
+            <span>{t('purchases.po.subtotal')}</span>
             <strong data-testid="po-subtotal">{totals.subtotal.toFixed(2)}</strong>
           </div>
           <div>
-            <span>Discount</span>
+            <span>{t('purchases.po.discount')}</span>
             <strong data-testid="po-discount-total">
               {(totals.lineDiscount + totals.discount).toFixed(2)}
             </strong>
           </div>
           <div>
-            <span>Tax</span>
+            <span>{t('purchases.po.tax')}</span>
             <strong data-testid="po-tax-total">{totals.tax.toFixed(2)}</strong>
           </div>
           <div>
-            <span>Freight</span>
+            <span>{t('purchases.po.freightShort')}</span>
             <strong data-testid="po-freight-total">{totals.freight.toFixed(2)}</strong>
           </div>
           <div className="po-total-grand">
-            <span>Grand total</span>
+            <span>{t('purchases.po.grandTotal')}</span>
             <strong data-testid="po-total-grand">{totals.grandTotal.toFixed(2)}</strong>
           </div>
           <div>
-            <span>Paid</span>
+            <span>{t('purchases.po.paid')}</span>
             <strong data-testid="po-paid-total">{totals.paid.toFixed(2)}</strong>
           </div>
           <div>
-            <span>Payable</span>
+            <span>{t('purchases.po.payable')}</span>
             <strong data-testid="po-payable-total">{totals.payable.toFixed(2)}</strong>
           </div>
         </div>
 
         {!validation.ok && (
           <ul className="po-validation" data-testid="po-validation">
-            {validation.messages.map((m) => (
-              <li key={m}>{m}</li>
+            {validationMessages.map((m, i) => (
+              <li key={`${m}-${i}`}>{m}</li>
             ))}
           </ul>
         )}

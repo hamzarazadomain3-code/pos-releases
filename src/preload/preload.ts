@@ -287,7 +287,7 @@ const bridge: PosBridge = {
     getOrder: (id: number) => ipcRenderer.invoke('purchases:getOrder', id),
     createOrder: (supplierId: number, items, options?) =>
       ipcRenderer.invoke('purchases:createOrder', supplierId, items, options),
-    receiveOrder: (id: number, lines?: { product_id: number; qty: number }[]) =>
+    receiveOrder: (id: number, lines?: { item_id?: number; product_id?: number; qty: number }[]) =>
       ipcRenderer.invoke('purchases:receiveOrder', id, lines),
     cancelOrder: (id: number, reason?: string) => ipcRenderer.invoke('purchases:cancelOrder', id, reason),
     ledger: (supplierId: number) => ipcRenderer.invoke('purchases:ledger', supplierId),

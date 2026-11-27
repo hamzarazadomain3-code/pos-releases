@@ -371,12 +371,25 @@ export type PoValidationError =
   | 'cost_negative'
   | 'nan'
   | 'duplicate_product'
-  | 'paid_exceeds_total';
+  | 'paid_exceeds_total'
+  // Phase 3, item 6 — the header money rules.
+  | 'freight_negative'
+  | 'discount_out_of_range'
+  | 'tax_negative';
 
 export interface PoValidationInput {
   supplierId?: number | null;
   lines: { product_id: number; qty: number; unit_cost: number }[];
   totals?: PoTotals;
+  /**
+   * Phase 3, item 6 — the header money. When `totals` is NOT given, the
+   * validator computes it from the lines + these fields, so the service can
+   * call the SAME validator the screen uses and the two can never disagree.
+   */
+  discount_type?: DiscountType;
+  discount_value?: number;
+  freight?: number;
+  paid_amount?: number;
 }
 
 export interface PoValidation {
@@ -389,7 +402,13 @@ export interface PoValidation {
   duplicateProductIds: number[];
 }
 
-const VALIDATION_MESSAGES: Record<PoValidationError, string> = {
+/**
+ * The sentence for each validation error.
+ *
+ * Exported so the service can report the SAME words the screen shows — the
+ * owner reads one message, not two.
+ */
+export const VALIDATION_MESSAGES: Record<PoValidationError, string> = {
   no_supplier: 'Select a supplier.',
   no_lines: 'Add at least one item.',
   qty_not_positive: 'Every item needs a quantity greater than 0.',
@@ -397,6 +416,33 @@ const VALIDATION_MESSAGES: Record<PoValidationError, string> = {
   nan: 'An amount is not a valid number.',
   duplicate_product: 'The same product is in the list twice — merge the lines.',
   paid_exceeds_total: 'The paid amount is more than the order total.',
+  freight_negative: 'Freight cannot be negative.',
+  discount_out_of_range: 'The order discount must be between 0 and 100 percent.',
+  tax_negative: 'A tax rate cannot be negative.',
+};
+
+/**
+ * The i18n KEY for each validation error.
+ *
+ * Phase 3, item 15 — the PO screen is bilingual, so the reason a button is
+ * disabled must be too. The renderer maps the error code to this key and
+ * asks i18next for the sentence in the shop's language; the main process
+ * keeps using `VALIDATION_MESSAGES` (English), because an IPC error is a
+ * technical message, not a screen.
+ *
+ * Both maps cover the SAME error codes — the i18n suite checks that.
+ */
+export const VALIDATION_MESSAGE_KEYS: Record<PoValidationError, string> = {
+  no_supplier: 'purchases.po.validation.no_supplier',
+  no_lines: 'purchases.po.validation.no_lines',
+  qty_not_positive: 'purchases.po.validation.qty_not_positive',
+  cost_negative: 'purchases.po.validation.cost_negative',
+  nan: 'purchases.po.validation.nan',
+  duplicate_product: 'purchases.po.validation.duplicate_product',
+  paid_exceeds_total: 'purchases.po.validation.paid_exceeds_total',
+  freight_negative: 'purchases.po.validation.freight_negative',
+  discount_out_of_range: 'purchases.po.validation.discount_out_of_range',
+  tax_negative: 'purchases.po.validation.tax_negative',
 };
 
 /**
@@ -415,6 +461,8 @@ export function validatePo(input: PoValidationInput): PoValidation {
   let hasNaN = false;
   let hasBadQty = false;
   let hasBadCost = false;
+  let hasBadTax = false;
+  let hasBadLineDiscount = false;
   const seen = new Set<number>();
   const dupes = new Set<number>();
   for (const l of lines) {
@@ -425,6 +473,12 @@ export function validatePo(input: PoValidationInput): PoValidation {
       if (!(qty > 0)) hasBadQty = true;
       if (cost < 0) hasBadCost = true;
     }
+    // Phase 3, item 6 — a negative tax is a silent discount; a line discount
+    // above 100 % makes the line's money negative.
+    const tax = safeNumber((l as { tax_pct?: number })?.tax_pct, 0);
+    if (tax < 0) hasBadTax = true;
+    const lineDiscount = safeNumber((l as { discount_pct?: number })?.discount_pct, 0);
+    if (lineDiscount < 0 || lineDiscount > 100) hasBadLineDiscount = true;
     const pid = safeNumber(l?.product_id, 0);
     if (pid > 0) {
       if (seen.has(pid)) dupes.add(pid);
@@ -434,10 +488,35 @@ export function validatePo(input: PoValidationInput): PoValidation {
   if (hasNaN) errors.push('nan');
   if (hasBadQty) errors.push('qty_not_positive');
   if (hasBadCost) errors.push('cost_negative');
+  if (hasBadTax) errors.push('tax_negative');
+  if (hasBadLineDiscount) errors.push('discount_out_of_range');
   if (dupes.size > 0) errors.push('duplicate_product');
 
-  const totals = input?.totals;
-  if (totals && totals.paid > totals.grandTotal + 0.001) errors.push('paid_exceeds_total');
+  // Phase 3, item 6 — the header money.
+  const freight = safeNumber(input?.freight, 0);
+  if (freight < 0) errors.push('freight_negative');
+  const discountValue = safeNumber(input?.discount_value, 0);
+  if (discountValue < 0) errors.push('discount_out_of_range');
+  if (input?.discount_type === 'percent' && discountValue > 100) {
+    errors.push('discount_out_of_range');
+  }
+
+  // The totals: the caller's own, or computed from the lines + the header.
+  const totals =
+    input?.totals ??
+    computeTotals({
+      lines: lines.map((l) => ({
+        qty: safeNumber(l?.qty, 0),
+        unit_cost: safeNumber(l?.unit_cost, 0),
+        discount_pct: safeNumber((l as { discount_pct?: number })?.discount_pct, 0),
+        tax_pct: safeNumber((l as { tax_pct?: number })?.tax_pct, 0),
+      })),
+      discount_type: input?.discount_type,
+      discount_value: input?.discount_value,
+      freight: input?.freight,
+      paid_amount: input?.paid_amount,
+    });
+  if (totals.paid > totals.grandTotal + 0.001) errors.push('paid_exceeds_total');
 
   return {
     ok: errors.length === 0,

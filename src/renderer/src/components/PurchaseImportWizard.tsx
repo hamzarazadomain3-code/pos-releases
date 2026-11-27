@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type {
   Product,
   PurchaseImportParseResult,
@@ -43,21 +44,27 @@ type FieldKey =
   | 'expiry'
   | 'notes';
 
-const FIELDS: { key: FieldKey; label: string }[] = [
-  { key: 'ignore', label: '— ignore —' },
-  { key: 'barcode', label: 'Barcode' },
-  { key: 'sku', label: 'SKU / Item code' },
-  { key: 'name', label: 'Product name' },
-  { key: 'qty', label: 'Quantity' },
-  { key: 'unit', label: 'Unit' },
-  { key: 'cost', label: 'Cost rate' },
-  { key: 'sale', label: 'Sale price' },
-  { key: 'wholesale', label: 'Wholesale price' },
-  { key: 'discount', label: 'Discount %' },
-  { key: 'tax', label: 'Tax %' },
-  { key: 'batch', label: 'Batch' },
-  { key: 'expiry', label: 'Expiry date' },
-  { key: 'notes', label: 'Notes' },
+/**
+ * The columns the owner can map a file column to.
+ *
+ * Phase 3, item 15 — the label is an i18n KEY, not a sentence: the wizard is
+ * bilingual, so the dropdown follows the shop's language.
+ */
+const FIELDS: { key: FieldKey; labelKey: string }[] = [
+  { key: 'ignore', labelKey: 'purchases.import.fieldIgnore' },
+  { key: 'barcode', labelKey: 'purchases.import.fieldBarcode' },
+  { key: 'sku', labelKey: 'purchases.import.fieldSku' },
+  { key: 'name', labelKey: 'purchases.import.fieldName' },
+  { key: 'qty', labelKey: 'purchases.import.fieldQty' },
+  { key: 'unit', labelKey: 'purchases.import.fieldUnit' },
+  { key: 'cost', labelKey: 'purchases.import.fieldCost' },
+  { key: 'sale', labelKey: 'purchases.import.fieldSale' },
+  { key: 'wholesale', labelKey: 'purchases.import.fieldWholesale' },
+  { key: 'discount', labelKey: 'purchases.import.fieldDiscount' },
+  { key: 'tax', labelKey: 'purchases.import.fieldTax' },
+  { key: 'batch', labelKey: 'purchases.import.fieldBatch' },
+  { key: 'expiry', labelKey: 'purchases.import.fieldExpiry' },
+  { key: 'notes', labelKey: 'purchases.import.fieldNotes' },
 ];
 
 /** Auto-guess dictionary: English + common Urdu/roman spellings. */
@@ -210,6 +217,8 @@ export default function PurchaseImportWizard({
   onClose: () => void;
   onDone: () => void;
 }) {
+  // Phase 3, item 15 — the import wizard is bilingual (en + ur).
+  const { t } = useTranslation();
   const [step, setStep] = useState<Step>(1);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -446,13 +455,15 @@ export default function PurchaseImportWizard({
     setEdits((prev) => ({ ...prev, [row]: { ...(prev[row] || {}), [k]: v } }));
 
   const rowStatus = (r: ProcessedRow): { status: 'ok' | 'new' | 'warning' | 'error' | 'skipped'; text: string } => {
-    if (r.mode === 'skip') return { status: 'skipped', text: 'Skipped' };
+    if (r.mode === 'skip') return { status: 'skipped', text: t('purchases.import.statusSkipped') };
     const qty = safeNum(rowValue(r, 'qty'), NaN as unknown as number);
-    if (!Number.isFinite(qty) || qty <= 0) return { status: 'error', text: 'Invalid qty' };
-    if (r.mode === 'new') return { status: 'new', text: 'New product' };
-    if (safeNum(rowValue(r, 'cost'), 0) <= 0) return { status: 'warning', text: 'Cost is 0' };
-    if (r.mode === 'suggested') return { status: 'warning', text: `Fuzzy → ${r.matchedName}` };
-    return { status: 'ok', text: 'OK' };
+    if (!Number.isFinite(qty) || qty <= 0) return { status: 'error', text: t('purchases.import.statusInvalidQty') };
+    if (r.mode === 'new') return { status: 'new', text: t('purchases.import.statusNewProduct') };
+    if (safeNum(rowValue(r, 'cost'), 0) <= 0) return { status: 'warning', text: t('purchases.import.statusCostZero') };
+    if (r.mode === 'suggested') {
+      return { status: 'warning', text: t('purchases.import.statusFuzzy', { name: r.matchedName }) };
+    }
+    return { status: 'ok', text: t('purchases.import.statusOk') };
   };
 
   const totals = useMemo(() => {
@@ -484,7 +495,7 @@ export default function PurchaseImportWizard({
 
   // ── confirm ───────────────────────────────────────────────────────────────
   const confirm = useCallback(async () => {
-    if (!supplierId) return setError('Choose a supplier first');
+    if (!supplierId) return setError(t('purchases.import.errChooseSupplier'));
     const payloadRows = rows
       .filter((r) => rowStatus(r).status !== 'skipped' && rowStatus(r).status !== 'error')
       .map((r) => ({
@@ -504,7 +515,7 @@ export default function PurchaseImportWizard({
         units_in_base: r.unitsInBase,
         unit_name: r.unitName,
       }));
-    if (!payloadRows.length) return setError('Nothing to import — every row is skipped or invalid');
+    if (!payloadRows.length) return setError(t('purchases.import.errNothingToImport'));
 
     setBusy(true);
     setError(null);
@@ -526,7 +537,7 @@ export default function PurchaseImportWizard({
     } finally {
       setBusy(false);
     }
-  }, [supplierId, rows, docType, referenceNo, invoiceDate, file, options, onDone]);
+  }, [supplierId, rows, docType, referenceNo, invoiceDate, file, options, onDone, t]);
 
   const downloadErrors = useCallback(async () => {
     if (!summary?.errors?.length) return;
@@ -570,19 +581,19 @@ export default function PurchaseImportWizard({
           .replace(/\s+/g, ' ')
           .trim()
       );
-      setNotice('Purchase order copied to the clipboard — paste it into WhatsApp.');
+      setNotice(t('purchases.import.copied'));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [summary]);
+  }, [summary, t]);
 
   const steps: { id: string; label: string; n: Step }[] = [
-    { id: 's1', label: '1 · Details', n: 1 },
-    { id: 's2', label: '2 · File', n: 2 },
-    { id: 's3', label: '3 · Columns', n: 3 },
-    { id: 's4', label: '4 · Match', n: 4 },
-    { id: 's5', label: '5 · Review', n: 5 },
-    { id: 's6', label: '6 · Done', n: 6 },
+    { id: 's1', label: t('purchases.import.stepDetails'), n: 1 },
+    { id: 's2', label: t('purchases.import.stepFile'), n: 2 },
+    { id: 's3', label: t('purchases.import.stepColumns'), n: 3 },
+    { id: 's4', label: t('purchases.import.stepMatch'), n: 4 },
+    { id: 's5', label: t('purchases.import.stepReview'), n: 5 },
+    { id: 's6', label: t('purchases.import.stepDone'), n: 6 },
   ];
 
   const canNext: Record<Step, boolean> = {
@@ -596,7 +607,7 @@ export default function PurchaseImportWizard({
 
   return (
     <ModalShell
-      title="Import purchases from file"
+      title={t('purchases.import.title')}
       tabs={steps.map((s) => ({ id: s.id, label: s.label }))}
       activeId={steps[step - 1].id}
       onSelect={(id) => {
@@ -612,17 +623,23 @@ export default function PurchaseImportWizard({
           if (step === 3) void buildRows();
           setStep((s) => (Math.min(6, s + 1) as Step));
         } else {
-          setError(step === 1 ? 'Choose a supplier first' : step === 2 ? 'Pick a file first' : 'Map at least the Quantity column');
+          setError(
+            step === 1
+              ? t('purchases.import.errChooseSupplier')
+              : step === 2
+                ? t('purchases.import.errPickFile')
+                : t('purchases.import.errMapQty')
+          );
         }
       }}
-      submitLabel={step === 5 ? 'Confirm import' : step === 6 ? 'Close' : 'Next'}
+      submitLabel={step === 5 ? t('purchases.import.confirmImport') : step === 6 ? t('purchases.import.close') : t('purchases.import.next')}
       className="import-wizard"
-      label="Purchase import"
+      label={t('purchases.import.label')}
     >
       {progress && (
         <div style={{ marginBottom: 8 }}>
           <div className="muted small">
-            Processing rows… {progress.done}/{progress.total}
+            {t('purchases.import.processing', { done: progress.done, total: progress.total })}
           </div>
           <progress value={progress.done} max={Math.max(1, progress.total)} style={{ width: '100%' }} />
         </div>
@@ -633,31 +650,31 @@ export default function PurchaseImportWizard({
       {step === 1 && (
         <div className="form-row" style={{ gap: 12, flexWrap: 'wrap' }}>
           <div className="form-group" style={{ minWidth: 220 }}>
-            <label>Supplier *</label>
+            <label>{t('purchases.import.supplier')}</label>
             <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-              <option value="">— choose —</option>
+              <option value="">{t('purchases.import.chooseSupplier')}</option>
               {suppliers.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
           </div>
           <div className="form-group" style={{ minWidth: 220 }}>
-            <label>Document type *</label>
+            <label>{t('purchases.import.docType')}</label>
             <select value={docType} onChange={(e) => setDocType(e.target.value as 'purchase_order' | 'purchase_invoice')}>
-              <option value="purchase_order">Purchase Order — stock changes when received</option>
-              <option value="purchase_invoice">Purchase Invoice — stock changes now</option>
+              <option value="purchase_order">{t('purchases.import.docTypeOrder')}</option>
+              <option value="purchase_invoice">{t('purchases.import.docTypeInvoice')}</option>
             </select>
           </div>
           <div className="form-group" style={{ minWidth: 160 }}>
-            <label>Reference no.</label>
-            <input value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} placeholder="e.g. INV-778" />
+            <label>{t('purchases.import.referenceNo')}</label>
+            <input value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} placeholder={t('purchases.import.referencePlaceholder')} />
           </div>
           <div className="form-group" style={{ minWidth: 160 }}>
-            <label>Invoice date</label>
+            <label>{t('purchases.import.invoiceDate')}</label>
             <DateInput
               value={invoiceDate}
               onChange={setInvoiceDate}
-              placeholder="Invoice date"
+              placeholder={t('purchases.import.invoiceDate')}
             />
           </div>
         </div>
@@ -674,7 +691,7 @@ export default function PurchaseImportWizard({
               setDragOver(false);
               const f = e.dataTransfer.files?.[0];
               if (f) void handleFile(f);
-              else setError('Could not read the dropped file.');
+              else setError(t('purchases.import.couldNotReadFile'));
             }}
             style={{
               border: `2px dashed ${dragOver ? 'var(--primary)' : '#cbd5e1'}`,
@@ -685,17 +702,17 @@ export default function PurchaseImportWizard({
             }}
           >
             <div style={{ fontSize: 30, marginBottom: 6 }}>📄</div>
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>Drag & drop an .xlsx / .xls / .csv file here</div>
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>{t('purchases.import.dropHere')}</div>
             <div className="row-btns" style={{ justifyContent: 'center' }}>
               <button type="button" className="btn btn-sm btn-primary" onClick={pickFile} disabled={busy}>
-                Choose file…
+                {t('purchases.import.chooseFile')}
               </button>
               <button
                 type="button"
                 className="btn btn-sm"
                 onClick={() => void downloadTemplate()}
               >
-                Download sample template
+                {t('purchases.import.downloadTemplate')}
               </button>
             </div>
             <input
@@ -713,7 +730,12 @@ export default function PurchaseImportWizard({
           </div>
           {file && (
             <div className="muted small" style={{ marginTop: 8 }}>
-              Loaded <b>{file.file_name}</b> — sheet “{file.sheet}”, header row {file.header_row}, {file.rows.length} data row(s).
+              {t('purchases.import.loaded', {
+                file: file.file_name,
+                sheet: file.sheet,
+                header: file.header_row,
+                rows: file.rows.length,
+              })}
             </div>
           )}
         </div>
@@ -723,21 +745,21 @@ export default function PurchaseImportWizard({
       {step === 3 && file && (
         <div>
           <div className="muted small" style={{ marginBottom: 8 }}>
-            Auto-guessed from the header row. Adjust any column that was read wrongly.
+            {t('purchases.import.autoGuessed')}
           </div>
           <div className="table-wrap" style={{ maxHeight: 320, overflow: 'auto' }}>
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>File column</th>
-                  <th>First value</th>
-                  <th>Maps to</th>
+                  <th>{t('purchases.import.fileColumn')}</th>
+                  <th>{t('purchases.import.firstValue')}</th>
+                  <th>{t('purchases.import.mapsTo')}</th>
                 </tr>
               </thead>
               <tbody>
                 {file.headers.map((h) => (
                   <tr key={h}>
-                    <td>{h || <span className="muted">(blank)</span>}</td>
+                    <td>{h || <span className="muted">{t('purchases.import.blank')}</span>}</td>
                     <td className="muted">{file.rows[0]?.values[h] ?? ''}</td>
                     <td>
                       <select
@@ -745,7 +767,7 @@ export default function PurchaseImportWizard({
                         onChange={(e) => setMapping((m) => ({ ...m, [h]: e.target.value as FieldKey }))}
                       >
                         {FIELDS.map((f) => (
-                          <option key={f.key} value={f.key}>{f.label}</option>
+                          <option key={f.key} value={f.key}>{t(f.labelKey)}</option>
                         ))}
                       </select>
                     </td>
@@ -754,7 +776,9 @@ export default function PurchaseImportWizard({
               </tbody>
             </table>
           </div>
-          {!headerByField.qty && <div className="notice error">Map one column to “Quantity” to continue.</div>}
+          {!headerByField.qty && (
+            <div className="notice error">{t('purchases.import.mapQty')}</div>
+          )}
         </div>
       )}
 
@@ -762,18 +786,24 @@ export default function PurchaseImportWizard({
       {step === 4 && (
         <div>
           <div className="row-btns" style={{ marginBottom: 8, flexWrap: 'wrap' }}>
-            <button type="button" className="btn btn-sm" onClick={acceptAllSuggestions}>Accept all fuzzy matches</button>
-            <button type="button" className="btn btn-sm" onClick={createAllUnmatched}>Create products for all unmatched</button>
-            <button type="button" className="btn btn-sm" onClick={skipAllUnmatched}>Skip all unmatched</button>
+            <button type="button" className="btn btn-sm" onClick={acceptAllSuggestions}>
+              {t('purchases.import.acceptAllSuggestions')}
+            </button>
+            <button type="button" className="btn btn-sm" onClick={createAllUnmatched}>
+              {t('purchases.import.createAllUnmatched')}
+            </button>
+            <button type="button" className="btn btn-sm" onClick={skipAllUnmatched}>
+              {t('purchases.import.skipAllUnmatched')}
+            </button>
           </div>
           <div className="table-wrap" style={{ maxHeight: 360, overflow: 'auto' }}>
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Row</th>
-                  <th>From file</th>
-                  <th>Matched to</th>
-                  <th>Action</th>
+                  <th>{t('purchases.import.row')}</th>
+                  <th>{t('purchases.import.fromFile')}</th>
+                  <th>{t('purchases.import.matchedTo')}</th>
+                  <th>{t('purchases.import.action')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -781,19 +811,19 @@ export default function PurchaseImportWizard({
                   <tr key={r.row}>
                     <td>{r.row}</td>
                     <td>
-                      {r.name || r.barcode || r.sku || <span className="muted">(blank)</span>}
+                      {r.name || r.barcode || r.sku || <span className="muted">{t('purchases.import.blank')}</span>}
                       <div className="muted small">{[r.barcode, r.sku].filter(Boolean).join(' · ')}</div>
                     </td>
                     <td>
                       {r.mode === 'matched' || r.mode === 'suggested' ? (
                         <span className={r.mode === 'suggested' ? 'text-warn' : ''}>
                           {r.matchedName}
-                          {r.mode === 'suggested' ? ' (check)' : ''}
+                          {r.mode === 'suggested' ? t('purchases.import.check') : ''}
                         </span>
                       ) : r.mode === 'new' ? (
-                        <span className="text-ok">Will be created</span>
+                        <span className="text-ok">{t('purchases.import.willBeCreated')}</span>
                       ) : (
-                        <span className="muted">No match</span>
+                        <span className="muted">{t('purchases.import.noMatch')}</span>
                       )}
                     </td>
                     <td>
@@ -806,8 +836,8 @@ export default function PurchaseImportWizard({
                           else setMode(r.row, 'matched', Number(v.slice(2)));
                         }}
                       >
-                        <option value="skip">Skip row</option>
-                        <option value="new">Create new product</option>
+                        <option value="skip">{t('purchases.import.skipRow')}</option>
+                        <option value="new">{t('purchases.import.createNewProduct')}</option>
                         {products.slice(0, 300).map((p) => (
                           <option key={p.id} value={`p:${p.id}`}>{p.name}</option>
                         ))}
@@ -818,7 +848,9 @@ export default function PurchaseImportWizard({
               </tbody>
             </table>
           </div>
-          {rows.length > 500 && <div className="muted small">Showing the first 500 of {rows.length} rows — all rows import.</div>}
+          {rows.length > 500 && (
+            <div className="muted small">{t('purchases.import.showingFirst', { rows: rows.length })}</div>
+          )}
         </div>
       )}
 
@@ -832,7 +864,7 @@ export default function PurchaseImportWizard({
                 checked={options.updateCostPrice}
                 onChange={(e) => setOptions((o) => ({ ...o, updateCostPrice: e.target.checked }))}
               />{' '}
-              Update product cost price
+              {t('purchases.import.updateCostPrice')}
             </label>
             <label className="muted small">
               <input
@@ -840,7 +872,7 @@ export default function PurchaseImportWizard({
                 checked={options.updateSalePrice}
                 onChange={(e) => setOptions((o) => ({ ...o, updateSalePrice: e.target.checked }))}
               />{' '}
-              Update sale price from file
+              {t('purchases.import.updateSalePrice')}
             </label>
             <label className="muted small">
               <input
@@ -848,7 +880,7 @@ export default function PurchaseImportWizard({
                 checked={options.updateOnlyIfChanged}
                 onChange={(e) => setOptions((o) => ({ ...o, updateOnlyIfChanged: e.target.checked }))}
               />{' '}
-              Update only if changed
+              {t('purchases.import.updateOnlyIfChanged')}
             </label>
             <label className="muted small">
               <input
@@ -856,23 +888,23 @@ export default function PurchaseImportWizard({
                 checked={options.mergeDuplicates}
                 onChange={(e) => setOptions((o) => ({ ...o, mergeDuplicates: e.target.checked }))}
               />{' '}
-              Merge duplicates
+              {t('purchases.import.mergeDuplicates')}
             </label>
           </div>
           <div className="table-wrap" style={{ maxHeight: 360, overflow: 'auto' }}>
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Row</th>
-                  <th>Product</th>
-                  <th>Status</th>
-                  <th className="num">Qty</th>
-                  <th className="num">Cost</th>
-                  <th className="num">Sale</th>
-                  <th className="num">Disc %</th>
-                  <th className="num">Tax %</th>
-                  <th>Batch</th>
-                  <th>Expiry</th>
+                  <th>{t('purchases.import.row')}</th>
+                  <th>{t('purchases.import.product')}</th>
+                  <th>{t('purchases.import.status')}</th>
+                  <th className="num">{t('purchases.import.qty')}</th>
+                  <th className="num">{t('purchases.import.cost')}</th>
+                  <th className="num">{t('purchases.import.sale')}</th>
+                  <th className="num">{t('purchases.import.discPct')}</th>
+                  <th className="num">{t('purchases.import.taxPct')}</th>
+                  <th>{t('purchases.import.batch')}</th>
+                  <th>{t('purchases.import.expiry')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -882,7 +914,13 @@ export default function PurchaseImportWizard({
                     <tr key={r.row}>
                       <td>{r.row}</td>
                       <td>
-                        {r.mode === 'new' ? <span className="text-ok">{r.name} (new)</span> : r.product_id ? productById.get(r.product_id)?.name ?? r.matchedName : r.name}
+                        {r.mode === 'new' ? (
+                          <span className="text-ok">{r.name}{t('purchases.import.newSuffix')}</span>
+                        ) : r.product_id ? (
+                          productById.get(r.product_id)?.name ?? r.matchedName
+                        ) : (
+                          r.name
+                        )}
                       </td>
                       <td>
                         <span
@@ -907,7 +945,11 @@ export default function PurchaseImportWizard({
             </table>
           </div>
           <div className="muted small" style={{ marginTop: 8, textAlign: 'right' }}>
-            {totals.count} line(s) · {Number(totals.qty.toFixed(3))} qty · total {totals.amount.toLocaleString()}
+            {t('purchases.import.summary', {
+              count: totals.count,
+              qty: Number(totals.qty.toFixed(3)),
+              amount: totals.amount.toLocaleString(),
+            })}
           </div>
         </div>
       )}
@@ -916,45 +958,51 @@ export default function PurchaseImportWizard({
       {step === 6 && summary && (
         <div>
           <div className="panel" style={{ padding: 12 }}>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>Import complete</div>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>{t('purchases.import.importComplete')}</div>
             <div>
-              Imported <b>{summary.imported}</b> line(s) · created <b>{summary.created}</b> product(s) · skipped{' '}
-              <b>{summary.skipped}</b> · failed <b>{summary.failed}</b>
+              {t('purchases.import.importedSummary', {
+                imported: summary.imported,
+                created: summary.created,
+                skipped: summary.skipped,
+                failed: summary.failed,
+              })}
             </div>
             {summary.purchase_order_id && (
               <div className="row-btns" style={{ marginTop: 10, flexWrap: 'wrap' }}>
                 <button type="button" className="btn btn-sm" onClick={() => window.api.purchases.previewOrder(summary.purchase_order_id!).catch((e) => setError(String(e)))}>
-                  Preview / print
+                  {t('purchases.import.previewPrint')}
                 </button>
                 <button type="button" className="btn btn-sm" onClick={shareOrder}>
-                  Copy for WhatsApp
+                  {t('purchases.import.copyWhatsApp')}
                 </button>
                 <button type="button" className="btn btn-sm" onClick={() => window.api.purchases.saveOrderText(summary.purchase_order_id!).catch((e) => setError(String(e)))}>
-                  Save as text
+                  {t('purchases.import.saveAsText')}
                 </button>
                 {summary.import_id && (
                   <button type="button" className="btn btn-sm btn-danger" onClick={undoImport} disabled={busy}>
-                    Undo this import
+                    {t('purchases.import.undoImport')}
                   </button>
                 )}
               </div>
             )}
             {summary.errors.length > 0 && (
               <div style={{ marginTop: 10 }}>
-                <div className="text-warn" style={{ fontWeight: 600 }}>{summary.errors.length} row(s) failed</div>
+                <div className="text-warn" style={{ fontWeight: 600 }}>
+                  {t('purchases.import.rowsFailed', { count: summary.errors.length })}
+                </div>
                 <ul className="muted small" style={{ margin: '4px 0 8px 16px' }}>
                   {summary.errors.slice(0, 8).map((e) => (
-                    <li key={e.row}>Row {e.row}: {e.message}</li>
+                    <li key={e.row}>{t('purchases.import.rowFailed', { row: e.row, message: e.message })}</li>
                   ))}
                 </ul>
                 <button type="button" className="btn btn-sm" onClick={downloadErrors}>
-                  Download error report (CSV)
+                  {t('purchases.import.downloadErrors')}
                 </button>
               </div>
             )}
             {undoable && !summary.purchase_order_id && (
               <div className="muted small" style={{ marginTop: 8 }}>
-                Last import #{undoable.id} is still undoable from the Purchases screen.
+                {t('purchases.import.stillUndoable', { id: undoable.id })}
               </div>
             )}
           </div>

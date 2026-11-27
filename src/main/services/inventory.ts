@@ -523,6 +523,47 @@ export function createBatch(
 }
 
 /**
+ * Put stock INTO a named batch — the same batch if it already exists.
+ *
+ * Phase 3, item 12 — a batch number IS the batch.
+ *
+ * `createBatch()` always inserted a new row, so receiving the SAME purchase
+ * line twice (two partial receipts of one order line that carries an explicit
+ * batch number) left TWO rows with the same number. The FIFO report then
+ * showed the batch twice and any sum over it was wrong. Here the quantity is
+ * ADDED to the existing row (and the cost / expiry are filled in if they were
+ * empty), so one batch number is always one row.
+ */
+export function addToBatch(
+  productId: number,
+  batchNumber: string,
+  quantity: number,
+  costPrice: number,
+  expiryDate: string | null
+): number {
+  const db = getDb();
+  const qty = roundStock(quantity);
+  if (!(qty > 0)) {
+    throw new Error('Batch quantity must be positive');
+  }
+  const existing = db
+    .prepare('SELECT * FROM product_batches WHERE product_id = ? AND batch_number = ? ORDER BY id LIMIT 1')
+    .get(productId, batchNumber) as
+    | { id: number; quantity: number; quantity_received: number; cost_price: number; expiry_date: string | null }
+    | undefined;
+  if (!existing) return createBatch(productId, batchNumber, qty, costPrice, expiryDate);
+  db.prepare(
+    `UPDATE product_batches
+        SET quantity = COALESCE(quantity, 0) + ?,
+            quantity_received = COALESCE(quantity_received, 0) + ?,
+            cost_price = CASE WHEN COALESCE(cost_price, 0) = 0 THEN ? ELSE cost_price END,
+            expiry_date = CASE WHEN expiry_date IS NULL OR expiry_date = '' THEN ? ELSE expiry_date END
+      WHERE id = ?`
+  ).run(qty, qty, costPrice, expiryDate ?? null, existing.id);
+  return existing.id;
+}
+
+/**
  * Take stock off the shelf, oldest (and earliest-expiring) batch first.
  *
  * Phase 1, item 1.1 — the batch rows are NO LONGER left half-deducted when the

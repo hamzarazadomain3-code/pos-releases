@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { Product, PurchaseItem, PurchaseOrder, PurchasePriceRow, Supplier, SupplierTransaction } from '../../../shared/types';
 import { DateRangePicker, SearchInput, FilterBar, FilterRow } from '../components/filters';
 import { formatDateTimeAdmin } from '../utils/dateUtils';
@@ -15,6 +16,8 @@ import { lineMoney } from '../../../shared/purchaseCalc';
 type Tab = 'suppliers' | 'orders';
 
 export default function Purchases() {
+  // Phase 3, item 15 — the Purchases screen is bilingual (en + ur).
+  const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('suppliers');
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
@@ -68,7 +71,7 @@ export default function Purchases() {
   }, [load]);
 
   const addSupplier = async () => {
-    if (!sName.trim()) return setErr('Supplier name required');
+    if (!sName.trim()) return setErr(t('purchases.page.nameRequired'));
     await window.api.purchases.createSupplier(sName, sPhone, sAddress);
     setSName('');
     setSPhone('');
@@ -84,7 +87,7 @@ export default function Purchases() {
   const pay = async () => {
     if (!ledger) return;
     const amt = Number(payAmount);
-    if (!amt || amt <= 0) return setErr('Enter a valid amount');
+    if (!amt || amt <= 0) return setErr(t('purchases.page.enterAmount'));
     try {
       const sup = await window.api.purchases.paySupplier(ledger.supplier.id, amt, payMode);
       setLedger({ supplier: sup, rows: await window.api.purchases.ledger(sup.id) });
@@ -97,10 +100,24 @@ export default function Purchases() {
 
   const openPo = async (id: number) => {
     const full = await window.api.purchases.getOrder(id);
+    // Phase 3, item 16 — the "Stock received" note belongs to the order that
+    // was received. It used to stay on screen, so the NEXT order the owner
+    // opened showed a note about a receipt that belonged to another order.
+    setReceiveNote('');
+    setReceiveQty({});
     if (full) setPoView({ order: full, items: full.items });
   };
 
-  const receivePo = async (id: number, linesToReceive?: { product_id: number; qty: number }[]) => {
+  /**
+   * Phase 3, item 3 — the partial receive is keyed by the LINE, not by the
+   * product.
+   *
+   * The old key was `product_id`, so an order with two lines of the SAME
+   * product (two batches, two prices) showed ONE input for both lines and the
+   * typed quantity was sent for EACH of them — the shop received twice what
+   * it typed. The line id (`purchase_items.id`) addresses one row exactly.
+   */
+  const receivePo = async (id: number, linesToReceive?: { item_id: number; product_id: number; qty: number }[]) => {
     try {
       await window.api.purchases.receiveOrder(id, linesToReceive);
       // The receipt says what happened to the product's cost price — the shop
@@ -109,11 +126,11 @@ export default function Purchases() {
         const s = await window.api.purchases.poSettings();
         setReceiveNote(
           s.update_cost_price
-            ? 'Stock received. The products’ cost price now follows this purchase.'
-            : 'Stock received. The products’ cost price was left as it is (the shop’s costing setting says so).'
+            ? t('purchases.page.receivedCostUpdated')
+            : t('purchases.page.receivedCostKept')
         );
       } catch {
-        setReceiveNote('Stock received.');
+        setReceiveNote(t('purchases.page.receivedPlain'));
       }
       setPoView(null);
       setReceiveQty({});
@@ -126,10 +143,11 @@ export default function Purchases() {
   /** Receive only the quantities typed in the PO view (partial receive). */
   const receivePartial = async () => {
     if (!poView) return;
+    // Phase 3, item 3 — the quantity is addressed to the LINE.
     const lines = poView.items
-      .map((i) => ({ product_id: i.product_id, qty: Number(receiveQty[i.product_id]) || 0 }))
+      .map((i) => ({ item_id: i.id, product_id: i.product_id, qty: Number(receiveQty[i.id]) || 0 }))
       .filter((l) => l.qty > 0);
-    if (!lines.length) return setErr('Type how much of each line arrived before receiving.');
+    if (!lines.length) return setErr(t('purchases.page.typeHowMuch'));
     await receivePo(poView.order.id, lines);
   };
 
@@ -187,6 +205,11 @@ export default function Purchases() {
    * Duplicate an order: the SAME lines, as a NEW order (a new number, a new
    * date, nothing received yet). The copy keeps the costs and the units it
    * was ordered with — the shop can edit them before creating it.
+   *
+   * Phase 3, item 17 — the copy does NOT carry the supplier's invoice /
+   * reference number. That number belongs to ONE invoice; two orders showing
+   * the same ref no made the shop's own records ambiguous (and the import
+   * match on the ref no picked the wrong order).
    */
   const duplicatePo = async (id: number) => {
     try {
@@ -204,14 +227,14 @@ export default function Purchases() {
       if (!items.length) throw new Error('That order has no items to duplicate.');
       const copy = await window.api.purchases.createOrder(full.supplier_id, items, {
         status: 'draft',
-        reference_no: full.reference_no ?? null,
+        // NO reference_no — the new order has its own (the shop fills it in).
         notes: full.notes ?? null,
         discount_type: (full.discount_type as 'amount' | 'percent') ?? 'amount',
         discount_value: Number(full.discount_value) || 0,
         freight: Number(full.freight) || 0,
       });
       await load();
-      setErr(`Duplicated as PO-${String(copy.id).padStart(4, '0')} (a draft).`);
+      setErr(t('purchases.page.duplicated', { id: String(copy.id).padStart(4, '0') }));
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
@@ -227,14 +250,14 @@ export default function Purchases() {
   //   open and the goods have not all arrived".
   const statusLabel = (s: string) =>
     s === 'received'
-      ? 'Received'
+      ? t('purchases.page.statusReceived')
       : s === 'cancelled'
-        ? 'Cancelled'
+        ? t('purchases.page.statusCancelled')
         : s === 'draft'
-          ? 'Draft'
+          ? t('purchases.page.statusDraft')
           : s === 'partial'
-            ? 'Partial'
-            : 'Ordered';
+            ? t('purchases.page.statusPartial')
+            : t('purchases.page.statusOrdered');
 
   const statusChip = (s: string) =>
     s === 'received'
@@ -261,17 +284,22 @@ export default function Purchases() {
 
   const supplierOptions = suppliers.map(s => ({ value: s.id, label: s.name }));
   const statusOptions = [
-    { value: 'draft', label: 'Draft' },
-    { value: 'ordered', label: 'Ordered' },
-    { value: 'partial', label: 'Partial' },
-    { value: 'received', label: 'Received' },
-    { value: 'cancelled', label: 'Cancelled' },
+    { value: 'draft', label: t('purchases.page.statusDraft') },
+    { value: 'ordered', label: t('purchases.page.statusOrdered') },
+    { value: 'partial', label: t('purchases.page.statusPartial') },
+    { value: 'received', label: t('purchases.page.statusReceived') },
+    { value: 'cancelled', label: t('purchases.page.statusCancelled') },
   ];
 
   // ── the totals of the FILTERED list ──────────────────────────────────────
-  const listTotal = orders.reduce((s, o) => s + (Number(o.total_amount) || 0), 0);
-  const listPaid = orders.reduce((s, o) => s + (Number(o.paid_amount) || 0), 0);
-  const listPayable = orders.reduce(
+  //   Phase 3, item 18 — a DRAFT costs nothing and a CANCELLED order is not
+  //   payable, so neither belongs in the money row. Before this the header
+  //   summed every row, so a saved draft or a cancelled order inflated the
+  //   "Payable" figure the owner reads.
+  const moneyOrders = orders.filter((o) => o.status !== 'draft' && o.status !== 'cancelled');
+  const listTotal = moneyOrders.reduce((s, o) => s + (Number(o.total_amount) || 0), 0);
+  const listPaid = moneyOrders.reduce((s, o) => s + (Number(o.paid_amount) || 0), 0);
+  const listPayable = moneyOrders.reduce(
     (s, o) => s + Math.max(0, (Number(o.total_amount) || 0) - (Number(o.paid_amount) || 0)),
     0
   );
@@ -299,7 +327,7 @@ export default function Purchases() {
 
   useKeyboardScope({
     kind: 'page',
-    label: 'Purchases & Suppliers',
+    label: t('purchases.page.scopeLabel'),
     actions: {
       new_record: () => {
         if (tab === 'suppliers') setSupplierModal(true);
@@ -307,22 +335,25 @@ export default function Purchases() {
       },
     },
     shortcuts: [
-      { action: 'new_record', label: tab === 'suppliers' ? 'Add supplier' : 'New purchase order' },
-      { keys: '↑ / ↓', label: 'Move between rows' },
-      { keys: 'Enter', label: 'Open highlighted row / next PO line field' },
+      {
+        action: 'new_record',
+        label: tab === 'suppliers' ? t('purchases.page.scopeAddSupplier') : t('purchases.page.scopeNewOrder'),
+      },
+      { keys: '↑ / ↓', label: t('purchases.page.scopeMoveRows') },
+      { keys: 'Enter', label: t('purchases.page.scopeOpenRow') },
     ],
   });
 
   return (
     <div className="page">
       <div className="page-head">
-        <h1>Purchases & Suppliers</h1>
+        <h1>{t('purchases.page.title')}</h1>
         <div className="tabs">
           <button className={`tab-btn ${tab === 'suppliers' ? 'active' : ''}`} onClick={() => setTab('suppliers')}>
-            Suppliers
+            {t('purchases.page.tabSuppliers')}
           </button>
           <button className={`tab-btn ${tab === 'orders' ? 'active' : ''}`} onClick={() => setTab('orders')}>
-            Purchase Orders
+            {t('purchases.page.tabOrders')}
           </button>
         </div>
       </div>
@@ -336,18 +367,18 @@ export default function Purchases() {
       {tab === 'suppliers' && (
         <div className="card">
           <div className="card-head">
-            <h2>Suppliers</h2>
+            <h2>{t('purchases.page.tabSuppliers')}</h2>
             <button className="btn btn-primary" onClick={() => setSupplierModal(true)}>
-              Add Supplier
+              {t('purchases.page.addSupplier')}
             </button>
           </div>
           <div {...supplierList.getContainerProps()}>
           <table className="tbl">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Phone</th>
-                <th>Payable</th>
+                <th>{t('purchases.page.name')}</th>
+                <th>{t('purchases.page.phone')}</th>
+                <th>{t('purchases.page.payable')}</th>
                 <th></th>
               </tr>
             </thead>
@@ -359,7 +390,7 @@ export default function Purchases() {
                   <td className={s.balance > 0 ? 'text-warn' : ''}>{s.balance.toFixed(2)}</td>
                   <td>
                     <button className="btn btn-sm" onClick={() => openLedger(s)}>
-                      Ledger / Pay
+                      {t('purchases.page.ledgerPay')}
                     </button>
                   </td>
                 </tr>
@@ -367,7 +398,7 @@ export default function Purchases() {
               {!suppliers.length && (
                 <tr>
                   <td colSpan={4} className="muted">
-                    No suppliers yet — add one to start purchasing.
+                    {t('purchases.page.noSuppliers')}
                   </td>
                 </tr>
               )}
@@ -385,8 +416,8 @@ export default function Purchases() {
                 from={from}
                 to={to}
                 onChange={(from: string, to: string) => { setFrom(from); setTo(to); }}
-                labelFrom="From"
-                labelTo="To"
+                labelFrom={t('purchases.page.from')}
+                labelTo={t('purchases.page.to')}
               />
               <select
                 className="field-select"
@@ -394,7 +425,7 @@ export default function Purchases() {
                 onChange={(e) => setSupplierId(e.target.value ? Number(e.target.value) : '')}
                 style={{ width: '180px' }}
               >
-                <option value="">All Suppliers</option>
+                <option value="">{t('purchases.page.allSuppliers')}</option>
                 {supplierOptions.map(opt => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
@@ -405,7 +436,7 @@ export default function Purchases() {
                 onChange={(e) => setStatus(e.target.value as any)}
                 style={{ width: '140px' }}
               >
-                <option value="">All Status</option>
+                <option value="">{t('purchases.page.allStatus')}</option>
                 {statusOptions.map(opt => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
@@ -426,18 +457,18 @@ export default function Purchases() {
     }
   }}
 >
-                Export Excel
+                {t('purchases.page.exportExcel')}
               </button>
               {undoInfo && (
-                <button className="btn btn-sm" onClick={undoLastImport} title={`Undo import #${undoInfo.id} (${undoInfo.imported_count} lines)`}>
-                  Undo last import
+                <button className="btn btn-sm" onClick={undoLastImport} title={`${t('purchases.page.undoImport')} #${undoInfo.id} (${undoInfo.imported_count} lines)`}>
+                  {t('purchases.page.undoImport')}
                 </button>
               )}
               <button className="btn btn-sm" onClick={() => { setImportFile(null); setImportOpen(true); }}>
-                Import from file
+                {t('purchases.page.importFromFile')}
               </button>
               <button className="btn btn-primary" onClick={() => setPoModal(true)}>
-                New Purchase Order
+                {t('purchases.page.newOrder')}
               </button>
             </FilterRow>
           </FilterBar>
@@ -456,7 +487,7 @@ export default function Purchases() {
                 setImportFile(f);
                 setImportOpen(true);
               } else {
-                setErr('Could not read the dropped file.');
+                setErr(t('purchases.page.couldNotReadFile'));
               }
             }}
             style={
@@ -465,23 +496,23 @@ export default function Purchases() {
                 : undefined
             }
           >
-            {importDragOver && <div className="muted small">Drop the Excel / CSV file to start the import…</div>}
+            {importDragOver && <div className="muted small">{t('purchases.page.dropHint')}</div>}
           </div>
           <div className="po-totals" style={{ marginBottom: 10 }} data-testid="po-list-totals">
             <div>
-              <span>Orders</span>
+              <span>{t('purchases.page.orders')}</span>
               <strong data-testid="po-list-count">{orders.length}</strong>
             </div>
             <div>
-              <span>Order value</span>
+              <span>{t('purchases.page.orderValue')}</span>
               <strong data-testid="po-list-total">{listTotal.toFixed(2)}</strong>
             </div>
             <div>
-              <span>Paid now</span>
+              <span>{t('purchases.page.paidNow')}</span>
               <strong data-testid="po-list-paid">{listPaid.toFixed(2)}</strong>
             </div>
             <div>
-              <span>Payable</span>
+              <span>{t('purchases.page.payable')}</span>
               <strong data-testid="po-list-payable">{listPayable.toFixed(2)}</strong>
             </div>
           </div>
@@ -490,12 +521,12 @@ export default function Purchases() {
             <thead>
               <tr>
                 <th>#</th>
-                <th>Supplier</th>
-                <th>Date</th>
-                <th>Total</th>
-                <th>Paid</th>
-                <th>Payable</th>
-                <th>Status</th>
+                <th>{t('purchases.page.tabSuppliers')}</th>
+                <th>{t('purchases.page.date')}</th>
+                <th>{t('purchases.page.total')}</th>
+                <th>{t('purchases.page.paid')}</th>
+                <th>{t('purchases.page.payable')}</th>
+                <th>{t('purchases.page.status')}</th>
                 <th></th>
               </tr>
             </thead>
@@ -519,27 +550,27 @@ export default function Purchases() {
                   </td>
                   <td>
                     <div className="po-quick-actions">
-                      <button className="btn btn-sm" onClick={() => openPo(o.id)}>
-                        View
+                      <button className="btn btn-sm" onClick={() => openPo(o.id)} data-testid={`po-view-${o.id}`}>
+                        {t('purchases.page.view')}
                       </button>
                       {isOpenOrder(o.status) && (
-                        <button className="btn btn-sm btn-primary" onClick={() => receivePo(o.id)}>
-                          Receive
+                        <button className="btn btn-sm btn-primary" onClick={() => receivePo(o.id)} data-testid={`po-receive-${o.id}`}>
+                          {t('purchases.page.receive')}
                         </button>
                       )}
                       {canCancelOrder(o.status) && (
                         <button className="btn btn-sm" onClick={() => askCancelPo(o.id)}>
-                          Cancel
+                          {t('purchases.page.cancel')}
                         </button>
                       )}
                       <button className="btn btn-sm" onClick={() => printPo(o.id, 'a4')}>
-                        Print
+                        {t('purchases.page.print')}
                       </button>
                       <button className="btn btn-sm" onClick={() => printPo(o.id, 'thermal80')}>
-                        Thermal
+                        {t('purchases.page.thermal')}
                       </button>
                       <button className="btn btn-sm" onClick={() => duplicatePo(o.id)}>
-                        Duplicate
+                        {t('purchases.page.duplicate')}
                       </button>
                     </div>
                   </td>
@@ -548,7 +579,7 @@ export default function Purchases() {
               {!orders.length && (
                 <tr>
                   <td colSpan={8} className="muted">
-                    No purchase orders yet.
+                    {t('purchases.page.noOrders')}
                   </td>
                 </tr>
               )}
@@ -562,20 +593,20 @@ export default function Purchases() {
         <Modal
           onClose={() => setCancelTarget(null)}
           onSubmit={() => void cancelPo(cancelTarget, cancelReason)}
-          title="Cancel this purchase order"
+          title={t('purchases.page.cancelTitle')}
           className="modal-sm"
-          label="Cancel purchase order"
-          shortcuts={[{ action: 'save', label: 'Cancel the order' }]}
+          label={t('purchases.page.cancelLabel')}
+          shortcuts={[{ action: 'save', label: t('purchases.page.cancelShortcut') }]}
         >
           <div className="notice warn" style={{ marginBottom: 10 }}>
-            The order is cancelled and the stock is NOT touched. The reason is stored with the order.
+            {t('purchases.page.cancelNotice')}
           </div>
-          <label className="lbl">Reason</label>
+          <label className="lbl">{t('purchases.page.reason')}</label>
           <input
             className="inp"
             value={cancelReason}
             onChange={(e) => setCancelReason(e.target.value)}
-            placeholder="Why is it cancelled?"
+            placeholder={t('purchases.page.reasonPlaceholder')}
             data-testid="po-cancel-reason"
           />
           <div className="row-btns">
@@ -584,10 +615,10 @@ export default function Purchases() {
               onClick={() => void cancelPo(cancelTarget, cancelReason)}
               data-testid="po-cancel-confirm"
             >
-              Cancel the order
+              {t('purchases.page.cancelTheOrder')}
             </button>
             <button className="btn" onClick={() => setCancelTarget(null)}>
-              Keep it
+              {t('purchases.page.keepIt')}
             </button>
           </div>
         </Modal>
@@ -597,23 +628,23 @@ export default function Purchases() {
         <Modal
           onClose={() => setSupplierModal(false)}
           onSubmit={addSupplier}
-          title="Add Supplier"
+          title={t('purchases.page.addSupplier')}
           className="modal-sm"
-          label="Add Supplier"
-          shortcuts={[{ action: 'save', label: 'Save supplier' }]}
+          label={t('purchases.page.addSupplier')}
+          shortcuts={[{ action: 'save', label: t('purchases.page.saveSupplier') }]}
         >
-            <label className="lbl">Name *</label>
+            <label className="lbl">{t('purchases.page.name')} *</label>
             <input className="inp" value={sName} onChange={(e) => setSName(e.target.value)} />
-            <label className="lbl">Phone</label>
+            <label className="lbl">{t('purchases.page.phone')}</label>
             <input className="inp" value={sPhone} onChange={(e) => setSPhone(e.target.value)} />
-            <label className="lbl">Address</label>
+            <label className="lbl">{t('purchases.page.address')}</label>
             <input className="inp" value={sAddress} onChange={(e) => setSAddress(e.target.value)} />
             <div className="row-btns">
               <button className="btn btn-primary" onClick={addSupplier}>
-                Save
+                {t('purchases.page.save')}
               </button>
               <button className="btn" onClick={() => setSupplierModal(false)}>
-                Cancel
+                {t('purchases.page.cancel')}
               </button>
             </div>
         </Modal>
@@ -635,7 +666,7 @@ export default function Purchases() {
           onClose={() => setPoView(null)}
           title={`PO-${String(poView.order.id).padStart(4, '0')} — ${poView.order.supplier_name ?? ''}`}
           className="modal-wide modal-scroll-body"
-          label="Purchase Order"
+          label={t('purchases.page.poLabel')}
         >
           <div className="modal-body">
             <p className="muted small">
@@ -643,14 +674,19 @@ export default function Purchases() {
               <span className={`po-status-chip ${statusChip(poView.order.status)}`}>
                 {statusLabel(poView.order.status)}
               </span>
-              {poView.order.delivery_date ? ` | Expected: ${poView.order.delivery_date}` : ''}
+              {poView.order.delivery_date ? ` | ${t('purchases.page.expected', { date: poView.order.delivery_date })}` : ''}
             </p>
             {poView.order.reference_no && (
-              <p className="muted small">Reference: {poView.order.reference_no} {poView.order.document_type === 'purchase_invoice' ? '· Purchase Invoice' : ''}</p>
+              <p className="muted small">
+                {t('purchases.page.reference', { ref: poView.order.reference_no })}{' '}
+                {poView.order.document_type === 'purchase_invoice' ? t('purchases.page.purchaseInvoice') : ''}
+              </p>
             )}
-            {poView.order.notes && <p className="muted small">Notes: {poView.order.notes}</p>}
+            {poView.order.notes && (
+              <p className="muted small">{t('purchases.page.notesPrefix', { notes: poView.order.notes })}</p>
+            )}
             {poView.order.cancel_reason && (
-              <p className="muted small">Cancelled — reason: {poView.order.cancel_reason}</p>
+              <p className="muted small">{t('purchases.page.cancelledReason', { reason: poView.order.cancel_reason })}</p>
             )}
             {receiveNote && (
               <div className="notice" style={{ marginBottom: 8 }} data-testid="po-receive-note">
@@ -660,12 +696,14 @@ export default function Purchases() {
             <table className="tbl">
               <thead>
                 <tr>
-                  <th>Product</th>
-                  <th>Qty</th>
-                  <th>Received</th>
-                  <th>Unit Cost</th>
-                  <th>Line Total</th>
-                  {isOpenOrder(poView.order.status) && <th style={{ width: 110 }}>Receive Now</th>}
+                  <th>{t('purchases.page.product')}</th>
+                  <th>{t('purchases.page.qty')}</th>
+                  <th>{t('purchases.page.received')}</th>
+                  <th>{t('purchases.page.unitCost')}</th>
+                  <th>{t('purchases.page.lineTotal')}</th>
+                  {isOpenOrder(poView.order.status) && (
+                    <th style={{ width: 110 }}>{t('purchases.page.receiveNow')}</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -685,13 +723,16 @@ export default function Purchases() {
                       <td>{i.product_name ?? `#${i.product_id}`}</td>
                       <td>
                         {i.qty}
-                        {multiplier > 1 ? ` ${i.unit_name ?? ''} = ${money.baseQty} pcs` : ''}
-                        {i.tax_pct ? ` (+${i.tax_pct}% tax)` : ''}
+                        {multiplier > 1 ? ` ${i.unit_name ?? ''} = ${t('purchases.page.pcs', { qty: money.baseQty })}` : ''}
+                        {i.tax_pct ? ` ${t('purchases.page.taxSuffix', { tax: i.tax_pct })}` : ''}
                       </td>
-                      <td>{received}{remaining > 0 ? ` · ${remaining} left` : ''}</td>
+                      <td>
+                        {received}
+                        {remaining > 0 ? ` ${t('purchases.page.left', { qty: remaining })}` : ''}
+                      </td>
                       <td>
                         {i.unit_cost.toFixed(2)}
-                        {multiplier > 1 ? ` (${money.costPerBase.toFixed(2)} / base)` : ''}
+                        {multiplier > 1 ? ` ${t('purchases.page.perBase', { cost: money.costPerBase.toFixed(2) })}` : ''}
                       </td>
                       <td>{money.total.toFixed(2)}</td>
                       {isOpenOrder(poView.order.status) && (
@@ -700,10 +741,10 @@ export default function Purchases() {
                             className="inp"
                             style={{ width: 90 }}
                             placeholder={String(remaining)}
-                            value={receiveQty[i.product_id] ?? ''}
+                            value={receiveQty[i.id] ?? ''}
                             disabled={remaining <= 0}
-                            onChange={(e) => setReceiveQty((prev) => ({ ...prev, [i.product_id]: e.target.value }))}
-                            data-testid={`po-receive-qty-${i.product_id}`}
+                            onChange={(e) => setReceiveQty((prev) => ({ ...prev, [i.id]: e.target.value }))}
+                            data-testid={`po-receive-qty-${i.id}`}
                           />
                         </td>
                       )}
@@ -714,31 +755,31 @@ export default function Purchases() {
             </table>
             <div className="po-totals" style={{ marginTop: 10 }}>
               <div>
-                <span>Subtotal</span>
+                <span>{t('purchases.page.subtotal')}</span>
                 <strong>{(Number(poView.order.subtotal) || 0).toFixed(2)}</strong>
               </div>
               <div>
-                <span>Discount</span>
+                <span>{t('purchases.page.discount')}</span>
                 <strong>{(Number(poView.order.discount_amount) || 0).toFixed(2)}</strong>
               </div>
               <div>
-                <span>Tax</span>
+                <span>{t('purchases.page.tax')}</span>
                 <strong>{(Number(poView.order.tax_total) || 0).toFixed(2)}</strong>
               </div>
               <div>
-                <span>Freight</span>
+                <span>{t('purchases.page.freight')}</span>
                 <strong>{(Number(poView.order.freight) || 0).toFixed(2)}</strong>
               </div>
               <div className="po-total-grand">
-                <span>Total</span>
+                <span>{t('purchases.page.total')}</span>
                 <strong data-testid="po-view-total">{poView.order.total_amount.toFixed(2)}</strong>
               </div>
               <div>
-                <span>Paid</span>
+                <span>{t('purchases.page.paid')}</span>
                 <strong data-testid="po-view-paid">{(Number(poView.order.paid_amount) || 0).toFixed(2)}</strong>
               </div>
               <div>
-                <span>Payable</span>
+                <span>{t('purchases.page.payable')}</span>
                 <strong data-testid="po-view-payable">
                   {Math.max(0, poView.order.total_amount - (Number(poView.order.paid_amount) || 0)).toFixed(2)}
                 </strong>
@@ -746,37 +787,37 @@ export default function Purchases() {
             </div>
             <div className="row-btns" style={{ flexWrap: 'wrap' }}>
               <button className="btn btn-sm" onClick={() => window.api.purchases.previewOrder(poView.order.id).catch((e) => setErr(String(e)))}>
-                Preview / Print
+                {t('purchases.page.previewPrint')}
               </button>
               <button className="btn btn-sm" onClick={() => printPo(poView.order.id, 'a4')}>
-                Print A4
+                {t('purchases.page.printA4')}
               </button>
               <button className="btn btn-sm" onClick={() => printPo(poView.order.id, 'thermal80')}>
-                Print thermal
+                {t('purchases.page.printThermal')}
               </button>
               <button className="btn btn-sm" onClick={() => window.api.purchases.saveOrderText(poView.order.id).catch((e) => setErr(String(e)))}>
-                Save as text
+                {t('purchases.page.saveAsText')}
               </button>
             </div>
             {isOpenOrder(poView.order.status) && (
               <div className="row-btns" style={{ flexWrap: 'wrap' }}>
                 <button className="btn btn-primary" onClick={receivePartial}>
-                  Receive typed quantities
+                  {t('purchases.page.receiveTyped')}
                 </button>
                 <button className="btn" onClick={() => receivePo(poView.order.id)}>
-                  Receive all remaining
+                  {t('purchases.page.receiveAll')}
                 </button>
               </div>
             )}
             {canCancelOrder(poView.order.status) && (
               <div className="row-btns" style={{ flexWrap: 'wrap' }}>
                 <button className="btn" onClick={() => askCancelPo(poView.order.id)}>
-                  Cancel Order
+                  {t('purchases.page.cancelOrder')}
                 </button>
               </div>
             )}
             <button className="btn" onClick={() => setPoView(null)}>
-              Close
+              {t('purchases.page.close')}
             </button>
           </div>
         </Modal>
@@ -798,15 +839,15 @@ export default function Purchases() {
           onSubmit={pay}
           title={`Supplier — ${ledger.supplier.name}`}
           className="modal-wide"
-          label="Supplier Ledger"
-          shortcuts={[{ keys: 'Enter', label: 'Record payment' }]}
+          label={t('purchases.page.supplierLedger')}
+          shortcuts={[{ keys: 'Enter', label: t('purchases.page.recordPayment') }]}
         >
             <div className="ledger-head">
               <span>
-                Payable: <strong>{ledger.supplier.balance.toFixed(2)}</strong>
+                {t('purchases.page.payable')}: <strong>{ledger.supplier.balance.toFixed(2)}</strong>
               </span>
               <span>
-                Pay:
+                {t('purchases.page.pay')}:
                 <KeyboardInput
                   type="text"
                   decimals
@@ -815,23 +856,23 @@ export default function Purchases() {
                   onChange={(e) => setPayAmount(e.target.value)}
                 />
                 <select className="limit-input" value={payMode} onChange={(e) => setPayMode(e.target.value)}>
-                  <option value="cash">Cash</option>
-                  <option value="bank">Bank</option>
-                  <option value="jazzcash">JazzCash</option>
-                  <option value="easypaisa">Easypaisa</option>
+                  <option value="cash">{t('purchases.page.cash')}</option>
+                  <option value="bank">{t('purchases.page.bank')}</option>
+                  <option value="jazzcash">{t('purchases.page.jazzcash')}</option>
+                  <option value="easypaisa">{t('purchases.page.easypaisa')}</option>
                 </select>
                 <button className="btn btn-sm btn-primary" onClick={pay}>
-                  Pay
+                  {t('purchases.page.pay')}
                 </button>
               </span>
             </div>
             <table className="tbl">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Type</th>
-                  <th>Amount</th>
-                  <th>Balance</th>
+                  <th>{t('purchases.page.date')}</th>
+                  <th>{t('purchases.page.type')}</th>
+                  <th>{t('purchases.page.amount')}</th>
+                  <th>{t('purchases.page.balance')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -840,10 +881,10 @@ export default function Purchases() {
                     <td>{formatDateTimeAdmin(r.created_at ?? '')}</td>
                     <td>
                       {r.type.startsWith('payment')
-                        ? 'Payment'
+                        ? t('purchases.page.payment')
                         : r.type === 'purchase'
-                          ? `Purchase (PO-${String(r.purchase_order_id ?? 0).padStart(4, '0')})`
-                          : 'Cancelled'}
+                          ? t('purchases.page.purchaseTx', { id: String(r.purchase_order_id ?? 0).padStart(4, '0') })
+                          : t('purchases.page.cancelledTx')}
                     </td>
                     <td className={r.amount < 0 ? '' : 'text-warn'}>
                       {r.amount < 0 ? `(${(-r.amount).toFixed(2)})` : r.amount.toFixed(2)}
@@ -854,14 +895,14 @@ export default function Purchases() {
                 {!ledger.rows.length && (
                   <tr>
                     <td colSpan={4} className="muted">
-                      No transactions.
+                      {t('purchases.page.noTransactions')}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
             <button className="btn" onClick={() => setLedger(null)}>
-              Close
+              {t('purchases.page.close')}
             </button>
         </Modal>
       )}
@@ -869,14 +910,14 @@ export default function Purchases() {
       {priceProd && (
         <Modal
           onClose={() => setPriceProd(null)}
-          title={`Price History — ${priceProd.name}`}
-          label="Price History"
+          title={`${t('purchases.page.priceHistory')} — ${priceProd.name}`}
+          label={t('purchases.page.priceHistory')}
         >
             <table className="tbl">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Cost</th>
+                  <th>{t('purchases.page.date')}</th>
+                  <th>{t('purchases.page.cost')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -889,14 +930,14 @@ export default function Purchases() {
                 {!priceHist.length && (
                   <tr>
                     <td colSpan={2} className="muted">
-                      No purchase history.
+                      {t('purchases.page.noHistory')}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
             <button className="btn" onClick={() => setPriceProd(null)}>
-              Close
+              {t('purchases.page.close')}
             </button>
         </Modal>
       )}
@@ -904,14 +945,14 @@ export default function Purchases() {
       {tab === 'orders' && (
         <div className="card">
           <div className="card-head">
-            <h2>Price History</h2>
+            <h2>{t('purchases.page.priceHistory')}</h2>
           </div>
           <div {...priceList.getContainerProps()}>
           <table className="tbl">
             <thead>
               <tr>
-                <th>Product</th>
-                <th>Cost</th>
+                <th>{t('purchases.page.product')}</th>
+                <th>{t('purchases.page.cost')}</th>
                 <th></th>
               </tr>
             </thead>
@@ -922,7 +963,7 @@ export default function Purchases() {
                   <td>{p.cost_price.toFixed(2)}</td>
                   <td>
                     <button className="btn btn-sm" onClick={() => showPriceHist(p)}>
-                      History
+                      {t('purchases.page.history')}
                     </button>
                   </td>
                 </tr>
