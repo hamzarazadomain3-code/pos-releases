@@ -59,6 +59,51 @@ also covers the validation gates (empty cart, negative price, zero refund), the
 owner-only-above-`refund_manager_threshold` rule (read from `admin_settings`, the same
 table the Admin UI writes), and the "open a shift first" refusal.
 
+### Phase 0 test suites (the master-prompt run, 2026-11-26)
+
+```powershell
+$env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"
+npm run test:ipcError        # 38/38 - the IPC error boundary (src/main/ipcError.ts)
+npm run test:timezone        # 16/16 - no UTC "today" leak + the Karachi business-day maths
+npm run test:unified         # 11/11 - one business-day resolver (the daily closing / sales list / expenses)
+npm run test:shifts          # 14/14 - the >24 h shift block + the shift_long_open audit row
+npm run test:utf8            # the permanent mojibake scan (src/ must be real UTF-8)
+npm run test:settingsbridge  # 16/16 - the one settings bridge
+npm run test:expired         # 15/15 - the expired-stock block + the manager override
+npm run test:audits          # 13/13 - audits:discard (owner only)
+npm run test:security        # 24/24 - the secret vault + the enforced password policy
+npm run test:ui              # 30/30 - the four UI defects, in the REAL renderer (+ 6 screenshots)
+npm run test:billingSmoke    # 46/46 - the phase's billing smoke test
+```
+
+`test:utf8` runs in **pure Node** (no Electron) - keep it that way, it is the
+cheapest permanent guard in the repo. Every other suite runs under Electron and
+prints Electron's stderr banner, so **PowerShell can report exit 1 on success**:
+trust the `ALL PASSED` line and `$LASTEXITCODE`, not the pipeline status. The
+Electron ones need `npm run build:main` first (the npm scripts do it for you);
+the two renderer suites (`test:ui`, `test:keyboard`) need the full
+`npm run build` because they load `dist/renderer`.
+
+Two gotchas that cost real time - do not repeat them:
+
+- **Every Electron suite must call `app.exit(0)` on success.** Without it the
+  Electron process stays alive, the `npm run` script never returns and the
+  build HANGS on a suite that already printed "all checks passed". Four suites
+  had this bug (the Phase 0 `test:unified`, `test:shifts`, `test:audits` and
+  `test:security`); it was found when the close-out batch stopped dead after
+  a green suite. The batch script now also kills any suite that runs longer
+  than 300 s, so a hang can never stall the whole battery again.
+- **`test:billingSmoke` must point the backup folder at its own temp dir.** The
+  backup service's default is the shop's real
+  `Documents\ShopKeeper POS\backups`, and the retention cleanup there deletes
+  the owner's own old `pos-*.db` files. The suite therefore writes the
+  `backup_folder` admin setting into its throwaway DB before it runs a backup.
+- **`test:ui` screenshots need an ON-SCREEN window.** A window parked
+  off-screen (`x: -2400`) is treated as occluded, so `capturePage()` hands back
+  a **stale** frame from an earlier screen - the screenshot silently shows the
+  wrong page. The suite keeps the window on screen and takes the LAST of two
+  captures.
+
 ### Image-upload helper test (pure Node, no Electron)
 ```powershell
 $env:PATH = "C:\Users\Hamza PC\Downloads\node-v24.18.0-win-x64\node-v24.18.0-win-x64;$env:PATH"; npm run test:imageupload

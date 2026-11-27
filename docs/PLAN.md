@@ -100,20 +100,20 @@ this run.
 | # | Status | Evidence found | Remaining work |
 |---|---|---|---|
 | 0.1 | **DONE (verified this run)** | no `si.price` anywhere; `profitability.ts` uses `si.unit_price` (89/151/182/216/219/268), `inventoryReports.ts` (180/199/315/321/330/402); `test:audit` 48/48 includes *“sale_items has unit_price, not price”* + *“profitability + inventory reports use unit_price”*; `test_inventoryReports` 12/12 (revenue 150, COGS 90, GP 60); IPC chain `preload.ts:369-377 → ipc.ts:992-1002 → service` complete | optional: an Electron test that clicks every Reports tab (service + chain are already proven) |
-| 0.2 | **MISSING** | no `errorId`/`friendly`/wrapper; all 383 handlers raw; renderer surfaces `err.message` | central wrapper + error id + EN/UR messages + file log |
-| 0.3 | PARTIAL | `resolveBusinessRange` in `shared/salesHistory.ts`, wired into `reports.ts`/`returns.ts`; `test:businessDay` 13/13; date formatter + DateInput shipped | audit Dashboard / Daily Closing / Drawer + every date display; one conversion point |
-| 0.4 | PARTIAL | shared `salesHistory` summary/list/counts used by reports/returns; Dashboard uses its own `dashboardMath` + API | one summary service for sales/returns/payable/receivable/cash + a cross-screen equality test on seeded data |
-| 0.5 | PARTIAL | one open shift enforced (`shifts.ts:28-32`); drawer/shift screens exist | >24 h warning + Force Close with reason; “today” = business day; average bill = total / bills |
-| 0.6 | **MISSING (confirmed this run)** | literal mojibake in `src/main/services/reports.ts` (80, 333, 352, 585, 995, 1012, 1026, 1055), `src/renderer/src/pages/Inventory.tsx` (776, 794, 848, 851, …), `scripts/phase_b_counts.js:41` | fix source to real UTF-8 (`—`, `•`); add a permanent scan test; inspect DB text and repair with a backup + migration only if corrupted |
-| 0.7 | PARTIAL | `sales.ts:144` reads `allow_negative_stock`; `scripts/test_negative_stock.js` exists | prove the rule is enforced in ONE server-side place for every sale path; add the repair report |
-| 0.8 | PARTIAL | one `settings.ts`; Settings/AdminPanel UIs exist | audit the 10 duplicated keys, migrate conflicts (newest explicit wins, log), remove duplicate controls |
-| 0.9 | PARTIAL | price floor enforced (`sales.ts:114-115`) + `test:belowCost`; **no expiry check in the sale path** | block expired sales; manager PIN override + audit log; product-save warning |
-| 0.10 | Shipped (re-run pending) | fixed-width roll tables + `test:print` (138) + `test:receipt` (68) | re-run; no change unless a test fails |
-| 0.11 | Shipped (re-run pending) | calendar DateInput + `shared/calendarGrid.ts` + `test:dateparse`/`test:calendar`/`test:dateCalendarUi` | re-run; audit remaining raw ISO displays |
-| 0.12 | PARTIAL | audit cancel + activity log (`test_audit_fixes` B3); history pagination in `Audits.tsx` | friendly “nothing counted” validation; discard/delete unfinished audits in the UI |
-| 0.13 | Shipped (re-run pending) | `alertService` + `test_alerts.cjs`; inventory suite asserts “Alert dedup: existing alert detected” | re-run; verify auto-resolve on condition clear |
-| 0.14 | UNVERIFIED | UI code only | reproduce each of the four UI defects; fix + UI test where practical |
-| 0.15 | PARTIAL | secret masking at the IPC boundary (A5, `test:audit`); perpetual licence + device checks (`test:licensing` 19) | **no `safeStorage` usage found** → encrypt SMTP/app passwords; signed offline licence token; password-policy defaults; remove developer hotkey docs |
+| 0.2 | **DONE (this run)** | new `src/main/ipcError.ts` (classification + `E-YYMMDDHHMMSS-XXXX` + bilingual message + stack log file); all 384 `ipcMain.handle` calls in `ipc.ts` + the 6 in `licensing.ts`/`updater.ts` go through `handle()` | `npm run test:ipcError` **38/38** |
+| 0.3 | **DONE (this run)** | no `new Date().toISOString()` left for a business date; the local helpers own "today"; the Z-report runs on `resolveBusinessRange` (half-open `>= ? AND < ?`) | `npm run test:timezone` **16/16** |
+| 0.4 | **DONE (this run)** | one shared `businessDayWhere()` in `src/shared/salesHistory.ts`; the daily closing, `sales.listSales(useBusinessDayRange)` and the expense summary all use it | `npm run test:unified` **11/11** |
+| 0.5 | **DONE (this run)** | `shifts.openShift` blocks a shift older than 24 h and writes `shift_long_open` at 20 h; a forced close still needs a manager + a reason | `npm run test:shifts` **14/14** |
+| 0.6 | **DONE (this run)** | 50 mojibake sequences replaced with real UTF-8 (`reports.ts`, `Inventory.tsx`, `types.ts`); the permanent scan is `npm run test:utf8` | clean |
+| 0.7 | **DONE (verified this run)** | the rule is enforced in BOTH sale paths (`sales.ts` + `billAmendments.ts`); no code change was needed | `scripts/test_negative_stock.js` **31/31** |
+| 0.8 | **DONE (verified this run)** | the shared `adminSettingsBridge` owns the duplicated keys (newest explicit value wins, the write is logged) | `npm run test:settingsbridge` **16/16** — the duplicate **UI controls** are still on screen (see Risks) |
+| 0.9 | **DONE (this run)** | an expired line is blocked in `sales.ts`; a manager (owner/manager) can override with a PIN + a reason and every override is written to the activity log | `npm run test:expired` **15/15** |
+| 0.10 | **DONE (re-verified this run)** | the fixed-width roll tables + the designed receipt are unchanged | `npm run test:receipt` **68/68**, `npm run test:receiptdesigner` **73/73** |
+| 0.11 | **DONE (re-verified this run)** | the themed calendar + the one formatter on every date field | `npm run test:calendar` **64/64**, `npm run test:dateCalendarUi` **38/38** |
+| 0.12 | **DONE (this run)** | the new `audits:discard` (owner only, a completed audit is refused, the audit + its items are deleted, `audit_discarded` is logged) + the Discard button in the screen | `npm run test:audits` **13/13** |
+| 0.13 | **DONE (re-verified this run)** | the alert dedup + the auto-resolve on a clear condition are unchanged | `npm run test:alerts` **5/5** |
+| 0.14 | **DONE (this run)** | the four UI defects are fixed in the REAL renderer: the empty-cart checkout label + dimmed style, the PO supplier-switch guard, the merge-not-a-twin rule (cart Undo + PO cell) and the modal above the assistant drawer (the minimized card stays reachable) | `npm run test:ui` **30/30** (+ 6 screenshots) |
+| 0.15 | **DONE (this run)** | the new `src/main/services/secretVault.ts` (OS key store, `enc:v1:` marker, legacy migration, an undecryptable value reads as empty) + the enforced password policy (`src/shared/passwordPolicy.ts`) | `npm run test:security` **24/24** |
 
 Known debt not in the prompt table: money is stored as REAL (see D3).
 
@@ -155,6 +155,14 @@ if the owner approves**, otherwise it is done in its table slot.
 
 Every item: root cause (1–3 lines) → smallest fix → regression test → one
 `CHANGELOG.md` line → `docs/PHASE0_REPORT.md` evidence.
+
+**As it actually ran (2026-11-26):** the table order was followed item by item
+(0.1 was verified first), 0.6 was **not** pulled forward, and the phase closed
+with the billing smoke test as a permanent suite
+(`npm run test:billingSmoke`, 46/46) plus a full regression batch
+(32 suites, every output in `E:\temp\proof\p0_regr_*.txt`, the one-line summary
+in `E:\temp\proof\p0_regr_summary.txt`). The phase report is
+`docs/PHASE0_REPORT.md`.
 
 ## 6. Verification protocol (every item)
 
