@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import { getAllSettings, setSetting } from './settings';
 import { getDeviceId } from './recovery';
+import { wrapIpcHandler } from '../ipcError';
 
 // Server URL is read at call time from the environment so it can be swapped without a rebuild
 function serverUrl(): string {
@@ -394,15 +395,18 @@ export function ensureLicenseValidSync(): void {
 }
 
 export function registerIpc(): void {
-  ipcMain.handle('licensing:activate', async (_event, key: string) => {
+  const handle = (channel: string, listener: (event: any, ...args: any[]) => unknown) =>
+    ipcMain.handle(channel, wrapIpcHandler(channel, listener));
+
+  handle('licensing:activate', async (_event, key: string) => {
     await activateLicense(key);
     return 'License activated';
   });
-  ipcMain.handle('licensing:check', async () => {
+  handle('licensing:check', async () => {
     await checkLicense();
     return 'License OK';
   });
   // Read-only trial state for the Settings screen. Separate from licensing:check so
   // that rendering the badge can never itself throw 'trial ended' at the shop.
-  ipcMain.handle('licensing:trialStatus', async () => trialStatus());
+  handle('licensing:trialStatus', async () => trialStatus());
 }

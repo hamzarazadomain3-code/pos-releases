@@ -361,6 +361,26 @@ export function resolveBusinessRange(
   return { from: f, to: t, businessDate, startHour: hour, timezone, fromUtc, toUtc };
 }
 
+/**
+ * Shared WHERE clause for business-day filtering.
+ * Returns { where: "datetime(created_at) >= datetime(?) AND datetime(created_at) < datetime(?)",
+ *          fromUtc, toUtc } so callers can bind the bounds once.
+ */
+export function businessDayWhere(
+  from: string,
+  to: string,
+  startHour: number,
+  timezone: string,
+  column: string = 'created_at'
+): { fromUtc: string; toUtc: string; where: string } {
+  const range = resolveBusinessRange(from, to, startHour, timezone);
+  return {
+    fromUtc: range.fromUtc,
+    toUtc: range.toUtc,
+    where: `datetime(${column}) >= datetime(?) AND datetime(${column}) < datetime(?)`,
+  };
+}
+
 /** Default view: the current business day, every event type. */
 export function defaultHistoryFilters(today: string): HistoryFilters {
   return {

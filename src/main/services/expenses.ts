@@ -1,5 +1,7 @@
 import { getDb } from '../db';
 import { logError } from '../logger';
+import { getBusinessDayStartHour, getShopTimezone } from './salesHistory';
+import { businessDayWhere } from '../../shared/salesHistory';
 
 export interface ExpenseCategoryRow {
   id: number;
@@ -166,10 +168,25 @@ export function getExpenseSummary(from?: string, to?: string): { total: number; 
     const db = getDb();
     let sql = `SELECT e.amount, c.name as category, e.status FROM expenses e JOIN expense_categories c ON e.category_id = c.id WHERE e.status = 'active'`;
     const params: any[] = [];
-    if (from) { sql += ' AND date(e.expense_date) >= ?'; }
-    if (to) { sql += ' AND date(e.expense_date) <= ?'; }
-    if (from) params.push(from);
-    if (to) params.push(to);
+    let fromUtc = from;
+    let toUtc = to;
+    let whereClause = '';
+    if (from && to) {
+      const startHour = getBusinessDayStartHour();
+      const timezone = getShopTimezone();
+      const { where, fromUtc: fu, toUtc: tu } = businessDayWhere(from, to, startHour, timezone, 'e.expense_date');
+      whereClause = where;
+      fromUtc = fu;
+      toUtc = tu;
+    }
+    if (whereClause) {
+      sql += ' AND ' + whereClause;
+    } else {
+      if (from) { sql += ' AND date(e.expense_date) >= ?'; }
+      if (to) { sql += ' AND date(e.expense_date) <= ?'; }
+    }
+    if (from) params.push(fromUtc);
+    if (to) params.push(toUtc);
 
     const rows = db.prepare(sql).all(...params) as { amount: number; category: string; status: string }[];
 

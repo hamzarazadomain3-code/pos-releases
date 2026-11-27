@@ -12,6 +12,7 @@ import {
   overlayAdminSettings,
   planAdminBatch,
 } from '../../shared/adminSettingsBridge';
+import { encryptSecret, isVaultKey } from './secretVault';
 
 // ═══════════════════════════════════════════
 //  SHORTCUTS
@@ -252,7 +253,9 @@ export function setAdminSetting(key: string, value: string): void {
     throw new Error('Allow Negative Stock is managed in Settings → Billing');
   }
   const db = getDb();
-  db.prepare('INSERT OR REPLACE INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(key, value);
+  // Item 0.15 — a credential is never stored as plain text.
+  const stored = isVaultKey(key) && value ? encryptSecret(value) : value;
+  db.prepare('INSERT OR REPLACE INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(key, stored);
   mirrorAdminWrite(key, value);
 }
 
@@ -273,7 +276,10 @@ export function setAdminSettingsBatch(settings: Record<string, string>): void {
   const plan = planAdminBatch(raw, loaded, settings);
 
   const stmt = db.prepare('INSERT OR REPLACE INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)');
-  for (const [k, v] of Object.entries(plan.writes)) stmt.run(k, v);
+  for (const [k, v] of Object.entries(plan.writes)) {
+    // Item 0.15 — credentials are encrypted before they touch the database.
+    stmt.run(k, isVaultKey(k) && v ? encryptSecret(v) : v);
+  }
   for (const mirror of plan.mirrors) {
     setSetting(mirror.target, mirror.value);
   }

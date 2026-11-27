@@ -1,6 +1,7 @@
 import { scryptSync, timingSafeEqual } from 'node:crypto';
 import { getDb } from '../db';
 import { roleAtLeast, ROLE_RANK } from '../../shared/roles';
+import { checkPassword } from '../../shared/passwordPolicy';
 
 const SALT = 'pos-salt';
 
@@ -167,8 +168,12 @@ export function createUser(input: { username: string; password?: string; pin?: s
   if (!input.password && !input.pin) throw new Error('Set a password or PIN');
   if (input.role === 'cashier' && !input.pin) throw new Error('Cashier accounts need a PIN for fast login');
   if (input.pin && !/^\d{4,10}$/.test(input.pin.trim())) throw new Error('PIN must be 4-10 digits');
-  if (input.password && input.password.length < getSecurityPolicy().min_password_length)
-    throw new Error(`Password must be at least ${getSecurityPolicy().min_password_length} characters`);
+  // Item 0.15 — the FULL policy (uppercase / numbers / special) is enforced,
+  // not just the length.
+  if (input.password) {
+    const check = checkPassword(input.password, getSecurityPolicy());
+    if (!check.ok) throw new Error(check.message);
+  }
   const db = getDb();
   db.exec('BEGIN');
   try {
@@ -197,8 +202,10 @@ export function updateUser(id: number, input: { password?: string; pin?: string;
   if (!user) throw new Error('User not found');
   if (input.pin !== undefined && input.pin !== '' && !/^\d{4,10}$/.test(input.pin.trim()))
     throw new Error('PIN must be 4-10 digits');
-  if (input.password !== undefined && input.password !== '' && input.password.length < getSecurityPolicy().min_password_length)
-    throw new Error(`Password must be at least ${getSecurityPolicy().min_password_length} characters`);
+  if (input.password !== undefined && input.password !== '') {
+    const check = checkPassword(input.password, getSecurityPolicy());
+    if (!check.ok) throw new Error(check.message);
+  }
 
   const db = getDb();
   db.exec('BEGIN');

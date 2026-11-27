@@ -132,9 +132,24 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
   const [pickQuery, setPickQuery] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  /**
+   * Item 0.14 — the supplier was changed while the order ALREADY had lines.
+   *
+   * The dropdown used to re-label the whole order silently: the items the
+   * owner had added for supplier A were created against supplier B. Nothing
+   * was lost, but the order was wrong. The owner must now say what should
+   * happen to those lines before the order can be created.
+   */
+  const [supplierSwitch, setSupplierSwitch] = useState<{ from: number; to: number } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
+
+  /** The supplier's name for the messages (the list is the source of truth). */
+  const supplierName = useCallback(
+    (id: number) => suppliers.find((s) => s.id === id)?.name ?? `supplier #${id}`,
+    [suppliers]
+  );
 
   /* ── the settings of the PO screen ─────────────────────────────────────── */
   useEffect(() => {
@@ -334,6 +349,12 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
    * The row keeps its own quantity, but the product's live data (the unit,
    * the last purchase cost, the tax, the batch) is re-read, exactly like a
    * freshly added line.
+   *
+   * Item 0.14 — the same product must never sit on TWO rows: when the owner
+   * re-picks a product that is already on another line, the two quantities are
+   * merged into the row that was just picked and the twin is dropped (the
+   * order used to show the product twice and only complained when the owner
+   * pressed Create).
    */
   const setLineProduct = useCallback(
     (key: string, product: PurchaseProductRow) => {
@@ -345,24 +366,28 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
       const multiplier = safeNumber(unit?.quantity_in_base_units, 1) || 1;
       const baseline = live.last_purchase_cost ?? live.cost_price;
       const needsBatch = Boolean(live.batch_no) || Boolean(live.expiry_date);
-      setLines((prev) =>
-        prev.map((l) =>
-          l.key === key
-            ? {
-                ...l,
-                product_id: live.product_id,
-                product: live,
-                unit_cost: String(round2(baseline)),
-                tax_pct: String(safeNumber(live.tax_rate, 0)),
-                unit_id: unit?.id ?? null,
-                units_in_base: multiplier,
-                unit_name: unit?.name ?? '',
-                batch_no: needsBatch ? live.batch_no ?? '' : '',
-                expiry_date: needsBatch ? live.expiry_date ?? '' : '',
-              }
-            : l
-        )
-      );
+      const picked = {
+        product_id: live.product_id,
+        product: live,
+        unit_cost: String(round2(baseline)),
+        tax_pct: String(safeNumber(live.tax_rate, 0)),
+        unit_id: unit?.id ?? null,
+        units_in_base: multiplier,
+        unit_name: unit?.name ?? '',
+        batch_no: needsBatch ? live.batch_no ?? '' : '',
+        expiry_date: needsBatch ? live.expiry_date ?? '' : '',
+      };
+      setLines((prev) => {
+        const current = prev.find((l) => l.key === key);
+        const twin = prev.find((l) => l.key !== key && l.product_id === live.product_id);
+        if (twin && current) {
+          const mergedQty = safeNumber(current.qty, 0) + safeNumber(twin.qty, 0);
+          return prev
+            .filter((l) => l.key !== twin.key)
+            .map((l) => (l.key === key ? { ...l, ...picked, qty: String(mergedQty) } : l));
+        }
+        return prev.map((l) => (l.key === key ? { ...l, ...picked } : l));
+      });
       setPickingFor(null);
       setPickQuery('');
     },
@@ -531,6 +556,15 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
   const save = useCallback(
     async (status: 'draft' | 'ordered') => {
       setErr('');
+      // Item 0.14 — the supplier swap must be settled before anything is
+      // written: the order would otherwise be created against a supplier the
+      // owner never picked for those items.
+      if (supplierSwitch) {
+        setErr(
+          `The supplier changed and this order still has ${lines.length} item${lines.length === 1 ? '' : 's'} from ${supplierName(supplierSwitch.from)}. Choose what to do with them first.`
+        );
+        return;
+      }
       if (status === 'ordered') {
         // The duplicate lines are merged with a PROMPT, never silently.
         const dupes = validation.duplicateProductIds;
@@ -577,7 +611,7 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
         setBusy(false);
       }
     },
-    [buildPayload, lines, onSaved, supplierId, validation]
+    [buildPayload, lines, onSaved, supplierId, supplierName, supplierSwitch, validation]
   );
 
   /* ── the keyboard ──────────────────────────────────────────────────────── */
@@ -706,14 +740,20 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
           </>
         )}
       </div>
-      <button className="btn" onClick={() => void save('draft')} disabled={busy} data-testid="po-save-draft">
+      <button className="btn" onClick={() => void save('draft')} disabled={busy || !!supplierSwitch} data-testid="po-save-draft">
         Save draft
       </button>
       <button
         className="btn btn-primary"
         onClick={() => void save('ordered')}
-        disabled={busy || !validation.ok}
-        title={validation.ok ? '' : validation.messages.join(' ')}
+        disabled={busy || !validation.ok || !!supplierSwitch}
+        title={
+          supplierSwitch
+            ? 'The supplier changed — choose what to do with the items first.'
+            : validation.ok
+              ? ''
+              : validation.messages.join(' ')
+        }
         data-testid="po-create"
       >
         Create
@@ -749,6 +789,43 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
             </button>
           </div>
         )}
+        {supplierSwitch && (
+          <div className="po-stale-banner" data-testid="po-supplier-switch">
+            <span>
+              The supplier changed, but this order still has {lines.length} item{lines.length === 1 ? '' : 's'} added
+              for {supplierName(supplierSwitch.from)}. Choose what should happen to them.
+            </span>
+            <span className="po-supplier-switch-actions">
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={() => setSupplierSwitch(null)}
+                data-testid="po-supplier-keep-new"
+              >
+                Keep them for {supplierName(supplierSwitch.to)}
+              </button>
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  setSupplierId(supplierSwitch.from);
+                  setSupplierSwitch(null);
+                }}
+                data-testid="po-supplier-revert"
+              >
+                Go back to {supplierName(supplierSwitch.from)}
+              </button>
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  setLines([]);
+                  setSupplierSwitch(null);
+                }}
+                data-testid="po-supplier-clear"
+              >
+                Remove the items
+              </button>
+            </span>
+          </div>
+        )}
         {undo && (
           <div className="po-undo-banner" data-testid="po-undo-banner">
             <span>Line removed.</span>
@@ -765,7 +842,20 @@ export default function PurchaseOrderModal({ suppliers, onSaved, onClose }: Purc
             <select
               className="inp"
               value={supplierId}
-              onChange={(e) => setSupplierId(e.target.value ? Number(e.target.value) : '')}
+              onChange={(e) => {
+                const next = e.target.value ? Number(e.target.value) : '';
+                const prev = safeNumber(supplierId, 0);
+                // Item 0.14 — swapping the supplier with lines already in the
+                // order is a decision, not a typo: the owner is asked what to
+                // do with those lines instead of the order being re-labelled
+                // behind their back.
+                if (next !== '' && prev && next !== prev && lines.length > 0) {
+                  setSupplierSwitch({ from: prev, to: next });
+                } else {
+                  setSupplierSwitch(null);
+                }
+                setSupplierId(next);
+              }}
               data-testid="po-supplier"
             >
               <option value="">— select —</option>

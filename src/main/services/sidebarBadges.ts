@@ -15,6 +15,7 @@
  */
 
 import { getDb } from '../db';
+import { todayLocal } from '../utils/timezone';
 import { buildBadges, BADGE_REFRESH_MS, type SidebarBadge, type SidebarBadgeInput } from '../../shared/sidebarBadges';
 import { resolveCreditDays } from '../../shared/creditDays';
 import { currentShift } from './shifts';
@@ -59,7 +60,7 @@ function lowStockCount(): number {
 /** The customers whose oldest unpaid charge is overdue. */
 function overdueCustomersCount(): number {
   const db = getDb();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocal();
   const shopDays = shopDefaultCreditDays();
   if (shopDays <= 0 && !hasOwnCreditDays()) return 0;
 
@@ -144,7 +145,7 @@ function auditsInProgressCount(): number {
 /** The active promotions that end within the next week. */
 function promotionsEndingSoonCount(): number {
   const db = getDb();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocal();
   const until = addDays(today, PROMOTION_SOON_DAYS);
   const row = db
     .prepare(

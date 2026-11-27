@@ -88,6 +88,27 @@
     "receipt_footer": "Receipt Footer",
     "currency": "Currency"
   },
+  "billing": {
+    "checkout": {
+      "payAndSave": "Pay & Save",
+      "working": "Working...",
+      "saveQuotation": "Save Quotation",
+      "emptyLabel": "Add items to bill",
+      "emptyHint": "The cart is empty — add an item before you can take the payment."
+    },
+    "expired": {
+      "title": "Expired items in bill",
+      "intro": "The following items have passed their expiry date. Selling them requires manager approval:",
+      "manager": "Manager",
+      "selectManager": "Select manager",
+      "pin": "PIN / Password",
+      "reason": "Reason (optional)",
+      "cancel": "Go back",
+      "approve": "Override & continue",
+      "invalid": "Invalid credentials",
+      "needManager": "Select a manager"
+    }
+  },
   "calendar": {
     "pick": "Pick a date",
     "today": "Today",

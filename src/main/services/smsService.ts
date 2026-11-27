@@ -1,4 +1,5 @@
 import { getAllAdminSettings } from './admin';
+import { getSecretSetting } from './secretVault';
 import { getAllSettings } from './settings';
 import { getSale } from './sales';
 import { buildReceiptText, buildReceiptHtml } from './printing';
@@ -11,7 +12,8 @@ interface SmsResult {
 export async function sendSmsReceipt(saleId: number, phoneNumber: string): Promise<SmsResult> {
   const admin = getAllAdminSettings();
   const smsProvider = admin.sms_provider;
-  const smsApiKey = admin.sms_api_key;
+  // Item 0.15 — the SMS credentials are stored encrypted (OS key store).
+  const smsApiKey = getSecretSetting('sms_api_key');
   const smsSender = admin.sms_sender || 'Rokar';
 
   if (!smsProvider || !smsApiKey) {
@@ -41,8 +43,8 @@ export async function sendSmsReceipt(saleId: number, phoneNumber: string): Promi
 }
 
 async function sendTwilioSms(to: string, body: string, admin: Record<string, string>): Promise<SmsResult> {
-  const accountSid = admin.sms_api_key;
-  const authToken = admin.sms_api_secret;
+  const accountSid = getSecretSetting('sms_api_key');
+  const authToken = getSecretSetting('sms_api_secret');
   const from = admin.sms_sender;
 
   if (!accountSid || !authToken || !from) {
@@ -74,7 +76,7 @@ async function sendTwilioSms(to: string, body: string, admin: Record<string, str
 }
 
 async function sendTextLocalSms(to: string, body: string, admin: Record<string, string>): Promise<SmsResult> {
-  const apiKey = admin.sms_api_key;
+  const apiKey = getSecretSetting('sms_api_key');
   const sender = admin.sms_sender || 'Rokar';
 
   const params = new URLSearchParams();
@@ -97,7 +99,7 @@ async function sendTextLocalSms(to: string, body: string, admin: Record<string, 
 
 async function sendApiSms(to: string, body: string, admin: Record<string, string>): Promise<SmsResult> {
   const apiUrl = admin.sms_api_url;
-  const apiKey = admin.sms_api_key;
+  const apiKey = getSecretSetting('sms_api_key');
 
   if (!apiUrl) {
     return { ok: false, message: 'SMS API URL not configured' };

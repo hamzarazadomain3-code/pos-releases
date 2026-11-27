@@ -4,6 +4,7 @@ import { Modal } from './Modal';
 import { KeyboardInput } from './KeyboardInput';
 import { DateInput } from './DateInput';
 import { formatMoney } from '../utils/currency';
+import { toLocalDateString } from '../utils/dateUtils';
 
 /**
  * Add / Return Udhaar items.
@@ -63,7 +64,7 @@ function nextKey(): string {
 }
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return toLocalDateString(new Date());
 }
 
 function num(v: string): number {

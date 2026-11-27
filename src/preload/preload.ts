@@ -343,6 +343,7 @@ const bridge: PosBridge = {
     saveCounts: (auditId: number, counts) => ipcRenderer.invoke('audits:saveCounts', auditId, counts),
     cancel: (auditId: number) => ipcRenderer.invoke('audits:cancel', auditId),
     complete: (auditId: number) => ipcRenderer.invoke('audits:complete', auditId),
+    discard: (auditId: number) => ipcRenderer.invoke('audits:discard', auditId),
   },
    promotions: {
     list: () => ipcRenderer.invoke('promotions:list'),

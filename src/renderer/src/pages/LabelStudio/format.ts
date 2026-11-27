@@ -8,6 +8,7 @@
  */
 import type { Product } from '@shared/types';
 import { formatMoney } from '@utils/currency';
+import { toLocalDateString } from '@utils/dateUtils';
 import type { LabelRunOptions, LabelTemplateOptions, ProductOverride } from './types';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -122,7 +123,7 @@ export function resolveLabelContent(content: string, p: Product, ctx: ResolveCtx
     barcode: () => p.barcode || p.sku || String(p.id),
     expiry: (arg) => (hideDates && !arg ? '' : formatDateToken(expRaw, arg || 'dd/mm/yyyy')),
     mfg: (arg) => formatDateToken(mfgRaw, arg || 'dd/mm/yyyy'),
-    date: (arg) => formatDateToken(new Date().toISOString().slice(0, 10), arg || 'dd/mm/yyyy'),
+    date: (arg) => formatDateToken(toLocalDateString(new Date()), arg || 'dd/mm/yyyy'),
     batch: () => p.batch_no || '',
     weight: () => weight,
     approx: () => approx,

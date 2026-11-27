@@ -153,7 +153,7 @@ export default function Reports({ onNavigate }: ReportsProps = {}) {
           cs.setDate(cs.getDate() - 30);
           const ce = new Date();
           setCategoryProfit(await window.api.profitability.category(
-            cs.toISOString().split('T')[0], ce.toISOString().split('T')[0]
+            toLocalDateString(cs), toLocalDateString(ce)
           ));
           break;
         case 'breakEven':

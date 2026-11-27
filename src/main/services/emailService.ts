@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { getAllAdminSettings } from './admin';
 import { getAllSettings } from './settings';
+import { getSecretSetting } from './secretVault';
 import { todayLocal, formatLocalString } from '../utils/timezone';
 
 interface EmailOptions {
@@ -17,7 +18,8 @@ function getTransporter(): nodemailer.Transporter | null {
   const host = admin.email_smtp_host;
   const port = parseInt(admin.email_smtp_port || '587', 10);
   const user = admin.email_smtp_user;
-  const pass = admin.email_smtp_pass;
+  // Item 0.15 — the SMTP password is stored encrypted (OS key store).
+  const pass = getSecretSetting('email_smtp_pass');
 
   if (!host || !user || !pass) return null;
 

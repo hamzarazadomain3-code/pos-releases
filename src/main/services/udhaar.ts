@@ -1,4 +1,5 @@
 import { getDb } from '../db';
+import { todayLocal } from '../utils/timezone';
 import { logActivity } from './activity';
 import { checkCredit } from './creditLimits';
 import { adjustStock, createProduct } from './inventory';
@@ -163,7 +164,7 @@ function dateOnly(ts: string | null | undefined): string | null {
 }
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayLocal();
 }
 
 /**

@@ -9,6 +9,9 @@
  */
 
 import { getDb } from '../db';
+import { todayLocal } from '../utils/timezone';
+import { getBusinessDayStartHour, getShopTimezone } from './salesHistory';
+import { resolveBusinessRange } from '../../shared/salesHistory';
 import { getAdminSetting, getAllAdminSettings } from './admin';
 import { getSale, listSales } from './sales';
 import { getUser } from './auth';
@@ -138,16 +141,24 @@ export async function collectReportData(kind: ReportKind, shiftId?: number): Pro
 
     return buildReportTotals(sales, shift, from, to);
   } else {
-    // Z Report: entire day (all shifts closed today)
-    const today = new Date().toISOString().split('T')[0];
-    from = today + 'T00:00:00Z';
-    to = today + 'T23:59:59Z';
+    // Z Report: the whole shop business day (respects business_day_start_hour
+    // and shop_timezone; the old UTC-midnight window missed the evening sales).
+    const today = todayLocal();
+    const range = resolveBusinessRange(
+      today,
+      today,
+      getBusinessDayStartHour(),
+      getShopTimezone(),
+      new Date()
+    );
+    from = range.fromUtc;
+    to = range.toUtc;
 
     const sales = db.prepare(`
       SELECT s.*, c.name as customer_name
       FROM sales s
       LEFT JOIN customers c ON c.id = s.customer_id
-      WHERE s.created_at BETWEEN ? AND ? AND s.status = 'completed'
+      WHERE s.created_at >= ? AND s.created_at < ? AND s.status = 'completed'
       ORDER BY s.created_at
     `).all(from, to);
 

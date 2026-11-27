@@ -26,9 +26,23 @@ export function openShift(openingCash: number): ShiftRow {
   const db = getDb();
   const uid = getSessionUserId() ?? 1;
   const open = db
-    .prepare('SELECT id FROM shifts WHERE user_id = ? AND closed_at IS NULL')
-    .get(uid) as { id: number } | undefined;
+    .prepare('SELECT id, opened_at FROM shifts WHERE user_id = ? AND closed_at IS NULL')
+    .get(uid) as { id: number; opened_at: string } | undefined;
   if (open) {
+    const raw = String(open.opened_at ?? '').trim();
+    // Normalise: space→T, add Z if missing (DB may store '2026-11-25 06:52:47' or '...Z')
+    const normalized = raw.includes('Z') || raw.includes('+')
+      ? raw.replace(' ', 'T')
+      : raw.replace(' ', 'T') + 'Z';
+    const parsed = Date.parse(normalized);
+    const hoursOpen = Number.isFinite(parsed) ? (Date.now() - parsed) / 3_600_000 : 0;
+    if (hoursOpen >= 24) {
+      logActivity('shift_long_open', 'shift', open.id, `hours=${hoursOpen.toFixed(1)} user=${uid} refused_reopen`, uid);
+      throw new Error('Your current shift is over 24 hours. Please close it before opening a new one.');
+    }
+    if (hoursOpen >= 20) {
+      logActivity('shift_long_open', 'shift', open.id, `hours=${hoursOpen.toFixed(1)} user=${uid}`, uid);
+    }
     throw new Error('You already have an open shift — close it before opening a new one');
   }
   const info = db

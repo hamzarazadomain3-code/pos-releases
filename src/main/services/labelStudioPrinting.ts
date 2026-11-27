@@ -27,6 +27,7 @@ import {
   printCurrency,
 } from './printDocs';
 import { getProduct } from './inventory';
+import { todayLocal } from '../utils/timezone';
 import {
   LABEL_SPECS,
   registerLabelSpec,
@@ -436,7 +437,7 @@ function resolveContent(
     barcode: () => p.barcode || p.sku || String(p.id),
     expiry: (arg) => (hideDates && !arg ? '' : formatDateToken(expRaw, arg || style?.dateFormat)),
     mfg: (arg) => formatDateToken(mfgRaw, arg || style?.dateFormat),
-    date: (arg) => formatDateToken(new Date().toISOString().slice(0, 10), arg || style?.dateFormat),
+    date: (arg) => formatDateToken(todayLocal(), arg || style?.dateFormat),
     batch: () => p.batch_no || '',
     weight: () => weight,
     approx: () => approx,

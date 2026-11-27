@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain, app, powerMonitor } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { log, logError } from './logger';
+import { wrapIpcHandler } from './ipcError';
 import { shutdownWhatsAppGateway, isWhatsAppInitialized } from './whatsapp-gateway';
 
 autoUpdater.autoDownload = true;
@@ -86,16 +87,16 @@ export function initUpdater(): void {
     sendStatus('error', err.message);
   });
 
-  ipcMain.handle('updater:check', async () => {
+  ipcMain.handle('updater:check', wrapIpcHandler('updater:check', async () => {
     try {
       await checkForUpdates(true);
       return 'ok';
     } catch (e) {
       return e instanceof Error ? e.message : String(e);
     }
-  });
+  }));
 
-  ipcMain.handle('updater:install', async () => {
+  ipcMain.handle('updater:install', wrapIpcHandler('updater:install', async () => {
     sendStatus('restarting');
     log('Updater: shutting down before install');
 
@@ -111,9 +112,9 @@ export function initUpdater(): void {
     await new Promise(r => setTimeout(r, 500));
     autoUpdater.quitAndInstall(true, true);
     return 'ok';
-  });
+  }));
 
-  ipcMain.handle('updater:getState', async () => lastState);
+  ipcMain.handle('updater:getState', wrapIpcHandler('updater:getState', async () => lastState));
 
   // Start periodic background checks (every 6 hours)
   startPeriodicChecks();

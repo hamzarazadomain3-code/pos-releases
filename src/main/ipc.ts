@@ -1,4 +1,6 @@
 import { ipcMain, BrowserWindow, dialog } from 'electron';
+import type { IpcMainInvokeEvent } from 'electron';
+import { wrapIpcHandler } from './ipcError';
 import {
   SECRET_MASK,
   SECRET_ADMIN_KEYS,
@@ -242,6 +244,7 @@ import {
   cancelAudit,
   completeAudit,
   createAudit,
+  discardAudit,
   getAudit,
   listAudits,
   listAuditsPaginated,
@@ -301,82 +304,94 @@ import { commissionsService } from './services/commissions';
 import { expensesService } from './services/expenses';
 import { customReportsService } from './services/customReports';
 
+/**
+ * Item 0.2 — the ONE registration helper. Every business handler is wrapped so
+ * internal faults are logged with an id instead of leaking a stack trace into
+ * a toast. Expected validation errors are rethrown unchanged.
+ */
+function handle(
+  channel: string,
+  listener: (event: IpcMainInvokeEvent, ...args: any[]) => unknown
+): void {
+  ipcMain.handle(channel, wrapIpcHandler(channel, listener));
+}
+
 export function registerIpcHandlers(): void {
-  ipcMain.handle('inventory:list', (_e, search?: string, includeInactive?: boolean, categoryId?: number, stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock', supplierId?: number, expiryFrom?: string, expiryTo?: string) =>
+  handle('inventory:list', (_e, search?: string, includeInactive?: boolean, categoryId?: number, stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock', supplierId?: number, expiryFrom?: string, expiryTo?: string) =>
     listProducts(search, includeInactive, categoryId, stockStatus, supplierId, expiryFrom, expiryTo)
   );
-  ipcMain.handle('inventory:get', (_e, id: number) => getProduct(id));
-  ipcMain.handle('inventory:getByBarcode', (_e, barcode: string) => getProductByBarcode(barcode));
-  ipcMain.handle('inventory:create', (_e, input) => createProduct(input));
-  ipcMain.handle('inventory:update', (_e, id: number, input) => updateProduct(id, input));
-  ipcMain.handle('inventory:remove', (_e, id: number) => deleteProduct(id));
-  ipcMain.handle('inventory:adjustStock', (_e, productId: number, changeQty: number, reason: string, refType?: string | null, refId?: number | null) =>
+  handle('inventory:get', (_e, id: number) => getProduct(id));
+  handle('inventory:getByBarcode', (_e, barcode: string) => getProductByBarcode(barcode));
+  handle('inventory:create', (_e, input) => createProduct(input));
+  handle('inventory:update', (_e, id: number, input) => updateProduct(id, input));
+  handle('inventory:remove', (_e, id: number) => deleteProduct(id));
+  handle('inventory:adjustStock', (_e, productId: number, changeQty: number, reason: string, refType?: string | null, refId?: number | null) =>
     adjustStock(productId, changeQty, reason, refType, refId)
   );
-  ipcMain.handle('inventory:movements', (_e, productId?: number) => listMovements(productId));
-  ipcMain.handle('inventory:getBatches', (_e, productId: number) => getBatches(productId));
-  ipcMain.handle('inventory:getUnits', (_e, productId: number) => getUnits(productId));
-  ipcMain.handle('inventory:lowStock', () => listLowStock());
-  ipcMain.handle('inventory:categories', () => listCategories());
-  ipcMain.handle('inventory:createCategory', (_e, name: string) => createCategory(name));
-  ipcMain.handle('inventory:units', () => listUnits());
+  handle('inventory:movements', (_e, productId?: number) => listMovements(productId));
+  handle('inventory:getBatches', (_e, productId: number) => getBatches(productId));
+  handle('inventory:getUnits', (_e, productId: number) => getUnits(productId));
+  handle('inventory:lowStock', () => listLowStock());
+  handle('inventory:categories', () => listCategories());
+  handle('inventory:createCategory', (_e, name: string) => createCategory(name));
+  handle('inventory:units', () => listUnits());
 
-  ipcMain.handle('sales:create', (_e, input) => createSale(input));
-  ipcMain.handle('sales:get', (_e, id: number) => getSale(id));
-  ipcMain.handle('sales:list', (_e, from?: string, to?: string, includeVoided?: boolean, customerId?: number, userId?: number, paymentMode?: string, productId?: number, minAmount?: number, maxAmount?: number, saleNo?: string, sortBy?: 'date' | 'amount' | 'saleNo', sortOrder?: 'asc' | 'desc', onlyMySales?: boolean, status?: 'completed' | 'voided' | 'held' | 'returned' | 'all') => listSales(from, to, includeVoided, customerId, userId, paymentMode, productId, minAmount, maxAmount, saleNo, sortBy, sortOrder, onlyMySales, status));
-  ipcMain.handle('sales:void', (_e, id: number, reason: string) => voidSale(id, reason));
-  ipcMain.handle('sales:nextInvoiceNo', () => nextInvoiceNo());
-  ipcMain.handle('sales:hold', (_e, kind: string, label: string, data) => holdBill(kind as 'held' | 'quotation', label, data));
-  ipcMain.handle('sales:heldBills', (_e, kind?: string) => listHeldBills(kind as 'held' | 'quotation' | undefined));
-  ipcMain.handle('sales:getHeld', (_e, id: number) => getHeldBill(id));
-  ipcMain.handle('sales:deleteHeld', (_e, id: number, reason?: string) => deleteHeldBill(id, reason));
-  ipcMain.handle('sales:resumeHeld', (_e, id: number) => resumeHeldBill(id));
+  handle('sales:create', (_e, input) => createSale(input));
+  handle('sales:get', (_e, id: number) => getSale(id));
+  handle('sales:list', (_e, from?: string, to?: string, includeVoided?: boolean, customerId?: number, userId?: number, paymentMode?: string, productId?: number, minAmount?: number, maxAmount?: number, saleNo?: string, sortBy?: 'date' | 'amount' | 'saleNo', sortOrder?: 'asc' | 'desc', onlyMySales?: boolean, status?: 'completed' | 'voided' | 'held' | 'returned' | 'all') => listSales(from, to, includeVoided, customerId, userId, paymentMode, productId, minAmount, maxAmount, saleNo, sortBy, sortOrder, onlyMySales, status));
+  handle('sales:void', (_e, id: number, reason: string) => voidSale(id, reason));
+  handle('sales:nextInvoiceNo', () => nextInvoiceNo());
+  handle('sales:hold', (_e, kind: string, label: string, data) => holdBill(kind as 'held' | 'quotation', label, data));
+  handle('sales:heldBills', (_e, kind?: string) => listHeldBills(kind as 'held' | 'quotation' | undefined));
+  handle('sales:getHeld', (_e, id: number) => getHeldBill(id));
+  handle('sales:deleteHeld', (_e, id: number, reason?: string) => deleteHeldBill(id, reason));
+  handle('sales:resumeHeld', (_e, id: number) => resumeHeldBill(id));
 
   // PHASE 3d — one timeline service for every event type.
-  ipcMain.handle('history:defaults', () => historyDefaults());
-  ipcMain.handle('history:list', (_e, filters, page?: number, pageSize?: number) =>
+  handle('history:defaults', () => historyDefaults());
+  handle('history:list', (_e, filters, page?: number, pageSize?: number) =>
     listHistoryEvents(filters ?? {}, page, pageSize)
   );
-  ipcMain.handle('history:counts', (_e, filters) => historyTypeCounts(filters ?? {}));
-  ipcMain.handle('history:summary', (_e, filters) => historySummary(filters ?? {}));
-  ipcMain.handle('history:openHeld', () => historyOpenHeldCount());
-  ipcMain.handle('history:detail', (_e, eventId: number) => getHistoryDetail(eventId));
-  ipcMain.handle('history:print', (_e, filters) => printHistoryReport(filters ?? {}));
-  ipcMain.handle('history:presetRange', (_e, preset: string) => historyPresetRange(preset ?? 'today'));
+  handle('history:counts', (_e, filters) => historyTypeCounts(filters ?? {}));
+  handle('history:summary', (_e, filters) => historySummary(filters ?? {}));
+  handle('history:openHeld', () => historyOpenHeldCount());
+  handle('history:detail', (_e, eventId: number) => getHistoryDetail(eventId));
+  handle('history:print', (_e, filters) => printHistoryReport(filters ?? {}));
+  handle('history:presetRange', (_e, preset: string) => historyPresetRange(preset ?? 'today'));
 
-  ipcMain.handle('customers:list', () => listCustomers());
-  ipcMain.handle('customers:create', (_e, name: string, phone?: string, openingBalance?: number) =>
+  handle('customers:list', () => listCustomers());
+  handle('customers:create', (_e, name: string, phone?: string, openingBalance?: number) =>
     createCustomer(name, phone, openingBalance ?? 0)
   );
-  ipcMain.handle('customers:ledger', (_e, customerId: number) => customerLedger(customerId));
-  ipcMain.handle('customers:receivePayment', (_e, customerId: number, amount: number, mode: string, note?: string) =>
+  handle('customers:ledger', (_e, customerId: number) => customerLedger(customerId));
+  handle('customers:receivePayment', (_e, customerId: number, amount: number, mode: string, note?: string) =>
     receivePayment(customerId, amount, mode, note)
   );
-  ipcMain.handle('customers:setCreditLimit', (_e, customerId: number, limit: number) => setCreditLimit(customerId, limit));
-  ipcMain.handle('customers:get', (_e, id: number) => getCustomer(id));
-  ipcMain.handle('customers:save', (_e, input: CustomerInput, id?: number | null) => saveCustomer(input, id ?? null));
-  ipcMain.handle('customers:deactivate', (_e, id: number) => setCustomerStatus(id, 'inactive'));
-  ipcMain.handle('customers:reactivate', (_e, id: number) => setCustomerStatus(id, 'active'));
-  ipcMain.handle('customers:remove', (_e, id: number) => deleteCustomer(id));
-  ipcMain.handle('customers:merge', (_e, sourceId: number, targetId: number) => {
+  handle('customers:setCreditLimit', (_e, customerId: number, limit: number) => setCreditLimit(customerId, limit));
+  handle('customers:get', (_e, id: number) => getCustomer(id));
+  handle('customers:save', (_e, input: CustomerInput, id?: number | null) => saveCustomer(input, id ?? null));
+  handle('customers:deactivate', (_e, id: number) => setCustomerStatus(id, 'inactive'));
+  handle('customers:reactivate', (_e, id: number) => setCustomerStatus(id, 'active'));
+  handle('customers:remove', (_e, id: number) => deleteCustomer(id));
+  handle('customers:merge', (_e, sourceId: number, targetId: number) => {
     if (!can('owner')) return { ok: false, message: 'Only the owner can merge customers' };
     return mergeCustomers(sourceId, targetId);
   });
-  ipcMain.handle('customers:findDuplicates', (_e, opts: { phone?: string | null; name?: string; excludeId?: number | null }) =>
+  handle('customers:findDuplicates', (_e, opts: { phone?: string | null; name?: string; excludeId?: number | null }) =>
     findCustomerDuplicates(opts)
   );
 
-  ipcMain.handle('udhaar:ledger', (_e, customerId: number) => getUdhaarLedger(customerId));
-  ipcMain.handle('udhaar:printStatement', (_e, customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') =>
+  handle('udhaar:ledger', (_e, customerId: number) => getUdhaarLedger(customerId));
+  handle('udhaar:printStatement', (_e, customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') =>
     printStatement(customerId, from, to, paper)
   );
-  ipcMain.handle('udhaar:previewStatement', (_e, customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') =>
+  handle('udhaar:previewStatement', (_e, customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') =>
     previewStatement(customerId, from, to, paper)
   );
-  ipcMain.handle('udhaar:exportStatementPdf', (_e, customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') =>
+  handle('udhaar:exportStatementPdf', (_e, customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') =>
     exportStatementPdf(customerId, from, to, paper)
   );
-  ipcMain.handle('udhaar:shareStatement', async (_e, customerId: number, from?: string, to?: string, phone?: string) => {
+  handle('udhaar:shareStatement', async (_e, customerId: number, from?: string, to?: string, phone?: string) => {
     const ledger = getUdhaarLedger(customerId);
     const target = (phone && phone.trim()) || ledger.customer.phone || '';
     if (!target) return { ok: false, message: 'This customer has no phone number to share to.' };
@@ -384,8 +399,8 @@ export function registerIpcHandlers(): void {
   });
 
   // ── Phase 4: receivables aging, reminders, write-off ────────────────
-  ipcMain.handle('udhaar:aging', () => getUdhaarAging());
-  ipcMain.handle('udhaar:remind', async (_e, customerId: number, phone?: string) => {
+  handle('udhaar:aging', () => getUdhaarAging());
+  handle('udhaar:remind', async (_e, customerId: number, phone?: string) => {
     const ledger = getUdhaarLedger(customerId);
     if (ledger.summary.outstanding <= 0) {
       return { ok: false, message: 'This customer has no outstanding balance.' };
@@ -394,28 +409,28 @@ export function registerIpcHandlers(): void {
     if (!target) return { ok: false, message: 'This customer has no phone number to send the reminder to.' };
     return sendWhatsAppReceipt(target, reminderText(customerId));
   });
-  ipcMain.handle('udhaar:writeOff', (_e, customerId: number, amount: number, note?: string) => {
+  handle('udhaar:writeOff', (_e, customerId: number, amount: number, note?: string) => {
     if (!can('owner')) return { ok: false, message: 'Only the owner can write off debt' };
     return writeOffUdhaar(customerId, amount, note);
   });
 
   // ── Phase 2: manual item entries + the Udhaar item catalog ──────────
-  ipcMain.handle('udhaar:lookupItem', (_e, code: string) => lookupUdhaarItem(code));
-  ipcMain.handle('udhaar:searchItems', (_e, term: string) => searchUdhaarItems(term));
-  ipcMain.handle('udhaar:createEntry', (_e, input: UdhaarEntryInput) => createUdhaarEntry(input));
-  ipcMain.handle('udhaar:catalogList', () => listUdhaarCatalog());
-  ipcMain.handle('udhaar:catalogUpsert', (_e, item: { id?: number; barcode?: string | null; name: string; price: number; unit?: string | null }) =>
+  handle('udhaar:lookupItem', (_e, code: string) => lookupUdhaarItem(code));
+  handle('udhaar:searchItems', (_e, term: string) => searchUdhaarItems(term));
+  handle('udhaar:createEntry', (_e, input: UdhaarEntryInput) => createUdhaarEntry(input));
+  handle('udhaar:catalogList', () => listUdhaarCatalog());
+  handle('udhaar:catalogUpsert', (_e, item: { id?: number; barcode?: string | null; name: string; price: number; unit?: string | null }) =>
     upsertUdhaarCatalog(item)
   );
-  ipcMain.handle('udhaar:catalogDelete', (_e, id: number) => deleteUdhaarCatalog(id));
-  ipcMain.handle('udhaar:catalogExport', () => exportUdhaarCatalogCsv(BrowserWindow.getFocusedWindow()));
-  ipcMain.handle('udhaar:catalogImport', () => importUdhaarCatalogCsv(BrowserWindow.getFocusedWindow()));
-  ipcMain.handle('udhaar:catalogImportFromData', (_e, text: string) => importUdhaarCatalogCsvFromData(text));
-  ipcMain.handle('udhaar:catalogExportData', () => exportUdhaarCatalogCsv(null));
-  ipcMain.handle('udhaar:printEntrySlip', (_e, transactionId: number, paper?: 'thermal80' | 'thermal58') =>
+  handle('udhaar:catalogDelete', (_e, id: number) => deleteUdhaarCatalog(id));
+  handle('udhaar:catalogExport', () => exportUdhaarCatalogCsv(BrowserWindow.getFocusedWindow()));
+  handle('udhaar:catalogImport', () => importUdhaarCatalogCsv(BrowserWindow.getFocusedWindow()));
+  handle('udhaar:catalogImportFromData', (_e, text: string) => importUdhaarCatalogCsvFromData(text));
+  handle('udhaar:catalogExportData', () => exportUdhaarCatalogCsv(null));
+  handle('udhaar:printEntrySlip', (_e, transactionId: number, paper?: 'thermal80' | 'thermal58') =>
     printEntrySlip(transactionId, paper)
   );
-  ipcMain.handle('udhaar:shareEntrySlip', async (_e, transactionId: number, phone?: string) => {
+  handle('udhaar:shareEntrySlip', async (_e, transactionId: number, phone?: string) => {
     const entry = getUdhaarEntry(transactionId);
     if (!entry) return { ok: false, message: 'Entry not found.' };
     const target = (phone && phone.trim()) || entry.customer.phone || '';
@@ -423,15 +438,15 @@ export function registerIpcHandlers(): void {
     return sendWhatsAppReceipt(target, entrySlipText(transactionId));
   });
 
-  ipcMain.handle('settings:getAll', () => maskSecrets(getAllSettings(), SECRET_SETTING_KEYS));
-  ipcMain.handle('settings:set', (_e, key: string, value: string) => {
+  handle('settings:getAll', () => maskSecrets(getAllSettings(), SECRET_SETTING_KEYS));
+  handle('settings:set', (_e, key: string, value: string) => {
     if (!can('owner')) throw new Error('Only the owner can change settings');
     // A masked value means "the renderer never saw the real secret" — keep the
     // stored one instead of overwriting it with the placeholder.
     if (isMaskedSecret(value)) return;
     return setSetting(key, value);
   });
-  ipcMain.handle('settings:chooseCloudFolder', async () => {
+  handle('settings:chooseCloudFolder', async () => {
     if (!can('owner')) throw new Error('Only the owner can change settings');
     const win = BrowserWindow.getFocusedWindow();
     const result = await dialog.showOpenDialog(win ?? BrowserWindow.getAllWindows()[0], {
@@ -444,26 +459,26 @@ export function registerIpcHandlers(): void {
   // ── Assistant ────────────────────────────────────────────────────────────
   // The API key never crosses this boundary: `getAssistantSettingsView` returns
   // only whether a key is set and its last four characters.
-  ipcMain.handle('assistant:getSettings', () => {
+  handle('assistant:getSettings', () => {
     // The renderer learns WHETHER a key was found and its last four characters —
     // never the key itself, and never the environment variable's value.
     return getAssistantSettingsView();
   });
-  ipcMain.handle('assistant:saveSettings', (_e, patch) => {
+  handle('assistant:saveSettings', (_e, patch) => {
     saveAssistantSettings(patch ?? {});
     // The VIEW comes back (not the raw settings), so the screen keeps the key
     // hint and the cost after a save.
     return getAssistantSettingsView();
   });
-  ipcMain.handle('assistant:setKey', (_e, key: string) => setAssistantApiKey(String(key ?? '')));
-  ipcMain.handle('assistant:activity', () => listAssistantActivity(50));
-  ipcMain.handle('assistant:send', (_e, request) => runAssistantTurn(request ?? { message: '' }));
-  ipcMain.handle('assistant:cancel', () => cancelAssistantTurn());
-  ipcMain.handle('assistant:pendingList', () => assistantPendingActions());
-  ipcMain.handle('assistant:pendingConfirm', (_e, id) => confirmAssistantAction(Number(id)));
-  ipcMain.handle('assistant:pendingCancel', (_e, id) => cancelAssistantAction(Number(id)));
-  ipcMain.handle('assistant:proactive', () => getProactiveSuggestions());
-  ipcMain.handle('assistant:optOut', (_e, optedOut: unknown) => {
+  handle('assistant:setKey', (_e, key: string) => setAssistantApiKey(String(key ?? '')));
+  handle('assistant:activity', () => listAssistantActivity(50));
+  handle('assistant:send', (_e, request) => runAssistantTurn(request ?? { message: '' }));
+  handle('assistant:cancel', () => cancelAssistantTurn());
+  handle('assistant:pendingList', () => assistantPendingActions());
+  handle('assistant:pendingConfirm', (_e, id) => confirmAssistantAction(Number(id)));
+  handle('assistant:pendingCancel', (_e, id) => cancelAssistantAction(Number(id)));
+  handle('assistant:proactive', () => getProactiveSuggestions());
+  handle('assistant:optOut', (_e, optedOut: unknown) => {
     // A user decides for THEMSELVES — never for anybody else.
     const user = currentUser();
     if (!user) throw new Error('Sign in again.');
@@ -472,7 +487,7 @@ export function registerIpcHandlers(): void {
     }
     return setAssistantOptOut(optedOut === true);
   });
-  ipcMain.handle('assistant:testConnection', async () => {
+  handle('assistant:testConnection', async () => {
     if (!can('owner')) throw new Error('Only the owner can test the assistant connection');
     const view = getAssistantSettingsView();
     if (!view.enabled) return { ok: false, message: 'The assistant is turned off.' };
@@ -484,35 +499,35 @@ export function registerIpcHandlers(): void {
   });
   // The voice: the recorded WAV goes to the app's own OFFLINE recogniser on
   // this computer. The audio never leaves the PC and no key is needed.
-  ipcMain.handle('assistant:transcribe', (_e, wavBase64: unknown) =>
+  handle('assistant:transcribe', (_e, wavBase64: unknown) =>
     transcribeWav(String(wavBase64 ?? ''))
   );
-  ipcMain.handle('assistant:voiceSupport', () => voiceSupport());
+  handle('assistant:voiceSupport', () => voiceSupport());
 
   // --- BayLan Label Scale barcode handlers ---
-  ipcMain.handle('scaleBarcode:parse', (_e, barcode: string) => parseBayLanBarcode(barcode));
-  ipcMain.handle('scaleBarcode:isScaleItem', (_e, barcode: string) => isScaleBarcode(barcode));
-  ipcMain.handle('scaleBarcode:listPluMappings', () => listPluMappings());
+  handle('scaleBarcode:parse', (_e, barcode: string) => parseBayLanBarcode(barcode));
+  handle('scaleBarcode:isScaleItem', (_e, barcode: string) => isScaleBarcode(barcode));
+  handle('scaleBarcode:listPluMappings', () => listPluMappings());
 
   // ── Printing ────────────────────────────────────────────────────────────
   // All printing funnels through printService, the only module that calls
   // webContents.print(). Every handler resolves to a PrintResult so the renderer
   // always gets a reason on failure instead of a silent hang.
-  ipcMain.handle('printing:printSale', async (_e, saleId: number, template?: ReceiptTemplate, opts?: PrintSaleOptions) => {
+  handle('printing:printSale', async (_e, saleId: number, template?: ReceiptTemplate, opts?: PrintSaleOptions) => {
     try {
       return await printSale(saleId, template, opts);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:previewReceipt', async (_e, saleId: number, template?: ReceiptTemplate, opts?: PrintSaleOptions) => {
+  handle('printing:previewReceipt', async (_e, saleId: number, template?: ReceiptTemplate, opts?: PrintSaleOptions) => {
     try {
       return await previewReceipt(saleId, template, opts);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:reprintLastReceipt', async () => {
+  handle('printing:reprintLastReceipt', async () => {
     try {
       return await reprintLastReceipt();
     } catch (e) {
@@ -520,106 +535,106 @@ export function registerIpcHandlers(): void {
     }
   });
   // Phase 5: X/Z reports
-  ipcMain.handle('printing:printXReport', async (_e, shiftId?: number) => {
+  handle('printing:printXReport', async (_e, shiftId?: number) => {
     try {
       return await printReport('x', shiftId);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:printZReport', async () => {
+  handle('printing:printZReport', async () => {
     try {
       return await printReport('z');
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:previewXReport', async (_e, shiftId?: number) => {
+  handle('printing:previewXReport', async (_e, shiftId?: number) => {
     try {
       return await previewReport('x', shiftId);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:previewZReport', async () => {
+  handle('printing:previewZReport', async () => {
     try {
       return await previewReport('z');
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:previewInvoice', async (_e, saleId: number) => {
+  handle('printing:previewInvoice', async (_e, saleId: number) => {
     try {
       return await previewInvoice(saleId);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:printLabel', async (_e, productId: number, copies?: number) => {
+  handle('printing:printLabel', async (_e, productId: number, copies?: number) => {
     try {
       return await printLabel(productId, copies ?? 1);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:printBarcodeLabel', async (_e, productId: number, copies?: number) => {
+  handle('printing:printBarcodeLabel', async (_e, productId: number, copies?: number) => {
     try {
       return await printBarcodeLabel(productId, copies ?? 1);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:printBarcodeBatch', async (_e, productIds: number[], size?: LabelSize, copies?: number) => {
+  handle('printing:printBarcodeBatch', async (_e, productIds: number[], size?: LabelSize, copies?: number) => {
     try {
       return await printBarcodeBatch(Array.isArray(productIds) ? productIds : [], size, copies ?? 1);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:previewBarcodeBatch', async (_e, productIds: number[], size?: LabelSize, copies?: number) => {
+  handle('printing:previewBarcodeBatch', async (_e, productIds: number[], size?: LabelSize, copies?: number) => {
     try {
       return await previewBarcodeBatch(Array.isArray(productIds) ? productIds : [], size, copies ?? 1);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:printBarcodeBatchWithOptions', async (_e, productIds: number[], size: LabelSize | undefined, copies: number, options: { printer?: string; xOffset?: number; yOffset?: number; mirror?: boolean; rotation?: number; template?: unknown; run?: LabelRunOptions }) => {
+  handle('printing:printBarcodeBatchWithOptions', async (_e, productIds: number[], size: LabelSize | undefined, copies: number, options: { printer?: string; xOffset?: number; yOffset?: number; mirror?: boolean; rotation?: number; template?: unknown; run?: LabelRunOptions }) => {
     try {
       return await printBarcodeBatchWithOptions(Array.isArray(productIds) ? productIds : [], size, copies, options);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:exportLabelBatchToPDF', async (_e, productIds: number[], template: any, size: LabelSize | undefined, copies: number, run?: LabelRunOptions) => {
+  handle('printing:exportLabelBatchToPDF', async (_e, productIds: number[], template: any, size: LabelSize | undefined, copies: number, run?: LabelRunOptions) => {
     try {
       return await exportLabelBatchToPDF(Array.isArray(productIds) ? productIds : [], template, size, copies, run);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:exportLabelBatchToPNG', async (_e, productIds: number[], template: any, size: LabelSize | undefined, copies: number, run?: LabelRunOptions) => {
+  handle('printing:exportLabelBatchToPNG', async (_e, productIds: number[], template: any, size: LabelSize | undefined, copies: number, run?: LabelRunOptions) => {
     try {
       return await exportLabelBatchToPNG(Array.isArray(productIds) ? productIds : [], template, size, copies, run);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:printCalibrationLabel', async (_e, size: LabelSize) => {
+  handle('printing:printCalibrationLabel', async (_e, size: LabelSize) => {
     try {
       return await printCalibrationLabel(size);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:openCashDrawer', () => openCashDrawer());
-  ipcMain.handle('printing:printInvoice', async (_e, saleId: number) => {
+  handle('printing:openCashDrawer', () => openCashDrawer());
+  handle('printing:printInvoice', async (_e, saleId: number) => {
     try {
       return await printInvoice(saleId);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:printDrawerSummary', async (_e, data: Parameters<typeof printDrawerSummary>[0]) => {
+  handle('printing:printDrawerSummary', async (_e, data: Parameters<typeof printDrawerSummary>[0]) => {
     try {
       return await printDrawerSummary(data);
     } catch (e) {
@@ -627,35 +642,35 @@ export function registerIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle('receipt:getTemplates', () => {
+  handle('receipt:getTemplates', () => {
     return getAvailableTemplates();
   });
 
   // ── Receipt Designer (phase 2) ──────────────────────────────────────────
-  ipcMain.handle('receipt:design:get', () => {
+  handle('receipt:design:get', () => {
     return { design: getReceiptDesign(), enabled: isReceiptDesignEnabled() };
   });
 
-  ipcMain.handle('receipt:design:set', (_e, design: ReceiptDesign, enabled?: boolean) => {
+  handle('receipt:design:set', (_e, design: ReceiptDesign, enabled?: boolean) => {
     const clean = normalizeReceiptDesign(design);
     setAdminSetting(RECEIPT_DESIGN_KEY, JSON.stringify(clean));
     if (enabled !== undefined) setAdminSetting(RECEIPT_DESIGN_ENABLED_KEY, enabled ? 'true' : 'false');
     return { ok: true, message: 'Receipt design saved' };
   });
 
-  ipcMain.handle('receipt:design:reset', () => {
+  handle('receipt:design:reset', () => {
     setAdminSetting(RECEIPT_DESIGN_KEY, '');
     setAdminSetting(RECEIPT_DESIGN_ENABLED_KEY, 'false');
     return { ok: true, message: 'Receipt design reset to the built-in layout' };
   });
 
-  ipcMain.handle('receipt:design:preview', async (_e, design: ReceiptDesign, paper: ReceiptPaper, sample?: string) => {
+  handle('receipt:design:preview', async (_e, design: ReceiptDesign, paper: ReceiptPaper, sample?: string) => {
     const s = buildSampleSale(undefined, sample === 'return' ? 'return' : 'sale');
     return buildDesignedReceiptAsync(s, paper, normalizeReceiptDesign(design));
   });
 
   // Phase 4 — print the sample sale with the on-screen (possibly unsaved) design.
-  ipcMain.handle('receipt:design:test', async (_e, design: ReceiptDesign, paper: ReceiptPaper, copies?: number, draft?: boolean) => {
+  handle('receipt:design:test', async (_e, design: ReceiptDesign, paper: ReceiptPaper, copies?: number, draft?: boolean) => {
     try {
       return await printDesignSample(design, paper, copies, draft === true);
     } catch (e) {
@@ -664,22 +679,22 @@ export function registerIpcHandlers(): void {
   });
 
   // ── Receipt template library (phase 3) ──────────────────────────────────────
-  ipcMain.handle('receipt:library:get', () => getReceiptLibrary());
+  handle('receipt:library:get', () => getReceiptLibrary());
 
-  ipcMain.handle('receipt:library:set', (_e, library: unknown) => {
+  handle('receipt:library:set', (_e, library: unknown) => {
     saveReceiptLibrary(library);
     return { ok: true, message: 'Receipt templates saved' };
   });
 
   // ── Printer selection ───────────────────────────────────────────────────
-  ipcMain.handle('printing:getPrinters', async () => {
+  handle('printing:getPrinters', async () => {
     try {
       return await getAvailablePrinters(true);
     } catch {
       return [];
     }
   });
-  ipcMain.handle('printing:getPrinterSettings', () => {
+  handle('printing:getPrinterSettings', () => {
     const fallback = {
       receiptPrinter: AUTO_PRINTER,
       invoicePrinter: AUTO_PRINTER,
@@ -711,7 +726,7 @@ export function registerIpcHandlers(): void {
       return fallback;
     }
   });
-  ipcMain.handle('printing:setPrinter', (_e, key: string, printer: string) => {
+  handle('printing:setPrinter', (_e, key: string, printer: string) => {
     try {
       if (!['receipt', 'invoice', 'label', 'drawer'].includes(key)) {
         return { ok: false, message: 'Unknown printer slot.' };
@@ -723,7 +738,7 @@ export function registerIpcHandlers(): void {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:setPaper', (_e, key: string, paper: string) => {
+  handle('printing:setPaper', (_e, key: string, paper: string) => {
     try {
       if (!['receipt', 'invoice', 'label'].includes(key)) {
         return { ok: false, message: 'Unknown paper slot.' };
@@ -734,7 +749,7 @@ export function registerIpcHandlers(): void {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:setLabelLayout', (_e, layout: string) => {
+  handle('printing:setLabelLayout', (_e, layout: string) => {
     try {
       setAdminSetting('label_layout', layout === 'sheet' ? 'sheet' : 'roll');
       return { ok: true, message: 'Label layout saved.' };
@@ -742,7 +757,7 @@ export function registerIpcHandlers(): void {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  ipcMain.handle('printing:printTestSheet', async (_e, paper?: PaperKind) => {
+  handle('printing:printTestSheet', async (_e, paper?: PaperKind) => {
     try {
       return await printTestSheet(paper);
     } catch (e) {
@@ -750,104 +765,104 @@ export function registerIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle('reports:dashboard', () => dashboard());
-  ipcMain.handle('reports:expiringSoon', (_e, days?: number) => listExpiringSoon(days));
-  ipcMain.handle('reports:salesReport', (_e, from?: string, to?: string) => salesReport(from, to));
-  ipcMain.handle('reports:profitLoss', (_e, from?: string, to?: string) => profitLoss(from, to));
-  ipcMain.handle('reports:bestSellers', (_e, from?: string, to?: string, limit?: number) => bestSellers(from, to, limit));
-  ipcMain.handle('reports:stockValuation', () => stockValuation());
-  ipcMain.handle('reports:oversoldItems', () => listOversoldItems());
-  ipcMain.handle('reports:belowCostItems', () => listBelowCostProducts());
-  ipcMain.handle('reports:expenses', (_e, from?: string, to?: string) => listExpenses(from, to));
-  ipcMain.handle('reports:addExpense', (_e, input) => addExpense(input));
-  ipcMain.handle('reports:deleteExpense', (_e, id: number) => deleteExpense(id));
+  handle('reports:dashboard', () => dashboard());
+  handle('reports:expiringSoon', (_e, days?: number) => listExpiringSoon(days));
+  handle('reports:salesReport', (_e, from?: string, to?: string) => salesReport(from, to));
+  handle('reports:profitLoss', (_e, from?: string, to?: string) => profitLoss(from, to));
+  handle('reports:bestSellers', (_e, from?: string, to?: string, limit?: number) => bestSellers(from, to, limit));
+  handle('reports:stockValuation', () => stockValuation());
+  handle('reports:oversoldItems', () => listOversoldItems());
+  handle('reports:belowCostItems', () => listBelowCostProducts());
+  handle('reports:expenses', (_e, from?: string, to?: string) => listExpenses(from, to));
+  handle('reports:addExpense', (_e, input) => addExpense(input));
+  handle('reports:deleteExpense', (_e, id: number) => deleteExpense(id));
 
-  ipcMain.handle('reports:getDailySalesTrend', (_e, from?: string, to?: string) => getDailySalesTrend(from, to));
-  ipcMain.handle('reports:getDailySalesTrendDaily', (_e, from?: string, to?: string) => getDailySalesTrendDaily(from, to));
-  ipcMain.handle('reports:getTopProducts', (_e, limit?: number, from?: string, to?: string) => getTopProducts(limit ?? 5, from, to));
-  ipcMain.handle('reports:getDailyStats', (_e, from?: string, to?: string) => getDailyStats(from, to));
-  ipcMain.handle('reports:getReceiptSettings', () => getReceiptSettings());
-  ipcMain.handle('reports:updateReceiptSetting', (_e, key: string, value: string) => {
+  handle('reports:getDailySalesTrend', (_e, from?: string, to?: string) => getDailySalesTrend(from, to));
+  handle('reports:getDailySalesTrendDaily', (_e, from?: string, to?: string) => getDailySalesTrendDaily(from, to));
+  handle('reports:getTopProducts', (_e, limit?: number, from?: string, to?: string) => getTopProducts(limit ?? 5, from, to));
+  handle('reports:getDailyStats', (_e, from?: string, to?: string) => getDailyStats(from, to));
+  handle('reports:getReceiptSettings', () => getReceiptSettings());
+  handle('reports:updateReceiptSetting', (_e, key: string, value: string) => {
     updateReceiptSetting(key, value);
     return true;
   });
 
-  ipcMain.handle('reports:getSalesAnalysis', (_e, from?: string, to?: string) => getSalesAnalysis(from, to));
-  ipcMain.handle('reports:getProductPerformance', (_e, from?: string, to?: string) => getProductPerformance(from, to));
-  ipcMain.handle('reports:getCustomerAnalysis', () => getCustomerAnalysis());
-  ipcMain.handle('reports:getInventoryAnalysis', () => getInventoryAnalysis());
-  ipcMain.handle('reports:getFinancialReport', (_e, from?: string, to?: string) => getFinancialReport(from, to));
-  ipcMain.handle('reports:getTaxReport', (_e, from?: string, to?: string) => getTaxReport(from, to));
-  ipcMain.handle('reports:getDailyClosing', (_e, date: string) => getDailyClosing(date));
-  ipcMain.handle('reports:exportReportPDF', (_e, reportType: string, data: unknown) => exportReportPDF(reportType, data));
-  ipcMain.handle('reports:exportReportExcel', (_e, reportType: string, data: unknown) => exportReportExcel(reportType, data));
+  handle('reports:getSalesAnalysis', (_e, from?: string, to?: string) => getSalesAnalysis(from, to));
+  handle('reports:getProductPerformance', (_e, from?: string, to?: string) => getProductPerformance(from, to));
+  handle('reports:getCustomerAnalysis', () => getCustomerAnalysis());
+  handle('reports:getInventoryAnalysis', () => getInventoryAnalysis());
+  handle('reports:getFinancialReport', (_e, from?: string, to?: string) => getFinancialReport(from, to));
+  handle('reports:getTaxReport', (_e, from?: string, to?: string) => getTaxReport(from, to));
+  handle('reports:getDailyClosing', (_e, date: string) => getDailyClosing(date));
+  handle('reports:exportReportPDF', (_e, reportType: string, data: unknown) => exportReportPDF(reportType, data));
+  handle('reports:exportReportExcel', (_e, reportType: string, data: unknown) => exportReportExcel(reportType, data));
 
-  ipcMain.handle('whatsapp:status', () => getWhatsAppStatus());
-  ipcMain.handle('whatsapp:start', async () => {
+  handle('whatsapp:status', () => getWhatsAppStatus());
+  handle('whatsapp:start', async () => {
     if (!can('owner')) throw new Error('Only the owner can link WhatsApp');
     await restartWhatsAppGateway();
     return getWhatsAppStatus();
   });
-  ipcMain.handle('whatsapp:send', (_e, phone: string, text: string) => {
+  handle('whatsapp:send', (_e, phone: string, text: string) => {
     if (!can('owner')) throw new Error('Only the owner can send WhatsApp messages');
     return sendWhatsAppReceipt(phone, text);
   });
-  ipcMain.handle('whatsapp:sendSaleReceipt', (_e, saleId: number, phone?: string) =>
+  handle('whatsapp:sendSaleReceipt', (_e, saleId: number, phone?: string) =>
     sendSaleReceiptOnWhatsApp(saleId, phone)
   );
 
-  ipcMain.handle('activity:list', (_e, limit?: number) => listActivity(limit));
+  handle('activity:list', (_e, limit?: number) => listActivity(limit));
 
-  ipcMain.handle('auth:verify', (_e, username: string, password: string) => verifyCredentials(username, password));
-  ipcMain.handle('auth:login', (_e, username: string, password: string) => login(username, password));
-  ipcMain.handle('auth:loginWithPin', (_e, pin: string) => loginWithPin(pin));
-  ipcMain.handle('auth:logout', () => {
+  handle('auth:verify', (_e, username: string, password: string) => verifyCredentials(username, password));
+  handle('auth:login', (_e, username: string, password: string) => login(username, password));
+  handle('auth:loginWithPin', (_e, pin: string) => loginWithPin(pin));
+  handle('auth:logout', () => {
     logout();
     return true;
   });
-  ipcMain.handle('auth:currentUser', () => currentUser());
-  ipcMain.handle('auth:refreshSession', () => refreshSession());
-  ipcMain.handle('auth:getSecurityPolicy', () => getSecurityPolicy());
-  ipcMain.handle('auth:defaultPasswordActive', () => defaultPasswordActive());
+  handle('auth:currentUser', () => currentUser());
+  handle('auth:refreshSession', () => refreshSession());
+  handle('auth:getSecurityPolicy', () => getSecurityPolicy());
+  handle('auth:defaultPasswordActive', () => defaultPasswordActive());
 
   // Password recovery — Option A (security answer) + Option B (support code)
-  ipcMain.handle('recovery:getStatus', (_e, userId: number) => getRecoveryStatus(userId));
-  ipcMain.handle('recovery:setSecurity', (_e, userId: number, question: string, answer: string) =>
+  handle('recovery:getStatus', (_e, userId: number) => getRecoveryStatus(userId));
+  handle('recovery:setSecurity', (_e, userId: number, question: string, answer: string) =>
     setSecurityQuestion(userId, question, answer)
   );
-  ipcMain.handle('recovery:clearSecurity', (_e, userId: number) => clearSecurityQuestion(userId));
-  ipcMain.handle('recovery:ownerCode', () => ownerRecoveryCode());
-  ipcMain.handle('recovery:rotateCode', () => rotateRecoverySalt());
-  ipcMain.handle('recovery:getQuestion', (_e, username: string) => getRecoveryQuestion(username));
-  ipcMain.handle('recovery:verifyAnswer', (_e, username: string, answer: string) =>
+  handle('recovery:clearSecurity', (_e, userId: number) => clearSecurityQuestion(userId));
+  handle('recovery:ownerCode', () => ownerRecoveryCode());
+  handle('recovery:rotateCode', () => rotateRecoverySalt());
+  handle('recovery:getQuestion', (_e, username: string) => getRecoveryQuestion(username));
+  handle('recovery:verifyAnswer', (_e, username: string, answer: string) =>
     verifySecurityAnswer(username, answer)
   );
-  ipcMain.handle('recovery:supportInfo', () => getSupportInfo());
-  ipcMain.handle('recovery:verifySupportCode', (_e, code: string) => verifySupportCode(code));
-  ipcMain.handle('recovery:setNewPassword', (_e, username: string, newPassword: string) =>
+  handle('recovery:supportInfo', () => getSupportInfo());
+  handle('recovery:verifySupportCode', (_e, code: string) => verifySupportCode(code));
+  handle('recovery:setNewPassword', (_e, username: string, newPassword: string) =>
     setRecoveredPassword(username, newPassword)
   );
 
-  ipcMain.handle('users:list', () => listUsers());
-  ipcMain.handle('users:create', (_e, input) => createUser(input));
-  ipcMain.handle('users:update', (_e, id: number, input) => updateUser(id, input));
-  ipcMain.handle('users:remove', (_e, id: number) => deleteUser(id));
+  handle('users:list', () => listUsers());
+  handle('users:create', (_e, input) => createUser(input));
+  handle('users:update', (_e, id: number, input) => updateUser(id, input));
+  handle('users:remove', (_e, id: number) => deleteUser(id));
 
-  ipcMain.handle('shifts:open', (_e, openingCash: number) => openShift(openingCash));
-  ipcMain.handle('shifts:close', (_e, id: number, countedCash: number, notes?: string) => closeShift(id, countedCash, notes));
-  ipcMain.handle('shifts:forceClose', (_e, id: number, countedCash?: number, notes?: string) =>
+  handle('shifts:open', (_e, openingCash: number) => openShift(openingCash));
+  handle('shifts:close', (_e, id: number, countedCash: number, notes?: string) => closeShift(id, countedCash, notes));
+  handle('shifts:forceClose', (_e, id: number, countedCash?: number, notes?: string) =>
     forceCloseShift(id, countedCash, notes)
   );
-  ipcMain.handle('shifts:current', () => currentShift());
-  ipcMain.handle('shifts:list', () => listShifts());
-  ipcMain.handle('shifts:get', (_e, id: number) => getShift(id));
+  handle('shifts:current', () => currentShift());
+  handle('shifts:list', () => listShifts());
+  handle('shifts:get', (_e, id: number) => getShift(id));
 
-  ipcMain.handle('backup:run', () => {
+  handle('backup:run', () => {
     if (!can('owner')) throw new Error('Only the owner can run backups');
     return runBackup();
   });
 
-  ipcMain.handle('backup:restore', async () => {
+  handle('backup:restore', async () => {
     if (!can('owner')) throw new Error('Only the owner can restore backups');
     const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
     const picked = await dialog.showOpenDialog(win, {
@@ -870,49 +885,49 @@ export function registerIpcHandlers(): void {
     return restoreBackup(filePath);
   });
 
-  ipcMain.handle('export:saveCsv', (_e, defaultName: string, headers: string[], rows: (string | number)[][]) =>
+  handle('export:saveCsv', (_e, defaultName: string, headers: string[], rows: (string | number)[][]) =>
     saveCsv(BrowserWindow.getFocusedWindow(), defaultName, headers, rows)
   );
-  ipcMain.handle('export:saveXlsx', (_e, defaultName: string, sheets) =>
+  handle('export:saveXlsx', (_e, defaultName: string, sheets) =>
     saveXlsx(BrowserWindow.getFocusedWindow(), defaultName, sheets)
   );
 
-  ipcMain.handle('excel:exportProducts', (_e, filters?: { search?: string; includeInactive?: boolean; categoryId?: number; stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock'; supplierId?: number; expiryFrom?: string; expiryTo?: string }) => exportProductsXlsx(BrowserWindow.getFocusedWindow(), filters?.search, filters?.includeInactive, filters?.categoryId, filters?.stockStatus, filters?.supplierId, filters?.expiryFrom, filters?.expiryTo));
-  ipcMain.handle('excel:exportSales', (_e, from?: string, to?: string) => exportSalesXlsx(BrowserWindow.getFocusedWindow(), from, to));
-  ipcMain.handle('excel:exportCustomers', (_e, filters?: { status?: 'paid' | 'pending' | 'all'; from?: string; to?: string }) => exportCustomersXlsx(BrowserWindow.getFocusedWindow(), filters?.status, filters?.from, filters?.to));
-  ipcMain.handle('excel:exportUdhaarStatement', (_e, customerId: number, from?: string, to?: string) => exportUdhaarStatementXlsx(BrowserWindow.getFocusedWindow(), customerId, from, to));
-  ipcMain.handle('excel:exportPurchaseOrders', (_e, filters?: { status?: string; from?: string; to?: string; supplierId?: number }) => exportPurchaseOrdersXlsx(BrowserWindow.getFocusedWindow(), filters?.status, filters?.from, filters?.to, filters?.supplierId));
-  ipcMain.handle('excel:exportExpenses', (_e, from?: string, to?: string) => exportExpensesXlsx(BrowserWindow.getFocusedWindow(), from, to));
-  ipcMain.handle('excel:downloadTemplate', () => downloadProductTemplate(BrowserWindow.getFocusedWindow()));
-  ipcMain.handle('excel:importProducts', () => importProductsFromExcel(BrowserWindow.getFocusedWindow()));
-  ipcMain.handle('excel:importProductsFromData', (_e, data: unknown) => importProductsFromBuffer(data));
+  handle('excel:exportProducts', (_e, filters?: { search?: string; includeInactive?: boolean; categoryId?: number; stockStatus?: 'in_stock' | 'low_stock' | 'out_of_stock' | 'negative_stock'; supplierId?: number; expiryFrom?: string; expiryTo?: string }) => exportProductsXlsx(BrowserWindow.getFocusedWindow(), filters?.search, filters?.includeInactive, filters?.categoryId, filters?.stockStatus, filters?.supplierId, filters?.expiryFrom, filters?.expiryTo));
+  handle('excel:exportSales', (_e, from?: string, to?: string) => exportSalesXlsx(BrowserWindow.getFocusedWindow(), from, to));
+  handle('excel:exportCustomers', (_e, filters?: { status?: 'paid' | 'pending' | 'all'; from?: string; to?: string }) => exportCustomersXlsx(BrowserWindow.getFocusedWindow(), filters?.status, filters?.from, filters?.to));
+  handle('excel:exportUdhaarStatement', (_e, customerId: number, from?: string, to?: string) => exportUdhaarStatementXlsx(BrowserWindow.getFocusedWindow(), customerId, from, to));
+  handle('excel:exportPurchaseOrders', (_e, filters?: { status?: string; from?: string; to?: string; supplierId?: number }) => exportPurchaseOrdersXlsx(BrowserWindow.getFocusedWindow(), filters?.status, filters?.from, filters?.to, filters?.supplierId));
+  handle('excel:exportExpenses', (_e, from?: string, to?: string) => exportExpensesXlsx(BrowserWindow.getFocusedWindow(), from, to));
+  handle('excel:downloadTemplate', () => downloadProductTemplate(BrowserWindow.getFocusedWindow()));
+  handle('excel:importProducts', () => importProductsFromExcel(BrowserWindow.getFocusedWindow()));
+  handle('excel:importProductsFromData', (_e, data: unknown) => importProductsFromBuffer(data));
 
-  ipcMain.handle('purchases:suppliers', () => listSuppliers());
-  ipcMain.handle('purchases:createSupplier', (_e, name: string, phone?: string, address?: string) =>
+  handle('purchases:suppliers', () => listSuppliers());
+  handle('purchases:createSupplier', (_e, name: string, phone?: string, address?: string) =>
     createSupplier(name, phone, address)
   );
-  ipcMain.handle('purchases:orders', (_e, status?: string) => listPurchaseOrders(status));
-  ipcMain.handle('purchases:getOrder', (_e, id: number) => getPurchaseOrder(id));
-  ipcMain.handle('purchases:createOrder', (_e, supplierId: number, items, options) =>
+  handle('purchases:orders', (_e, status?: string) => listPurchaseOrders(status));
+  handle('purchases:getOrder', (_e, id: number) => getPurchaseOrder(id));
+  handle('purchases:createOrder', (_e, supplierId: number, items, options) =>
     createPurchaseOrder(supplierId, items, options)
   );
-  ipcMain.handle('purchases:receiveOrder', (_e, id: number, lines?: { product_id: number; qty: number }[]) =>
+  handle('purchases:receiveOrder', (_e, id: number, lines?: { product_id: number; qty: number }[]) =>
     receivePurchaseOrder(id, lines)
   );
-  ipcMain.handle('purchases:cancelOrder', (_e, id: number, reason?: string) => cancelPurchaseOrder(id, reason));
-  ipcMain.handle('purchases:ledger', (_e, supplierId: number) => supplierLedger(supplierId));
-  ipcMain.handle('purchases:paySupplier', (_e, supplierId: number, amount: number, mode: string, note?: string) =>
+  handle('purchases:cancelOrder', (_e, id: number, reason?: string) => cancelPurchaseOrder(id, reason));
+  handle('purchases:ledger', (_e, supplierId: number) => supplierLedger(supplierId));
+  handle('purchases:paySupplier', (_e, supplierId: number, amount: number, mode: string, note?: string) =>
     paySupplier(supplierId, amount, mode, note)
   );
-  ipcMain.handle('purchases:priceHistory', (_e, productId: number) => purchasePriceHistory(productId));
+  handle('purchases:priceHistory', (_e, productId: number) => purchasePriceHistory(productId));
   // ── the Purchase Order screen: the LIVE inventory master data ──
-  ipcMain.handle('purchases:productRow', (_e, productId: number) => purchaseProductRow(productId));
-  ipcMain.handle('purchases:lowStockProducts', (_e, limit?: number) => listLowStockPurchaseProducts(limit));
-  ipcMain.handle('purchases:supplierProducts', (_e, supplierId: number, limit?: number) =>
+  handle('purchases:productRow', (_e, productId: number) => purchaseProductRow(productId));
+  handle('purchases:lowStockProducts', (_e, limit?: number) => listLowStockPurchaseProducts(limit));
+  handle('purchases:supplierProducts', (_e, supplierId: number, limit?: number) =>
     listSupplierPurchaseProducts(supplierId, limit)
   );
-  ipcMain.handle('purchases:lastPurchase', (_e, productId: number) => lastPurchaseInfo(productId));
-  ipcMain.handle('purchases:poSettings', () => ({
+  handle('purchases:lastPurchase', (_e, productId: number) => lastPurchaseInfo(productId));
+  handle('purchases:poSettings', () => ({
     cost_change_warn_pct: poCostChangeWarnPct(),
     min_margin_pct: poMinMarginPct(),
     auto_suggest_low_stock: poAutoSuggestLowStock(),
@@ -921,147 +936,148 @@ export function registerIpcHandlers(): void {
   }));
 
   // ── Phase 3: purchase import (Excel / CSV) ──
-  ipcMain.handle('purchases:importPickFile', () => pickPurchaseImportFile(BrowserWindow.getFocusedWindow()));
-  ipcMain.handle('purchases:importParse', (_e, filePath: string) => parsePurchaseFile(filePath));
+  handle('purchases:importPickFile', () => pickPurchaseImportFile(BrowserWindow.getFocusedWindow()));
+  handle('purchases:importParse', (_e, filePath: string) => parsePurchaseFile(filePath));
   // The web build has no file system: the renderer sends the picked file's
   // bytes (base64) instead of a path.
-  ipcMain.handle('purchases:importParseData', (_e, fileName: string, payload: unknown) => parsePurchaseData(fileName, payload));
-  ipcMain.handle('purchases:importTemplate', () => savePurchaseImportTemplate(BrowserWindow.getFocusedWindow()));
-  ipcMain.handle('purchases:importConfirm', (_e, payload) => importPurchaseOrders(payload));
-  ipcMain.handle('purchases:importUndo', (_e, importId?: number) => undoPurchaseImport(importId));
-  ipcMain.handle('purchases:importLast', () => lastUndoableImport());
-  ipcMain.handle('purchases:importLog', (_e, limit?: number) => listPurchaseImports(limit));
-  ipcMain.handle('purchases:printOrder', (_e, id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58') =>
+  handle('purchases:importParseData', (_e, fileName: string, payload: unknown) => parsePurchaseData(fileName, payload));
+  handle('purchases:importTemplate', () => savePurchaseImportTemplate(BrowserWindow.getFocusedWindow()));
+  handle('purchases:importConfirm', (_e, payload) => importPurchaseOrders(payload));
+  handle('purchases:importUndo', (_e, importId?: number) => undoPurchaseImport(importId));
+  handle('purchases:importLast', () => lastUndoableImport());
+  handle('purchases:importLog', (_e, limit?: number) => listPurchaseImports(limit));
+  handle('purchases:printOrder', (_e, id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58') =>
     printPurchaseOrder(id, paper ?? 'a4')
   );
-  ipcMain.handle('purchases:previewOrder', (_e, id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58') =>
+  handle('purchases:previewOrder', (_e, id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58') =>
     previewPurchaseOrder(id, paper ?? 'a4')
   );
-  ipcMain.handle('purchases:shareOrder', (_e, id: number) => buildPurchaseOrderHtml(id));
-  ipcMain.handle('purchases:saveOrderText', (_e, id: number) => savePurchaseOrderText(id));
+  handle('purchases:shareOrder', (_e, id: number) => buildPurchaseOrderHtml(id));
+  handle('purchases:saveOrderText', (_e, id: number) => savePurchaseOrderText(id));
 
-  ipcMain.handle('returns:create', (_e, input) => createReturn(input));
-  ipcMain.handle('returns:createBill', (_e, input) => createReturnBill(input));
-  ipcMain.handle('returns:list', (_e, from?: string, to?: string) => listReturns(from, to));
-  ipcMain.handle('returns:get', (_e, id: number) => getReturn(id));
-  ipcMain.handle('returns:createCashRefund', (_e, amount: number, reason?: string, mode?: string) =>
+  handle('returns:create', (_e, input) => createReturn(input));
+  handle('returns:createBill', (_e, input) => createReturnBill(input));
+  handle('returns:list', (_e, from?: string, to?: string) => listReturns(from, to));
+  handle('returns:get', (_e, id: number) => getReturn(id));
+  handle('returns:createCashRefund', (_e, amount: number, reason?: string, mode?: string) =>
     createCashRefund(amount, reason, mode)
   );
-  ipcMain.handle('returns:listCashRefunds', (_e, from?: string, to?: string) => listCashRefunds(from, to));
+  handle('returns:listCashRefunds', (_e, from?: string, to?: string) => listCashRefunds(from, to));
 
   // ── Amending a finished bill ───────────────────────────────────────────────
   // The permissions live in the SERVICE (a cashier is refused there, a manager
   // needs their PIN re-entered), not in the UI.
-  ipcMain.handle('billAmend:getView', (_e, saleId: number) => getBillAmendView(Number(saleId)));
-  ipcMain.handle('billAmend:list', (_e, saleId: number) => listAmendments(Number(saleId)));
-  ipcMain.handle('billAmend:customer', (_e, input) => amendCustomer(input));
-  ipcMain.handle('billAmend:payments', (_e, input) => amendPayments(input));
-  ipcMain.handle('billAmend:notes', (_e, input) => amendNotes(input));
-  ipcMain.handle('billAmend:items', (_e, input) => amendItems(input));
+  handle('billAmend:getView', (_e, saleId: number) => getBillAmendView(Number(saleId)));
+  handle('billAmend:list', (_e, saleId: number) => listAmendments(Number(saleId)));
+  handle('billAmend:customer', (_e, input) => amendCustomer(input));
+  handle('billAmend:payments', (_e, input) => amendPayments(input));
+  handle('billAmend:notes', (_e, input) => amendNotes(input));
+  handle('billAmend:items', (_e, input) => amendItems(input));
 
-  ipcMain.handle('audits:create', () => createAudit());
-  ipcMain.handle('audits:list', () => listAudits());
-  ipcMain.handle('audits:listPaginated', (_e, page?: number, pageSize?: number, from?: string, to?: string, userId?: number, status?: 'in_progress' | 'completed') =>
+  handle('audits:create', () => createAudit());
+  handle('audits:list', () => listAudits());
+  handle('audits:listPaginated', (_e, page?: number, pageSize?: number, from?: string, to?: string, userId?: number, status?: 'in_progress' | 'completed') =>
     listAuditsPaginated(page, pageSize, from, to, userId, status)
   );
-  ipcMain.handle('audits:get', (_e, id: number) => getAudit(id));
-  ipcMain.handle('audits:saveCounts', (_e, auditId: number, counts) => saveCounts(auditId, counts));
-  ipcMain.handle('audits:complete', (_e, id: number) => completeAudit(id));
-  ipcMain.handle('audits:cancel', (_e, id: number) => cancelAudit(id));
+  handle('audits:get', (_e, id: number) => getAudit(id));
+  handle('audits:saveCounts', (_e, auditId: number, counts) => saveCounts(auditId, counts));
+  handle('audits:complete', (_e, id: number) => completeAudit(id));
+  handle('audits:cancel', (_e, id: number) => cancelAudit(id));
+  handle('audits:discard', (_e, id: number) => discardAudit(id));
 
-  ipcMain.handle('promotions:list', () => listPromotions());
-  ipcMain.handle('promotions:create', (_e, input) => createPromotion(input));
-  ipcMain.handle('promotions:update', (_e, id: number, input) => updatePromotion(id, input));
-  ipcMain.handle('promotions:remove', (_e, id: number) => deletePromotion(id));
-   ipcMain.handle('promotions:resolve', (_e, items) => resolvePromotions(items));
+  handle('promotions:list', () => listPromotions());
+  handle('promotions:create', (_e, input) => createPromotion(input));
+  handle('promotions:update', (_e, id: number, input) => updatePromotion(id, input));
+  handle('promotions:remove', (_e, id: number) => deletePromotion(id));
+   handle('promotions:resolve', (_e, items) => resolvePromotions(items));
 
   // ── v1.8.0 Advanced Reports ──
   // Inventory Reports
   const inventoryReports = getInventoryReports();
-  ipcMain.handle('inventoryReports:purchaseHistory', (_e, productId?: number, dateRange?: { start: string; end: string }) =>
+  handle('inventoryReports:purchaseHistory', (_e, productId?: number, dateRange?: { start: string; end: string }) =>
     inventoryReports.getPurchaseHistory(productId, dateRange)
   );
-  ipcMain.handle('inventoryReports:dailyInventory', (_e, date: string) => inventoryReports.computeDailyInventory(date));
-  ipcMain.handle('inventoryReports:weeklyInventory', (_e, weekStart: string, weekEnd: string) => inventoryReports.getWeeklyInventory(weekStart, weekEnd));
-  ipcMain.handle('inventoryReports:monthlyInventory', (_e, year: number, month: number) => inventoryReports.getMonthlyInventory(year, month));
-  ipcMain.handle('inventoryReports:supplierMetrics', (_e, supplierId?: number) => inventoryReports.getSupplierMetrics(supplierId));
-  ipcMain.handle('inventoryReports:productPurchaseSummary', (_e, productId: number, months?: number) => inventoryReports.getProductPurchaseSummary(productId, months));
-  ipcMain.handle('inventoryReports:createDailySnapshot', (_e, date: string) => inventoryReports.createDailySnapshot(date));
-  ipcMain.handle('inventoryReports:addPurchaseOrder', (_e, supplierId: number, items: any[], notes?: string) => inventoryReports.addPurchaseOrder(supplierId, items, notes));
+  handle('inventoryReports:dailyInventory', (_e, date: string) => inventoryReports.computeDailyInventory(date));
+  handle('inventoryReports:weeklyInventory', (_e, weekStart: string, weekEnd: string) => inventoryReports.getWeeklyInventory(weekStart, weekEnd));
+  handle('inventoryReports:monthlyInventory', (_e, year: number, month: number) => inventoryReports.getMonthlyInventory(year, month));
+  handle('inventoryReports:supplierMetrics', (_e, supplierId?: number) => inventoryReports.getSupplierMetrics(supplierId));
+  handle('inventoryReports:productPurchaseSummary', (_e, productId: number, months?: number) => inventoryReports.getProductPurchaseSummary(productId, months));
+  handle('inventoryReports:createDailySnapshot', (_e, date: string) => inventoryReports.createDailySnapshot(date));
+  handle('inventoryReports:addPurchaseOrder', (_e, supplierId: number, items: any[], notes?: string) => inventoryReports.addPurchaseOrder(supplierId, items, notes));
 
   // Profitability
   const profitabilityService = getProfitabilityService();
-  ipcMain.handle('profitability:daily', (_e, date: string) => profitabilityService.getDailyProfitability(date));
-  ipcMain.handle('profitability:weekly', (_e, start: string, end: string) => profitabilityService.getWeeklyProfitability(start, end));
-  ipcMain.handle('profitability:monthly', (_e, year: number, month: number) => profitabilityService.getMonthlyProfitability(year, month));
-  ipcMain.handle('profitability:category', (_e, start: string, end: string) => profitabilityService.getCategoryProfitability(start, end));
-  ipcMain.handle('profitability:lowProfit', (_e, threshold?: number) => profitabilityService.getLowProfitProducts(threshold));
-  ipcMain.handle('profitability:topProfit', (_e, limit?: number, days?: number) => profitabilityService.getTopProfitProducts(limit, days));
-  ipcMain.handle('profitability:worstPerforming', (_e, limit?: number, days?: number) => profitabilityService.getWorstPerformingProducts(limit, days));
-  ipcMain.handle('profitability:breakEven', () => profitabilityService.getBreakEvenAnalysis());
-  ipcMain.handle('profitability:computePeriod', (_e, date: string) => profitabilityService.computePeriodProfitability(date));
+  handle('profitability:daily', (_e, date: string) => profitabilityService.getDailyProfitability(date));
+  handle('profitability:weekly', (_e, start: string, end: string) => profitabilityService.getWeeklyProfitability(start, end));
+  handle('profitability:monthly', (_e, year: number, month: number) => profitabilityService.getMonthlyProfitability(year, month));
+  handle('profitability:category', (_e, start: string, end: string) => profitabilityService.getCategoryProfitability(start, end));
+  handle('profitability:lowProfit', (_e, threshold?: number) => profitabilityService.getLowProfitProducts(threshold));
+  handle('profitability:topProfit', (_e, limit?: number, days?: number) => profitabilityService.getTopProfitProducts(limit, days));
+  handle('profitability:worstPerforming', (_e, limit?: number, days?: number) => profitabilityService.getWorstPerformingProducts(limit, days));
+  handle('profitability:breakEven', () => profitabilityService.getBreakEvenAnalysis());
+  handle('profitability:computePeriod', (_e, date: string) => profitabilityService.computePeriodProfitability(date));
 
   // The sidebar badges — the small numbers next to a page in the menu.
   // The role is taken from the SESSION (never from the renderer), so a cashier
   // can never ask for the owner's numbers. The service keeps the numbers for
   // a minute, so a shop that opens the menu often does not query again.
-  ipcMain.handle('sidebar:badges', () => getSidebarBadges(currentUser()?.role));
+  handle('sidebar:badges', () => getSidebarBadges(currentUser()?.role));
 
   // Alerts
   const alertService = getAlertService();
-  ipcMain.handle('alerts:getAll', () => alertService.getAll());
-  ipcMain.handle('alerts:getUnread', () => alertService.getUnread());
-  ipcMain.handle('alerts:markAsRead', (_e, id: number) => alertService.markAsRead(id));
-  ipcMain.handle('alerts:resolve', (_e, id: number, action: string) => alertService.resolve(id, action));
-  ipcMain.handle('alerts:checkNow', () => alertService.checkAndCreateAlerts());
-  ipcMain.handle('alerts:sendWhatsApp', () => alertService.sendAlertsWhatsApp());
-  ipcMain.handle('alerts:sendDailySummary', () => alertService.sendDailySalesSummary());
+  handle('alerts:getAll', () => alertService.getAll());
+  handle('alerts:getUnread', () => alertService.getUnread());
+  handle('alerts:markAsRead', (_e, id: number) => alertService.markAsRead(id));
+  handle('alerts:resolve', (_e, id: number, action: string) => alertService.resolve(id, action));
+  handle('alerts:checkNow', () => alertService.checkAndCreateAlerts());
+  handle('alerts:sendWhatsApp', () => alertService.sendAlertsWhatsApp());
+  handle('alerts:sendDailySummary', () => alertService.sendDailySalesSummary());
 
   // ── Cash Drawer Sessions ──
-  ipcMain.handle('cashDrawer:open', (_e, shiftId: number, openingCash: number) => openDrawer(shiftId, openingCash));
-  ipcMain.handle('cashDrawer:close', (_e, shiftId: number, closingCash: number, notes?: string) => closeDrawer(shiftId, closingCash, notes));
-  ipcMain.handle('cashDrawer:getCurrent', (_e, shiftId: number) => getCurrentDrawer(shiftId));
-  ipcMain.handle('cashDrawer:getBreakdown', (_e, shiftId: number) => getBreakdown(shiftId));
-  ipcMain.handle('cashDrawer:history', (_e, shiftId?: number) => getDrawerHistory(shiftId));
+  handle('cashDrawer:open', (_e, shiftId: number, openingCash: number) => openDrawer(shiftId, openingCash));
+  handle('cashDrawer:close', (_e, shiftId: number, closingCash: number, notes?: string) => closeDrawer(shiftId, closingCash, notes));
+  handle('cashDrawer:getCurrent', (_e, shiftId: number) => getCurrentDrawer(shiftId));
+  handle('cashDrawer:getBreakdown', (_e, shiftId: number) => getBreakdown(shiftId));
+  handle('cashDrawer:history', (_e, shiftId?: number) => getDrawerHistory(shiftId));
 
   // ── Admin: Shortcuts ──
-  ipcMain.handle('admin:shortcuts:getAll', () => getAllShortcuts());
-  ipcMain.handle('admin:shortcuts:update', (_e, action: string, key: string) => updateShortcut(action, key));
-  ipcMain.handle('admin:shortcuts:add', (_e, action: string, key: string) => createShortcut(action, key));
-  ipcMain.handle('admin:shortcuts:reset', () => { resetShortcuts(); return true; });
+  handle('admin:shortcuts:getAll', () => getAllShortcuts());
+  handle('admin:shortcuts:update', (_e, action: string, key: string) => updateShortcut(action, key));
+  handle('admin:shortcuts:add', (_e, action: string, key: string) => createShortcut(action, key));
+  handle('admin:shortcuts:reset', () => { resetShortcuts(); return true; });
 
   // ── Admin: Feature Toggles ──
-  ipcMain.handle('admin:features:getAll', () => getAllFeatures());
-  ipcMain.handle('admin:features:toggle', (_e, name: string) => toggleFeature(name));
-  ipcMain.handle('admin:features:isEnabled', (_e, name: string) => isFeatureEnabled(name));
+  handle('admin:features:getAll', () => getAllFeatures());
+  handle('admin:features:toggle', (_e, name: string) => toggleFeature(name));
+  handle('admin:features:isEnabled', (_e, name: string) => isFeatureEnabled(name));
 
   // ── Admin: Roles & Permissions ──
-  ipcMain.handle('admin:roles:getAll', () => getAllRoles());
-  ipcMain.handle('admin:roles:create', (_e, name: string, description?: string) => createRole(name, description));
-  ipcMain.handle('admin:roles:update', (_e, id: number, data: { name?: string; description?: string }) => updateRole(id, data));
-  ipcMain.handle('admin:roles:delete', (_e, id: number) => deleteRole(id));
-  ipcMain.handle('admin:roles:getPermissions', (_e, roleId: number) => getRolePermissions(roleId));
-  ipcMain.handle('admin:roles:setPermissions', (_e, roleId: number, permissions: { permission_name: string; is_allowed: boolean }[]) => {
+  handle('admin:roles:getAll', () => getAllRoles());
+  handle('admin:roles:create', (_e, name: string, description?: string) => createRole(name, description));
+  handle('admin:roles:update', (_e, id: number, data: { name?: string; description?: string }) => updateRole(id, data));
+  handle('admin:roles:delete', (_e, id: number) => deleteRole(id));
+  handle('admin:roles:getPermissions', (_e, roleId: number) => getRolePermissions(roleId));
+  handle('admin:roles:setPermissions', (_e, roleId: number, permissions: { permission_name: string; is_allowed: boolean }[]) => {
     setRolePermissions(roleId, permissions);
     return true;
   });
 
   // ── Admin: Settings ──
-  ipcMain.handle('admin:settings:getAll', () =>
+  handle('admin:settings:getAll', () =>
     maskSecrets(getAllAdminSettings(), SECRET_ADMIN_KEYS)
   );
-  ipcMain.handle('admin:settings:get', (_e, key: string) => {
+  handle('admin:settings:get', (_e, key: string) => {
     const all = getAllAdminSettings();
     const value = all[key] ?? null;
     if (value && SECRET_ADMIN_KEYS.has(key)) return SECRET_MASK;
     return value;
   });
-  ipcMain.handle('admin:settings:set', (_e, key: string, value: string) => {
+  handle('admin:settings:set', (_e, key: string, value: string) => {
     if (!isMaskedSecret(value)) setAdminSetting(key, value);
     BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('admin:settings:changed'));
     return true;
   });
-  ipcMain.handle('admin:settings:setBatch', (_e, settings: Record<string, string>) => {
+  handle('admin:settings:setBatch', (_e, settings: Record<string, string>) => {
     const real: Record<string, string> = {};
     for (const [key, value] of Object.entries(settings)) {
       if (!isMaskedSecret(value)) real[key] = value;
@@ -1070,47 +1086,47 @@ export function registerIpcHandlers(): void {
     BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('admin:settings:changed'));
     return true;
   });
-  ipcMain.handle('admin:settings:resetDefaults', () => {
+  handle('admin:settings:resetDefaults', () => {
     resetAdminSettings();
     BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('admin:settings:changed'));
     return true;
   });
 
   // ── Admin: Activity Log ──
-  ipcMain.handle('admin:activity:getAll', (_e, filters?: { from?: string; to?: string; user_id?: number; action?: string; limit?: number; offset?: number }) =>
+  handle('admin:activity:getAll', (_e, filters?: { from?: string; to?: string; user_id?: number; action?: string; limit?: number; offset?: number }) =>
     listActivityLogs(filters ?? {})
   );
-  ipcMain.handle('admin:activity:clear', (_e, retentionDays: number) => clearOldActivityLogs(retentionDays));
+  handle('admin:activity:clear', (_e, retentionDays: number) => clearOldActivityLogs(retentionDays));
 
   // ── Admin: User Management ──
-  ipcMain.handle('admin:users:getAll', () => listAllUsers());
-  ipcMain.handle('admin:users:resetPassword', (_e, userId: number, newPassword: string) => resetUserPassword(userId, newPassword));
+  handle('admin:users:getAll', () => listAllUsers());
+  handle('admin:users:resetPassword', (_e, userId: number, newPassword: string) => resetUserPassword(userId, newPassword));
 
   // ── Admin: System Health ──
-  ipcMain.handle('admin:systemHealth', () => getSystemHealth());
+  handle('admin:systemHealth', () => getSystemHealth());
 
   // ── Admin: Test-data cleanup ──
-  ipcMain.handle('admin:testData:preview', () => {
+  handle('admin:testData:preview', () => {
     if (!can('owner')) throw new Error('Only the owner can review test data');
     return previewTestData();
   });
-  ipcMain.handle('admin:testData:remove', (_e, confirmText: string) => {
+  handle('admin:testData:remove', (_e, confirmText: string) => {
     if (!can('owner')) throw new Error('Only the owner can remove test data');
     return removeTestData(confirmText);
   });
 
   // ── 2FA ──
-  ipcMain.handle('2fa:isEnabled', () => is2FAEnabled());
-  ipcMain.handle('2fa:method', () => get2FAMethod());
-  ipcMain.handle('2fa:generateOtp', (_e, userId: number) => generateOtp(userId));
-  ipcMain.handle('2fa:verifyOtp', (_e, userId: number, code: string) => verifyOtp(userId, code));
+  handle('2fa:isEnabled', () => is2FAEnabled());
+  handle('2fa:method', () => get2FAMethod());
+  handle('2fa:generateOtp', (_e, userId: number) => generateOtp(userId));
+  handle('2fa:verifyOtp', (_e, userId: number, code: string) => verifyOtp(userId, code));
 
   // ── Email ──
   // `email:send` is a raw relay: the caller supplies recipient, subject and HTML.
   // It is not used by the till (receipts go through receipt:sendEmail), so keep
   // it owner-only — an authenticated cashier must not be able to send arbitrary
   // mail from the shop's SMTP account.
-  ipcMain.handle('email:send', (_e, options: { to: string | string[]; subject: string; text?: string; html?: string }) => {
+  handle('email:send', (_e, options: { to: string | string[]; subject: string; text?: string; html?: string }) => {
     if (!can('owner')) throw new Error('Only the owner can send email');
     if (!options || typeof options !== 'object') throw new Error('Invalid email options');
     const recipients = Array.isArray(options.to) ? options.to : [options.to];
@@ -1122,122 +1138,122 @@ export function registerIpcHandlers(): void {
     }
     return sendEmail(options);
   });
-  ipcMain.handle('email:sendDailyReport', () => {
+  handle('email:sendDailyReport', () => {
     if (!can('owner')) throw new Error('Only the owner can send the daily report');
     return sendDailySalesReportEmail();
   });
 
   // ── Quotation Module ──
-  ipcMain.handle('quotations:list', (_e, filters?: { status?: string; customer_id?: number; from_date?: string; to_date?: string; search?: string }) =>
+  handle('quotations:list', (_e, filters?: { status?: string; customer_id?: number; from_date?: string; to_date?: string; search?: string }) =>
     quotationsService.list(filters || {})
   );
-  ipcMain.handle('quotations:get', (_e, id: number) => quotationsService.get(id));
-  ipcMain.handle('quotations:create', (_e, input) => quotationsService.create(input));
-  ipcMain.handle('quotations:updateStatus', (_e, id: number, status: string) => quotationsService.updateStatus(id, status));
-  ipcMain.handle('quotations:delete', (_e, id: number) => quotationsService.delete(id));
-  ipcMain.handle('quotations:convertToSale', (_e, id: number, actorUserId: number) => quotationsService.convertToSale(id, actorUserId));
-  ipcMain.handle('quotations:expireOld', () => ({ count: quotationsService.expireOld() }));
+  handle('quotations:get', (_e, id: number) => quotationsService.get(id));
+  handle('quotations:create', (_e, input) => quotationsService.create(input));
+  handle('quotations:updateStatus', (_e, id: number, status: string) => quotationsService.updateStatus(id, status));
+  handle('quotations:delete', (_e, id: number) => quotationsService.delete(id));
+  handle('quotations:convertToSale', (_e, id: number, actorUserId: number) => quotationsService.convertToSale(id, actorUserId));
+  handle('quotations:expireOld', () => ({ count: quotationsService.expireOld() }));
 
   // ── Invoice Templates ──
-  ipcMain.handle('templates:list', (_e, type?: string) => invoiceTemplatesService.list(type));
-  ipcMain.handle('templates:get', (_e, id: number) => invoiceTemplatesService.get(id));
-  ipcMain.handle('templates:getDefault', (_e, type: string) => invoiceTemplatesService.getDefault(type));
-  ipcMain.handle('templates:create', (_e, input) => invoiceTemplatesService.create(input));
-  ipcMain.handle('templates:update', (_e, id: number, input) => invoiceTemplatesService.update(id, input));
-  ipcMain.handle('templates:delete', (_e, id: number) => invoiceTemplatesService.delete(id));
-  ipcMain.handle('templates:duplicate', (_e, id: number, newName: string) => invoiceTemplatesService.duplicate(id, newName));
+  handle('templates:list', (_e, type?: string) => invoiceTemplatesService.list(type));
+  handle('templates:get', (_e, id: number) => invoiceTemplatesService.get(id));
+  handle('templates:getDefault', (_e, type: string) => invoiceTemplatesService.getDefault(type));
+  handle('templates:create', (_e, input) => invoiceTemplatesService.create(input));
+  handle('templates:update', (_e, id: number, input) => invoiceTemplatesService.update(id, input));
+  handle('templates:delete', (_e, id: number) => invoiceTemplatesService.delete(id));
+  handle('templates:duplicate', (_e, id: number, newName: string) => invoiceTemplatesService.duplicate(id, newName));
 
   // ── Products / Variants ──
-  ipcMain.handle('variants:list', (_e, productId: number) => variantsService.listVariantsForProduct(productId));
-  ipcMain.handle('variants:get', (_e, id: number) => variantsService.getVariant(id));
-  ipcMain.handle('variants:findByBarcode', (_e, barcode: string) => variantsService.findVariantByBarcode(barcode));
-  ipcMain.handle('variants:create', (_e, input) => variantsService.createVariant(input));
-  ipcMain.handle('variants:update', (_e, id: number, input) => variantsService.updateVariant(id, input));
-  ipcMain.handle('variants:delete', (_e, id: number) => variantsService.deleteVariant(id));
-  ipcMain.handle('variants:autoGenerate', (_e, input) => variantsService.autoGenerateVariants(input));
+  handle('variants:list', (_e, productId: number) => variantsService.listVariantsForProduct(productId));
+  handle('variants:get', (_e, id: number) => variantsService.getVariant(id));
+  handle('variants:findByBarcode', (_e, barcode: string) => variantsService.findVariantByBarcode(barcode));
+  handle('variants:create', (_e, input) => variantsService.createVariant(input));
+  handle('variants:update', (_e, id: number, input) => variantsService.updateVariant(id, input));
+  handle('variants:delete', (_e, id: number) => variantsService.deleteVariant(id));
+  handle('variants:autoGenerate', (_e, input) => variantsService.autoGenerateVariants(input));
 
   // ── Attributes ──
-  ipcMain.handle('attributes:list', () => variantsService.listAttributes());
-  ipcMain.handle('attributes:getValues', (_e, attributeId: number) => variantsService.getAttributeValues(attributeId));
-  ipcMain.handle('attributes:create', (_e, name: string) => variantsService.createAttribute(name));
-  ipcMain.handle('attributes:addValue', (_e, attributeId: number, value: string) => variantsService.addAttributeValue(attributeId, value));
+  handle('attributes:list', () => variantsService.listAttributes());
+  handle('attributes:getValues', (_e, attributeId: number) => variantsService.getAttributeValues(attributeId));
+  handle('attributes:create', (_e, name: string) => variantsService.createAttribute(name));
+  handle('attributes:addValue', (_e, attributeId: number, value: string) => variantsService.addAttributeValue(attributeId, value));
 
   // ── Credit Limits ──
-  ipcMain.handle('credits:check', (_e, customerId: number, additionalAmount?: number) =>
+  handle('credits:check', (_e, customerId: number, additionalAmount?: number) =>
     creditLimitsService.check(customerId, additionalAmount || 0)
   );
-  ipcMain.handle('credits:setCustomerLimit', (_e, customerId: number, limit: number, blockOnExceed: boolean, reason?: string, warningThresholdPct?: number) =>
+  handle('credits:setCustomerLimit', (_e, customerId: number, limit: number, blockOnExceed: boolean, reason?: string, warningThresholdPct?: number) =>
     creditLimitsService.setCustomerLimit(customerId, limit, blockOnExceed, 1, reason, warningThresholdPct)
   );
-  ipcMain.handle('credits:setSupplierLimit', (_e, supplierId: number, limit: number, blockOnExceed: boolean, warningThresholdPct?: number) =>
+  handle('credits:setSupplierLimit', (_e, supplierId: number, limit: number, blockOnExceed: boolean, warningThresholdPct?: number) =>
     creditLimitsService.setSupplierLimit(supplierId, limit, blockOnExceed, warningThresholdPct)
   );
-  ipcMain.handle('credits:history', (_e, customerId: number, limit?: number) => creditLimitsService.getHistory(customerId, limit));
-  ipcMain.handle('credits:listRisks', () => creditLimitsService.listRisks());
+  handle('credits:history', (_e, customerId: number, limit?: number) => creditLimitsService.getHistory(customerId, limit));
+  handle('credits:listRisks', () => creditLimitsService.listRisks());
 
   // ── Branches ──
-  ipcMain.handle('branches:list', () => branchesService.list());
-  ipcMain.handle('branches:get', (_e, id: number) => branchesService.get(id));
-  ipcMain.handle('branches:getDefault', () => branchesService.getDefault());
-  ipcMain.handle('branches:getCurrent', () => branchesService.getCurrent());
-  ipcMain.handle('branches:create', (_e, input) => branchesService.create(input));
-  ipcMain.handle('branches:update', (_e, id: number, input) => branchesService.update(id, input));
-  ipcMain.handle('branches:delete', (_e, id: number) => branchesService.delete(id));
-  ipcMain.handle('branches:setCurrent', (_e, branchId: number) => branchesService.setCurrent(branchId));
+  handle('branches:list', () => branchesService.list());
+  handle('branches:get', (_e, id: number) => branchesService.get(id));
+  handle('branches:getDefault', () => branchesService.getDefault());
+  handle('branches:getCurrent', () => branchesService.getCurrent());
+  handle('branches:create', (_e, input) => branchesService.create(input));
+  handle('branches:update', (_e, id: number, input) => branchesService.update(id, input));
+  handle('branches:delete', (_e, id: number) => branchesService.delete(id));
+  handle('branches:setCurrent', (_e, branchId: number) => branchesService.setCurrent(branchId));
 
   // ── Transfers ──
-  ipcMain.handle('transfers:party:list', () => transfersService.listPartyTransfers());
-  ipcMain.handle('transfers:party:create', (_e, input) => transfersService.createPartyTransfer(input));
-  ipcMain.handle('transfers:bank:accounts', () => transfersService.listBankAccounts());
-  ipcMain.handle('transfers:bank:createAccount', (_e, input) => transfersService.createBankAccount(input));
-  ipcMain.handle('transfers:bank:list', () => transfersService.listBankTransfers());
-  ipcMain.handle('transfers:bank:create', (_e, input) => transfersService.createBankTransfer(input));
+  handle('transfers:party:list', () => transfersService.listPartyTransfers());
+  handle('transfers:party:create', (_e, input) => transfersService.createPartyTransfer(input));
+  handle('transfers:bank:accounts', () => transfersService.listBankAccounts());
+  handle('transfers:bank:createAccount', (_e, input) => transfersService.createBankAccount(input));
+  handle('transfers:bank:list', () => transfersService.listBankTransfers());
+  handle('transfers:bank:create', (_e, input) => transfersService.createBankTransfer(input));
 
   // ── FIFO Stock Engine ──
-  ipcMain.handle('fifo:isEnabled', () => fifoEngine.isEnabled());
-  ipcMain.handle('fifo:isStrict', () => fifoEngine.isStrict());
-  ipcMain.handle('fifo:availableBatches', (_e, productId: number) => fifoEngine.getAvailableBatches(productId));
-  ipcMain.handle('fifo:allocate', (_e, productId: number, qty: number) => fifoEngine.allocateFIFO(productId, qty));
-  ipcMain.handle('fifo:stockReport', (_e, productId?: number) => fifoEngine.getFIFOStockReport(productId));
+  handle('fifo:isEnabled', () => fifoEngine.isEnabled());
+  handle('fifo:isStrict', () => fifoEngine.isStrict());
+  handle('fifo:availableBatches', (_e, productId: number) => fifoEngine.getAvailableBatches(productId));
+  handle('fifo:allocate', (_e, productId: number, qty: number) => fifoEngine.allocateFIFO(productId, qty));
+  handle('fifo:stockReport', (_e, productId?: number) => fifoEngine.getFIFOStockReport(productId));
 
   // ── Salesman Commissions ──
-  ipcMain.handle('commissions:rules', () => commissionsService.listRules());
-  ipcMain.handle('commissions:createRule', (_e, input) => commissionsService.createRule(input));
-  ipcMain.handle('commissions:updateRule', (_e, id: number, input) => commissionsService.updateRule(id, input));
-  ipcMain.handle('commissions:deleteRule', (_e, id: number) => commissionsService.deleteRule(id));
-  ipcMain.handle('commissions:salesmen', () => commissionsService.listSalesmen());
-  ipcMain.handle('commissions:calculate', (_e, saleId: number) => commissionsService.calculateCommissions(saleId));
-  ipcMain.handle('commissions:list', (_e, filters?: { salesman_id?: number; status?: string; from?: string; to?: string }) => commissionsService.listCommissions(filters || {}));
-  ipcMain.handle('commissions:updateStatus', (_e, id: number, status: string, userId: number) => commissionsService.updateCommissionStatus(id, status, userId));
-  ipcMain.handle('commissions:summary', (_e, salesmanId: number, from?: string, to?: string) => commissionsService.getSalesmanSummary(salesmanId, from, to));
+  handle('commissions:rules', () => commissionsService.listRules());
+  handle('commissions:createRule', (_e, input) => commissionsService.createRule(input));
+  handle('commissions:updateRule', (_e, id: number, input) => commissionsService.updateRule(id, input));
+  handle('commissions:deleteRule', (_e, id: number) => commissionsService.deleteRule(id));
+  handle('commissions:salesmen', () => commissionsService.listSalesmen());
+  handle('commissions:calculate', (_e, saleId: number) => commissionsService.calculateCommissions(saleId));
+  handle('commissions:list', (_e, filters?: { salesman_id?: number; status?: string; from?: string; to?: string }) => commissionsService.listCommissions(filters || {}));
+  handle('commissions:updateStatus', (_e, id: number, status: string, userId: number) => commissionsService.updateCommissionStatus(id, status, userId));
+  handle('commissions:summary', (_e, salesmanId: number, from?: string, to?: string) => commissionsService.getSalesmanSummary(salesmanId, from, to));
 
   // ── Expenses ──
-  ipcMain.handle('expenses:categories', () => expensesService.listCategories());
-  ipcMain.handle('expenses:createCategory', (_e, input) => expensesService.createCategory(input));
-  ipcMain.handle('expenses:updateCategory', (_e, id: number, input) => expensesService.updateCategory(id, input));
-  ipcMain.handle('expenses:deleteCategory', (_e, id: number) => expensesService.deleteCategory(id));
-  ipcMain.handle('expenses:list', (_e, filters?: { category_id?: number; user_id?: number; from?: string; to?: string; status?: string }) => expensesService.listExpenses(filters || {}));
-  ipcMain.handle('expenses:create', (_e, input) => expensesService.createExpense(input));
-  ipcMain.handle('expenses:get', (_e, id: number) => expensesService.getExpense(id));
-  ipcMain.handle('expenses:update', (_e, id: number, input) => expensesService.updateExpense(id, input));
-  ipcMain.handle('expenses:delete', (_e, id: number) => expensesService.deleteExpense(id));
-  ipcMain.handle('expenses:summary', (_e, from?: string, to?: string) => expensesService.getExpenseSummary(from, to));
+  handle('expenses:categories', () => expensesService.listCategories());
+  handle('expenses:createCategory', (_e, input) => expensesService.createCategory(input));
+  handle('expenses:updateCategory', (_e, id: number, input) => expensesService.updateCategory(id, input));
+  handle('expenses:deleteCategory', (_e, id: number) => expensesService.deleteCategory(id));
+  handle('expenses:list', (_e, filters?: { category_id?: number; user_id?: number; from?: string; to?: string; status?: string }) => expensesService.listExpenses(filters || {}));
+  handle('expenses:create', (_e, input) => expensesService.createExpense(input));
+  handle('expenses:get', (_e, id: number) => expensesService.getExpense(id));
+  handle('expenses:update', (_e, id: number, input) => expensesService.updateExpense(id, input));
+  handle('expenses:delete', (_e, id: number) => expensesService.deleteExpense(id));
+  handle('expenses:summary', (_e, from?: string, to?: string) => expensesService.getExpenseSummary(from, to));
 
   // ── Custom Reports ──
-  ipcMain.handle('reports:custom:list', (_e, userId?: number) => customReportsService.list(userId));
-  ipcMain.handle('reports:custom:get', (_e, id: number) => customReportsService.get(id));
-  ipcMain.handle('reports:custom:create', (_e, input) => customReportsService.create(input));
-  ipcMain.handle('reports:custom:update', (_e, id: number, input) => customReportsService.update(id, input));
-  ipcMain.handle('reports:custom:delete', (_e, id: number) => customReportsService.delete(id));
-  ipcMain.handle('reports:custom:tables', () => customReportsService.listTables());
-  ipcMain.handle('reports:custom:schema', (_e, table: string) => customReportsService.getTableSchema(table));
-  ipcMain.handle('reports:custom:execute', (_e, id: number, limit?: number) => customReportsService.execute(id, limit));
-  ipcMain.handle('reports:custom:schedules', () => customReportsService.listSchedules());
-  ipcMain.handle('reports:custom:createSchedule', (_e, input) => customReportsService.createSchedule(input));
-  ipcMain.handle('reports:custom:updateSchedule', (_e, id: number, input) => customReportsService.updateSchedule(id, input));
-  ipcMain.handle('reports:custom:deleteSchedule', (_e, id: number) => customReportsService.deleteSchedule(id));
+  handle('reports:custom:list', (_e, userId?: number) => customReportsService.list(userId));
+  handle('reports:custom:get', (_e, id: number) => customReportsService.get(id));
+  handle('reports:custom:create', (_e, input) => customReportsService.create(input));
+  handle('reports:custom:update', (_e, id: number, input) => customReportsService.update(id, input));
+  handle('reports:custom:delete', (_e, id: number) => customReportsService.delete(id));
+  handle('reports:custom:tables', () => customReportsService.listTables());
+  handle('reports:custom:schema', (_e, table: string) => customReportsService.getTableSchema(table));
+  handle('reports:custom:execute', (_e, id: number, limit?: number) => customReportsService.execute(id, limit));
+  handle('reports:custom:schedules', () => customReportsService.listSchedules());
+  handle('reports:custom:createSchedule', (_e, input) => customReportsService.createSchedule(input));
+  handle('reports:custom:updateSchedule', (_e, id: number, input) => customReportsService.updateSchedule(id, input));
+  handle('reports:custom:deleteSchedule', (_e, id: number) => customReportsService.deleteSchedule(id));
 
   // ── Receipt: Email & SMS ──
-  ipcMain.handle('receipt:sendSms', (_e, saleId: number, phone: string) => sendSmsReceipt(saleId, phone));
-  ipcMain.handle('receipt:sendEmail', (_e, saleId: number, email: string) => sendEmailReceipt(saleId, email));
+  handle('receipt:sendSms', (_e, saleId: number, phone: string) => sendSmsReceipt(saleId, phone));
+  handle('receipt:sendEmail', (_e, saleId: number, email: string) => sendEmailReceipt(saleId, email));
 }

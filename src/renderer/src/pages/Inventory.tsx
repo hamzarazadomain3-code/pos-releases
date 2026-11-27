@@ -124,7 +124,7 @@ export default function Inventory() {
   const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([]);
   const [lowStockCount, setLowStockCount] = useState(0);
   const [search, setSearch] = useState('');
-  // â”€â”€ Staged search (Enter 1x select, 2x open Edit) + barcode scan â”€â”€
+  // ── Staged search (Enter 1x select, 2x open Edit) + barcode scan ──
   const [searchStage, setSearchStage] = useState<'idle' | 'select'>('idle');
   const [searchSelIdx, setSearchSelIdx] = useState(-1);
   const [scanHighlight, setScanHighlight] = useState<number | null>(null);
@@ -773,7 +773,7 @@ export default function Inventory() {
                 {expiring.map((e) => (
                   <tr key={e.id} className={e.days_left < 0 ? 'row-expired' : e.days_left <= 7 ? 'row-expiring' : ''}>
                     <td>{e.name}</td>
-                    <td>{e.category_name ?? 'â€”'}</td>
+                    <td>{e.category_name ?? '—'}</td>
                     <td className="num">{Number(e.stock_qty.toFixed(3))}</td>
                     <td>{e.expiry_date}</td>
                     <td className={`num ${e.days_left < 0 ? 'text-warn' : e.days_left <= 7 ? 'text-warn' : ''}`}>
@@ -791,9 +791,9 @@ export default function Inventory() {
         <div className="search-result-item highlighted">
           <span className="psr-name">{selectedShownProduct()!.name}</span>
           <span className="psr-meta">
-            {selectedShownProduct()!.stock_qty} in stock â€¢ barcode {selectedShownProduct()!.barcode ?? 'â€”'}
+            {selectedShownProduct()!.stock_qty} in stock • barcode {selectedShownProduct()!.barcode ?? '—'}
           </span>
-          <span className="search-hint">Enter Ã—1 = selected, press Enter again to open Edit</span>
+          <span className="search-hint">Enter ×1 = selected, press Enter again to open Edit</span>
         </div>
       )}
 
@@ -845,15 +845,15 @@ export default function Inventory() {
                         <BarcodeCanvas text={p.barcode} />
                       </div>
                     ) : (
-                      <span className="muted">â€”</span>
+                      <span className="muted">—</span>
                     )}
                   </td>
-                  <td>{p.category_name ?? 'â€”'}</td>
-                  <td>{p.unit_symbol ?? 'â€”'}</td>
+                  <td>{p.category_name ?? '—'}</td>
+                  <td>{p.unit_symbol ?? '—'}</td>
                   <td>{p.cost_price.toLocaleString()}</td>
                   <td>{p.sale_price.toLocaleString()}</td>
-                  <td>{p.wholesale_price != null ? p.wholesale_price.toLocaleString() : 'â€”'}</td>
-                  <td>{p.shelf_location ?? 'â€”'}</td>
+                  <td>{p.wholesale_price != null ? p.wholesale_price.toLocaleString() : '—'}</td>
+                  <td>{p.shelf_location ?? '—'}</td>
                   <td className={`num ${p.stock_qty < 0 ? 'text-danger' : low(p) ? 'text-warn' : ''}`} style={p.stock_qty < 0 ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>
                     {Number(p.stock_qty.toFixed(3))} {p.low_stock_threshold > 0 && low(p) ? '(low)' : ''}{p.stock_qty < 0 ? ' (oversold)' : ''}
                   </td>
@@ -867,7 +867,7 @@ export default function Inventory() {
                         <span>{p.expiry_date} ({dn}d)</span>
                       )
                     ) : (
-                      <span className="muted">â€”</span>
+                      <span className="muted">—</span>
                     )}
                   </td>
                   <td>
@@ -965,7 +965,7 @@ export default function Inventory() {
                   value={form.category_id}
                   onChange={(e) => setForm({ ...form, category_id: e.target.value })}
                 >
-                  <option value="">â€” none â€”</option>
+                  <option value="">— none —</option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -998,7 +998,7 @@ export default function Inventory() {
                     });
                   }}
                 >
-                  <option value="">â€” none â€”</option>
+                  <option value="">— none —</option>
                   {units.map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.name} ({u.symbol})
@@ -1197,7 +1197,7 @@ export default function Inventory() {
                             onChange={(e) => updateUnit(i, { name: e.target.value })}
                             placeholder="Base unit name"
                           />
-                          <span className="unit-qty-fixed muted">1 Ã— base</span>
+                          <span className="unit-qty-fixed muted">1 × base</span>
                           <span className="badge badge-primary">Base</span>
                         </>
                       ) : (
@@ -1236,7 +1236,7 @@ export default function Inventory() {
                             onClick={() => removeUnit(i)}
                             title="Remove level"
                           >
-                            Ã—
+                            ×
                           </button>
                         </>
                       )}
@@ -1249,7 +1249,7 @@ export default function Inventory() {
                 <span className="muted small">
                   Base unit (qty 1) cannot be removed. Packaging levels convert to base units when sold.
                   Products with a Kilogram base unit automatically get a <strong>Gram</strong> selling
-                  option â€” the cashier can then type e.g. 250 and the system calculates the price from
+                  option — the cashier can then type e.g. 250 and the system calculates the price from
                   the Kilogram rate.
                 </span>
               </div>
@@ -1280,10 +1280,10 @@ export default function Inventory() {
           shortcuts={[{ action: 'save', label: 'Apply adjustment' }]}
         >
             <p className="muted">
-              {stockModal.product.name} â€” current stock: <strong>{Number(stockModal.product.stock_qty.toFixed(3))}</strong>
+              {stockModal.product.name} — current stock: <strong>{Number(stockModal.product.stock_qty.toFixed(3))}</strong>
             </p>
             <label className="field">
-              <span>Quantity (+in / âˆ’out)</span>
+              <span>Quantity (+in / −out)</span>
               <KeyboardInput
                 type="text"
                 decimals
@@ -1325,12 +1325,12 @@ export default function Inventory() {
                 <tbody>
                   {movements.rows.map((m) => (
                     <tr key={m.id}>
-                      <td>{m.created_at ? formatDateTimeAdmin(m.created_at) : 'â€”'}</td>
+                      <td>{m.created_at ? formatDateTimeAdmin(m.created_at) : '—'}</td>
                       <td className={m.change_qty >= 0 ? 'text-ok' : 'text-warn'}>
                         {m.change_qty > 0 ? '+' : ''}
                         {m.change_qty}
                       </td>
-                      <td>{m.reason ?? 'â€”'}</td>
+                      <td>{m.reason ?? '—'}</td>
                     </tr>
                   ))}
                   {movements.rows.length === 0 && (
@@ -1422,8 +1422,8 @@ export default function Inventory() {
                       <td><strong>{b.batch_number}</strong></td>
                       <td className="num">{b.quantity}</td>
                       <td className="num">{b.cost_price.toLocaleString()}</td>
-                      <td>{b.expiry_date ?? 'â€”'}</td>
-                      <td>{b.received_date ? formatDateTimeAdmin(b.received_date) : 'â€”'}</td>
+                      <td>{b.expiry_date ?? '—'}</td>
+                      <td>{b.received_date ? formatDateTimeAdmin(b.received_date) : '—'}</td>
                     </tr>
                   ))}
                   {batches.rows.length === 0 && (
@@ -1468,8 +1468,8 @@ export default function Inventory() {
                         <td><strong>{b.batch_number}</strong></td>
                         <td className="num">{b.quantity}</td>
                         <td className="num">{b.cost_price.toLocaleString()}</td>
-                        <td>{b.expiry_date ?? 'â€”'}</td>
-                        <td>{b.received_date ? formatDateTimeAdmin(b.received_date) : 'â€”'}</td>
+                        <td>{b.expiry_date ?? '—'}</td>
+                        <td>{b.received_date ? formatDateTimeAdmin(b.received_date) : '—'}</td>
                       </tr>
                     ))}
                   {stockReceived.length === 0 && (

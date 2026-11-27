@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import CashDrawer from '../components/CashDrawer';
 import LiveClock from '../components/LiveClock';
 import { Modal } from '../components/Modal';
@@ -193,6 +194,7 @@ export default function Billing({
   assistantCommand,
   onAssistantCommandDone,
 }: BillingProps) {
+  const { t } = useTranslation();
   const [items, setItems] = useState<CartLine[]>([]);
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -288,6 +290,13 @@ export default function Billing({
   const [belowCostConfirm, setBelowCostConfirm] = useState<CartLine[] | null>(null);
   const [priceFloorOverride, setPriceFloorOverride] = useState(false);
   const [priceFloorPin, setPriceFloorPin] = useState('');
+  // Item 0.9: expired stock needs a manager PIN; the approval is sent with the
+  // sale and written to the activity log by the main process.
+  const [expiredOverride, setExpiredOverride] = useState(false);
+  const [expiredApprovedBy, setExpiredApprovedBy] = useState<number | null>(null);
+  const [expiredUserId, setExpiredUserId] = useState<number | null>(null);
+  const [expiredPin, setExpiredPin] = useState('');
+  const [expiredReason, setExpiredReason] = useState('');
   const [managerUsers, setManagerUsers] = useState<UserRow[]>([]);
   const [priceFloorEnabled, setPriceFloorEnabled] = useState(true);
   // Phase 1: 'yes' | 'warn' | 'no' — whether selling more than available stock is allowed.
@@ -608,6 +617,8 @@ export default function Billing({
       setItems([]);
       setBillDiscount('');
       setPriceFloorOverride(false);
+      setExpiredOverride(false);
+      setExpiredApprovedBy(null);
       setNotice(`Return saved — ${formatMoney(refunded)} refunded via ${modeLabel}`);
       if (res.sale_id) {
         window.api.printing
@@ -1166,6 +1177,8 @@ useEffect(() => {
         bill_discount: Number(billDiscount) || 0, discount_type: discountType,
         discount_source: discountSource === 'none' ? undefined : discountSource,
         price_floor_override: priceFloorOverride, price_mode: priceMode,
+        expired_override: expiredOverride, expired_approved_by: expiredApprovedBy,
+        expired_reason: expiredReason || undefined,
         service_charge: Number(serviceCharge) || 0, service_charge_type: serviceChargeType,
         freight: freightAmt, payments: rows,
       });
@@ -1179,6 +1192,8 @@ useEffect(() => {
       setDiscountRemoved(false);
       setDiscountSource('none');
       setPriceFloorOverride(false);
+      setExpiredOverride(false);
+      setExpiredApprovedBy(null);
       if ((autoPrintReceipt || opts?.forcePrint) && result.sale?.id) {
         window.api.printing.printSale(result.sale.id, receiptTemplate)
           .then((r) => { if (r && r.ok === false) setNotice(`Auto-print failed: ${r.message}`); })
@@ -2184,6 +2199,9 @@ function openPay() {
           discount_source: discountSource === 'none' ? undefined : discountSource,
           price_floor_override: priceFloorOverride,
           price_mode: priceMode,
+          expired_override: expiredOverride,
+          expired_approved_by: expiredApprovedBy,
+          expired_reason: expiredReason || undefined,
           service_charge: Number(serviceCharge) || 0,
           service_charge_type: serviceChargeType,
           freight: freightAmt,
@@ -2202,6 +2220,11 @@ function openPay() {
       setPriceFloorOverride(false);
       setPriceFloorUserId(null);
       setPriceFloorPin('');
+      setExpiredOverride(false);
+      setExpiredApprovedBy(null);
+      setExpiredUserId(null);
+      setExpiredPin('');
+      setExpiredReason('');
       // Auto-print receipt if enabled
       if (autoPrintReceipt && result.sale?.id) {
         window.api.printing.printSale(result.sale.id, receiptTemplate)
@@ -2815,6 +2838,19 @@ return (
               setItems((prev) => {
                 if (!undoCartLine) return prev;
                 const next = [...prev];
+                // Item 0.14 — the undo must never bring back a TWIN: when the
+                // same product is already in the cart, its quantity goes back
+                // into that row instead of adding a second row for it.
+                const twin = next.findIndex(
+                  (x) =>
+                    x.product_id === undoCartLine.product_id &&
+                    !x.scale_price &&
+                    !undoCartLine.scale_price
+                );
+                if (twin >= 0) {
+                  next[twin] = { ...next[twin], qty: next[twin].qty + undoCartLine.qty };
+                  return next;
+                }
                 const at = Math.max(0, Math.min(next.length, undoIndex));
                 next.splice(at, 0, undoCartLine);
                 return next;
@@ -3657,8 +3693,23 @@ const handleUnitChange = (newLevel: number) => {
                   </div>
                 </div>
                 <div className="billten-actions-col">
-                  <button className="action-btn-pay-save" data-guide-id="billing.payment" onClick={quotationMode ? completeQuotation : openPay} disabled={items.length === 0 || busy || (!quotationMode && !shift)}>
-                    {busy ? 'Working...' : quotationMode ? 'Save Quotation' : 'Pay & Save'}
+                  {/* Item 0.14 — the checkout button must never look like a live
+                      action when it cannot do anything: with an empty cart it
+                      says so (and the CSS dims it). */}
+                  <button
+                    className="action-btn-pay-save"
+                    data-guide-id="billing.payment"
+                    onClick={quotationMode ? completeQuotation : openPay}
+                    disabled={items.length === 0 || busy || (!quotationMode && !shift)}
+                    title={items.length === 0 ? t('billing.checkout.emptyHint') : undefined}
+                  >
+                    {busy
+                      ? t('billing.checkout.working')
+                      : quotationMode
+                        ? t('billing.checkout.saveQuotation')
+                        : items.length === 0
+                          ? t('billing.checkout.emptyLabel')
+                          : t('billing.checkout.payAndSave')}
                   </button>
                   <button className="action-btn-save" onClick={quotationMode ? completeQuotation : openPay} disabled={items.length === 0 || busy || (!quotationMode && !shift)}>
                     Save
@@ -3729,11 +3780,11 @@ const handleUnitChange = (newLevel: number) => {
       {expiredConfirm && (
         <Modal
           onClose={() => setExpiredConfirm(null)}
-          title={<span className="text-warn">Expired Items in Bill</span>}
+          title={<span className="text-warn">{t('billing.expired.title')}</span>}
           className="modal-sm"
           closeOnOverlay={false}
         >
-            <p>The following items have passed their expiry date. Selling expired stock is not recommended:</p>
+            <p>{t('billing.expired.intro')}</p>
             <ul className="expired-confirm-list">
               {expiredConfirm.map((i) => (
                 <li key={i.product_id}>
@@ -3741,20 +3792,64 @@ const handleUnitChange = (newLevel: number) => {
                 </li>
               ))}
             </ul>
-            <p className="muted small">Do you want to sell these expired items anyway?</p>
+            <label className="field">
+              <span>{t('billing.expired.manager')}</span>
+              <select
+                value={expiredUserId ?? ''}
+                onChange={(e) => setExpiredUserId(e.target.value ? Number(e.target.value) : null)}
+              >
+                <option value="">{t('billing.expired.selectManager')}</option>
+                {managerUsers
+                  .filter((u) => u.role === 'owner' || u.role === 'manager')
+                  .map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.username} ({u.role})
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>{t('billing.expired.pin')}</span>
+              <input type="password" value={expiredPin} onChange={(e) => setExpiredPin(e.target.value)} />
+            </label>
+            <label className="field">
+              <span>{t('billing.expired.reason')}</span>
+              <input value={expiredReason} onChange={(e) => setExpiredReason(e.target.value)} />
+            </label>
             <div className="modal-actions">
-              <button className="btn" onClick={() => setExpiredConfirm(null)}>
-                Go Back
+              <button
+                className="btn"
+                onClick={() => {
+                  setExpiredConfirm(null);
+                  setExpiredPin('');
+                  setExpiredUserId(null);
+                  setExpiredReason('');
+                }}
+              >
+                {t('billing.expired.cancel')}
               </button>
               <button
                 className="btn btn-danger"
-                onClick={() => {
+                disabled={!expiredUserId || !expiredPin}
+                onClick={async () => {
+                  if (!expiredUserId) {
+                    setNotice(t('billing.expired.needManager'));
+                    return;
+                  }
+                  const ok = await window.api.auth.verifyForUser(expiredUserId, expiredPin);
+                  if (!ok) {
+                    setNotice(t('billing.expired.invalid'));
+                    return;
+                  }
+                  setExpiredOverride(true);
+                  setExpiredApprovedBy(expiredUserId);
                   setExpiredConfirm(null);
+                  setExpiredPin('');
                   setPayRows([{ mode: 'Cash', amount: grandTotal.toFixed(2) }]);
                   setPayOpen(true);
                 }}
               >
-                Sell Anyway
+                {t('billing.expired.approve')}
               </button>
             </div>
         </Modal>

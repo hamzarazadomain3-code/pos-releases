@@ -434,6 +434,25 @@ export default function Audits() {
               <button className="btn" onClick={() => setCurrent(null)}>
                 Exit
               </button>
+              <button
+                className="btn"
+                title="Permanently delete this audit (owner only)"
+                onClick={async () => {
+                  if (!current) return;
+                  if (!window.confirm('Discard this audit permanently? It will be deleted with no stock change.')) return;
+                  try {
+                    setErr('');
+                    await window.api.audits.discard(current.id);
+                    setCurrent(null);
+                    setMsg('');
+                    await load();
+                  } catch (e) {
+                    setErr(e instanceof Error ? e.message : String(e));
+                  }
+                }}
+              >
+                Discard
+              </button>
             </div>
           </div>
 

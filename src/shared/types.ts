@@ -401,6 +401,11 @@ export interface SaleInput {
   discount_type?: 'amount' | 'percent';
   discount_source?: 'customer_percent' | 'customer_fixed' | 'manual' | 'promotion';
   price_floor_override?: boolean;
+  /** Expired stock is blocked. A manager (PIN verified by the UI) may override;
+   *  the approving user id and an optional reason are written to the activity log. */
+  expired_override?: boolean;
+  expired_approved_by?: number | null;
+  expired_reason?: string;
   price_overridden?: boolean;
   price_mode?: 'retail' | 'wholesale';
   service_charge?: number;
@@ -1890,6 +1895,7 @@ export interface PosBridge {
     saveCounts: (auditId: number, counts: AuditCountInput[]) => Promise<boolean>;
     cancel: (auditId: number) => Promise<boolean>;
     complete: (auditId: number) => Promise<AuditRow & { items: AuditItemRow[] }>;
+    discard: (auditId: number) => Promise<boolean>;
   };
   promotions: {
     list: () => Promise<PromotionRow[]>;
@@ -2156,7 +2162,7 @@ export interface PosBridge {
   };
 };
 
-// â”€â”€ v1.8.0 Advanced Reports types â”€â”€
+// ── v1.8.0 Advanced Reports types ──
 
 export interface InventoryReportRow {
   id: number;
@@ -2316,7 +2322,7 @@ export interface DailySnapshotResult {
   date: string;
 }
 
-// â”€â”€ v2.1.0 Admin Panel types â”€â”€
+// ── v2.1.0 Admin Panel types ──
 
 export interface CashDrawerSession {
   id: number;
@@ -2449,7 +2455,7 @@ export interface ActivityFilters {
   offset?: number;
 }
 
-// â”€â”€ Phase 1: BILLTEN Parity Types â”€â”€
+// ── Phase 1: BILLTEN Parity Types ──
 
 export interface QuotationRow {
   id: number;

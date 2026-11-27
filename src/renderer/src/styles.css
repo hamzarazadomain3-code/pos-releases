@@ -2224,6 +2224,19 @@ body.theme-dark .bilten-bill-summary-item {
   font-size: 13px;
 }
 
+/* Item 0.14 — the supplier-swap banner wraps its three choices. */
+.po-supplier-switch {
+  flex-wrap: wrap;
+}
+
+.po-supplier-switch-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-inline-start: auto;
+}
+
 /* ── the suggestion list ── */
 .po-suggestions {
   margin-bottom: 12px;
@@ -3739,7 +3752,10 @@ body:has(.billing-page) {
   align-items: flex-start;
   justify-content: center;
   padding: 48px 16px;
-  z-index: 50;
+  /* Item 0.14 — a dialog is modal: it must sit ABOVE the assistant drawer
+     (z-index 60). At 50 the drawer covered the dialog's right edge, and the
+     DOCKED (minimized) card disappeared behind it completely. */
+  z-index: 70;
   overflow-y: auto;
   animation: modalFadeIn 0.2s ease;
 }
@@ -6854,6 +6870,22 @@ input[type="range"]::-moz-range-thumb {
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+
+/* Item 0.14 — the bill buttons must LOOK dead when they are dead. Without
+   this the empty cart showed a bright green "Pay & Save" that silently did
+   nothing. */
+.action-btn-pay-save:disabled,
+.action-btn-pay-save[disabled],
+.action-btn-save:disabled,
+.action-btn-save[disabled],
+.action-btn-hold:disabled,
+.action-btn-hold[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+  filter: saturate(0.6);
 }
 
 .action-btn-reset {

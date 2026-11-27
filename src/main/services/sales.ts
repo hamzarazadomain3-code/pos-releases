@@ -6,8 +6,10 @@ import { can, getSessionUserId } from './auth';
 import * as licensing from './licensing';
 import { currentShift } from './shifts';
 import { resolvePromotions } from './promotions';
-import { recordSaleEvent } from './salesHistory';
+import { recordSaleEvent, getBusinessDayStartHour, getShopTimezone } from './salesHistory';
+import { businessDayWhere } from '../../shared/salesHistory';
 import { summarizeHeldBill } from '../../shared/cartMath';
+import { todayIso } from '../../shared/calendarGrid';
 import { effectiveBillState, type BillAmendPaymentRow, type BillAmendRecord, type BillAmendState } from '../../shared/billAmend';
 import type {
   BillLineInput,
@@ -128,6 +130,34 @@ export function createSale(input: SaleInput): SaleCreateResult {
         .join(', ');
       throw new Error(`Below cost items: ${names}`);
     }
+  }
+
+  // Expired stock: hard block (item 0.9). Same-day expiry is still sellable;
+  // only a date BEFORE today is expired. A manager (PIN verified by the UI) may
+  // override; the approval is written to the activity log after the sale.
+  const businessToday = todayIso();
+  const expiredLines = lines.filter((l) => {
+    const p = getProduct(l.product_id);
+    return !!p?.expiry_date && String(p.expiry_date).slice(0, 10) < businessToday;
+  });
+  let expiredApprover: { id: number; username: string; role: string } | null = null;
+  if (expiredLines.length > 0) {
+    const names = expiredLines
+      .map((l) => getProduct(l.product_id)?.name ?? `#${l.product_id}`)
+      .join(', ');
+    if (!input.expired_override) {
+      throw new Error(`Expired items: ${names}`);
+    }
+    const approverId = Number(input.expired_approved_by) || 0;
+    const row = approverId
+      ? (db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(approverId) as
+          | { id: number; username: string; role: string }
+          | undefined)
+      : undefined;
+    if (!row || !['owner', 'manager'].includes(String(row.role))) {
+      throw new Error('Expired stock needs a manager approval');
+    }
+    expiredApprover = row;
   }
 
   // Determine if any price was overridden (compared to standard retail/wholesale)
@@ -321,6 +351,18 @@ export function createSale(input: SaleInput): SaleCreateResult {
           );
         }
       }
+    }
+
+    // Item 0.9: an expired-stock sale only happens with a manager approval.
+    if (expiredLines.length > 0 && expiredApprover) {
+      logActivity(
+        'expired_override',
+        'sale',
+        Number(saleInfo.lastInsertRowid),
+        `invoice=${invoiceNo} | items=${expiredLines
+          .map((l) => getProduct(l.product_id)?.name ?? `#${l.product_id}`)
+          .join(', ')} | approved_by=${expiredApprover.username} | reason=${input.expired_reason ?? ''}`
+      );
     }
 
     const insPay = db.prepare(
@@ -517,7 +559,8 @@ export function listSales(
   sortBy?: 'date' | 'amount' | 'saleNo',
   sortOrder?: 'asc' | 'desc',
   onlyMySales?: boolean,
-  status?: 'completed' | 'voided' | 'held' | 'returned' | 'all'
+  status?: 'completed' | 'voided' | 'held' | 'returned' | 'all',
+  useBusinessDayRange = false
 ): Sale[] {
   const db = getDb();
   let sql = `
@@ -528,7 +571,7 @@ export function listSales(
     WHERE 1=1
   `;
   const params: (string | number)[] = [];
-  
+
   if (status === 'held') {
     sql = `
       SELECT hb.*, c.name AS customer_name, u.username AS cashier_name
@@ -552,14 +595,22 @@ export function listSales(
       sql += " AND s.status NOT IN ('voided', 'returned', 'held')";
     }
   }
-  
-  if (from) {
-    sql += ' AND date(s.created_at) >= date(?)';
-    params.push(from);
-  }
-  if (to) {
-    sql += ' AND date(s.created_at) <= date(?)';
-    params.push(to);
+
+  if (from && to && useBusinessDayRange) {
+    const startHour = getBusinessDayStartHour();
+    const timezone = getShopTimezone();
+    const { where, fromUtc: fu, toUtc: tu } = businessDayWhere(from, to, startHour, timezone, 's.created_at');
+    sql += ' AND ' + where;
+    params.push(fu, tu);
+  } else {
+    if (from) {
+      sql += ' AND date(s.created_at) >= date(?)';
+      params.push(from);
+    }
+    if (to) {
+      sql += ' AND date(s.created_at) <= date(?)';
+      params.push(to);
+    }
   }
   if (customerId) {
     sql += ' AND s.customer_id = ?';

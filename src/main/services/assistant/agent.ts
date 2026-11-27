@@ -10,6 +10,7 @@
 import { currentUser } from '../auth';
 import { getAllSettings } from '../settings';
 import { getAdminSetting } from '../admin';
+import { getSecretSetting } from '../secretVault';
 import { runAgentTurn, type AgentStopReason, type PendingActionDraft } from '../../../shared/assistant/agent';
 import { DEFAULT_ASSISTANT_LIMITS, RateLimiter, type AssistantLimits } from '../../../shared/assistant/limits';
 import {
@@ -90,11 +91,13 @@ function shopSecrets(): string[] {
   };
   push(getAdminSetting('assistant_api_key'));
   push(getAdminSetting('license_key'));
-  push(getAdminSetting('email_smtp_pass'));
-  push(getAdminSetting('sms_api_key'));
-  push(getAdminSetting('sms_api_secret'));
-  push(getAdminSetting('whatsapp_api_token'));
-  push(getAdminSetting('whatsapp_token'));
+  // Item 0.15 — the vaulted credentials are read DECRYPTED here, so the
+  // redaction list still matches the real secret that must never leak.
+  push(getSecretSetting('email_smtp_pass'));
+  push(getSecretSetting('sms_api_key'));
+  push(getSecretSetting('sms_api_secret'));
+  push(getSecretSetting('whatsapp_api_token'));
+  push(getSecretSetting('whatsapp_token'));
   return secrets;
 }
 

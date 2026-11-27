@@ -10,6 +10,7 @@
  * Their `execute` runs only after the owner confirms the action card
  * (Item 8), through the very same service the normal UI uses.
  */
+import { todayLocal } from '../../utils/timezone';
 import {
   dashboard,
   getDailyStats,
@@ -100,7 +101,7 @@ function dateOnly(value: unknown): string | null {
 
 /** Today, in the shop's own date format. */
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayLocal();
 }
 
 /**

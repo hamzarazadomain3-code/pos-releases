@@ -163,6 +163,21 @@ export function cancelAudit(auditId: number): boolean {
     throw e;
   }
 }
+
+export function discardAudit(auditId: number): boolean {
+  if (!can('owner')) throw new Error('Only the owner can permanently delete an audit');
+  const db = getDb();
+  const audit = db.prepare('SELECT id, status FROM audits WHERE id = ?').get(auditId) as
+    | { id: number; status: string }
+    | undefined;
+  if (!audit) throw new Error('Audit not found');
+  if (audit.status === 'completed') throw new Error('A completed audit cannot be deleted');
+  db.prepare('DELETE FROM audit_items WHERE audit_id = ?').run(auditId);
+  db.prepare('DELETE FROM audits WHERE id = ?').run(auditId);
+  logActivity('audit_discarded', 'audit', auditId, `status=${audit.status} deleted_by=${getSessionUserId() ?? 1}`);
+  return true;
+}
+
 export function completeAudit(auditId: number): AuditFull {
   requireAuditAccess();
   const db = getDb();

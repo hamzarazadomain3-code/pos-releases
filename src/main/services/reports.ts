@@ -4,7 +4,7 @@ import { BrowserWindow, dialog } from 'electron';
 import { todayLocal, formatLocalString, daysAgo, toLocalDateString } from '../utils/timezone';
 import { createWriteStream } from 'fs';
 import { reconcilePayments, type SaleRow as ReconciliationSaleRow } from '../../shared/paymentReconciliation';
-import { resolveBusinessRange } from '../../shared/salesHistory';
+import { resolveBusinessRange, businessDayWhere } from '../../shared/salesHistory';
 import { toBase64Payload } from '../../shared/binaryTransfer';
 import type {
   SalesAnalysisResult,
@@ -77,7 +77,7 @@ export interface StockValuation {
   negative_cost_value: number;
 }
 
-/** Phase 1: "Oversold items" report row â€” product, negative qty, last sale. */
+/** Phase 1: "Oversold items" report row — product, negative qty, last sale. */
 export interface OversoldItemRow {
   product_id: number;
   name: string;
@@ -330,7 +330,7 @@ export function stockValuation(): StockValuation {
      FROM products p LEFT JOIN categories c ON c.id = p.category_id
      WHERE p.active=1 GROUP BY p.category_id ORDER BY cost DESC`
   );
-  // Phase 1: oversold products â€” negative qty valued at last purchase (cost) price
+  // Phase 1: oversold products — negative qty valued at last purchase (cost) price
   const negative = one<{ items: number; qty: number; cost: number }>(
     `SELECT COUNT(*) AS items,
             COALESCE(SUM(stock_qty),0) AS qty,
@@ -349,7 +349,7 @@ export function stockValuation(): StockValuation {
 }
 
 /**
- * Phase 1: "Oversold items" report â€” every product currently below zero stock,
+ * Phase 1: "Oversold items" report — every product currently below zero stock,
  * with its negative qty and the date/invoice of the most recent sale.
  */
 export function listOversoldItems(): OversoldItemRow[] {
@@ -582,7 +582,7 @@ export function updateReceiptSetting(key: string, value: string): void {
 }
 
 // ============================================================
-// v1.6.0 â€” Professional Reports (7 types) + PDF Export
+// v1.6.0 — Professional Reports (7 types) + PDF Export
 // ============================================================
 
 function dateRange(from?: string, to?: string, options: BusinessRangeOptions = {}): string[] {
@@ -873,20 +873,25 @@ export function getTaxReport(from?: string, to?: string): TaxReportResult {
 // 7) DAILY CLOSING
 export function getDailyClosing(date: string): DailyClosingResult {
   const db = getDb();
+  const settings = getAllSettings() as Record<string, string>;
+  const startHour = Number(settings.business_day_start_hour ?? 0);
+  const timezone = settings.shop_timezone ?? 'Asia/Karachi';
+  const { fromUtc, toUtc, where } = businessDayWhere(date, date, startHour, timezone, 's.created_at');
   const totals = one<{ bill_count: number; total_sales: number }>(
     `SELECT COUNT(*) AS bill_count,
             COALESCE(SUM(total_amount - COALESCE(returned_amount,0)),0) AS total_sales
-     FROM sales WHERE status='completed' AND date(created_at) = date(?)`,
-    date
+     FROM sales s WHERE status='completed' AND ${where}`,
+    fromUtc, toUtc
   );
   const byMode = all<{ mode: string; total: number }>(
     `SELECT p.mode AS mode, COALESCE(SUM(p.amount),0) AS total
      FROM payments p JOIN sales s ON s.id = p.sale_id
-     WHERE s.status='completed' AND date(s.created_at) = date(?)
+     WHERE s.status='completed' AND ${businessDayWhere(date, date, startHour, timezone, 's.created_at').where}
      GROUP BY p.mode ORDER BY total DESC`,
-    date
+    fromUtc, toUtc
   );
-  const expenses = one<{ v: number }>(`SELECT COALESCE(SUM(amount),0) AS v FROM expenses WHERE expense_date = date(?)`, date).v;
+  const expenses = one<{ v: number }>(
+    `SELECT COALESCE(SUM(amount),0) AS v FROM expenses WHERE expense_date = date(?)`, date).v;
   const cashRow = byMode.find((r) => r.mode.toLowerCase() === 'cash');
   const expected_cash = cashRow ? cashRow.total : 0;
   return {
@@ -992,7 +997,7 @@ export async function exportReportPDF(reportType: string, data: unknown): Promis
     case 'products': {
       pdfHeader(doc, 'Product Performance');
       pdfGridTable(doc, ['Product', 'Category', 'Qty', 'Revenue', 'Margin %', '% of Total'], d.topProducts.map((p: any) => [p.name, p.category ?? '', fmt(p.qty_sold), fmt(p.revenue), `${p.profit_margin_pct}%`, `${p.revenue_pct}%`]));
-      pdfGridTable(doc, ['Product', 'Category', 'Stock', 'Days No Sale'], d.slowMovers.map((p: any) => [p.name, p.category ?? '', fmt(p.stock_qty), p.days_no_sale ?? 'â€”']));
+      pdfGridTable(doc, ['Product', 'Category', 'Stock', 'Days No Sale'], d.slowMovers.map((p: any) => [p.name, p.category ?? '', fmt(p.stock_qty), p.days_no_sale ?? '—']));
       pdfGridTable(doc, ['Category', 'Products', 'Qty Sold', 'Revenue'], d.categoryAnalysis.map((c: any) => [c.category ?? 'Uncategorised', c.product_count, fmt(c.qty_sold), fmt(c.revenue)]));
       break;
     }
@@ -1009,7 +1014,7 @@ export async function exportReportPDF(reportType: string, data: unknown): Promis
       pdfGridTable(doc, ['Customer', 'Phone', 'Purchases', 'Total Spent', 'Segment'], d.topCustomers.map((c: any) => [c.name, c.phone ?? '', c.purchase_count, fmt(c.total_spent), c.segment]));
       if (d.udhaarOverdue.length) {
         doc.addPage();
-        pdfGridTable(doc, ['Customer', 'Phone', 'Outstanding', 'Days'], d.udhaarOverdue.map((c: any) => [c.name, c.phone ?? '', fmt(c.balance), c.days_since_purchase ?? 'â€”']));
+        pdfGridTable(doc, ['Customer', 'Phone', 'Outstanding', 'Days'], d.udhaarOverdue.map((c: any) => [c.name, c.phone ?? '', fmt(c.balance), c.days_since_purchase ?? '—']));
       }
       break;
     }
@@ -1023,7 +1028,7 @@ export async function exportReportPDF(reportType: string, data: unknown): Promis
       ]);
       const exp = d.expiryAlert.filter((e: any) => e.status !== 'OK');
       pdfGridTable(doc, ['Product', 'Category', 'Stock', 'Expiry', 'Days', 'Status'], exp.map((e: any) => [e.name, e.category ?? '', fmt(e.stock_qty), e.expiry_date, e.days_until_expiry, e.status]));
-      pdfGridTable(doc, ['Product', 'Stock', 'Velocity', 'Days No Sale'], d.turnoverAnalysis.map((t: any) => [t.name, fmt(t.stock_qty), t.velocity, t.days_no_sale ?? 'â€”']));
+      pdfGridTable(doc, ['Product', 'Stock', 'Velocity', 'Days No Sale'], d.turnoverAnalysis.map((t: any) => [t.name, fmt(t.stock_qty), t.velocity, t.days_no_sale ?? '—']));
       break;
     }
     case 'financial': {
@@ -1042,7 +1047,7 @@ export async function exportReportPDF(reportType: string, data: unknown): Promis
       break;
     }
     case 'tax': {
-      pdfHeader(doc, `Tax Report (${d.period.startDate} â†’ ${d.period.endDate})`);
+      pdfHeader(doc, `Tax Report (${d.period.startDate} → ${d.period.endDate})`);
       pdfKvTable(doc, [
         ['Taxable Sales', `Rs ${fmt(d.taxSummary.taxable_sales)}`],
         ['Tax Collected', `Rs ${fmt(d.taxSummary.tax_collected)}`],
@@ -1052,7 +1057,7 @@ export async function exportReportPDF(reportType: string, data: unknown): Promis
       break;
     }
     case 'closing': {
-      pdfHeader(doc, `Daily Closing â€” ${d.date}`);
+      pdfHeader(doc, `Daily Closing — ${d.date}`);
       pdfKvTable(doc, [
         ['Total Sales', `Rs ${fmt(d.total_sales)}`],
         ['Bill Count', String(d.bill_count)],
