@@ -1,9 +1,10 @@
 # PHASE 0 REPORT — Rokar POS (stabilize)
 
-**Run date:** 2026-11-26
+**Run date:** 2026-11-26 → 2026-11-27
 **Baseline:** `v2.32.0` (`main` @ `3c53c73`, unpushed) — the prompt's "2.22.0" is stale (D1)
 **Scope:** `E:\antigravty\billing softwere\pos-app` only
 **Proofs:** `E:\temp\proof\p0_*` (every claim below has a saved output)
+**Commits:** `a001ddb` (the code + the permanent suites), `6c35254` (the docs)
 
 ---
 
@@ -332,8 +333,11 @@ The batch summary (one line per suite, with the exit code and the time) is
 
 ## 6. Next (the phase gate)
 
-Phase 0 is complete and the tree is **uncommitted** — the owner reviews this
-report and the diff, then the work is committed (explicit file names only).
+Phase 0 is complete and **committed** (`a001ddb` the code + the suites,
+`6c35254` the docs) on the local `main` — **not pushed**, so the owner can
+review the diff and the report first. The working tree holds nothing but the
+owner's own files (`scripts/seed_demo.js` + the five stray scripts), untouched
+and unstaged.
 
 After the owner's approval, the next phases in the prompt's order:
 
