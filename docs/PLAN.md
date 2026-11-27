@@ -220,8 +220,6 @@ guessed from the prompt's wording.
 
 **The whole phase: `npm run test:inventoryModel` 70/70.**
 
-**The whole phase: `npm run test:inventoryModel` 70/70.**
-
 ### Two rules that moved into one place
 - `src/shared/expiry.ts` — "expired means before today" (D17).
 - `src/shared/units.ts` — "the stock is in base units, rounded to 3 decimals" (D21).
@@ -236,4 +234,102 @@ guessed from the prompt's wording.
 - **The variant stock** — `product_variants.stock_qty` is still outside the
   canonical model.
 - **Money as integer paisa** — still deferred (D3).
+
+---
+
+# Phase 2 — the receipt designer + the template library (2026-11-27)
+
+Baseline `v2.32.0` (`main` @ `04c2b71`). The phase report is
+`docs/PHASE2_REPORT.md`; the proofs are in `E:\temp\proof\p2_*`.
+
+## 10. Phase 2 scope
+
+The prompt's Phase 2 is the **receipt designer** — the screen where the shop
+decides what its receipt looks like — and the **template library** that lets
+the owner keep more than one design (a compact 80 mm roll for the counter, a
+detailed invoice for the month end, a return slip).
+
+**The scope was read from the code, not guessed.** `AGENTS.md` carries a
+"Receipt Designer (phases 2–3)" section and `docs/PHASE1_REPORT.md` §6 names
+the phase; the master's own Phase 2 wording is not in the repo, so the phase
+was defined by the promises the shipped code makes.
+
+## 11. Phase 2 status (as run)
+
+**Phase 2 needed NO new code** — the designer, the library, the migrations,
+the IPC surface and the permanent suites were already in the tree. The phase
+was therefore a **verification** phase: every promise was checked against the
+real code and re-run.
+
+| # | The promise | Status | How it is proven |
+|---|---|---|---|
+| 2.1 | the design is **opt-in** — an install that never touches it prints byte-identical receipts | **DONE (verified)** | `receipt_design_enabled = 'false'` (migration 055) + the print-path check |
+| 2.2 | the **first apply is a visual no-op** | **DONE (verified)** | `defaultReceiptDesign()` reproduces the shipped section order |
+| 2.3 | **one model, two processes** | **DONE (verified)** | `src/shared/receiptDesign.ts` is imported by the renderer AND the main process |
+| 2.4 | the **preview and the paper agree** | **DONE (verified)** | one builder (`buildDesignedReceiptAsync`) serves both |
+| 2.5 | the **money is printed once** | **DONE (verified)** | "NET TOTAL prints the currency exactly once"; no prefix in the item cells |
+| 2.6 | the **58 mm roll drops the DISC column** (the DISCOUNT totals row stays) | **DONE (verified)** | the 58 mm layout audit |
+| 2.7 | the **library**: 8 built-ins, **no default**, branch beats global, junk dropped, export → import round-trips | **DONE (verified)** | the library checks |
+| 2.8 | **nothing escapes the printable width** (80 mm AND 58 mm) | **DONE (verified)** | the layout audit (the same audit `test:print` runs) |
+
+**The phase: `npm run test:receiptdesigner` 73/73 and `npm run test:receipt`
+68/68 — every one of the eight promises is carried by a check.**
+
+### What Phase 2 did NOT do (and why)
+- **It changed no source file.** The code was already correct and guarded;
+  writing new code would have been churn on a live shop's receipt path.
+- **It did not choose the shop's default template.** The library ships with
+  **no** default on purpose (D23) — that is the owner's decision.
+- **It did not judge the printer driver.** Darkness, heat and the
+  auto-cutter are the driver's business; the **test print** button prints the
+  sample bill for the owner to hold against the roll.
+
+---
+
+# Phase 3 — the purchase-order screen (2026-11-27)
+
+Baseline `v2.32.0` (`main` @ `04c2b71`). The phase report is
+`docs/PHASE3_REPORT.md`; the proofs are in `E:\temp\proof\p3_*`.
+
+## 12. Phase 3 scope
+
+The prompt's Phase 3 is the **purchase-order screen hardening**. The items
+were **found in the code** (an explore pass over the purchase service, the
+import path, the inventory service and the three renderer surfaces), not
+guessed from the prompt's wording.
+
+## 13. Phase 3 status (as run)
+
+| # | Item | Status | The defect that was fixed | Proof |
+|---|---|---|---|---|
+| 3.1 | the catalog carried no units / no last cost | **DONE (new)** | the modal never asked for the units, and enriched only the LOW-stock products | `test:purchaseOrderUi` + `test:purchaseOrderHardening` |
+| 3.2 | Backspace deleted the row | **DONE (new)** | the delete handler ignored where the key came from | `test:purchaseOrderUi` (4 checks) |
+| 3.3 | a receipt was addressed to a PRODUCT | **DONE (new)** | the requested qty was applied to EVERY line of the product — the stock was received twice | `test:purchaseOrderHardening` |
+| 3.4 | an import could be undone after the receipt | **DONE (new)** | the undo took the stock back off the shelf | `test:purchaseOrderHardening` |
+| 3.5 | the permission lived only in the sidebar | **DONE (new)** | the IPC handlers accepted any signed-in user | `test:purchaseOrderHardening` (5 checks) |
+| 3.6 | the service accepted money the screen refused | **DONE (new)** | the freight / discount / tax / paid-now rules were screen-only | `test:purchaseOrderHardening` + `test:purchaseEnhance` |
+| 3.7 | a received order could still be cancelled | **DONE (new)** | the cancel action never looked at what was received | `test:purchaseOrderHardening` |
+| 3.8 | the legacy `quantity_received` read as 0 | **DONE (new)** | the new column exists and holds 0, so `COALESCE` read 0 for the old rows | `test:purchaseOrderHardening` + migration `091` |
+| 3.9 | the order belonged to no branch / was never updated | **DONE (new)** | `branch_id` was never written; `updated_at` never moved | `test:purchaseOrderHardening` |
+| 3.10 | the receipt note leaked between the orders | **DONE (new)** | the note state was not cleared when another order opened | `test:purchaseOrderUi` |
+| 3.11 | the screen was hard-coded English | **DONE (new)** | the whole Purchases surface ignored the i18n files | `test:purchaseOrderUi` + the en/ur key-parity check |
+| 3.12 | two lines of one product shared a batch number | **DONE (new)** | the batch number came from the product id + a timestamp | `test:purchaseOrderHardening` |
+
+**The whole phase: `npm run test:purchaseOrderHardening` 60/60 and
+`npm run test:purchaseOrderUi` 81/81.**
+
+### Three rules that moved into one place
+- the **PO money rules** — `validatePo()` in `src/shared/purchaseCalc.ts`
+  (the screen and the service call the same function) — D26.
+- the **received counter** — `RECEIVED_QTY_SQL` in
+  `src/main/services/purchases.ts` (one SQL fragment for every read) — D27.
+- **"a batch number IS a batch"** — `inventory.addToBatch()` — D28.
+
+### What Phase 3 did NOT do (and why)
+- **A per-permission flag for the purchases** — the code reads the manager
+  rank, the same rank the sidebar used (D24). The gap is named in the report.
+- **The duplicate-product rule at the service layer** — it stays a screen
+  rule, because a service line may legitimately be split by batch (D25).
+- **Money as integer paisa** — still deferred (D3).
+
 

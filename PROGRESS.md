@@ -200,5 +200,58 @@ matrix is `docs/PLAN.md` (section 9).
 | 1.12 - one unit-conversion rule | DONE (new) | `src/shared/units.ts`; the import wizard resolves the file's `unit` column against the product's units, so "2 box" of 12 adds 24 pieces | `src/shared/units.ts` (new), `src/shared/purchaseCalc.ts`, `src/main/services/purchaseImport.ts`, `src/renderer/src/components/PurchaseImportWizard.tsx`, `src/shared/types.ts` | 6 checks | fd2dc36 / 1a21564 |
 | 1.13 - the phase close-out | DONE | the regression battery (24 suites, every output saved), the phase report, the status matrix, the decisions D17-D22, the changelog and the AGENTS entry | `docs/PHASE1_REPORT.md`, `docs/PLAN.md`, `docs/DECISIONS.md`, `CHANGELOG.md`, `AGENTS.md` | `test:inventoryModel` **70/70** + the battery (`E:\temp\proof\p1_regr_*.txt`, the one-line verdict in `p1_regr_summary.txt`) | 1a21564 |
 
+---
+
+# Phase 2 - the receipt designer + the template library (master-prompt run, 2026-11-27)
+
+Baseline `v2.32.0` (`main` @ `04c2b71`). The prompt's Phase 2 is the screen where the
+shop decides what its receipt looks like, plus the template library that keeps more than
+one design.
+**This phase changed NO source file** - the designer, the library, the migrations, the IPC
+surface and the permanent suites were already in the tree. The phase was a VERIFICATION
+phase: every promise was checked against the real code and re-run.
+The phase report is `docs/PHASE2_REPORT.md`; the status matrix is `docs/PLAN.md`
+(section 11); the decision is D23.
+
+| Item | Status | Scope | File:line | Test / proof | Commit |
+|------|--------|-------|-----------|--------------|--------|
+| 2.1 - the design is opt-in | DONE (verified) | `receipt_design_enabled = 'false'`; the shipped `buildRoll` keeps printing until the owner clicks Save & apply | `migrations/055_receipt_designer.js`, `src/main/services/receiptDesigner.ts` (`resolveAppliedDesign`) | `test:receiptdesigner` - the library default drives the real print path only while the switch is on | (phase commit) |
+| 2.2 - the first apply is a visual no-op | DONE (verified) | `defaultReceiptDesign()` reproduces the shipped section order | `src/shared/receiptDesign.ts` | `test:receiptdesigner` | (phase commit) |
+| 2.3 - one model, two processes | DONE (verified) | the pure model is imported by the renderer AND the main process; `normalizeReceiptDesign()` drops the unknown fields | `src/shared/receiptDesign.ts` | `test:receiptdesigner` | (phase commit) |
+| 2.4 - the preview and the paper agree | DONE (verified) | one builder (`buildDesignedReceiptAsync`) serves both | `src/main/services/receiptDesigner.ts` | `test:receiptdesigner` | (phase commit) |
+| 2.5 - the money is printed once | DONE (verified) | the designed path prints the money plain and shows the currency once, on NET TOTAL | `src/main/services/receiptDesigner.ts` (`makePlainMoney`) | "NET TOTAL prints the currency exactly once" | (phase commit) |
+| 2.6 - the 58 mm roll drops the DISC column | DONE (verified) | the DISC **column** is absent on 58 mm; the DISCOUNT **totals row** stays | `src/main/services/receiptDesigner.ts` | the 58 mm layout audit | (phase commit) |
+| 2.7 - the template library | DONE (verified) | 8 built-ins, NO default set, the branch default beats the global one, the junk is dropped, export -> import round-trips | `src/shared/receiptDesign.ts` (`defaultLibrary`, `normalizeLibrary`, `resolveLibraryDefault`), `migrations/056_receipt_library.js` | the library checks | (phase commit) |
+| 2.8 - nothing escapes the printable width | DONE (verified) | the layout audit measures every real element box against the printable width of BOTH rolls | `scripts/receipt_designer_check.js` | the 80 mm + 58 mm audits | (phase commit) |
+| 2.9 - the phase close-out | DONE | the verification battery (3 suites), the phase report, the status matrix, the decision D23 and the changelog | `docs/PHASE2_REPORT.md`, `docs/PLAN.md`, `docs/DECISIONS.md`, `CHANGELOG.md` | `test:receiptdesigner` **73/73**, `test:receipt` **68/68**, `test:print` **138/138** (`E:\temp\proof\p2_*.txt`, the one-line verdict in `p2_regr_summary.txt`) | (phase commit) |
+
+---
+
+# Phase 3 - the purchase-order screen (master-prompt run, 2026-11-27)
+
+Baseline `v2.32.0` (`main` @ `04c2b71`). The prompt's Phase 3 is the purchase-order screen
+hardening. The items were found in the code (the purchase service, the import path, the
+inventory service and the three renderer surfaces), not guessed from the prompt's wording.
+Every item below has code + a permanent regression test + a saved proof under
+`E:\temp\proof\p3_*`. The phase report is `docs/PHASE3_REPORT.md`; the status matrix is
+`docs/PLAN.md` (section 13); the decisions are D24-D31.
+
+| Item | Status | Scope | File:line | Test / proof | Commit |
+|------|--------|-------|-----------|--------------|--------|
+| 3.1 - the catalog carried no units / no last cost | DONE (new) | every product gets its units (not only the low-stock ones) + its last purchase cost | `src/renderer/src/components/PurchaseOrderModal.tsx` | `test:purchaseOrderUi` "the NOT-low-stock product offers its units" | (phase commit) |
+| 3.2 - Backspace deleted the row | DONE (new) | Backspace never removes a row; Delete removes it only outside a text field | `src/renderer/src/components/PurchaseOrderModal.tsx` | `test:purchaseOrderUi` 4 checks | (phase commit) |
+| 3.3 - a receipt was addressed to a PRODUCT | DONE (new) | the receipt is addressed to `purchase_items.id`; the legacy `product_id` shape hits the FIRST outstanding line only | `src/main/services/purchases.ts` (`receivePurchaseOrder`), `src/main/ipc.ts`, `src/preload/preload.ts`, `src/shared/types.ts` | `test:purchaseOrderHardening` | (phase commit) |
+| 3.4 - an import could be undone after the receipt | DONE (new) | the undo of a RECEIVED order is refused | `src/main/services/purchaseImport.ts` | `test:purchaseOrderHardening` | (phase commit) |
+| 3.5 - the permission lived only in the sidebar | DONE (new) | `requirePurchasePermission()` = `can('manager')` on create / receive / cancel / pay | `src/main/services/purchases.ts` | `test:purchaseOrderHardening` 5 checks | (phase commit) |
+| 3.6 - the service accepted money the screen refused | DONE (new) | the service calls the screen's own `validatePo()` and computes the totals itself | `src/main/services/purchases.ts`, `src/shared/purchaseCalc.ts` | `test:purchaseOrderHardening` + `test:purchaseEnhance` "an over-payment is refused" | (phase commit) |
+| 3.7 - a received order could still be cancelled | DONE (new) | the cancel guard reads the counter through `RECEIVED_QTY_SQL` | `src/main/services/purchases.ts` | `test:purchaseOrderHardening` | (phase commit) |
+| 3.8 - the legacy `quantity_received` read as 0 | DONE (new) | `RECEIVED_QTY_SQL` - the NEW counter wins whenever it holds a number; migration `091` backfills the old rows | `src/main/services/purchases.ts`, `src/main/services/purchaseImport.ts`, `migrations/091_purchase_received_qty_backfill.js` (new) | `test:purchaseOrderHardening` + `check:migrations` "Integrity check: ok" | (phase commit) |
+| 3.9 - the order belonged to no branch / was never updated | DONE (new) | `branch_id` on the header AND every line (from `current_branch_id`); the header's `updated_at` moves | `src/main/services/purchases.ts` | `test:purchaseOrderHardening` | (phase commit) |
+| 3.10 - the receipt note leaked between the orders | DONE (new) | the note is cleared when the receive panel opens | `src/renderer/src/pages/Purchases.tsx` | `test:purchaseOrderUi` | (phase commit) |
+| 3.11 - the screen was hard-coded English | DONE (new) | the new `purchases.*` namespace in en.json + ur.json; the reason travels as the error CODE | `src/renderer/src/i18n/en.json`, `ur.json`, `src/renderer/src/components/PurchaseOrderModal.tsx`, `src/renderer/src/pages/Purchases.tsx`, `src/renderer/src/components/PurchaseImportWizard.tsx`, `src/shared/purchaseCalc.ts` | `test:purchaseOrderUi` + the en/ur key-parity check | (phase commit) |
+| 3.12 - two lines of one product shared a batch number | DONE (new) | `inventory.addToBatch()` - a batch number IS a batch; the batch number is unique per line | `src/main/services/inventory.ts`, `src/main/services/purchases.ts`, `src/main/services/purchaseImport.ts` | `test:purchaseOrderHardening` | (phase commit) |
+| 3.13 - the phase close-out | DONE | the regression battery (10 suites, every output saved), the phase report, the status matrix, the decisions D24-D31, the changelog and the AGENTS entry | `docs/PHASE3_REPORT.md`, `docs/PLAN.md`, `docs/DECISIONS.md`, `CHANGELOG.md`, `AGENTS.md` | `test:purchaseOrderHardening` **60/60** + `test:purchaseOrderUi` **81/81** + the battery (`E:\temp\proof\p3_regr_*.txt`, the one-line verdict in `p3_regr_summary.txt`) | (phase commit) |
+
+
 
 

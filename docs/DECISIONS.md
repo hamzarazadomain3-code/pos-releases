@@ -231,3 +231,130 @@ columns that actually exist (`COALESCE(received_qty, quantity_received, 0)`).
 The two broken report queries (they selected `pi.quantity_ordered`, a column
 that has never existed) are fixed and now covered by a permanent test.
 
+---
+
+# Phase 2 — the receipt designer + the template library
+
+## D23 — the template library ships with NO default set
+
+The receipt design itself is behind a safety switch (`receipt_design_enabled`
+= `'false'`, migration 055), so an install that never opens the designer
+prints byte-identical receipts. The **library** had to make the same promise:
+the eight built-in templates are starting points, not shop designs, and
+picking one of them for the shop is the owner's decision.
+**Decision:** `defaultLibrary()` carries the built-ins and **no defaults at
+all** (`defaults` is empty; the branch defaults are empty too). A missing
+library therefore means "built-ins, none chosen" — never "the first built-in
+wins by accident". `normalizeLibrary()` keeps that promise even against a
+hand-edited file: a default that points at a missing template is dropped, and
+a spoofed built-in id is ignored (the built-ins are canonical).
+
+The resolution order is fixed and tested: **branch default → global default →
+the applied design**. `resolveLibraryDefault()` returns `undefined` when
+nothing is set, and the print path then uses the applied design — so a
+library that was never touched changes nothing.
+
+---
+
+# Phase 3 — the purchase-order screen
+
+## D24 — the purchase permission is the MANAGER rank, enforced in the service
+
+`manage_purchases` and `can_import_purchase` exist in `RolesPermissions.tsx`
+but nothing read them: the rule lived only in the sidebar
+(`minRole: 'manager'`), so the IPC handlers were open to any signed-in user.
+**Decision:** the service enforces **`can('manager')`** — the SAME rank the
+sidebar already used for the Purchases page — on every mutating action
+(create, receive, cancel, pay). The import keeps its own
+`requireImportPermission()`.
+
+Why the rank and not the flag: `auth.can()` is a role-rank helper over
+`src/shared/roles.ts`; a per-permission flag would need a second mechanism
+that no other service uses, and the two would drift. The gap this leaves is
+named honestly in the report (a shop cannot yet say "the cashier may receive
+but not create").
+
+## D25 — a receipt is addressed to a LINE, never to a product
+
+The old receipt aggregated the requested quantities into a
+`Map<product_id, …>` and read that map for **every** line of the product, so
+an order with two lines of the same product (two batches, two prices)
+received the requested amount **twice**. **Decision:** the receipt is
+addressed to `purchase_items.id` (`item_id`). The old `product_id` shape is
+still accepted for the existing callers, but it is applied to the **first
+outstanding line only** — never to every line of that product. A line may
+legitimately be split by batch, so the duplicate-product rule stays a SCREEN
+rule (the screen merges the lines for the owner); the service accepts them.
+
+## D26 — one money rule: the service calls the screen's own `validatePo`
+
+The screen had always refused a negative freight, a discount above 100 %, a
+negative tax and a paid-now amount above the order total; the service
+accepted all of them, so a direct IPC call could write an order the screen
+would never create. **Decision:** the service calls the **same**
+`validatePo()` from `src/shared/purchaseCalc.ts`, and the validator now
+computes the totals itself when the caller does not pass them. The one error
+the service ignores is `duplicate_product` (see D25).
+
+The order of the two refusals matters and is fixed by the code: the money is
+validated **before** the shift rule, so an order that is wrong in both ways
+reports the money first — the same order the screen shows.
+
+## D27 — the received counter: the NEW column wins, the LEGACY one fills in
+
+`received_qty` (migration 064) and `quantity_received` (migration 024) are
+the same number in two columns. Rows written before migration 064 carry the
+truth only in the LEGACY column — and the new column exists and holds **0**,
+not NULL — so a plain `COALESCE(received_qty, quantity_received)` read **0**
+for them: the shop was told nothing had been received while the goods were on
+the shelf. **Decision:** one SQL fragment owns the rule —
+`RECEIVED_QTY_SQL` in `src/main/services/purchases.ts`: the NEW counter wins
+whenever it holds a number; the legacy one fills in only when the new one is
+still empty. Every read uses it. Migration `091` backfills the old rows in
+place (idempotent, additive — it only fills an empty new counter, so it can
+never lower a counter that is already right).
+
+## D28 — a batch number IS a batch
+
+The same batch number could land on two different rows (the number was built
+from the product id + a timestamp), and a second receipt of the same batch
+created a **twin** row instead of adding to the existing one.
+**Decision:** `inventory.addToBatch()` owns the rule — a batch number
+identifies ONE batch; adding to it adds the quantity to that row and never
+creates a duplicate. The purchase receipt and the import both use it. The
+batch number of a purchase line is unique **per line**.
+
+## D29 — the import's undo is refused once the order has been received
+
+The undo removed the imported stock and the purchase rows, with nothing
+stopping it after the shop had already received the order — the stock left
+the shelf while the goods were physically there, and the purchase row was
+gone, so nothing could ever be received again. **Decision:** an undo of a
+**received** order is refused and the owner is told why. An order that was
+never received can still be undone exactly as before (the base-unit reversal
+from Phase 1 is unchanged).
+
+## D30 — the Purchases surface is bilingual, and the reason travels as a CODE
+
+The Purchases screen, the PO modal and the import wizard were hard-coded
+English — the one surface an Urdu shop could not read.
+**Decision:** a new `purchases.*` namespace in **both** `i18n/en.json` and
+`i18n/ur.json` (the same keys in both files, and the parity is a permanent
+check). The validation reasons travel as the **error CODE**
+(`VALIDATION_MESSAGE_KEYS`: code → i18n key), never as a sentence: the
+renderer asks i18next for the sentence in the shop's language, and the main
+process uses `VALIDATION_MESSAGES` (English), because an IPC error is a
+technical message, not a screen.
+
+## D31 — a purchase order carries the branch, and `updated_at` moves
+
+`purchase_orders.branch_id` (migration 038) and `purchase_items.branch_id`
+were never written, and the header's `updated_at` never moved.
+**Decision:** the branch is read from the `current_branch_id` setting (the
+same one the branches screen writes — the purchase service never depends on
+the branches service, which would be an import cycle) and is written on the
+header **and** on every line; the header's `updated_at` moves on every
+write. The branch is still only **recorded** — the stock itself is still one
+number per product (Phase 1 risk 1).
+
+

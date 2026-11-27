@@ -107,6 +107,64 @@ One more gotcha for this area: **the FIFO allocations are per LINE, never per
 product.** A `Map<product_id, …>` silently gives two lines of the same product
 the same batch — the ledger then names the wrong batch (Phase 1, item 1.2).
 
+### Phase 2 + Phase 3 suites (the master-prompt run, 2026-11-27)
+
+```powershell
+npm run test:receiptdesigner    # 73/73 - the receipt designer + the template library
+npm run test:receipt            # 68/68 - the thermal redesign scenarios
+npm run test:print              # 138/138 - the print geometry + the layout audit
+npm run test:purchaseOrderHardening  # 60/60 - the Phase 3 purchase-order hardening
+npm run test:purchaseOrderUi         # 81/81 - the Phase 3 purchase-order screen (the real renderer)
+```
+
+`npm run test:purchaseOrderHardening` (60 checks) is the permanent guard for
+the Phase 3 purchase-order work. It runs the REAL services against a
+throwaway DB and covers: the catalog carrying the units and the last purchase
+cost for **every** product (not only the low-stock ones), a receipt addressed
+to a **line** (`item_id`) instead of a product, the undo of an import that
+was already received, the purchase permission enforced **in the service**
+(a cashier cannot create / receive / cancel / pay), the money validation
+(the same `validatePo` the screen uses), the cancel-after-receive guard, the
+legacy `quantity_received` counter, the branch + `updated_at` on the order,
+the unique batch number per line, and the en/ur i18n key parity.
+
+`npm run test:purchaseOrderUi` (81 checks) drives the REAL renderer: the
+Backspace/Delete behaviour, the units of a product that is NOT low on stock,
+the supplier-switch guard (A -> B -> C still names A), the stale receipt note
+and the Urdu toggle.
+
+**Three rules that moved into one place — use them, do not write a fourth
+copy:**
+
+- **The PO money rules** live in `validatePo()` (`src/shared/purchaseCalc.ts`).
+  The **service** calls it now (not just the screen), so a direct IPC call
+  cannot store an order the screen would refuse. The validator computes the
+  totals itself when the caller does not pass them. The one error the
+  service ignores is `duplicate_product` — that is a screen rule (the screen
+  merges the lines; a service line may be split by batch).
+- **The received counter** is read through `RECEIVED_QTY_SQL`
+  (`src/main/services/purchases.ts`): the NEW column (`received_qty`,
+  migration 064) wins whenever it holds a number; the LEGACY one
+  (`quantity_received`, migration 024) fills in only when the new one is
+  still empty. **Do not use a plain `COALESCE(received_qty, quantity_received)`
+  anywhere** — the new column exists and holds 0, so that expression reads 0
+  for every row written before migration 064.
+- **"A batch number IS a batch"** lives in `inventory.addToBatch()`: it adds
+  the quantity to the existing row and never creates a twin. Use it instead
+  of `createBatch()` when the batch number may already exist.
+
+**Two gotchas for the purchase area:**
+
+- **A receipt is addressed to a LINE.** `receivePurchaseOrder(id, lines)`
+  takes `{ item_id?, product_id?, qty }`. The old `product_id` shape is
+  accepted, but it is applied to the **FIRST outstanding line only** — never
+  to every line of that product. The old code applied the requested qty to
+  every line of the product, so an order with two lines of one product
+  received the quantity twice.
+- **`inventory.listProducts()` is the call that returns the `units`.**
+  `inventory.list()` does not. `purchases.purchaseProductRow(id)` returns
+  the units + `last_purchase_cost` + `last_supplier_id`.
+
 `test:utf8` runs in **pure Node** (no Electron) - keep it that way, it is the
 cheapest permanent guard in the repo. Every other suite runs under Electron and
 prints Electron's stderr banner, so **PowerShell can report exit 1 on success**:
