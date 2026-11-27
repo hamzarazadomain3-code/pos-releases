@@ -1,5 +1,14 @@
 import { getDb } from '../db';
-import { getProduct, recordMovement, getProductBatches, deductStockFIFO, recordFIFOAllocations, roundStock } from './inventory';
+import {
+  getProduct,
+  recordMovement,
+  getProductBatches,
+  deductStockFIFO,
+  recordFIFOAllocations,
+  roundStock,
+  batchStockState,
+  currentBranchId,
+} from './inventory';
 import { getSetting } from './settings';
 import { logActivity } from './activity';
 import { can, getSessionUserId } from './auth';
@@ -10,6 +19,7 @@ import { recordSaleEvent, getBusinessDayStartHour, getShopTimezone } from './sal
 import { businessDayWhere } from '../../shared/salesHistory';
 import { summarizeHeldBill } from '../../shared/cartMath';
 import { todayIso } from '../../shared/calendarGrid';
+import { isExpiredOn } from '../../shared/expiry';
 import { effectiveBillState, type BillAmendPaymentRow, type BillAmendRecord, type BillAmendState } from '../../shared/billAmend';
 import type {
   BillLineInput,
@@ -135,10 +145,27 @@ export function createSale(input: SaleInput): SaleCreateResult {
   // Expired stock: hard block (item 0.9). Same-day expiry is still sellable;
   // only a date BEFORE today is expired. A manager (PIN verified by the UI) may
   // override; the approval is written to the activity log after the sale.
+  //
+  // Phase 1, item 1.5 — the rule now comes from ONE place (`shared/expiry.ts`).
+  // It used to be a string comparison written out in this file, in Billing.tsx
+  // and in cartMath.ts, while reports.ts used a different rule (`<= 0 days`),
+  // so the till could sell what the report called EXPIRED.
+  //
+  // Phase 1, item 1.6 — the BATCH is checked too. A product whose own expiry
+  // date is past is still blocked (unchanged), and now a product whose only
+  // stock sits in expired batches is blocked as well: the batch that would
+  // actually leave the shelf is the batch that has to be fresh.
   const businessToday = todayIso();
   const expiredLines = lines.filter((l) => {
     const p = getProduct(l.product_id);
-    return !!p?.expiry_date && String(p.expiry_date).slice(0, 10) < businessToday;
+    if (!p) return false;
+    // The product's own expiry (the rule that was already there).
+    if (isExpiredOn(p.expiry_date, businessToday)) return true;
+    // The batch that would be sold.
+    const state = batchStockState(l.product_id, businessToday);
+    if (!state.hasBatches) return false;
+    const wanted = roundStock(l.qty);
+    return state.freshQty < wanted && state.expiredQty > 0;
   });
   let expiredApprover: { id: number; username: string; role: string } | null = null;
   if (expiredLines.length > 0) {
@@ -212,11 +239,27 @@ export function createSale(input: SaleInput): SaleCreateResult {
   db.exec('BEGIN');
   try {
     // FIFO batch deduction (mutates batches + product stock, rolled back on error)
-    const batchAllocations: Map<number, { batchId: number; qty: number }[]> = new Map();
+    //
+    // Phase 1, item 1.2 — the allocations are kept PER LINE, not per product.
+    // They used to live in a `Map<product_id, ...>`, so a bill with two lines
+    // of the SAME product made the second line overwrite the first: both
+    // `sale_items` rows were then written with the LAST allocation and the
+    // `fifo_allocations` rows pointed at the wrong sale items. The stock ledger
+    // said a different batch had been consumed than the one that really was.
+    const lineAllocations: { batchId: number; qty: number }[][] = [];
     const effectiveAllowNegative = allowNegativeStock !== 'no' || mayOverrideNegativeBlock;
+    const sessionUserId = getSessionUserId();
+    const branchId = currentBranchId();
     for (const l of lines) {
-      const allocation = deductStockFIFO(l.product_id, roundStock(l.qty), effectiveAllowNegative);
-      batchAllocations.set(l.product_id, allocation);
+      // Phase 1, item 1.6 — an expired line that a manager approved is sold as
+      // it is (the expired batch must NOT be skipped). Every other line only
+      // ever consumes a fresh batch.
+      const isExpiredLine = expiredLines.some((e) => e.product_id === l.product_id);
+      const allocation = deductStockFIFO(l.product_id, roundStock(l.qty), effectiveAllowNegative, {
+        today: businessToday,
+        skipExpired: !isExpiredLine,
+      });
+      lineAllocations.push(allocation);
     }
     const invoiceNo = nextInvoiceNo();
     const nowIso = new Date().toISOString();
@@ -254,15 +297,19 @@ export function createSale(input: SaleInput): SaleCreateResult {
       `INSERT INTO sale_items (sale_id, product_id, qty, unit_price, discount, tax_rate, line_total, promo_id, promo_name, batch_id, box_qty, unit_name, display_qty)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
-    // Track sale item IDs for FIFO recording
-    const saleItemIds: Map<number, number[]> = new Map();
+    // The sale item ids of every line, in the order the line was written.
+    // They line up with the line's batch allocations (the shortfall row has no
+    // allocation, so it gets none).
+    const saleItemIdsPerLine: number[][] = [];
     
-    for (const l of lines) {
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const l = lines[lineIndex];
       const promo = promoOf.get(l.product_id);
-      const allocation = batchAllocations.get(l.product_id) || [];
+      const allocation = lineAllocations[lineIndex] || [];
       const boxQty = (l as any).box_qty ?? null;
       const unitName = (l as any).unit_name ?? null;
       const displayQty = (l as any).display_qty ?? null;
+      const lineItemIds: number[] = [];
 
       // Phase 1: insert one sale_items row per batch allocation, plus an extra
       // NULL-batch row for any shortfall (stock went negative). This keeps the
@@ -294,9 +341,8 @@ export function createSale(input: SaleInput): SaleCreateResult {
           displayQty
         );
         const saleItemId = Number(res.lastInsertRowid);
-        if (!saleItemIds.has(l.product_id)) saleItemIds.set(l.product_id, []);
-        saleItemIds.get(l.product_id)!.push(saleItemId);
-        recordMovement(l.product_id, -part.qty, 'Sale', 'sale', saleId, part.batchId);
+        lineItemIds.push(saleItemId);
+        recordMovement(l.product_id, -part.qty, 'Sale', 'sale', saleId, part.batchId, sessionUserId, branchId);
       } else {
         // Multiple rows - need to split sale_items rows per batch (and shortfall)
         for (const part of parts) {
@@ -318,20 +364,21 @@ export function createSale(input: SaleInput): SaleCreateResult {
             displayQty != null ? (allocQty / lineQtySafe) * displayQty : null
           );
           const saleItemId = Number(res.lastInsertRowid);
-          if (!saleItemIds.has(l.product_id)) saleItemIds.set(l.product_id, []);
-          saleItemIds.get(l.product_id)!.push(saleItemId);
-          recordMovement(l.product_id, -allocQty, 'Sale', 'sale', saleId, part.batchId);
+          lineItemIds.push(saleItemId);
+          recordMovement(l.product_id, -allocQty, 'Sale', 'sale', saleId, part.batchId, sessionUserId, branchId);
         }
       }
+      saleItemIdsPerLine.push(lineItemIds);
     }
 
-    // Record FIFO allocations for each sale item
-    for (const [productId, saleItemIdsList] of saleItemIds.entries()) {
-      const allocation = batchAllocations.get(productId) || [];
-      if (allocation.length > 0) {
-        for (let i = 0; i < saleItemIdsList.length && i < allocation.length; i++) {
-          recordFIFOAllocations(saleItemIdsList[i], productId, [allocation[i]]);
-        }
+    // Record FIFO allocations for each sale item.
+    // Phase 1, item 1.2 — per line, so two lines of the same product each get
+    // THEIR OWN allocation (the old per-product map mixed them up).
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const allocation = lineAllocations[lineIndex] || [];
+      const ids = saleItemIdsPerLine[lineIndex] || [];
+      for (let j = 0; j < ids.length && j < allocation.length; j++) {
+        recordFIFOAllocations(ids[j], lines[lineIndex].product_id, [allocation[j]]);
       }
     }
 
@@ -681,12 +728,21 @@ export function voidSale(id: number, reason: string): boolean {
         db.prepare('UPDATE products SET stock_qty = stock_qty + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
           .run(roundStock(it.qty), it.product_id);
         db.prepare(
-          `INSERT INTO stock_movements (product_id, change_qty, reason, ref_type, ref_id, batch_id)
-           VALUES (?, ?, ?, ?, ?, ?)`
-        ).run(it.product_id, roundStock(it.qty), 'Voided sale', 'sale', id, batchId);
+          `INSERT INTO stock_movements (product_id, change_qty, reason, ref_type, ref_id, batch_id, user_id, branch_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(
+          it.product_id,
+          roundStock(it.qty),
+          'Voided sale',
+          'sale',
+          id,
+          batchId,
+          getSessionUserId(),
+          currentBranchId()
+        );
       } else {
         // Legacy: no batch tracking
-        recordMovement(it.product_id, it.qty, 'Voided sale', 'sale', id);
+        recordMovement(it.product_id, it.qty, 'Voided sale', 'sale', id, null, getSessionUserId(), currentBranchId());
       }
     }
     // Release FIFO allocations

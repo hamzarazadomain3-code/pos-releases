@@ -19,6 +19,11 @@
  */
 
 import type { ProductUnit } from './types';
+import {
+  baseQty as baseQtyRule,
+  costPerBaseUnit as costPerBaseUnitRule,
+  unitsInBase as unitsInBaseRule,
+} from './units';
 
 /* ── money-safe numbers ─────────────────────────────────────────────────── */
 
@@ -58,22 +63,28 @@ export function purchaseUnits(units: ProductUnit[] | null | undefined): ProductU
   return [...packs, base];
 }
 
-/** How many base units one purchase unit holds. 1 when unknown. */
+/**
+ * Phase 1, item 1.13 — the conversion rule now lives in ONE place
+ * (`src/shared/units.ts`). These three names stay here (they are imported by
+ * the service, the screen and the printed order) but they are no longer a
+ * second implementation.
+ *
+ * The quantity is rounded to the app's STOCK precision (3 decimals). It used
+ * to be rounded to 4 here and to 3 in `inventory.roundStock`, so a batch
+ * quantity and `products.stock_qty` could differ by 0.0001.
+ */
 export function unitsInBase(units: number | null | undefined): number {
-  const n = safeNumber(units, 1);
-  return n > 0 ? n : 1;
+  return unitsInBaseRule(units);
 }
 
 /** The quantity in BASE units (the unit the stock is kept in). */
 export function baseQty(qty: number, units: number | null | undefined): number {
-  return round4(safeNumber(qty, 0) * unitsInBase(units));
+  return baseQtyRule(qty, units);
 }
 
 /** The cost of ONE base unit (what the stock is really worth). */
 export function costPerBaseUnit(unitCost: number, units: number | null | undefined): number {
-  const c = safeNumber(unitCost, 0);
-  const u = unitsInBase(units);
-  return round4(u > 0 ? c / u : c);
+  return costPerBaseUnitRule(unitCost, units);
 }
 
 /* ── one line ───────────────────────────────────────────────────────────── */

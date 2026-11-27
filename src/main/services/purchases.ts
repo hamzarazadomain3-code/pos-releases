@@ -171,22 +171,36 @@ export function insertPurchaseOrderCore(
       opts.payment_method ?? null
     );
   const poId = Number(info.lastInsertRowid);
+  // Phase 1, item 1.10 — the line snapshot is COMPLETE.
+  //
+  // It used to write `batch_no` + `received_qty` only. Three things were lost:
+  //   - `unit_name` — the printed order and the purchase history showed no unit;
+  //   - `total_cost` — every report had to recompute the line money;
+  //   - `batch_number` + `quantity_received` — the LEGACY twins of the two
+  //     columns above. The expiry alert (`alertService.checkExpiry`) reads
+  //     `quantity_received` and `batch_number`, so every purchase made through
+  //     this path was invisible to the "this batch expires soon" alert.
   const insItem = db.prepare(
     `INSERT INTO purchase_items
-       (purchase_order_id, product_id, qty, unit_cost, batch_no, expiry_date, discount_pct, tax_pct,
-        received_qty, sale_price, wholesale_price, unit_multiplier, base_qty, cost_per_base)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`
+       (purchase_order_id, product_id, qty, unit_cost, unit_name, total_cost,
+        batch_no, batch_number, expiry_date, discount_pct, tax_pct,
+        received_qty, quantity_received, sale_price, wholesale_price, unit_multiplier, base_qty, cost_per_base)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?)`
   );
   for (const it of items) {
     const multiplier = unitsInBase(it.units_in_base);
     const qty = round2(safeNumber(it.qty, 0));
     const unitCost = round2(safeNumber(it.unit_cost, 0));
+    const batchNo = it.batch_no ?? null;
     insItem.run(
       poId,
       it.product_id,
       qty,
       unitCost,
-      it.batch_no ?? null,
+      it.unit_name ?? null,
+      round2(qty * unitCost),
+      batchNo,
+      batchNo,
       it.expiry_date ?? null,
       Number(it.discount_pct) || 0,
       Number(it.tax_pct) || 0,
@@ -385,7 +399,8 @@ export function receivePurchaseOrder(id: number, lines?: { product_id: number; q
       // Stock-in: batch already holds the qty, so recordMovement must NOT be given a batchId
       // (it would add the qty to the batch a second time). It updates product stock + movement log.
       recordMovement(it.product_id, baseReceived, 'Purchase stock-in', 'purchase', id);
-      db.prepare('UPDATE purchase_items SET received_qty = COALESCE(received_qty, 0) + ? WHERE id = ?').run(
+      db.prepare('UPDATE purchase_items SET received_qty = COALESCE(received_qty, 0) + ?, quantity_received = COALESCE(quantity_received, 0) + ? WHERE id = ?').run(
+        p.qty,
         p.qty,
         it.id
       );

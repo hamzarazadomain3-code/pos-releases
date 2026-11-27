@@ -5,6 +5,7 @@ import { todayLocal, formatLocalString, daysAgo, toLocalDateString } from '../ut
 import { createWriteStream } from 'fs';
 import { reconcilePayments, type SaleRow as ReconciliationSaleRow } from '../../shared/paymentReconciliation';
 import { resolveBusinessRange, businessDayWhere } from '../../shared/salesHistory';
+import { daysUntilExpiry } from '../../shared/expiry';
 import { toBase64Payload } from '../../shared/binaryTransfer';
 import type {
   SalesAnalysisResult,
@@ -789,9 +790,14 @@ export function getInventoryAnalysis(): InventoryAnalysisResult {
      ORDER BY p.expiry_date ASC`
   );
   const expiryAlert = expiryAlertRaw.map((r) => {
-    const d = r.days_until_expiry ?? 999;
+    // Phase 1, item 1.5 — the EXPIRED test now comes from the shared rule.
+    // It used to be `days_until_expiry <= 0`, which called a product that
+    // expires TODAY "EXPIRED" while the till (which uses "before today") was
+    // still selling it. One rule, one place: `shared/expiry.ts`.
+    const days = daysUntilExpiry(r.expiry_date, todayLocal());
+    const d = days ?? 999;
     let status: 'EXPIRED' | 'URGENT' | 'WARNING' | 'OK' = 'OK';
-    if (d <= 0) status = 'EXPIRED';
+    if (days !== null && days < 0) status = 'EXPIRED';
     else if (d <= 7) status = 'URGENT';
     else if (d <= 30) status = 'WARNING';
     return { ...r, days_until_expiry: d, status };

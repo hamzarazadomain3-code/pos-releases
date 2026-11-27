@@ -20,6 +20,8 @@ import { applyCustomerDiscount, customerDiscountBadge, describeDiscountSource, m
 import { shouldJumpToQty } from '@shared/qtyJump';
 import { matchProducts, findExactCodeMatch, getProductCode } from '@shared/productSearch';
 import { fileBytesFromResult } from '@shared/binaryTransfer';
+import { isExpiredOn } from '@shared/expiry';
+import { todayIso } from '@shared/calendarGrid';
 import { type AssistantBillCommand } from '@shared/assistant/billActions';
 import { downloadBytes } from '@utils/download';
 import {
@@ -58,11 +60,14 @@ import type {
   UserRow,
 } from '../../../shared/types';
 
+/**
+ * Phase 1, item 1.5 — the expiry rule now comes from ONE place
+ * (`shared/expiry.ts`). This copy used to build a local Date and compare it,
+ * while the reports used `days_until_expiry <= 0` — so the till could sell
+ * what the report called EXPIRED.
+ */
 function isExpired(dateStr: string | null): boolean {
-  if (!dateStr) return false;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return new Date(dateStr + 'T00:00:00').getTime() < today.getTime();
+  return isExpiredOn(dateStr, todayIso());
 }
 
 function formatStockQty(qty: number): string {

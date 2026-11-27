@@ -1,8 +1,19 @@
 import { getDb } from '../db';
 import { logError } from '../logger';
-import { getAllSettings } from './settings';
+import { getAllSettings, getSetting } from './settings';
 import { recordSaleEvent } from './salesHistory';
 import { todayLocal, daysFromNow } from '../utils/timezone';
+import {
+  getProduct,
+  deductStockFIFO,
+  recordMovement,
+  recordFIFOAllocations,
+  roundStock,
+  batchStockState,
+  currentBranchId,
+} from './inventory';
+import { can } from './auth';
+import { isExpiredOn } from '../../shared/expiry';
 
 export interface QuotationRow {
   id: number;
@@ -260,6 +271,39 @@ export function convertToSale(quotationId: number, actorUserId: number): { ok: b
 
     const items = db.prepare(`SELECT * FROM quotation_items WHERE quotation_id = ?`).all(quotationId) as unknown as QuotationItemRow[];
 
+    // Phase 1, item 1.7 — a quotation is a SALE the moment it is converted, so
+    // it obeys the SAME stock rules. It used to decrement `products.stock_qty`
+    // directly: no negative-stock refusal, no FIFO, no expiry check. A
+    // quotation could drive the stock negative even when the shop's policy
+    // says "never", and it could sell expired stock without an approval.
+    const allowNegativeStock = getSetting('allow_negative_stock') ?? 'warn';
+    const maxNegative = parseFloat(getSetting('max_negative_qty') ?? '0') || 0;
+    const mayOverrideNegativeBlock = can('manager');
+    const businessToday = todayLocal();
+    for (const it of items) {
+      const p = getProduct(it.product_id);
+      if (!p) return { ok: false, message: `Product ${it.product_id} not found` };
+      const requestedQty = roundStock(it.qty);
+      const available = p.stock_qty;
+      if (available < requestedQty && allowNegativeStock === 'no' && !mayOverrideNegativeBlock) {
+        return { ok: false, message: `Insufficient stock: ${p.name} (${available} available)` };
+      }
+      if (maxNegative > 0 && available - requestedQty < -maxNegative) {
+        return {
+          ok: false,
+          message: `Cannot sell ${p.name}: would exceed max negative qty of ${maxNegative} (would be ${available - requestedQty})`,
+        };
+      }
+      // The expiry rule — the same one the till uses (one rule, one place).
+      if (isExpiredOn(p.expiry_date, businessToday)) {
+        return { ok: false, message: `Expired items: ${p.name}` };
+      }
+      const state = batchStockState(it.product_id, businessToday);
+      if (state.hasBatches && state.freshQty < requestedQty && state.expiredQty > 0) {
+        return { ok: false, message: `Expired items: ${p.name}` };
+      }
+    }
+
     // Generate sale invoice number (same scheme as sales service)
   const today = todayLocal().replace(/-/g, '');
     const lastSale = db.prepare(`SELECT invoice_no FROM sales WHERE invoice_no LIKE ? ORDER BY id DESC LIMIT 1`).get(`INV-${today}-%`) as any;
@@ -280,19 +324,48 @@ export function convertToSale(quotationId: number, actorUserId: number): { ok: b
       saleId = Number(saleRes.lastInsertRowid);
 
       const insItem = db.prepare(`
-        INSERT INTO sale_items (sale_id, product_id, qty, unit_price, discount, tax_rate, line_total)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sale_items (sale_id, product_id, qty, unit_price, discount, tax_rate, line_total, batch_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      const decStock = db.prepare(`UPDATE products SET stock_qty = stock_qty - ?, updated_at = datetime('now', 'utc') || 'Z' WHERE id = ?`);
-      const insMove = db.prepare(`
-        INSERT INTO stock_movements (product_id, change_qty, reason, ref_type, ref_id, user_id)
-        VALUES (?, ?, 'sale', 'sale', ?, ?)
-      `);
+      // Phase 1, item 1.7 — the stock comes off the shelf through the SAME
+      // FIFO the till uses, so the batches, the ledger and the FIFO report all
+      // agree (it used to be a bare `stock_qty = stock_qty - ?`).
+      const branchId = currentBranchId();
+      const allowNegative = allowNegativeStock !== 'no' || mayOverrideNegativeBlock;
 
       for (const it of items) {
-        insItem.run(saleId, it.product_id, it.qty, it.unit_price, it.discount, it.tax_rate, it.line_total);
-        decStock.run(it.qty, it.product_id);
-        insMove.run(it.product_id, -it.qty, saleId, actorUserId);
+        const allocation = deductStockFIFO(it.product_id, roundStock(it.qty), allowNegative, {
+          today: businessToday,
+          skipExpired: true,
+        });
+        const allocTotal = allocation.reduce((s, a) => s + a.qty, 0);
+        const shortfall = roundStock(it.qty - allocTotal);
+        const parts: { qty: number; batchId: number | null; alloc: { batchId: number; qty: number } | null }[] =
+          allocation.map((a) => ({ qty: a.qty, batchId: a.batchId as number, alloc: a }));
+        if (shortfall > 0) parts.push({ qty: shortfall, batchId: null, alloc: null });
+        if (!parts.length) parts.push({ qty: it.qty, batchId: null, alloc: null });
+        const lineQtySafe = it.qty > 0 ? it.qty : 1;
+
+        for (const part of parts) {
+          const allocQty = part.qty;
+          const share = allocQty / lineQtySafe;
+          const afterDisc = it.unit_price * allocQty - (it.discount || 0) * share;
+          const allocLineTotal = afterDisc + afterDisc * ((it.tax_rate || 0) / 100);
+          const res = insItem.run(
+            saleId,
+            it.product_id,
+            allocQty,
+            it.unit_price,
+            (it.discount || 0) * share,
+            it.tax_rate,
+            allocLineTotal,
+            part.batchId
+          );
+          recordMovement(it.product_id, -allocQty, 'sale', 'sale', saleId, part.batchId, actorUserId, branchId);
+          if (part.alloc) {
+            recordFIFOAllocations(Number(res.lastInsertRowid), it.product_id, [part.alloc]);
+          }
+        }
       }
 
       db.prepare(`

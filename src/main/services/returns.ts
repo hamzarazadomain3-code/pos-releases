@@ -1,5 +1,5 @@
 import { getDb } from '../db';
-import { recordMovement, roundStock } from './inventory';
+import { recordMovement, roundStock, currentBranchId } from './inventory';
 import { logActivity } from './activity';
 import { getSale } from './sales';
 import { currentShift } from './shifts';
@@ -84,6 +84,12 @@ function nextReturnInvoiceNo(db: ReturnType<typeof getDb>): string {
 /**
  * Put a returned line back on the shelf. Batch-tracked lines go back to their
  * original batch; legacy lines go through `recordMovement`.
+ *
+ * Phase 1, item 1.4 — the FIFO allocation is RELEASED as well. The batch
+ * quantity and the product stock went back up, but the `fifo_allocations` row
+ * stayed, so the separate FIFO engine (which works from the allocations, not
+ * from the batch quantity) kept showing the returned stock as consumed. The
+ * FIFO Stock Report and the shelf disagreed.
  */
 function restockLine(db: ReturnType<typeof getDb>, line: ResolvedReturnLine, returnId: number): void {
   if (line.batch_id) {
@@ -95,11 +101,39 @@ function restockLine(db: ReturnType<typeof getDb>, line: ResolvedReturnLine, ret
       'UPDATE products SET stock_qty = stock_qty + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
     ).run(roundStock(line.qty), line.product_id);
     db.prepare(
-      `INSERT INTO stock_movements (product_id, change_qty, reason, ref_type, ref_id, batch_id)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    ).run(line.product_id, roundStock(line.qty), 'Returned to stock', 'return', returnId, line.batch_id);
+      `INSERT INTO stock_movements (product_id, change_qty, reason, ref_type, ref_id, batch_id, user_id, branch_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      line.product_id,
+      roundStock(line.qty),
+      'Returned to stock',
+      'return',
+      returnId,
+      line.batch_id,
+      getSessionUserId(),
+      currentBranchId()
+    );
+    // Release the FIFO allocation for the returned part of the line. The
+    // allocation is shortened by the returned quantity; when the whole line
+    // comes back the row is gone.
+    const alloc = db
+      .prepare(
+        `SELECT id, allocated_qty FROM fifo_allocations
+         WHERE sale_item_id = ? AND product_batch_id = ?`
+      )
+      .get(line.sale_item_id, line.batch_id) as
+      | { id: number; allocated_qty: number }
+      | undefined;
+    if (alloc) {
+      const left = roundStock(Number(alloc.allocated_qty) - roundStock(line.qty));
+      if (left > 0) {
+        db.prepare('UPDATE fifo_allocations SET allocated_qty = ? WHERE id = ?').run(left, alloc.id);
+      } else {
+        db.prepare('DELETE FROM fifo_allocations WHERE id = ?').run(alloc.id);
+      }
+    }
   } else {
-    recordMovement(line.product_id, line.qty, 'Returned to stock', 'return', returnId);
+    recordMovement(line.product_id, line.qty, 'Returned to stock', 'return', returnId, null, getSessionUserId(), currentBranchId());
   }
 }
 

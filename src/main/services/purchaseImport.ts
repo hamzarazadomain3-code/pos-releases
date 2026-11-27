@@ -20,7 +20,7 @@ import { dialog, BrowserWindow } from 'electron';
 import fs from 'node:fs';
 import * as XLSX from 'xlsx';
 import { getDb } from '../db';
-import { getProduct, createProduct, roundStock, recordMovement } from './inventory';
+import { getProduct, createProduct, roundStock, recordMovement, createBatch } from './inventory';
 import { getPurchaseOrder, insertPurchaseOrderCore, type PurchaseLineInput } from './purchases';
 import { logActivity } from './activity';
 import { can, getSessionUserId } from './auth';
@@ -28,7 +28,7 @@ import { getPrintSettings, toShopProfile } from './printDocs';
 import { printDocument, previewDocument } from './printService';
 import { saveXlsx } from './export';
 import { normalizeBinaryPayload } from '../../shared/binaryTransfer';
-import { lineMoney, round2 } from '../../shared/purchaseCalc';
+import { lineMoney, round2, unitsInBase, baseQty, costPerBaseUnit } from '../../shared/purchaseCalc';
 import {
   defaultDocumentDesign,
   renderDocument,
@@ -172,7 +172,7 @@ export function importPurchaseOrders(payload: PurchaseImportPayload): PurchaseIm
   const createdProducts: number[] = [];
 
   // ── 1. materialise rows: create new products, resolve ids, merge dupes ──
-  type Ready = { row: number; product_id: number; qty: number; unit_cost: number; sale?: number | null; whole?: number | null; disc: number; tax: number; batch?: string | null; expiry?: string | null; notes?: string | null };
+  type Ready = { row: number; product_id: number; qty: number; unit_cost: number; sale?: number | null; whole?: number | null; disc: number; tax: number; batch?: string | null; expiry?: string | null; notes?: string | null; units_in_base?: number | null; unit_name?: string | null };
   const ready: Ready[] = [];
 
   for (const r of payload.rows) {
@@ -216,6 +216,10 @@ export function importPurchaseOrders(payload: PurchaseImportPayload): PurchaseIm
         batch: r.batch_no ?? null,
         expiry: r.expiry_date ?? null,
         notes: r.notes ?? null,
+        // Phase 1, item 1.12 — the purchase unit of this line. The wizard
+        // resolves the file's `unit` column against the product's own units.
+        units_in_base: r.units_in_base ?? null,
+        unit_name: r.unit_name ?? null,
       });
     } catch (e) {
       errors.push({ row: r.row, message: e instanceof Error ? e.message : String(e) });
@@ -286,6 +290,8 @@ export function importPurchaseOrders(payload: PurchaseImportPayload): PurchaseIm
       tax_pct: r.tax,
       sale_price: r.sale,
       wholesale_price: r.whole,
+      units_in_base: r.units_in_base ?? null,
+      unit_name: r.unit_name ?? null,
     }));
     const po = insertPurchaseOrderCore(payload.supplier_id, items, {
       document_type: docType,
@@ -334,16 +340,27 @@ export function importPurchaseOrders(payload: PurchaseImportPayload): PurchaseIm
     if (docType === 'purchase_invoice') {
       for (const r of merged) {
         const batchNumber = r.batch || `IMP-${importId}-${r.product_id}-${Date.now()}`;
-        db
-          .prepare(
-            `INSERT INTO product_batches (product_id, batch_number, quantity, cost_price, expiry_date, received_date)
-             VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
-          )
-          .run(r.product_id, batchNumber, r.qty, r.unit_cost, r.expiry ?? null);
-        recordMovement(r.product_id, r.qty, 'Purchase import (invoice)', 'purchase', poId);
+        // Phase 1, item 1.12 — the stock comes on in BASE units. A file that
+        // says "2 box" of a 12-piece box puts 24 pieces on the shelf, not 2.
+        // The cost per base unit follows the same rule.
+        const multiplier = unitsInBase(r.units_in_base);
+        const baseReceived = baseQty(r.qty, multiplier);
+        const costPerBase = costPerBaseUnit(r.unit_cost, multiplier);
+        // Phase 1, item 1.11 — `createBatch` writes `quantity_received` (the
+        // raw INSERT left it at 0, so the FIFO report showed these batches as
+        // empty), and the batch number is now STORED on the purchase line so
+        // the undo below can delete exactly this batch.
+        createBatch(r.product_id, batchNumber, baseReceived, costPerBase, r.expiry ?? null);
+        db.prepare('UPDATE purchase_items SET batch_no = ?, batch_number = ? WHERE purchase_order_id = ? AND product_id = ?').run(
+          batchNumber,
+          batchNumber,
+          poId,
+          r.product_id
+        );
+        recordMovement(r.product_id, baseReceived, 'Purchase import (invoice)', 'purchase', poId);
       }
       db
-        .prepare('UPDATE purchase_items SET received_qty = qty WHERE purchase_order_id = ?')
+        .prepare('UPDATE purchase_items SET received_qty = qty, quantity_received = qty WHERE purchase_order_id = ?')
         .run(poId);
       db.prepare("UPDATE purchase_orders SET status = 'received' WHERE id = ?").run(poId);
     }
@@ -415,11 +432,21 @@ export function undoPurchaseImport(importId?: number): { ok: boolean; message: s
       for (const it of items) {
         if (!(Number(it.received_qty) > 0)) continue;
         // Remove the batch quantity we added, then move product stock back.
-        db.prepare('DELETE FROM product_batches WHERE product_id = ? AND batch_number = ?').run(
-          it.product_id,
-          it.batch_no || ''
-        );
-        recordMovement(it.product_id, -Number(it.received_qty), 'Import undone', 'purchase_undo', po.id);
+        // Phase 1, item 1.11 — the batch number is now always on the line
+        // (the import used to generate an `IMP-...` name and never store it,
+        // so this DELETE matched nothing and the batch survived the undo).
+        const batchNumber = it.batch_no || it.batch_number || '';
+        if (batchNumber) {
+          db.prepare('DELETE FROM product_batches WHERE product_id = ? AND batch_number = ?').run(
+            it.product_id,
+            batchNumber
+          );
+        }
+        // The stock went on in BASE units ("2 boxes of 12" = 24 pieces), so it
+        // has to come off in BASE units too. Reversing the purchase quantity
+        // would leave 22 of the 24 pieces on the shelf.
+        const receivedBase = baseQty(Number(it.received_qty), it.unit_multiplier);
+        recordMovement(it.product_id, -receivedBase, 'Import undone', 'purchase_undo', po.id);
       }
     }
     // Reverse the ledger EXACTLY. The original ledger row references the PO via

@@ -64,6 +64,9 @@ import {
   summarizeItemChanges,
   validateItemLines,
 } from '../../shared/billAmendItems';
+import { isExpiredOn } from '../../shared/expiry';
+import { todayIso } from '../../shared/calendarGrid';
+import { batchStockState } from './inventory';
 
 /** The amendment kinds the service writes. */
 export type AmendmentKind = BillAmendKind;
@@ -917,9 +920,14 @@ function takeMoreStock(
   saleId: number,
   productId: number,
   qty: number,
-  allowNegative: boolean
+  allowNegative: boolean,
+  today: string
 ): { batchId: number; qty: number }[] {
-  const allocations = deductStockFIFO(productId, qty, allowNegative);
+  // Phase 1, item 1.6 — an expired batch is never taken (the same rule the
+  // till uses). A product with a mix of fresh and expired batches sells the
+  // fresh ones; a product with only expired ones is refused by the gate
+  // above.
+  const allocations = deductStockFIFO(productId, qty, allowNegative, { today, skipExpired: true });
   let taken = 0;
   for (const alloc of allocations) {
     recordMovement(productId, -alloc.qty, 'Sale Amend', 'sale_amend', saleId, alloc.batchId);
@@ -1035,6 +1043,10 @@ export function amendItems(input: AmendItemsInput): AmendmentResult {
   // but an amendment rewrites a record that is already on the books.)
   const mayOverrideNegativeBlock = who.role === 'owner';
   const maxNegative = parseFloat(getSetting('max_negative_qty') ?? '0') || 0;
+  // Phase 1, item 1.6 — an amendment that ADDS stock obeys the expiry rule
+  // too. It used to have no expiry check at all, so a bill could be amended
+  // to include expired stock that the till itself would have refused.
+  const businessToday = todayIso();
   for (const delta of stockPlan) {
     if (delta.delta >= 0) continue; // the stock comes back (or stays) — never a problem
     const product = getProduct(delta.productId);
@@ -1050,6 +1062,13 @@ export function amendItems(input: AmendItemsInput): AmendmentResult {
           available - needed
         })`
       );
+    }
+    if (isExpiredOn(product.expiry_date, businessToday)) {
+      throw new Error(`Expired items: ${product.name}`);
+    }
+    const batchState = batchStockState(delta.productId, businessToday);
+    if (batchState.hasBatches && batchState.freshQty < needed && batchState.expiredQty > 0) {
+      throw new Error(`Expired items: ${product.name}`);
     }
   }
   const allowNegative = allowNegativeStock !== 'no' || mayOverrideNegativeBlock;
@@ -1121,7 +1140,7 @@ export function amendItems(input: AmendItemsInput): AmendmentResult {
       } else if (newQty > oldQty) {
         // The extra units go out — from the oldest batch first.
         const extra = roundStock(newQty - oldQty);
-        const allocations = takeMoreStock(db, saleId, delta.productId, extra, allowNegative);
+        const allocations = takeMoreStock(db, saleId, delta.productId, extra, allowNegative, businessToday);
         const template = lineRows[0];
         const ins = db.prepare(
           `INSERT INTO sale_items

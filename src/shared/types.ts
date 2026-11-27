@@ -1175,6 +1175,15 @@ export interface PurchaseImportConfirmRow {
   batch_no?: string | null;
   expiry_date?: string | null;
   notes?: string | null;
+  /**
+   * Phase 1, item 1.12 — how many base units ONE purchase unit of this line
+   * holds (a box of 12 = 12). The import wizard resolves the file's `unit`
+   * column against the product's own units and sends the factor here; 1 (the
+   * default) means the file's quantity is already in base units.
+   */
+  units_in_base?: number | null;
+  /** The name of the purchase unit, e.g. "box". */
+  unit_name?: string | null;
 }
 
 export interface PurchaseImportPayload {

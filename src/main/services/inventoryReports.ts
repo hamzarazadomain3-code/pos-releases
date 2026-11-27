@@ -112,15 +112,15 @@ export class InventoryReportsService {
         p.name AS product_name,
         s.name AS supplier_name,
         s.id AS supplier_id,
-        COALESCE(pi.quantity_ordered, pi.qty) AS quantity_ordered,
-        pi.quantity_received,
+        pi.qty AS quantity_ordered,
+        COALESCE(pi.received_qty, pi.quantity_received, 0) AS quantity_received,
         pi.unit_name,
         pi.unit_cost AS cost_per_unit,
         COALESCE(pi.total_cost, (pi.qty * pi.unit_cost)) AS total_cost,
         po.created_at AS order_date,
         po.delivery_date,
         pi.expiry_date,
-        pi.batch_number,
+        COALESCE(pi.batch_no, pi.batch_number) AS batch_number,
         CASE
           WHEN po.delivery_date IS NULL THEN 'Pending'
           WHEN DATE(po.delivery_date) <= DATE(po.created_at, '+7 days') THEN 'On Time'
@@ -388,7 +388,7 @@ export class InventoryReportsService {
         po.id AS id,
         po.created_at AS order_date,
         s.name AS supplier_name,
-        COALESCE(pi.quantity_ordered, pi.qty) AS quantity,
+        pi.qty AS quantity,
         pi.unit_cost AS cost_per_unit,
         COALESCE(pi.total_cost, (pi.qty * pi.unit_cost)) AS total_cost,
         CASE
@@ -397,7 +397,7 @@ export class InventoryReportsService {
           ELSE 'Late'
         END AS delivery_status,
         pi.expiry_date,
-        pi.batch_number,
+        COALESCE(pi.batch_no, pi.batch_number) AS batch_number,
         (SELECT COALESCE(SUM(si2.qty), 0)
          FROM sale_items si2 JOIN sales s2 ON si2.sale_id = s2.id
          WHERE si2.product_id = ?

@@ -143,6 +143,38 @@ interface ProcessedRow {
   matchedName: string;
   qty: number;
   cost: number;
+  /**
+   * Phase 1, item 1.12 — the purchase unit of this line. When the file's
+   * `unit` column names one of the product's own units (a "box" of 12), the
+   * factor travels with the row so the stock is added in BASE units (24
+   * pieces for "2 box", never 2).
+   */
+  unitsInBase: number;
+  unitName: string | null;
+}
+
+/**
+ * Phase 1, item 1.12 — match the file's `unit` cell against the product's own
+ * units and return the factor (how many base units one of them holds).
+ *
+ * The rules are deliberately strict, because a wrong factor silently ruins
+ * the stock:
+ *   - no unit cell, or a product we do not know → 1 (the file is in base
+ *     units — the safe, unchanged behaviour);
+ *   - the cell names one of the product's units → that unit's factor;
+ *   - the cell names the BASE unit → 1;
+ *   - the cell names something we do not know → 1 (never guess).
+ */
+function resolveUnitFactor(product: Product | undefined, unitRaw: string): { factor: number; name: string | null } {
+  const text = String(unitRaw || '').trim().toLowerCase();
+  if (!product || !text) return { factor: 1, name: null };
+  const units = product.units ?? [];
+  if (!units.length) return { factor: 1, name: null };
+  const hit = units.find((u) => String(u.name || '').trim().toLowerCase() === text);
+  if (!hit) return { factor: 1, name: null };
+  const factor = Number(hit.quantity_in_base_units);
+  if (!Number.isFinite(factor) || factor <= 0) return { factor: 1, name: null };
+  return { factor, name: hit.name ?? null };
 }
 
 function runChunked<T>(
@@ -308,6 +340,11 @@ export default function PurchaseImportWizard({
           }
           if (!product && name) mode = 'new';
 
+          const unitRaw = get('unit');
+          // Phase 1, item 1.12 — resolve the file's unit against the product's
+          // own units. "2 box" of a 12-piece box is 24 base units.
+          const unitFactor = resolveUnitFactor(product, unitRaw);
+
           built.push({
             row: r.row,
             values: r.values,
@@ -322,13 +359,15 @@ export default function PurchaseImportWizard({
             taxRaw: get('tax'),
             batchRaw: get('batch'),
             expiryRaw: get('expiry'),
-            unitRaw: get('unit'),
+            unitRaw,
             notesRaw: get('notes'),
             mode,
             product_id: product?.id ?? null,
             matchedName: product?.name ?? '',
             qty: safeNum(qtyRaw, 0),
             cost: safeNum(costRaw, 0),
+            unitsInBase: unitFactor.factor,
+            unitName: unitFactor.name,
           });
         },
         (done, total) => setProgress({ done, total })
@@ -461,6 +500,9 @@ export default function PurchaseImportWizard({
         batch_no: rowValue(r, 'batch') || null,
         expiry_date: rowValue(r, 'expiry') || null,
         notes: r.notesRaw || null,
+        // Phase 1, item 1.12 — the purchase unit travels with the line.
+        units_in_base: r.unitsInBase,
+        unit_name: r.unitName,
       }));
     if (!payloadRows.length) return setError('Nothing to import — every row is skipped or invalid');
 

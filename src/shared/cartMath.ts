@@ -1,4 +1,6 @@
 import type { Product, ProductUnit, ResolvedPromotion } from './types';
+import { isExpiredOn } from './expiry';
+import { todayIso } from './calendarGrid';
 
 /**
  * Pure cart maths shared by the Billing screen and its tests.
@@ -47,11 +49,14 @@ export function safeNum(value: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Phase 1, item 1.5 — the expiry rule now comes from ONE place
+ * (`shared/expiry.ts`). This copy used to build a local Date and compare it,
+ * while the reports used `days_until_expiry <= 0` — so the held-bill list
+ * could call a product EXPIRED that the till was still selling.
+ */
 function isExpiredDate(dateStr: string | null | undefined): boolean {
-  if (!dateStr) return false;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return new Date(dateStr + 'T00:00:00').getTime() < today.getTime();
+  return isExpiredOn(dateStr, todayIso());
 }
 
 export function lineTotals(

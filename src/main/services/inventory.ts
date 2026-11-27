@@ -1,10 +1,34 @@
 ﻿import { randomBytes } from 'node:crypto';
 import { getDb } from '../db';
 import { logActivity } from './activity';
+import { getSessionUserId } from './auth';
+import { roundQty } from '../../shared/units';
+import { isExpiredOn } from '../../shared/expiry';
 import type { Category, Product, ProductInput, StockMovement, Unit } from '../../shared/types';
 
+/**
+ * The branch the till is on right now (null when the shop has no branches).
+ * Read straight from the settings table so the stock ledger never depends on
+ * the branches service (which would be a cycle).
+ */
+export function currentBranchId(): number | null {
+  try {
+    const row = getDb()
+      .prepare("SELECT value FROM settings WHERE key = 'current_branch_id'")
+      .get() as { value?: string } | undefined;
+    const id = Number(row?.value);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
 export function roundStock(qty: number): number {
-  return Math.round(qty * 1000) / 1000;
+  // Phase 1, item 1.13 — the stock precision now lives in ONE place
+  // (`src/shared/units.ts`), the same module the purchase maths uses. Before
+  // this the purchase maths rounded to 4 decimals and the stock to 3, so a
+  // batch quantity and `products.stock_qty` could drift apart.
+  return roundQty(qty);
 }
 
 export interface ProductBatch {
@@ -310,6 +334,16 @@ export function deleteProduct(id: number): boolean {
   return info.changes > 0;
 }
 
+/**
+ * A manual stock correction (the Inventory screen, the assistant, the udhaar
+ * write-off).
+ *
+ * Phase 1, item 1.1 — the whole adjustment is now ATOMIC. It runs inside a
+ * SAVEPOINT (a savepoint, not `BEGIN`, because the caller may already own a
+ * transaction — the udhaar write-off does). Before this a refused negative
+ * adjustment left the batches short while the product stock and the ledger
+ * stayed untouched.
+ */
 export function adjustStock(
   productId: number,
   changeQty: number,
@@ -321,32 +355,41 @@ export function adjustStock(
   if (!existing) throw new Error('Product not found');
   // Allow negative stock - check is done at the billing level via settings
   const db = getDb();
-  if (changeQty > 0) {
-    const latest = db
-      .prepare(
-        `SELECT * FROM product_batches WHERE product_id = ? AND quantity > 0
-         ORDER BY received_date DESC, id DESC LIMIT 1`
-      )
-      .get(productId) as { id: number } | undefined;
-    if (latest) {
-      recordMovement(productId, changeQty, reason, refType, refId, latest.id);
+  const userId = getSessionUserId();
+  const branchId = currentBranchId();
+  db.exec('SAVEPOINT rokar_stock_adjust');
+  try {
+    if (changeQty > 0) {
+      const latest = db
+        .prepare(
+          `SELECT * FROM product_batches WHERE product_id = ? AND quantity > 0
+           ORDER BY received_date DESC, id DESC LIMIT 1`
+        )
+        .get(productId) as { id: number } | undefined;
+      if (latest) {
+        recordMovement(productId, changeQty, reason, refType, refId, latest.id, userId, branchId);
+      } else {
+        createBatch(productId, 'ADJ-' + Date.now(), changeQty, existing.cost_price ?? 0, null);
+        recordMovement(productId, changeQty, reason, refType, refId, null, userId, branchId);
+      }
+    } else if (changeQty < 0) {
+      const allocations = deductStockFIFO(productId, roundStock(-changeQty));
+      db.prepare('UPDATE products SET stock_qty = stock_qty - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(roundStock(-changeQty), productId);
+      const ins = db.prepare(
+        `INSERT INTO stock_movements (product_id, change_qty, reason, ref_type, ref_id, batch_id, user_id, branch_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      for (const a of allocations) {
+        ins.run(productId, -a.qty, reason, refType ?? null, refId ?? null, a.batchId, userId, branchId);
+      }
     } else {
-      createBatch(productId, 'ADJ-' + Date.now(), changeQty, existing.cost_price ?? 0, null);
-      recordMovement(productId, changeQty, reason, refType, refId);
+      recordMovement(productId, 0, reason, refType, refId, null, userId, branchId);
     }
-  } else if (changeQty < 0) {
-    const allocations = deductStockFIFO(productId, roundStock(-changeQty));
-    db.prepare('UPDATE products SET stock_qty = stock_qty - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-      .run(roundStock(-changeQty), productId);
-    const ins = db.prepare(
-      `INSERT INTO stock_movements (product_id, change_qty, reason, ref_type, ref_id, batch_id)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    );
-    for (const a of allocations) {
-      ins.run(productId, -a.qty, reason, refType ?? null, refId ?? null, a.batchId);
-    }
-  } else {
-    recordMovement(productId, 0, reason, refType, refId);
+    db.exec('RELEASE SAVEPOINT rokar_stock_adjust');
+  } catch (e) {
+    try { db.exec('ROLLBACK TO SAVEPOINT rokar_stock_adjust'); db.exec('RELEASE SAVEPOINT rokar_stock_adjust'); } catch { /* ignore */ }
+    throw e;
   }
   logActivity('stock_adjust', 'product', productId, `change=${changeQty} | reason=${reason}`);
   const product = getProduct(productId);
@@ -402,6 +445,44 @@ export function listUnits(): Unit[] {
   return db.prepare('SELECT * FROM units ORDER BY id').all() as unknown as Unit[];
 }
 
+/**
+ * How much of a product's stock may be sold today.
+ *
+ * Phase 1, item 1.6 — the sale used to look at ONE thing: the product's own
+ * `expiry_date`. The batch it actually consumed was never checked, so a batch
+ * that was past its expiry could be sold silently. This helper splits the
+ * batches into what is fresh and what is expired.
+ *
+ * A product with NO batches at all (a legacy product that only ever had a
+ * running `stock_qty`) keeps the product-level expiry rule.
+ */
+export interface BatchStockState {
+  /** The product has at least one batch with stock on it. */
+  hasBatches: boolean;
+  /** The stock in the batches that are still sellable. */
+  freshQty: number;
+  /** The stock in the batches that are past their expiry date. */
+  expiredQty: number;
+}
+
+export function batchStockState(productId: number, today: string): BatchStockState {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      'SELECT expiry_date, quantity FROM product_batches WHERE product_id = ? AND quantity > 0'
+    )
+    .all(productId) as { expiry_date: string | null; quantity: number }[];
+  if (!rows.length) return { hasBatches: false, freshQty: 0, expiredQty: 0 };
+  let freshQty = 0;
+  let expiredQty = 0;
+  for (const r of rows) {
+    const qty = roundStock(Number(r.quantity) || 0);
+    if (isExpiredOn(r.expiry_date, today)) expiredQty += qty;
+    else freshQty += qty;
+  }
+  return { hasBatches: true, freshQty: roundStock(freshQty), expiredQty: roundStock(expiredQty) };
+}
+
 export function getProductBatches(productId: number): ProductBatch[] {
   const db = getDb();
   return db
@@ -413,6 +494,16 @@ export function getProductBatches(productId: number): ProductBatch[] {
     .all(productId) as unknown as ProductBatch[];
 }
 
+/**
+ * Put a batch on the shelf.
+ *
+ * Phase 1, item 1.3 — `quantity_received` is written here. It used to stay 0,
+ * and the separate FIFO engine (`fifoEngine.ts`) filters on
+ * `quantity_received > 0`, so EVERY real batch (the initial stock, a manual
+ * adjustment, a purchase receipt) showed up with ZERO available in the FIFO
+ * Stock Report. The column is the "how much did we ever receive" truth; the
+ * `quantity` column is "how much is on the shelf right now".
+ */
 export function createBatch(
   productId: number,
   batchNumber: string,
@@ -421,34 +512,65 @@ export function createBatch(
   expiryDate: string | null
 ): number {
   const db = getDb();
+  const qty = roundStock(quantity);
   const info = db
     .prepare(
-      `INSERT INTO product_batches (product_id, batch_number, quantity, cost_price, expiry_date, received_date)
-       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+      `INSERT INTO product_batches (product_id, batch_number, quantity, quantity_received, cost_price, expiry_date, received_date)
+       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
     )
-    .run(productId, batchNumber, quantity, costPrice, expiryDate);
+    .run(productId, batchNumber, qty, qty, costPrice, expiryDate);
   return Number(info.lastInsertRowid);
 }
 
-export function deductStockFIFO(productId: number, qty: number, allowNegative = false): { batchId: number; qty: number }[] {
+/**
+ * Take stock off the shelf, oldest (and earliest-expiring) batch first.
+ *
+ * Phase 1, item 1.1 — the batch rows are NO LONGER left half-deducted when the
+ * stock is not enough. Before this the function wrote `quantity -= take` for
+ * every batch it touched and only THEN checked whether it had enough; the
+ * error was thrown with the batches already short. `adjustStock()` has no
+ * transaction of its own, so a refused manual adjustment silently destroyed
+ * batch stock while `products.stock_qty` and the ledger stayed untouched.
+ *
+ * Phase 1, item 1.6 — `skipExpired` makes the FIFO skip the batches that are
+ * past their expiry date, so an expired batch can never be sold. The caller
+ * decides whether "nothing sellable left" is an error (a sale) or a manual
+ * correction (an adjustment).
+ */
+export function deductStockFIFO(
+  productId: number,
+  qty: number,
+  allowNegative = false,
+  options: { today?: string; skipExpired?: boolean } = {}
+): { batchId: number; qty: number }[] {
   const db = getDb();
   const batches = getProductBatches(productId);
   const allocation: { batchId: number; qty: number }[] = [];
-  let remaining = qty;
+  let remaining = roundStock(qty);
+  const today = options.today ?? null;
+  const skipExpired = !!options.skipExpired && !!today;
 
   for (const batch of batches) {
     if (remaining <= 0) break;
+    // An expired batch is not sellable stock.
+    if (skipExpired && today && isExpiredOn(batch.expiry_date, today)) continue;
     const take = roundStock(Math.min(batch.quantity, remaining));
+    if (take <= 0) continue;
     allocation.push({ batchId: batch.id, qty: take });
-    
+
     // Update batch quantity
     db.prepare('UPDATE product_batches SET quantity = quantity - ? WHERE id = ?')
       .run(take, batch.id);
-    
+
     remaining = roundStock(remaining - take);
   }
 
   if (remaining > 0 && !allowNegative) {
+    // Put back what we took: the deduction must be all-or-nothing.
+    for (const a of allocation) {
+      db.prepare('UPDATE product_batches SET quantity = quantity + ? WHERE id = ?')
+        .run(a.qty, a.batchId);
+    }
     throw new Error(`Insufficient stock in batches for product ${productId}`);
   }
 
@@ -471,25 +593,36 @@ export function recordFIFOAllocations(saleItemId: number, productId: number, all
   }
 }
 
+/**
+ * The ONE writer of the stock ledger (`stock_movements`) + the product's
+ * running stock.
+ *
+ * Phase 1, item 1.8 — the ledger now records WHO moved the stock and from
+ * WHICH branch. Before this the function could not write `user_id` or
+ * `branch_id` at all, so every sale, purchase, return, audit correction and
+ * manual adjustment was an anonymous line and the branch columns were dead.
+ */
 export function recordMovement(
   productId: number,
   changeQty: number,
   reason: string,
   refType?: string | null,
   refId?: number | null,
-  batchId?: number | null
+  batchId?: number | null,
+  userId?: number | null,
+  branchId?: number | null
 ): void {
   const db = getDb();
   const roundedQty = roundStock(changeQty);
   db.prepare(
     'UPDATE products SET stock_qty = stock_qty + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
   ).run(roundedQty, productId);
-  
+   
   if (batchId !== undefined && batchId !== null) {
     db.prepare(
-      `INSERT INTO stock_movements (product_id, change_qty, reason, ref_type, ref_id, batch_id)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    ).run(productId, roundedQty, reason, refType ?? null, refId ?? null, batchId);
+      `INSERT INTO stock_movements (product_id, change_qty, reason, ref_type, ref_id, batch_id, user_id, branch_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(productId, roundedQty, reason, refType ?? null, refId ?? null, batchId, userId ?? null, branchId ?? null);
     
     if (roundedQty > 0) {
       db.prepare('UPDATE product_batches SET quantity = quantity + ? WHERE id = ?')
@@ -497,9 +630,9 @@ export function recordMovement(
     }
   } else {
     db.prepare(
-      `INSERT INTO stock_movements (product_id, change_qty, reason, ref_type, ref_id)
-       VALUES (?, ?, ?, ?, ?)`
-    ).run(productId, roundedQty, reason, refType ?? null, refId ?? null);
+      `INSERT INTO stock_movements (product_id, change_qty, reason, ref_type, ref_id, user_id, branch_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(productId, roundedQty, reason, refType ?? null, refId ?? null, userId ?? null, branchId ?? null);
   }
 }
 
