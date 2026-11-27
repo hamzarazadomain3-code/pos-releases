@@ -316,30 +316,40 @@ async function signIn(username, password) {
 }
 
 /** A screenshot is evidence — it is written next to the test output. */
+let lastShotHash = '';
 async function shot(name) {
   const file = path.join(PROOF_DIR, `p0_0.14_${name}.png`);
   try {
-    // The window is off-screen, so the compositor can hand back a STALE frame.
-    // Let it settle, then take the LAST of two captures.
-    await sleep(600);
-    let image = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        image = await win.webContents.capturePage();
-        if (image && !image.isEmpty()) break;
-      } catch (e) {
-        if (attempt === 2) throw e;
+    // The compositor can hand back a STALE frame (the same picture twice).
+    // Force a repaint, take a few captures, and keep the LAST one - but only
+    // accept it when it differs from the previous shot, otherwise the evidence
+    // is a lie (four identical PNGs once looked like four different screens).
+    let png = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await js(
+        "(() => { document.body.style.zoom = document.body.style.zoom === '0.999' ? '' : '0.999'; return true; })()"
+      ).catch(() => undefined);
+      await sleep(700);
+      let image = null;
+      for (let take = 0; take < 3; take++) {
+        try {
+          image = await win.webContents.capturePage();
+          if (image && !image.isEmpty()) break;
+        } catch (e) {
+          if (take === 2) throw e;
+        }
+        await sleep(400);
       }
-      await sleep(500);
+      if (!image) throw new Error('empty capture');
+      const buf = image.toPNG();
+      const hash = require('crypto').createHash('md5').update(buf).digest('hex');
+      png = buf;
+      if (hash !== lastShotHash) {
+        lastShotHash = hash;
+        break;
+      }
     }
-    if (!image) throw new Error('empty capture');
-    await sleep(300);
-    try {
-      image = await win.webContents.capturePage();
-    } catch {
-      /* keep the first one */
-    }
-    fs.writeFileSync(file, image.toPNG());
+    fs.writeFileSync(file, png);
     console.log(`  [shot] ${file}`);
   } catch (e) {
     console.log(`  [shot] could not capture ${name}: ${String(e).slice(0, 120)}`);
