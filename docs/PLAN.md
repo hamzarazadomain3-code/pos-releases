@@ -411,3 +411,42 @@ regression battery (`E:\temp\proof\p4_regr_summary.txt`).**
 - **A silent print that times out may open a second dialog** — it touches
   the print queue's timing.
 - **Money as integer paisa** — still deferred (D3).
+
+## 16. Phase 5 scope
+
+The prompt's Phase 5 is the **release + the owner checklist + the deploy**. It
+does not add features; it **proves the tree, writes what only the owner can
+check, and ships it**:
+
+1. the **final battery** — every `test:*` / `check:*` script in
+   `package.json` (102 suites) plus the typecheck, each with its own saved
+   output, judged by a rule that reads the suite's OWN pass/fail markers;
+2. the **owner checklist** — the things no automated test can prove (a real
+   printer, a real till, a real customer's money) plus the owner's open
+   decisions;
+3. the **release notes + the manual test checklist**, both stale;
+4. the **desktop release** — the version bump, the installer, the portable
+   build, a published GitHub release with a correct `latest.yml` and the
+   version-less alias;
+5. the **deploy** — the push (the push hook redeploys the Cloudflare Worker)
+   and the marketing site.
+
+## 17. Phase 5 status (as run)
+
+| # | Item | Status | What was done | Proof |
+|---|---|---|---|---|
+| 5.1 | the final battery | **DONE** | every `test:*` / `check:*` script in `package.json` (102) + the typecheck = **103 suites, 103 GREEN**, each with its own saved output | `E:\temp\proof\final_summary.txt` + `final_<suite>.txt` |
+| 5.2 | the verdict rule | **DONE (fix)** | the runner's first rule was case-insensitive and unanchored, so two **PASS** lines were read as failures (`test:ipcError`, `test:recovery`); the rule is now strict, and the saved outputs were re-judged from the evidence — every one of the 57 lines in all 103 outputs that mentions a failure was read by hand | `E:\temp\proof\rejudge_final.ps1`, `final_summary_v1_loose_rule.txt` |
+| 5.3 | the owner checklist | **DONE** | `docs/OWNER_CHECKLIST.md` — 9 sections + the 11 owner decisions | `docs/OWNER_CHECKLIST.md` |
+| 5.4 | the manual test checklist | **DONE (replace)** | it still described v1.5.0; the new file is the v2.33.0 smoke test and points at the owner checklist | `MANUAL_TEST_CHECKLIST.md` |
+| 5.5 | the release notes | **DONE (replace)** | it still carried v2.15.1; the new file is the v2.33.0 notes | `RELEASE_NOTES.md` |
+| 5.6 | the version bump | **DONE** | `2.32.0` → **2.33.0** (`package.json`; `package-lock.json`'s version field was still `2.21.0`) + the `AGENTS.md` version line | `git log` |
+| 5.7 | the desktop release | **DONE** | the NSIS installer + the portable build, published with a `latest.yml` rebuilt from the installer's OWN bytes, the blockmap and the version-less alias | `E:\temp\proof\release_v2.33.0.txt`, `verify_release_v2.33.0.txt` |
+| 5.8 | the deploy | **DONE** | the push to `main` (the hook redeploys the Worker) + the site updated to 2.33.0 | `E:\temp\proof\cloud_worker_deploy_v2.33.0.txt`, `vercel_site_v2.33.0.txt` |
+
+### The rule that Phase 5 added
+- **a suite's verdict comes from the suite's OWN output** — a pass marker AND
+  the absence of a failure marker, both **case sensitive and anchored**. A
+  suite is never called green on the exit code alone (Electron's stderr banner
+  makes Windows report a non-zero exit for a green suite) and never called red
+  because a PASS line happened to contain the word "failed".

@@ -4,7 +4,45 @@ Newest first. Phase 0 entries cite the master-prompt item number; the Phase 1
 entries cite the phase item number. A DONE entry means code + a regression test
 + a saved proof run.
 
-## Phase 4 — the printer pipeline (2026-11-27, baseline v2.32.0)
+## Phase 5 - the release, the owner checklist, the deploy (2026-11-28)
+
+- **5.1** **The final battery: every `test:*` / `check:*` script in
+  `package.json` - 103 suites (102 + the typecheck), 103 GREEN**, each with its
+  own saved output under `E:\temp\proof\final_<suite>.txt` and the one-line
+  verdict in `E:\temp\proof\final_summary.txt`.
+- **5.2** **The verdict rule was fixed, and two suites were re-judged.** The
+  runner's first rule was case-insensitive and unanchored, so it read a
+  **PASS** line as a failure - `[PASS] internal: Error: UNIQUE constraint
+  failed:` (`test:ipcError`) and `[PASS] lockout engages at 5 failures even
+  for the right answer` (`test:recovery`) were called RED although both
+  printed their own `38/38` and `ALL PASSED: 48/48`. The rule is now strict
+  (case sensitive, anchored, and a suite is GREEN only when its OWN output
+  carries a pass marker), the saved outputs were re-judged from the evidence
+  (`E:\temp\proof\rejudge_final.ps1`), and every line in all 103 outputs that
+  mentions a failure was read by hand - all 57 are PASS lines describing a
+  failure scenario, none is a failure. **No product code changed for this.**
+- **5.3** **The owner checklist is now one document** -
+  `docs/OWNER_CHECKLIST.md` (install, first launch, billing, stock/batches/
+  expiry, the purchase-order screen, printing, users/security, the web app,
+  deploy/release, and the 11 owner decisions).
+- **5.4** **`MANUAL_TEST_CHECKLIST.md` is replaced** (it still described
+  v1.5.0: the default `admin/admin123`, the old licence grace, screens that
+  no longer exist). The new file is the v2.33.0 smoke test and points at the
+  owner checklist instead of keeping a second copy that can drift.
+- **5.5** **`RELEASE_NOTES.md` is replaced** (it still carried v2.15.1 as the
+  newest release). The new file is the v2.33.0 notes, grouped by the shop's
+  own concerns, with the open owner decisions named.
+- **5.6** **The version bump**: `2.32.0` -> **2.33.0** (`package.json` +
+  `package-lock.json`, whose version field was still `2.21.0`), and the
+  `AGENTS.md` version line.
+- **5.7** **The desktop release**: the NSIS installer + the portable build,
+  published on GitHub with a `latest.yml` rebuilt from the installer's OWN
+  bytes, the blockmap and the version-less `RokarPOS-Setup.exe` alias the
+  website's button depends on.
+- **5.8** **The deploy**: the source pushed to `main` (the push hook
+  redeploys the Cloudflare Worker) and the marketing site updated to 2.33.0.
+
+## Phase 4 - the printer pipeline (2026-11-27, baseline v2.32.0)
 
 - **4.1** **Printing from the receipt preview now behaves exactly like
   printing directly.** The preview's Print button used to call the low-level

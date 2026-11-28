@@ -289,6 +289,21 @@ the tree since Phase 0, and a UTC-day leak in one of the run's own suites (4.17)
 | 4.17 - a suite was reading the UTC day instead of the shop's business day | DONE (fix) | `toISOString().slice(0,10)` is yesterday between midnight and 05:00 in Karachi while the dashboard asks for the business day - `test:billAmend` went 88/89 at 00:47 | `scripts/test_billAmend.cjs`, `scripts/smoke.js` | `test:billAmend` **89/89 ALL PASSED** after the fix | 1f816a4 |
 | 4.18 - the phase close-out | DONE | the regression battery (15 suites, every output saved), the phase report, the status matrix, the decisions D32-D43, the changelog and the AGENTS entry | `docs/PHASE4_REPORT.md`, `docs/PLAN.md`, `docs/DECISIONS.md`, `CHANGELOG.md`, `AGENTS.md` | `test:printPipeline` **112/112** + the battery (`E:\temp\proof\p4_regr_*.txt`, the one-line verdict in `p4_regr_summary.txt`) | 1f816a4 + b1d49b1 |
 
+# Phase 5 - the release, the owner checklist, the deploy (master-prompt run, 2026-11-28)
 
+Baseline `v2.32.0`. Phases 0-4 are committed on the local `main` (Phase 4's
+code `1f816a4`, its docs `b1d49b1`, the ledger `8a4de3d`). This phase does
+NOT add features: it **proves the whole tree, writes what only the owner can
+check, and ships it**. The phase report is `docs/PHASE5_REPORT.md`; the status
+matrix is `docs/PLAN.md` (sections 16-17).
 
-
+| Item | Status | Scope | File:line | Test / proof | Commit |
+|------|--------|-------|-----------|--------------|--------|
+| 5.1 - the final battery | DONE | every `test:*` / `check:*` script in `package.json` (102) + the typecheck = **103 suites**, each with its own saved output | `package.json` (the scripts), `E:\temp\proof\run_final_battery.ps1` | **103 GREEN / 0 RED** - `E:\temp\proof\final_summary.txt` + `final_<suite>.txt` | (phase commit) |
+| 5.2 - the verdict rule | DONE (fix) | the runner's first rule was case-insensitive and unanchored, so two **PASS** lines were read as failures (`test:ipcError`, `test:recovery`); the rule is now strict (case sensitive + anchored, and a suite is GREEN only when its OWN output carries a pass marker) | `E:\temp\proof\run_final_battery.ps1`, `E:\temp\proof\rejudge_final.ps1`, `E:\temp\proof\run_p4_batch.ps1` | the saved outputs re-judged from the evidence: **103 GREEN / 0 RED**; all 57 lines in the 103 outputs that mention a failure were read by hand - every one is a PASS line describing a failure scenario | (phase commit) |
+| 5.3 - the owner checklist | DONE | the things no automated test can prove (a real printer, a real till, a real customer's money) + the 11 open owner decisions | `docs/OWNER_CHECKLIST.md` | the report's section 3 | (phase commit) |
+| 5.4 - the manual test checklist was stale | DONE (replace) | it still described v1.5.0 (the default `admin/admin123`, the old licence grace, screens that no longer exist) | `MANUAL_TEST_CHECKLIST.md` | the report's section 3 | (phase commit) |
+| 5.5 - the release notes were stale | DONE (replace) | it still carried v2.15.1 as the newest release | `RELEASE_NOTES.md` | the report's section 3 | (phase commit) |
+| 5.6 - the version bump | DONE | `2.32.0` -> **2.33.0**; `package-lock.json`'s version field was still `2.21.0` and is now in step | `package.json`, `package-lock.json`, `AGENTS.md` (the version line) | the report's section 4 | (phase commit) |
+| 5.7 - the desktop release | IN PROGRESS | the NSIS installer + the portable build, published with a `latest.yml` rebuilt from the installer's OWN bytes, the blockmap and the version-less alias | `scripts/finalize-release.js`, `dist_release/` | the report's section 4 | (phase commit) |
+| 5.8 - the deploy | IN PROGRESS | the push to `main` (the push hook redeploys the Cloudflare Worker) + the marketing site updated to 2.33.0 | `.git/hooks/pre-push` -> `scripts/deploy-cloud.ps1`, `E:\antigravty\rokar-site\src\content.json` | the report's section 5 | (phase commit) |

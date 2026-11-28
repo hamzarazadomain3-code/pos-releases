@@ -1,105 +1,108 @@
-## Rokar POS v2.15.1 — hotfix
+# Rokar POS v2.33.0 — release notes
 
-**Label Studio crashed on opening for every user** ("Something went wrong — Cannot read
-properties of undefined (reading 'size')"). The page read the *configured paper size*
-(`labelPaper`, which defaults to `38x25`) as if it were a template id, found no template
-with that name, and crashed before it could render.
+**Released:** 2026-11-28
+**Baseline:** v2.32.0
+**Type:** a stabilization release. No new screens; the work is the master-prompt
+run's Phase 0 → 4 (defects, data safety, printing) plus the release/deploy work
+in Phase 5.
 
-- Opening the page no longer crashes, on any machine, with or without saved templates.
-- A second, hidden defect is fixed too: all 7 Label Studio dialogs (Template Manager,
-  Label Editor, Full Preview, Printer Settings, Calibration, Print History, Save As)
-  were rendered unconditionally — one full-screen overlay stacked on top of the other,
-  masked only by the crash. Each dialog now opens only when asked.
-- Legacy/corrupt saved templates are repaired on load; a missing template id falls back
-  to the default Retail template with a notice instead of a crash.
-- Error logging added: page crashes now write the real error + component stack to the
-  DevTools console instead of only the generic "Something went wrong" screen.
-- `npm run test:keyboard` gains a Label Studio crash-regression section (mounts with a
-  corrupt saved template + stale last-used id, no dialog stack on load, fallback notice,
-  focusable search, Template Manager renders the legacy template): 59/59 checks.
+This release is the result of a full audit-and-fix run over the live app. Every
+item below has a permanent regression test and a saved proof run; the details
+are in `docs/PHASE0_REPORT.md` … `docs/PHASE5_REPORT.md` and in the `CHANGELOG`.
 
----
+## The money path
 
-## Rokar POS v2.15.0
+- **A refused stock adjustment no longer destroys batch stock.** The FIFO
+  deduction is all-or-nothing: if the adjustment is refused, the batch, the
+  stock and the ledger stay exactly as they were.
+- **A bill with the same product on two lines keeps its own FIFO allocation
+  per line** — the ledger now names the right batch.
+- **Expired stock is one rule everywhere:** a batch that expired yesterday is
+  never sold; a batch expiring today is still sellable; a manager can override
+  with a PIN and a reason, and the override is written to the activity log.
+- **Returns release their FIFO allocation**, the shelf and the FIFO report
+  agree, and a cash refund reaches the drawer once (not twice, and not into the
+  customer's udhaar).
+- **The "today" leak is closed.** The Dashboard, the Reports and the Drawer all
+  use the shop's own business day, not the UTC day, so a sale at 00:30 no
+  longer lands on "yesterday".
 
-### Label Studio — Design & Print Your Own Product Labels
-A full label designer built into the app, so the shop can print retail labels that
-match its own layout instead of a fixed template.
+## The purchase order screen
 
-- **Draw the label yourself.** Add text, product name, price, barcode, QR code,
-  image and line elements at millimetre positions, then drag, resize, align and
-  rotate them on the canvas next to a live preview (with a mm ruler and zoom).
-- **Placeholders fill themselves per product:** `{name}`, `{price}`, `{sku}`,
-  `{barcode}`, `{expiry}`, `{shop}`, `{category}`, `{date}`, `{qty}`, `{unit}` and
-  more. Price follows the shop currency and decimal setting; barcodes validate
-  EAN-13 and fall back to Code 128 when the code is not a valid EAN.
-- **Templates:** nine ready-made label templates plus save / duplicate / delete for
-  the shop's own, and one-off custom sizes (any width × height) alongside the stock
-  sizes (38×25, 40×30, 50×25, 50×30, 58×40, 60×40, 100×50).
-- **Print options:** pick the label printer, nudge X/Y offset in mm, mirror, rotate,
-  repeat copies, and choose roll or A4 sheet layout.
-- **Export & calibration:** export the batch to PDF or PNG, and print a calibration
-  sheet (outline + mm ruler + guides) to line the label stock up before a run.
-- **Print history:** every batch is recorded; reprint any past batch exactly, or
-  clear the history.
+- **Backspace in the quantity box no longer deletes the row.**
+- **The supplier-switch guard**: changing the supplier on an order that already
+  has items asks what to do and keeps naming the original supplier until the
+  owner decides.
+- **A receipt is addressed to a line**, so two lines of the same product are
+  received one by one — the second line is not closed by the first receipt.
+- **A received order cannot be cancelled**, and an import cannot be undone
+  after the goods were received.
+- **The purchases permission is enforced in the service**, not only on the
+  screen: a cashier cannot create, receive, cancel or pay a purchase order.
+- **The Purchases screen, the PO modal and the import wizard are fully
+  bilingual** (English + Urdu).
 
-### Installer
-Download `RokarPOS-Setup-2.15.0.exe`
+## Printing
 
-## Rokar POS v2.14.0
+- **Printing from the receipt preview now behaves exactly like printing
+  directly**: the sale is remembered for "Reprint last receipt" and the cash
+  drawer pulses on a fresh receipt — it never did either from the preview
+  before.
+- **The printer choice is one tested rule.** A named printer prints silently;
+  "ask every time" always asks; the app never silently substitutes the Windows
+  default unless the owner explicitly picked "System default printer".
+- **Documents go to the printer that can print them**: a roll (58/80 mm) goes
+  to the receipt printer, a sheet (A4/A5) to the invoice printer. An A5
+  purchase order no longer comes out of the till's thermal printer.
+- **The "Print Test Page" button works** (it used to throw before printing),
+  and the A4 calibration sheet goes to the invoice printer.
+- **The label stock the shop configured is the page that prints** — every size
+  the engine knows, not just three.
+- **The udhaar entry slip follows the receipt paper** (a 58 mm shop no longer
+  gets an 80 mm slip).
+- **A successful print can now tell the owner something**: the "this layout
+  did not fit your paper" note is shown instead of being thrown away.
+- **Every preview toolbar speaks the shop's language** — receipt, invoice,
+  labels, purchase order and udhaar statement.
+- **The printer settings screen and the preview toolbar are bilingual**, and
+  the receipt-template panel shows a real printable width instead of
+  "Width: undefined".
 
-### Keyboard-First Navigation — Every Screen
-Whole-app keyboard operation. Every page and modal now shares one consistent
-keyboard layer, so a shop can run the till without touching the mouse.
+## Security and settings
 
-- **Global keys:** `Ctrl+K` page switcher, `F1` context help (shows only the keys
-  valid on the current screen), `Ctrl+N` new record, `Ctrl+F` search, `Ctrl+S`
-  save, `Ctrl+P` print. Combos are owner-rebindable from the existing shortcut
-  settings; the essentials work out of the box.
-- **Modals:** focus trap, `Esc` closes, `Enter` = next field (last field submits),
-  `Shift+Enter` = previous, first field auto-focused, numeric fields select-all on
-  focus.
-- **Tables & lists:** `↑`/`↓` highlight (never scrolls the page), `Home`/`End`,
-  `PageUp`/`PageDown`, `Enter` opens/selects, `Delete` deletes (with confirm),
-  type-ahead jumps to the search box.
-- **Editable grids:** `search → qty → price` Enter cycle, arrow cell navigation,
-  `Ctrl+Enter` submit, `Delete` row.
-- **Arrow keys never change numbers.** Price/qty fields use a purpose-built input
-  that leaves `↑`/`↓` for navigation instead of stepping the value.
-- **Applied everywhere:** Billing & Quick Sale (existing zones preserved), Quotations,
-  Returns, Purchases, Transfers, Audits, Production/FIFO, Promotions, Expenses,
-  Udhaar, Commissions, Inventory, Barcode Labels, Users & Roles, Settings, Shifts,
-  Cash Drawer, Login (Enter submit + on-screen PIN pad for touch), Reports and
-  Customers/Suppliers — plus every modal on those screens.
-- **Safe coexistence:** the barcode scanner, F-keys and any admin-defined shortcuts
-  keep working; the keyboard layer only acts on the screen that is on top.
+- **The credentials are encrypted at rest** (SMTP password, SMS keys, WhatsApp
+  token) with the OS keystore; the secret fields show dots and keep working.
+- **The password policy is enforced on create and update** through one shared
+  module. A 4–10 digit PIN is exempt from the complexity rules.
+- **A shift open for more than 24 hours is blocked**, and the forced
+  "set a new owner password" screen can no longer race the app shell.
+- **The admin settings and the shop profile agree** — one bridge owns the
+  shared keys, so changing the currency symbol in one screen updates the other.
 
-### Installer
-Download `RokarPOS-Setup-2.14.0.exe`
+## Install
 
-## Rokar POS v2.13.0
+- Download `RokarPOS-Setup.exe` from the website (the version-less alias always
+  points at the latest release) or `RokarPOS-Setup-2.33.0.exe` from the GitHub
+  release.
+- The updater checks `latest.yml` and verifies the installer's sha512; this
+  release ships a manifest rebuilt from the installer's own bytes.
+- **Take a backup before installing.** The migrations are additive, but a
+  backup is still the only way back.
 
-### Thermal Receipt Redesign
-- **Fixed right-edge clipping:** receipts no longer slice off the right-hand columns on 58mm or 80mm rolls. The body is exactly the printable width (48mm / 72mm) with 4mm side padding.
-- **One fixed item table on both rolls:** `# | PARTICULARS | QTY | RATE | DISC | AMOUNT` (58mm drops DISC and uses `ITEM`). Numeric columns are right-aligned and never run together; long product names wrap instead of overflowing.
-- **Invoice number on one line:** `INV-YYYYMMDD-NNNN` now prints as the compact `INV-MMDD-NNNN` instead of wrapping.
-- **NET TOTAL on one line:** 17px/900 with a solid rule; long amounts auto-shrink a step. Payments and totals print as full-width right-aligned rows (side-by-side overflowed on 80mm).
-- **Decimal quantities + units:** e.g. `0.57` with the unit label under the product name (Piece is omitted). Discount and Udhaar/Balance rows appear only when applicable.
-- **Editable receipt content** (Admin → System Settings → Billing): header lines, terms text, "software by" name, and a show/hide toggle for the item-number (`#`) column. Footer message defaults to "Come again soon!".
-- **Preview Receipt** button on Settings → Receipt Template renders the exact same HTML the printer uses.
+## Still open (owner decisions, not defects)
 
-### Installer
-Download `RokarPOS-Setup-2.13.0.exe`
+The full list is in `docs/OWNER_CHECKLIST.md` §9. The main ones:
 
-## Rokar POS v2.0.0
+- rotate the SMTP/SMS/WhatsApp credentials (the old app password was exposed
+  in the source history);
+- decide whether the strict password policy is acceptable for staff accounts;
+- pick the shop's default receipt template (the library ships with no default
+  on purpose);
+- decide whether the currency policy should reach every printed document;
+- decide whether the Receipt Designer should cover the invoice, purchase
+  order and statement too;
+- decide whether the legacy receipt-template dropdown is hidden or wired into
+  the library.
 
-### Fixes
-- **Scanner Detection:** Buffer gap 80->150ms, suffix support, 3x retry, improved indicator
-- **Session Persistence:** Remember Me checkbox, 24h localStorage session, 30-min lock timeout
-- **UI Performance:** memoized lineTotals, debounced inventory search (250ms)
-- **Reports Excel Export:** Multi-sheet XLSX for all 7 report types
-- **Alerts WhatsApp Delivery:** Unread critical/warning alerts + daily sales summary
-- **Time-based Triggers:** 7AM udhaar reminder, 6PM expiry check, 10PM daily report
-
-### Installer
-Download `RokarPOS-Setup-2.0.0.exe`
+Older release notes (v2.15.1 and earlier) remain in the git history and on the
+GitHub releases page.
