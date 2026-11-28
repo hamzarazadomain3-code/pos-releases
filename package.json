@@ -29,6 +29,7 @@
     "test:purchaseOrderHardening": "npm run build:main && electron scripts/test_purchaseOrderHardening.cjs",
     "test:purchaseOrderUi": "npm run build && electron scripts/test_purchaseOrderUi.cjs",
     "test:printPipeline": "npm run build:main && electron scripts/test_printPipeline.cjs",
+    "test:cloudShim": "node scripts/test_cloudShim.cjs",
     "test:utf8": "node scripts/test_mojibake.cjs",
     "test:ipcError": "npm run build:main && node scripts/test_ipcError.cjs",
     "test:timezone": "npm run build:main && node scripts/test_timezoneAudit.cjs",

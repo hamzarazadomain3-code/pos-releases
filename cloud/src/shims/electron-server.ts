@@ -114,6 +114,53 @@ export const ipcRenderer = {
   removeListener: noop,
 };
 
+/**
+ * `safeStorage` — the OS key store (Phase 0's credential vault,
+ * `src/main/services/secretVault.ts`).
+ *
+ * A Worker has NO OS key store, so:
+ *   - `isEncryptionAvailable()` is FALSE, which is the vault's documented
+ *     fallback: the credential is stored as plain text (exactly how the web
+ *     app stored it before the vault existed) and the owner is warned once;
+ *   - `decryptString()` returns '' — a value that was encrypted on the
+ *     DESKTOP is never "decrypted" into a secret here. The shop is told to
+ *     re-enter it, which is the vault's rule for a value that cannot be
+ *     decrypted;
+ *   - `encryptString()` THROWS on purpose. The vault asks first, so this is
+ *     unreachable today; if a future code path encrypts without asking, a
+ *     loud failure is safer than writing plain text under an "enc:v1:" prefix
+ *     that nobody can decrypt.
+ *
+ * This export is REQUIRED: without it the whole worker bundle fails to build
+ * ("No matching export in src/shims/electron-server.ts for import
+ * 'safeStorage'"), and the deploy dies. `npm run test:cloudShim` is the
+ * permanent guard for exactly that.
+ */
+export const safeStorage = {
+  isEncryptionAvailable: (): boolean => false,
+  encryptString: (): Buffer => {
+    throw new Error('safeStorage is not available on the server');
+  },
+  decryptString: (): string => '',
+};
+
+/**
+ * `powerMonitor` — the desktop's updater watches the 'resume' event to check
+ * for an update after the machine wakes up. A Worker has no power events, so
+ * the stub is a no-op. It is here because the desktop IMPORTS it as a value
+ * from 'electron': a missing export in this shim breaks the whole bundle
+ * ("No matching export in src/shims/electron-server.ts for import
+ * 'powerMonitor'"), even for a module the Worker does not use yet.
+ */
+export const powerMonitor = {
+  on: noop,
+  once: noop,
+  removeAllListeners: noop,
+  removeListener: noop,
+  getSystemIdleTime: (): number => 0,
+  getSystemIdleState: (): string => 'active',
+};
+
 export default {
   app,
   BrowserWindow,
@@ -126,4 +173,6 @@ export default {
   nativeImage,
   contextBridge,
   ipcRenderer,
+  safeStorage,
+  powerMonitor,
 };

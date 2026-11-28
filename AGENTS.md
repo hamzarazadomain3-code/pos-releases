@@ -622,6 +622,42 @@ of it (13 checks).
 - **IPC**: Handlers in `src/main/ipc.ts` under `registerIpcHandlers()`, bridge in `src/preload/preload.ts`
 - **Version bump**: Update `package.json` `version` field
 
+### The Worker bundles the REAL desktop code — so the electron shim must keep up
+
+The Cloudflare Worker (`cloud/`) bundles the desktop's **real**
+`src/main/ipc.ts` (through the `@desktop/ipc` specifier), so **every**
+desktop service comes with it. `electron` is aliased to
+`cloud/src/shims/electron-server.ts`, and **a missing export in that shim
+breaks the whole bundle**:
+
+```
+../src/main/services/secretVault.ts:1:9: ERROR: No matching export in
+"src/shims/electron-server.ts" for import "safeStorage"
+```
+
+That is exactly what Phase 0's credential vault did: it imported
+`safeStorage` from 'electron' and the **deploy died** — the 103-suite
+battery could not see it, because no suite builds the Worker.
+
+The rules now:
+
+- **Every VALUE import the desktop takes from `electron` must exist in the
+  shim** (a `import type { … }` is erased and needs nothing). `safeStorage`
+  (no key store on a Worker: `isEncryptionAvailable()` is false, a value
+  encrypted on the desktop reads as empty) and `powerMonitor` (no power
+  events on a Worker) are both there.
+- **`npm run test:cloudShim`** (13 checks) is the permanent guard: it scans
+  `src/main/**` for the electron imports, compares them with the shim's
+  exports, and then runs the **real** `cloud/scripts/build.mjs` (esbuild) and
+  insists the bundle is produced. Run it after ANY change that imports
+  something new from 'electron'.
+- The Worker is deployed by the **`.git/hooks/pre-push`** hook
+  (`scripts/deploy-cloud.ps1`) when `main` is pushed; its output is in
+  `.git/deploy-cloud.log`. A failed deploy leaves the **previous** Worker
+  live, so always read that log after a push — a silent failure is a stale
+  web app, not a broken one.
+
+
 ## Components
 - `migrations/024_inventory_advanced.js` — schema for advanced reports
 - `src/main/services/inventoryReports.ts` — purchase history, daily/weekly/monthly inventory, supplier metrics

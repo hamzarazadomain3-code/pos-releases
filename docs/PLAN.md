@@ -443,6 +443,7 @@ check, and ships it**:
 | 5.6 | the version bump | **DONE** | `2.32.0` → **2.33.0** (`package.json`; `package-lock.json`'s version field was still `2.21.0`) + the `AGENTS.md` version line | `git log` |
 | 5.7 | the desktop release | **DONE** | the NSIS installer + the portable build, published with a `latest.yml` rebuilt from the installer's OWN bytes, the blockmap and the version-less alias | `E:\temp\proof\release_v2.33.0.txt`, `verify_release_v2.33.0.txt` |
 | 5.8 | the deploy | **DONE** | the push to `main` (the hook redeploys the Worker) + the site updated to 2.33.0 | `E:\temp\proof\cloud_worker_deploy_v2.33.0.txt`, `vercel_site_v2.33.0.txt` |
+| 5.9 | the Worker deploy was broken by Phase 0's credential vault | **DONE (fix)** | the Worker bundles the REAL desktop `src/main/ipc.ts`, so `electron` is aliased to `cloud/src/shims/electron-server.ts`; Phase 0's `secretVault.ts` imports `safeStorage`, which the shim did not export - esbuild refused to bundle and the deploy died. No suite built the Worker, so the 103-suite battery could not see it | `cloud/src/shims/electron-server.ts` (`safeStorage`, `powerMonitor`), `scripts/test_cloudShim.cjs` (13 checks) + `npm run test:cloudShim` |
 
 ### The rule that Phase 5 added
 - **a suite's verdict comes from the suite's OWN output** — a pass marker AND

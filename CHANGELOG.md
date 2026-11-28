@@ -41,6 +41,21 @@ entries cite the phase item number. A DONE entry means code + a regression test
   website's button depends on.
 - **5.8** **The deploy**: the source pushed to `main` (the push hook
   redeploys the Cloudflare Worker) and the marketing site updated to 2.33.0.
+- **5.9** **The Worker deploy was broken by Phase 0's credential vault - and
+  the fix is now guarded.** The Worker bundles the **real** desktop
+  `src/main/ipc.ts`, so `electron` is aliased to
+  `cloud/src/shims/electron-server.ts`. Phase 0's
+  `src/main/services/secretVault.ts` imports `safeStorage` from 'electron',
+  and the shim had no such export, so esbuild refused to bundle and the
+  deploy died (`DEPLOY FAILED: npm run deploy exited with code 1`). The
+  **103-suite battery could not see it** - no suite builds the Worker. The
+  shim now exports `safeStorage` (no key store on a Worker: the credential
+  is stored as plain text, and a value encrypted on the desktop reads as
+  empty instead of leaking) and `powerMonitor` (no power events on a
+  Worker), and **`npm run test:cloudShim`** (13 checks) is the permanent
+  guard: it compares every value import the desktop takes from 'electron'
+  with the shim's exports and then runs the **real** cloud build and insists
+  the bundle is produced.
 
 ## Phase 4 - the printer pipeline (2026-11-27, baseline v2.32.0)
 
