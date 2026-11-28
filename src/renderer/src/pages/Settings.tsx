@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import type {
   ActivityRow,
   PrinterInfo,
@@ -13,9 +14,13 @@ import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
 import { ImageField } from '../components/ImageField';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
+import { previewLabels } from '../utils/previewLabels';
 import ReceiptDesigner from './ReceiptDesigner';
 
 export default function Settings() {
+  // Phase 4, item 4 — the printer + receipt-template surface is bilingual
+  // (English + Urdu), like the Purchases surface became in Phase 3.
+  const { t } = useTranslation();
   const [settings, setSettings] = useState<SettingsMap>({});
   // Null = not a trial, so the panel is hidden entirely for licensed shops.
   const [trial, setTrial] = useState<TrialStatus | null>(null);
@@ -33,7 +38,10 @@ export default function Settings() {
   const [waBusy, setWaBusy] = useState(false);
   const [waConnecting, setWaConnecting] = useState(false);
   const [pluMappings, setPluMappings] = useState<ScalePluMapping[]>([]);
-  const [receiptTemplates, setReceiptTemplates] = useState<Array<{ id: string; name: string; description: string; width: string }>>([]);
+  // Phase 4, item 4.13 — the backend sends `paper` + `contentMm` (the
+  // printable width in mm). The old type asked for a `width` field that does
+  // not exist, so the panel showed "Width: undefined".
+  const [receiptTemplates, setReceiptTemplates] = useState<Array<{ id: string; name: string; description: string; paper: string; contentMm: number }>>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string>('standard');
   const [designerOpen, setDesignerOpen] = useState(false);
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
@@ -726,18 +734,19 @@ export default function Settings() {
         </div>
 
         <div className="panel">
-          <div className="panel-title">Printers &amp; Paper</div>
+          <div className="panel-title">{t('printing.panelTitle')}</div>
           <div className="settings-form">
             <p className="muted small">
-              Pick a printer for each document type. If a printer is left on <strong>Ask every time</strong>, Windows
-              shows its print dialog each time so the job can never silently go to the wrong device.
-              Printers marked <em>file output</em> (XPS, PDF, OneNote, Fax) do not print to paper.
+              <Trans
+                i18nKey="printing.panelHint"
+                components={{ strong: <strong />, em: <em /> }}
+              />
             </p>
 
             {(['receipt', 'invoice', 'label'] as const).map((slot) => {
               const printerKey = `${slot}Printer` as const;
               const paperKey = `${slot}Paper` as const;
-              const title = slot === 'receipt' ? 'Receipts' : slot === 'invoice' ? 'Invoices' : 'Barcode Labels';
+              const title = t(`printing.slots.${slot}`);
               const currentPrinter = printSettings?.[printerKey] ?? 'auto';
               const currentPaper = printSettings?.[paperKey] ?? '';
               const paperOptions =
@@ -759,7 +768,7 @@ export default function Settings() {
                   <div style={{ fontWeight: 600, marginBottom: '8px' }}>{title}</div>
                   <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                     <label className="field" style={{ flex: '1 1 260px' }}>
-                      <span>Printer</span>
+                      <span>{t('printing.field.printer')}</span>
                       <select
                         value={currentPrinter}
                         onChange={async (e) => {
@@ -767,22 +776,22 @@ export default function Settings() {
                           setPrintSettings((s) => (s ? { ...s, [printerKey]: v } : s));
                           const r = await window.api.printing.setPrinter(slot, v);
                           if (!r.ok) setNotice(r.message);
-                          else setNotice(`${title} printer saved.`);
+                          else setNotice(t('printing.notice.printerSaved', { title }));
                         }}
                       >
-                        <option value="auto">Ask every time (show Windows dialog)</option>
-                        <option value="default">System default printer (print silently)</option>
+                        <option value="auto">{t('printing.printer.askEveryTime')}</option>
+                        <option value="default">{t('printing.printer.systemDefault')}</option>
                         {printers.map((p) => (
                           <option key={p.name} value={p.name}>
                             {p.displayName}
-                            {p.isDefault ? ' — Windows default' : ''}
-                            {p.isVirtual ? ' [file output / no paper]' : ''}
+                            {p.isDefault ? t('printing.printer.windowsDefault') : ''}
+                            {p.isVirtual ? t('printing.printer.fileOutput') : ''}
                           </option>
                         ))}
                       </select>
                     </label>
                     <label className="field" style={{ flex: '0 1 220px' }}>
-                      <span>Paper / size</span>
+                      <span>{t('printing.field.paper')}</span>
                       <select
                         value={currentPaper}
                         onChange={async (e) => {
@@ -790,7 +799,7 @@ export default function Settings() {
                           setPrintSettings((s) => (s ? { ...s, [paperKey]: v } : s));
                           const r = await window.api.printing.setPaper(slot, v);
                           if (!r.ok) setNotice(r.message);
-                          else setNotice(`${title} paper saved.`);
+                          else setNotice(t('printing.notice.paperSaved', { title }));
                         }}
                       >
                         {paperOptions.map(([k, v]) => {
@@ -811,7 +820,7 @@ export default function Settings() {
                   {slot === 'label' && (
                     <div style={{ marginTop: '8px' }}>
                       <label className="field" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span>Media</span>
+                        <span>{t('printing.field.media')}</span>
                         <select
                           value={printSettings?.labelLayout ?? 'roll'}
                           onChange={async (e) => {
@@ -821,26 +830,26 @@ export default function Settings() {
                           }}
                           style={{ width: 'auto' }}
                         >
-                          <option value="roll">Label roll (one label across)</option>
-                          <option value="sheet">A4 label sheet (grid)</option>
+                          <option value="roll">{t('printing.media.roll')}</option>
+                          <option value="sheet">{t('printing.media.sheet')}</option>
                         </select>
                       </label>
                       <label className="field" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
-                        <span>Barcode DPI</span>
+                        <span>{t('printing.field.barcodeDpi')}</span>
                         <select
                           value={printSettings?.barcodeDpi ?? 203}
                           onChange={async (e) => {
                             const n = parseInt(e.target.value) || 203;
                             setPrintSettings((s) => (s ? { ...s, barcodeDpi: n } : s));
                             const r = await window.api.admin.settings.set('barcode_dpi', String(n));
-                            if (r !== true) setNotice('Could not save the barcode DPI.');
+                            if (r !== true) setNotice(t('printing.notice.barcodeDpiFailed'));
                           }}
                           style={{ width: 'auto' }}
                         >
-                          <option value={203}>203 dpi (most label printers)</option>
-                          <option value={300}>300 dpi</option>
+                          <option value={203}>{t('printing.dpi.d203')}</option>
+                          <option value={300}>{t('printing.dpi.d300')}</option>
                         </select>
-                        <span className="muted small">Match your label printer's head so barcode bars snap to whole dots.</span>
+                        <span className="muted small">{t('printing.dpi.hint')}</span>
                       </label>
                     </div>
                   )}
@@ -860,12 +869,12 @@ export default function Settings() {
                   setPrintSettings((s) => (s ? { ...s, printMode: v } : s));
                   try {
                     const r = await window.api.admin.settings.set('print_mode', v);
-                    if (r !== true) setNotice('Could not save the print dialog preference.');
+                    if (r !== true) setNotice(t('printing.notice.printModeFailed'));
                     else
                       setNotice(
                         v === 'dialog'
-                          ? 'Every print will now ask which printer to use.'
-                          : 'Prints will use the printer chosen above.'
+                          ? t('printing.notice.alwaysAsk')
+                          : t('printing.notice.useChosen')
                       );
                   } catch (err) {
                     setNotice(err instanceof Error ? err.message : String(err));
@@ -874,8 +883,8 @@ export default function Settings() {
                 style={{ width: 'auto' }}
               />
               <span>
-                Always ask which printer to use
-                <span className="muted small"> — overrides the choices above and opens the Windows dialog for every print.</span>
+                {t('printing.field.alwaysAsk')}
+                <span className="muted small"> {t('printing.field.alwaysAskHint')}</span>
               </span>
             </label>
 
@@ -896,7 +905,7 @@ export default function Settings() {
                 }}
                 disabled={printBusy}
               >
-                {printBusy ? 'Sending…' : 'Print Test Page (Receipt)'}
+                {printBusy ? t('printing.test.sending') : t('printing.test.receipt')}
               </button>
               <button
                 className="btn"
@@ -914,40 +923,41 @@ export default function Settings() {
                 }}
                 disabled={printBusy}
               >
-                Print Test Page (A4 Invoice)
+                {t('printing.test.a4')}
               </button>
             </div>
             <p className="muted small" style={{ marginTop: '6px' }}>
-              Test pages print a millimetre ruler and black bars across the full printable width, so you can confirm the
-              paper is 58mm or 80mm and that nothing is cut off on the right edge.
+              {t('printing.test.hint')}
             </p>
             <p className="muted small">
-              The cash drawer is wired into the till's receipt printer, so it follows the <strong>Receipts</strong>{' '}
-              setting above.
+              <Trans
+                i18nKey="printing.drawerHint"
+                components={{ strong: <strong /> }}
+              />
             </p>
           </div>
         </div>
 
         <div className="panel">
-          <div className="panel-title">Receipt Template</div>
+          <div className="panel-title">{t('printing.template.panelTitle')}</div>
           <div className="settings-form">
             <p className="muted small">
-              Choose the receipt layout used when printing or previewing receipts. This affects the width, font, and overall design.
+              {t('printing.template.hint')}
             </p>
             <label className="field">
-              <span>Template</span>
+              <span>{t('printing.field.template')}</span>
               <select
                 value={selectedTemplate}
                 onChange={(e) => setSelectedTemplate(e.target.value)}
               >
-                {receiptTemplates.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name} — {t.description}</option>
+                {receiptTemplates.map((tpl) => (
+                  <option key={tpl.id} value={tpl.id}>{tpl.name} — {tpl.description}</option>
                 ))}
               </select>
             </label>
-            {receiptTemplates.filter((t) => t.id === selectedTemplate).map((t) => (
-              <div key={t.id} className="muted small" style={{ marginTop: 4 }}>
-                Width: {t.width}
+            {receiptTemplates.filter((tpl) => tpl.id === selectedTemplate).map((tpl) => (
+              <div key={tpl.id} className="muted small" style={{ marginTop: 4 }}>
+                {t('printing.template.width', { width: tpl.contentMm })}
               </div>
             ))}
             <div className="modal-actions">
@@ -956,13 +966,13 @@ export default function Settings() {
                 onClick={async () => {
                   try {
                     await window.api.admin.settings.set('receipt_template', selectedTemplate);
-                    setNotice('Receipt template saved!');
+                    setNotice(t('printing.template.saved'));
                   } catch (e) {
                     setNotice(e instanceof Error ? e.message : String(e));
                   }
                 }}
               >
-                Save Template
+                {t('printing.template.save')}
               </button>
               <button
                 className="btn"
@@ -978,10 +988,12 @@ export default function Settings() {
                     );
                     const sale = sales && sales[0];
                     if (!sale) {
-                      setNotice('No sale exists yet — make a test sale to preview the receipt.');
+                      setNotice(t('printing.template.noSale'));
                       return;
                     }
-                    await window.api.printing.previewReceipt(sale.id, selectedTemplate);
+                    await window.api.printing.previewReceipt(sale.id, selectedTemplate, {
+                      labels: previewLabels(t),
+                    });
                   } catch (e) {
                     setNotice(e instanceof Error ? e.message : String(e));
                   } finally {
@@ -989,10 +1001,10 @@ export default function Settings() {
                   }
                 }}
               >
-                {previewBusy ? 'Opening…' : 'Preview Receipt'}
+                {previewBusy ? t('printing.template.opening') : t('printing.template.preview')}
               </button>
               <button className="btn" onClick={() => setDesignerOpen(true)}>
-                Receipt Designer
+                {t('printing.template.designer')}
               </button>
             </div>
           </div>

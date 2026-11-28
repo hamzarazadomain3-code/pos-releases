@@ -242,7 +242,7 @@ async function run() {
   const invoiceNo = sale.sale.invoice_no;
 
   // A manager, for the "amend_allow_manager = 0" refusal screen.
-  auth.createUser({ username: 'amend_manager', password: 'manager123', pin: '2222', role: 'manager' });
+  auth.createUser({ username: 'amend_manager', password: 'Manager123', pin: '2222', role: 'manager' });
 
   registerIpcHandlers();
 
@@ -403,7 +403,7 @@ async function run() {
   await js('localStorage.clear()');
   await js('window.location.reload()');
   await new Promise((r) => setTimeout(r, 900));
-  await signIn('amend_manager', 'manager123');
+  await signIn('amend_manager', 'Manager123');
   await waitUntil(
     "window.__a.buttons().some((b) => (b.innerText || '').trim() === 'History')",
     'Billing mounted for the manager',

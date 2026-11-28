@@ -262,7 +262,7 @@ async function run() {
   // ───────────────────────────────────────────────────────────────────────────
   section('The permissions live in the service');
 
-  const cashier = auth.createUser({ username: 'items_cashier', password: 'cashier123', pin: '1111', role: 'cashier' });
+  const cashier = auth.createUser({ username: 'items_cashier', password: 'Cashier123', pin: '1111', role: 'cashier' });
   auth.setSessionUser(cashier.id);
   const cashierErr = throws(() =>
     billAmend.amendItems({
@@ -521,7 +521,7 @@ async function run() {
   // policy — only the owner may.
   const itemsManager = auth.createUser({
     username: 'items_manager',
-    password: 'manager123',
+    password: 'Manager123',
     pin: '2222',
     role: 'manager',
   });

@@ -1002,14 +1002,21 @@ export default function App() {
   }, []);
 
   const handleLogin = useCallback(async (u: UserRow, rememberMe: boolean) => {
+    // Phase 4, item 4.15 — the app shell and the FORCED "set a new owner
+    // password" screen must appear in the SAME commit. The flag used to be
+    // fetched AFTER setUser (and after the landing page), so for a frame the
+    // app was up WITHOUT the forced screen - a race every UI suite could
+    // lose, and a flash of an app the owner is not allowed to use yet.
+    const [mustChange, landing] = await Promise.all([
+      u.role === 'owner' ? window.api.auth.defaultPasswordActive().catch(() => false) : Promise.resolve(false),
+      resolveLanding(u.role),
+    ]);
     setUser(u);
-    setPage(await resolveLanding(u.role));
+    setPage(landing);
     if (rememberMe) {
       localStorage.setItem(SESSION_KEY, JSON.stringify({ user: u, savedAt: Date.now() }));
     }
-    if (u.role === 'owner') {
-      setMustChangePw(await window.api.auth.defaultPasswordActive());
-    }
+    setMustChangePw(mustChange);
     // The user's OWN opt-out (the assistant may be switched off for one
     // account without the owner doing anything).
     try {

@@ -7,7 +7,6 @@
  * `pageSize` or `margins`, which is why receipts printed as a narrow strip on
  * whatever paper the printer happened to be loaded with.
  */
-import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -42,12 +41,11 @@ import {
   previewReport,
 } from './xzReports';
 import { normalizeReceiptDesign, type ReceiptPaper } from '../../shared/receiptDesign';
-import type { PrintSaleOptions } from '../../shared/types';
+import type { PrintSaleOptions, PrintPreviewLabels } from '../../shared/types';
 import { buildLabelBatchHtml, type LabelProduct } from './labelTemplates';
 import { getProduct } from './inventory';
 import { getAdminSetting } from './admin';
 import { amendmentStamp } from './billAmendments';
-import { getDb } from '../db';
 import {
   printDocument,
   previewDocument,
@@ -59,9 +57,10 @@ import {
   LABEL_SPECS,
   AUTO_PRINTER,
   getConfiguredPaper,
-  getConfiguredPrinter,
   getLabelLayout,
   getReceiptCopies,
+  getCashDrawerKickEnabled,
+  openCashDrawer,
   invalidatePrinterCache,
   type LabelSize,
   type PaperKind,
@@ -70,7 +69,11 @@ import {
 } from './printService';
 
 export { buildReceiptHtml, buildInvoiceHtml, getAvailableTemplates, registerPrintProtocol };
-export type { PrintResult, ReceiptTemplate, LabelSize, PaperKind, PrintSaleOptions };
+export type { PrintResult, ReceiptTemplate, LabelSize, PaperKind, PrintSaleOptions, PrintPreviewLabels };
+// Phase 4, item 3 — the cash drawer pulse moved into `printService`, so the
+// whole "after a successful print" behaviour lives in ONE module. It is
+// re-exported here because the IPC layer imports it from this file.
+export { openCashDrawer };
 
 /** Is the "DUPLICATE COPY" stamp enabled? Default ON; only an explicit 'false' hides it. */
 function duplicateLabelEnabled(): boolean {
@@ -78,31 +81,6 @@ function duplicateLabelEnabled(): boolean {
     return getAdminSetting('receipt_duplicate_label') !== 'false';
   } catch {
     return true;
-  }
-}
-
-/** Should a completed sale pulse the cash drawer? Opt-in: default OFF. */
-function cashDrawerKickEnabled(): boolean {
-  try {
-    return getAdminSetting('cash_drawer_kick') === 'true';
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Record which sale was last sent to a printer, so "Reprint last receipt" works
- * after the sale modal is gone. Written straight to `admin_settings` (a
- * system-managed key) because `setAdminSetting` is owner-gated and a cashier
- * must be able to print.
- */
-function recordLastPrintedSale(saleId: number): void {
-  try {
-    getDb()
-      .prepare('INSERT OR REPLACE INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)')
-      .run('last_printed_sale_id', String(saleId));
-  } catch {
-    /* the reprint shortcut is a convenience — never fail a print over it */
   }
 }
 
@@ -193,19 +171,14 @@ export async function printSale(
   const job = await buildReceiptJobAsync(saleId, template, opts);
   const copies = opts.copies ?? getReceiptCopies();
   if (Number.isFinite(copies) && copies > 1) job.copies = Math.min(10, Math.floor(copies));
-  const result = await printDocument(job);
-  if (result.ok) {
-    recordLastPrintedSale(saleId);
-    // A reprint must not pop the drawer — only a fresh sale's print does.
-    const kick = opts.kickDrawer ?? (!opts.duplicate && cashDrawerKickEnabled());
-    if (kick) {
-      // Fire-and-forget: a drawer that isn't wired must not fail the print.
-      void openCashDrawer().then((r) => {
-        if (!r.ok) log(`cash drawer kick after print: ${r.message}`);
-      });
-    }
-  }
-  return result;
+  // Phase 4, item 3 — the job carries WHAT it is, and the print pipeline
+  // decides what happens afterwards (one rule for every print path):
+  //   - the sale is remembered as "the last printed sale";
+  //   - the cash drawer pulses for a FRESH receipt, never for a reprint.
+  job.saleId = saleId;
+  job.duplicate = !!opts.duplicate;
+  if (opts.kickDrawer !== undefined) job.kickDrawer = !!opts.kickDrawer;
+  return printDocument(job);
 }
 
 export async function previewReceipt(
@@ -213,10 +186,17 @@ export async function previewReceipt(
   template?: ReceiptTemplate,
   opts: PrintSaleOptions = {}
 ): Promise<PrintResult> {
-  return previewDocument(await buildReceiptJobAsync(saleId, template, opts), {
+  const job = await buildReceiptJobAsync(saleId, template, opts);
+  // Phase 4, item 3 — the preview's Print button must behave like the direct
+  // print, so the job carries the sale id (and whether it is a reprint).
+  job.saleId = saleId;
+  job.duplicate = !!opts.duplicate;
+  return previewDocument(job, {
     // Title is spec'd to read EXACTLY "Receipt preview".
     title: 'Receipt preview',
-    printButtonLabel: 'Print receipt',
+    printButtonLabel: opts.labels?.print || 'Print receipt',
+    // Phase 4, item 5 — the toolbar's strings in the shop's language.
+    labels: opts.labels,
     saleId,
     copies: opts.copies ?? getReceiptCopies(),
   });
@@ -300,17 +280,31 @@ export async function printInvoice(saleId: number): Promise<PrintResult> {
   return printDocument(buildInvoiceJob(saleId));
 }
 
-export async function previewInvoice(saleId: number): Promise<PrintResult> {
-  return previewDocument(buildInvoiceJob(saleId), { title: 'Invoice preview', printButtonLabel: 'Print invoice' });
+export async function previewInvoice(saleId: number, opts: PrintSaleOptions = {}): Promise<PrintResult> {
+  return previewDocument(buildInvoiceJob(saleId), {
+    title: 'Invoice preview',
+    printButtonLabel: opts.labels?.print || 'Print invoice',
+    // Phase 4, item 5 — the toolbar's strings in the shop's language.
+    labels: opts.labels,
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════
 //  BARCODE LABELS
 // ═══════════════════════════════════════════════════════════════════
 
-function resolveLabelSize(): LabelSize {
+/**
+ * The label stock the shop configured.
+ *
+ * Phase 4, item 4.10 — the shop can pick ANY stock size the engine knows
+ * (38x28, 40x30, 50x25, 58x40, 60x40, ...). The old resolver only accepted
+ * three of them, so everything else silently printed on a 38x25 page - the
+ * physical stock and the printed page did not match. Exported so the
+ * permanent suite can pin the rule.
+ */
+export function resolveLabelSize(): LabelSize {
   const configured = getConfiguredPaper('label');
-  if (configured === '38x25' || configured === '50x30' || configured === '100x50') return configured;
+  if (configured && configured in LABEL_SPECS) return configured as LabelSize;
   return '38x25';
 }
 
@@ -365,11 +359,15 @@ export async function printBarcodeBatch(
 export async function previewBarcodeBatch(
   productIds: number[],
   size?: LabelSize,
-  copies = 1
+  copies = 1,
+  labels?: PrintPreviewLabels
 ): Promise<PrintResult> {
   return previewDocument(await buildLabelJob(productIds, size, copies), {
     title: 'Barcode label preview',
-    printButtonLabel: 'Print labels',
+    // Phase 4, item 4.16 — the label preview's toolbar follows the shop's
+    // language too (it used to be English-only).
+    printButtonLabel: labels?.print || 'Print labels',
+    labels,
   });
 }
 
@@ -428,106 +426,9 @@ export function buildReceiptText(saleId: number): string {
   return lines.join('\n');
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  CASH DRAWER
-// ═══════════════════════════════════════════════════════════════════
-
-export async function openCashDrawer(): Promise<{ ok: boolean; message: string }> {
-  // The drawer is physically wired into the till's receipt printer, so it
-  // follows that setting. Unlike a document it cannot fall back to the Windows
-  // print dialog — there is nothing to show the user — so when no receipt
-  // printer is configured we use the system default rather than failing.
-  const configured = getConfiguredPrinter('receipt');
-  const target = configured && configured !== AUTO_PRINTER ? configured.replace(/'/g, "''") : '';
-  const script = `
-$ErrorActionPreference = 'Stop'
-$target = '${target}'
-try {
-  if ($target) {
-    $printer = Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $target } | Select-Object -First 1
-  }
-  if (-not $printer) {
-    $printer = Get-CimInstance Win32_Printer | Where-Object { $_.Default -eq $true } | Select-Object -First 1
-  }
-  if (-not $printer) {
-    Write-Output 'NO_PRINTER'
-    exit 2
-  }
-  Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public class DrawerPulse {
-  [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
-  public static extern bool OpenPrinter(string pPrinterName, out IntPtr phPrinter, IntPtr pDefault);
-  [DllImport("winspool.drv", SetLastError = true)]
-  public static extern bool ClosePrinter(IntPtr hPrinter);
-  [DllImport("winspool.drv", SetLastError = true)]
-  public static extern bool StartDocPrinter(IntPtr hPrinter, int level, ref DOC_INFO_1 pDocInfo);
-  [DllImport("winspool.drv", SetLastError = true)]
-  public static extern bool EndDocPrinter(IntPtr hPrinter);
-  [DllImport("winspool.drv", SetLastError = true)]
-  public static extern bool WritePrinter(IntPtr hPrinter, byte[] pBytes, int dwCount, out int dwWritten);
-  [StructLayout(LayoutKind.Sequential)]
-  public struct DOC_INFO_1 { public string pDocName; public string pOutputFile; public string pDatatype; }
-}
-'@
-  $docInfo = New-Object DrawerPulse+DOC_INFO_1
-  $docInfo.pDocName = 'Cash Drawer'
-  $docInfo.pDatatype = 'RAW'
-  $hPrinter = [IntPtr]::Zero
-  if (-not [DrawerPulse]::OpenPrinter($printer.Name, [ref]$hPrinter, [IntPtr]::Zero)) {
-    Write-Output 'OPEN_FAILED'
-    exit 3
-  }
-  try {
-    [DrawerPulse]::StartDocPrinter($hPrinter, 1, [ref]$docInfo) | Out-Null
-    # ESC/POS cash drawer kick: ESC p m t1 t2  (pulse pin 2, 50ms on, 250ms off)
-    $bytes = [byte[]](0x1B, 0x70, 0x00, 0x19, 0xFA)
-    $written = 0
-    [DrawerPulse]::WritePrinter($hPrinter, $bytes, $bytes.Length, [ref]$written) | Out-Null
-    [DrawerPulse]::EndDocPrinter($hPrinter) | Out-Null
-    Write-Output 'KICK_SENT'
-  } finally {
-    [DrawerPulse]::ClosePrinter($hPrinter) | Out-Null
-  }
-} catch {
-  Write-Output ('ERROR: ' + $_.Exception.Message)
-  exit 1
-}
-`;
-  return new Promise((resolve) => {
-    execFile(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-Command', script],
-      { timeout: 15000, windowsHide: true },
-      (err, stdout) => {
-        const out = String(stdout || '').trim();
-        if (out.includes('NO_PRINTER')) {
-          resolve({ ok: false, message: 'No default printer found. Connect a thermal printer to use the cash drawer.' });
-          return;
-        }
-        if (out.includes('OPEN_FAILED')) {
-          resolve({ ok: false, message: 'Could not open the printer for a drawer pulse. Check that the printer is online.' });
-          return;
-        }
-        if (err || out.includes('ERROR:')) {
-          resolve({
-            ok: false,
-            message: out.includes('ERROR:')
-              ? out.replace('ERROR: ', '')
-              : String(err?.message ?? 'Unknown printer error'),
-          });
-          return;
-        }
-        if (out.includes('KICK_SENT')) {
-          resolve({ ok: true, message: 'Cash drawer pulse sent.' });
-          return;
-        }
-        resolve({ ok: false, message: 'Cash drawer command failed — no response from printer.' });
-      }
-    );
-  });
-}
+// The cash-drawer pulse now lives in `printService` (Phase 4, item 3), so the
+// whole "after a successful print" behaviour is in ONE module. It is re-exported
+// above for the callers that import it from this file.
 
 // ═══════════════════════════════════════════════════════════════════
 //  DRAWER SUMMARY
@@ -622,8 +523,26 @@ export async function printDrawerSummary(
 //  CALIBRATION + SETTINGS HELPERS
 // ═══════════════════════════════════════════════════════════════════
 
+/**
+ * The paper a calibration sheet is printed on.
+ *
+ * Phase 4, item 4.9 — 'receipt' is NOT a paper key (the paper keys are
+ * thermal58 / thermal80 / a4 / a5). It used to go straight into PAPER_SPECS
+ * and the "Print Test Page (Receipt)" button died before it printed
+ * anything. Treat it as "the receipt paper this shop uses".
+ */
+export function resolveCalibrationPaper(paper?: PaperKind | string): PaperKind {
+  if (!paper || paper === 'receipt') return resolveReceiptPaper();
+  if (paper === 'thermal58' || paper === 'thermal80' || paper === 'a4' || paper === 'a5') {
+    return paper as PaperKind;
+  }
+  // An unknown key must not reach PAPER_SPECS - that is what crashed the
+  // button. Fall back to the receipt paper and let the caller report it.
+  return resolveReceiptPaper();
+}
+
 export async function printTestSheet(paper?: PaperKind): Promise<PrintResult> {
-  const chosen: PaperKind = paper ?? resolveReceiptPaper();
+  const chosen: PaperKind = resolveCalibrationPaper(paper);
   return printCalibration(chosen, buildCalibrationHtml);
 }
 

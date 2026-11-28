@@ -196,7 +196,7 @@ import { saveCsv, saveXlsx, exportProductsXlsx, exportSalesXlsx, exportCustomers
 import { getUdhaarLedger, getUdhaarAging, writeOffUdhaar, lookupUdhaarItem, searchUdhaarItems, createUdhaarEntry, getUdhaarEntry, listUdhaarCatalog, upsertUdhaarCatalog, deleteUdhaarCatalog } from './services/udhaar';
 import { printStatement, previewStatement, exportStatementPdf, statementText, printEntrySlip, entrySlipText, reminderText } from './services/udhaarPrinting';
 import { getCustomer, saveCustomer, findCustomerDuplicates, setCustomerStatus, deleteCustomer, mergeCustomers } from './services/customers';
-import type { UdhaarEntryInput, CustomerInput } from '../shared/types';
+import type { UdhaarEntryInput, CustomerInput, PrintPreviewLabels } from '../shared/types';
 import {
   cancelPurchaseOrder,
   createPurchaseOrder,
@@ -385,8 +385,8 @@ export function registerIpcHandlers(): void {
   handle('udhaar:printStatement', (_e, customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') =>
     printStatement(customerId, from, to, paper)
   );
-  handle('udhaar:previewStatement', (_e, customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') =>
-    previewStatement(customerId, from, to, paper)
+  handle('udhaar:previewStatement', (_e, customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58', labels?: PrintPreviewLabels) =>
+    previewStatement(customerId, from, to, paper, labels)
   );
   handle('udhaar:exportStatementPdf', (_e, customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') =>
     exportStatementPdf(customerId, from, to, paper)
@@ -563,9 +563,9 @@ export function registerIpcHandlers(): void {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  handle('printing:previewInvoice', async (_e, saleId: number) => {
+  handle('printing:previewInvoice', async (_e, saleId: number, opts?: PrintSaleOptions) => {
     try {
-      return await previewInvoice(saleId);
+      return await previewInvoice(saleId, opts);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
@@ -591,9 +591,9 @@ export function registerIpcHandlers(): void {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
-  handle('printing:previewBarcodeBatch', async (_e, productIds: number[], size?: LabelSize, copies?: number) => {
+  handle('printing:previewBarcodeBatch', async (_e, productIds: number[], size?: LabelSize, copies?: number, labels?: PrintPreviewLabels) => {
     try {
-      return await previewBarcodeBatch(Array.isArray(productIds) ? productIds : [], size, copies ?? 1);
+      return await previewBarcodeBatch(Array.isArray(productIds) ? productIds : [], size, copies ?? 1, labels);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
@@ -954,8 +954,8 @@ export function registerIpcHandlers(): void {
   handle('purchases:printOrder', (_e, id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58') =>
     printPurchaseOrder(id, paper ?? 'a4')
   );
-  handle('purchases:previewOrder', (_e, id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58') =>
-    previewPurchaseOrder(id, paper ?? 'a4')
+  handle('purchases:previewOrder', (_e, id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58', labels?: PrintPreviewLabels) =>
+    previewPurchaseOrder(id, paper ?? 'a4', labels)
   );
   handle('purchases:shareOrder', (_e, id: number) => buildPurchaseOrderHtml(id));
   handle('purchases:saveOrderText', (_e, id: number) => savePurchaseOrderText(id));

@@ -74,6 +74,7 @@ async function run() {
   const cashDrawer = require('../dist/main/services/cashDrawer.js');
   const reports = require('../dist/main/services/reports.js');
   const history = require('../dist/main/services/salesHistory.js');
+  const sharedHistory = require('../dist/shared/salesHistory.js');
   const billAmend = require('../dist/main/services/billAmendments.js');
   const migration089 = require('../migrations/089_bill_amendments.js');
   const settings = require('../dist/main/services/settings.js');
@@ -140,8 +141,10 @@ async function run() {
   const customerB = sales.createCustomer('Amend Customer B');
   const shift1 = shifts.openShift(1000);
 
-  const cashier = auth.createUser({ username: 'amend_cashier', password: 'cashier123', pin: '1111', role: 'cashier' });
-  const manager = auth.createUser({ username: 'amend_manager', password: 'manager123', pin: '2222', role: 'manager' });
+  // Phase 0's password policy applies to `createUser` too, so the fixture
+  // password must carry an uppercase letter and a digit (the PIN is exempt).
+  const cashier = auth.createUser({ username: 'amend_cashier', password: 'Cashier123', pin: '1111', role: 'cashier' });
+  const manager = auth.createUser({ username: 'amend_manager', password: 'Manager123', pin: '2222', role: 'manager' });
 
   const sale1 = sales.createSale({
     items: [{ product_id: product.id, qty: 2, price: 100, line_discount: 0, tax_rate: 0 }],
@@ -473,7 +476,16 @@ async function run() {
 
   // ── Dashboard / History / Sales list agree ────────────────────────────────
   section('Dashboard, Sales History and the sales list agree after amending');
-  const today = new Date().toISOString().slice(0, 10);
+  // The SHOP's business day, not the UTC date. `new Date().toISOString()`
+  // is the UTC day, and between midnight and 05:00 in Karachi that is
+  // YESTERDAY — so the history was asked about yesterday while the
+  // dashboard (which uses the business-day resolver) reported today. The
+  // app was right; this test was the one leaking UTC.
+  const today = sharedHistory.currentBusinessDate(
+    0,
+    new Date(),
+    history.getShopTimezone()
+  );
   const dash = reports.dashboard({ now: new Date(), startHour: 0 });
   const hist = history.historySummary({ from: today, to: today });
   check(

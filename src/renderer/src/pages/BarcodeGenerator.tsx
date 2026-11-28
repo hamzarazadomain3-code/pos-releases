@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import JsBarcode from 'jsbarcode';
 import type { Product } from '../../../shared/types';
 import { formatMoney } from '../utils/currency';
+import { previewLabels } from '../utils/previewLabels';
 import { KeyboardInput } from '../components/KeyboardInput';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { useKeyboardScope } from '../hooks/useKeyboardScope';
@@ -20,6 +22,9 @@ const LABEL_H: Record<LabelSize, string> = { '38x25': '25mm', '50x30': '30mm', '
 const BARCODE_H: Record<LabelSize, number> = { '38x25': 40, '50x30': 50, '100x50': 60 };
 
 export default function BarcodeGenerator() {
+  // Phase 4, item 4.16 — the preview window's toolbar is built by the MAIN
+  // process, so the renderer sends the translated strings with the request.
+  const { t } = useTranslation();
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProducts, setSelectedProducts] = useState<Set<number>>(new Set());
   const [labelSize, setLabelSize] = useState<LabelSize>('38x25');
@@ -147,7 +152,7 @@ export default function BarcodeGenerator() {
   const handlePreview = async () => {
     setBusy(true);
     try {
-      report(await window.api.printing.previewBarcodeBatch(selectedIds(), labelSize, copies));
+      report(await window.api.printing.previewBarcodeBatch(selectedIds(), labelSize, copies, previewLabels(t)));
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
     } finally {

@@ -719,5 +719,76 @@
       "noShiftTitle": "No shift is open",
       "noShiftBody": "Open a shift before the next bill."
     }
+  },
+  "printing": {
+    "panelTitle": "Printers & Paper",
+    "panelHint": "Pick a printer for each document type. If a printer is left on <strong>Ask every time</strong>, Windows shows its print dialog each time so the job can never silently go to the wrong device. Printers marked <em>file output</em> (XPS, PDF, OneNote, Fax) do not print to paper.",
+    "slots": {
+      "receipt": "Receipts",
+      "invoice": "Invoices",
+      "label": "Barcode Labels"
+    },
+    "field": {
+      "printer": "Printer",
+      "paper": "Paper / size",
+      "media": "Media",
+      "barcodeDpi": "Barcode DPI",
+      "alwaysAsk": "Always ask which printer to use",
+      "alwaysAskHint": "— overrides the choices above and opens the Windows dialog for every print.",
+      "template": "Template"
+    },
+    "printer": {
+      "askEveryTime": "Ask every time (show Windows dialog)",
+      "systemDefault": "System default printer (print silently)",
+      "windowsDefault": "— Windows default",
+      "fileOutput": "[file output / no paper]"
+    },
+    "media": {
+      "roll": "Label roll (one label across)",
+      "sheet": "A4 label sheet (grid)"
+    },
+    "dpi": {
+      "d203": "203 dpi (most label printers)",
+      "d300": "300 dpi",
+      "hint": "Match your label printer's head so barcode bars snap to whole dots."
+    },
+    "test": {
+      "sending": "Sending…",
+      "receipt": "Print Test Page (Receipt)",
+      "a4": "Print Test Page (A4 Invoice)",
+      "hint": "Test pages print a millimetre ruler and black bars across the full printable width, so you can confirm the paper is 58mm or 80mm and that nothing is cut off on the right edge."
+    },
+    "drawerHint": "The cash drawer is wired into the till's receipt printer, so it follows the <strong>Receipts</strong> setting above.",
+    "preview": {
+      "print": "Print receipt",
+      "printInvoice": "Print invoice",
+      "pdf": "Download PDF",
+      "whatsapp": "WhatsApp",
+      "close": "Close",
+      "copies": "Number of copies",
+      "printing": "Printing…",
+      "saving": "Saving…",
+      "sending": "Sending…",
+      "error": "Error: "
+    },
+    "notice": {
+      "printerSaved": "{{title}} printer saved.",
+      "paperSaved": "{{title}} paper saved.",
+      "barcodeDpiFailed": "Could not save the barcode DPI.",
+      "printModeFailed": "Could not save the print dialog preference.",
+      "alwaysAsk": "Every print will now ask which printer to use.",
+      "useChosen": "Prints will use the printer chosen above."
+    },
+    "template": {
+      "panelTitle": "Receipt Template",
+      "hint": "Choose the receipt layout used when printing or previewing receipts. This affects the width, font, and overall design.",
+      "width": "Printable width: {{width}}mm",
+      "save": "Save Template",
+      "saved": "Receipt template saved!",
+      "noSale": "No sale exists yet — make a test sale to preview the receipt.",
+      "preview": "Preview Receipt",
+      "opening": "Opening…",
+      "designer": "Receipt Designer"
+    }
   }
 }

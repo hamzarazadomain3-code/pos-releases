@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import JsBarcode from 'jsbarcode';
 import type { Product } from '@shared/types';
 import { normalizeBinaryPayload } from '@shared/binaryTransfer';
 import { LabelTemplate, LabelLayout, ProductOverride, LabelRunOptions, PRESET_SIZES, BUILTIN_TEMPLATES, DEFAULT_TEMPLATE_ID, defaultTemplate, parseSavedTemplates, normalizeTemplate, isKnownTemplateId, resolveSizeSpec } from '@pages/LabelStudio/types';
 import { formatMoney } from '@utils/currency';
+import { previewLabels } from '@utils/previewLabels';
 import { KeyboardInput } from '@components/KeyboardInput';
 import { useListKeyboard } from '@hooks/useListKeyboard';
 import { useKeyboardScope } from '@hooks/useKeyboardScope';
@@ -16,6 +18,9 @@ import { LabelEditorCanvas } from '@pages/LabelStudio/LabelEditorCanvas';
 import { PrintRunModal } from '@pages/LabelStudio/PrintRunModal';
 
 export default function LabelStudio() {
+  // Phase 4, item 4.16 — the preview window's toolbar is built by the MAIN
+  // process, so the renderer sends the translated strings with the request.
+  const { t } = useTranslation();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [selectedProducts, setSelectedProducts] = useState<Map<number, number>>(new Map());
@@ -339,7 +344,7 @@ export default function LabelStudio() {
       const productIds = Array.from(selectedProducts.keys());
       const size = typeof activeTemplate.size === 'string' ? activeTemplate.size : undefined;
       const copies = Math.max(1, Math.min(50, activeTemplate.defaults.copies));
-      await window.api.printing.previewBarcodeBatch(productIds, size, copies);
+      await window.api.printing.previewBarcodeBatch(productIds, size, copies, previewLabels(t));
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
     } finally { setBusy(false); }

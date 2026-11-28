@@ -1,8 +1,8 @@
 import { esc, getPrintSettings, htmlDocument, makeMoney, toShopProfile } from './printDocs';
-import { previewDocument, printDocument, printJobToPdf, type PrintJob, type PrintResult } from './printService';
+import { previewDocument, printDocument, printJobToPdf, getConfiguredPaper, type PrintJob, type PrintResult } from './printService';
 import { getUdhaarEntry, getUdhaarLedger, getUdhaarStatement, type UdhaarStatementRange } from './udhaar';
 import { formatLocalString } from '../utils/timezone';
-import type { Customer, UdhaarEntryDetail, UdhaarItemLine, UdhaarLedgerRow } from '../../shared/types';
+import type { Customer, UdhaarEntryDetail, UdhaarItemLine, UdhaarLedgerRow, PrintPreviewLabels } from '../../shared/types';
 import {
   renderDocument,
   type SaleData,
@@ -393,11 +393,14 @@ export async function previewStatement(
   customerId: number,
   from?: string,
   to?: string,
-  paper?: StatementPaper
+  paper?: StatementPaper,
+  labels?: PrintPreviewLabels
 ): Promise<PrintResult> {
   return previewDocument(buildStatementJob(customerId, from, to, paper), {
     title: 'Statement preview',
-    printButtonLabel: 'Print statement',
+    // Phase 4, item 4.16 — the preview toolbar follows the shop's language.
+    printButtonLabel: labels?.print || 'Print statement',
+    labels,
   });
 }
 
@@ -537,11 +540,27 @@ ${entry.note ? `<div class="rule"></div><div class="muted">Note: ${esc(entry.not
 <div class="center muted">${esc(shop.receipt_footer_text || 'Thank you for your business')}</div>`;
 }
 
+/**
+ * The roll an entry slip is printed on.
+ *
+ * Phase 4, item 4.12 — an entry slip used to be ALWAYS 80mm, so a shop on
+ * 58mm paper got a slip that does not fit its roll. With no explicit
+ * override the slip now follows the receipt paper the shop configured.
+ * Exported so the permanent suite can pin the rule.
+ */
+export function resolveEntrySlipPaper(
+  configured: string,
+  override?: 'thermal80' | 'thermal58'
+): 'thermal80' | 'thermal58' {
+  if (override === 'thermal58' || override === 'thermal80') return override;
+  return configured === 'thermal58' ? 'thermal58' : 'thermal80';
+}
+
 /** A roll (thermal) credit slip for one manual entry. */
 export function buildEntrySlipJob(transactionId: number, paper?: 'thermal80' | 'thermal58'): PrintJob {
   const entry = getUdhaarEntry(transactionId);
   if (!entry) throw new Error('Entry not found');
-  const roll: 'thermal80' | 'thermal58' = paper === 'thermal58' ? 'thermal58' : 'thermal80';
+  const roll = resolveEntrySlipPaper(getConfiguredPaper('receipt'), paper);
   const shop = toShopProfile(getPrintSettings());
   const saleData = toSaleData(entry);
   const design = defaultDocumentDesign('credit_slip', roll);

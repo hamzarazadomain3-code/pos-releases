@@ -28,6 +28,7 @@ import { getPrintSettings, toShopProfile } from './printDocs';
 import { printDocument, previewDocument } from './printService';
 import { saveXlsx } from './export';
 import { normalizeBinaryPayload } from '../../shared/binaryTransfer';
+import type { PrintPreviewLabels } from '../../shared/types';
 import { lineMoney, round2, unitsInBase, baseQty, costPerBaseUnit } from '../../shared/purchaseCalc';
 import {
   defaultDocumentDesign,
@@ -587,6 +588,19 @@ export function buildPurchaseOrderHtml(id: number, paper: DocumentPaper = 'a4'):
 }
 
 /**
+ * Which printer slot a document paper belongs to.
+ *
+ * Phase 4, item 4.11 — the old rule was `paper === 'a4' ? 'invoice' : 'receipt'`,
+ * so an A5 purchase order (which the IPC accepts) went to the till's THERMAL
+ * receipt printer even though A5 is sheet media. A ROLL belongs to the receipt
+ * printer, a SHEET to the invoice printer. Exported so the permanent suite can
+ * pin the rule.
+ */
+export function purchaseOrderPrinterKey(paper: DocumentPaper): 'receipt' | 'invoice' {
+  return paper === 'thermal80' || paper === 'thermal58' ? 'receipt' : 'invoice';
+}
+
+/**
  * Print a purchase order (A4 or thermal) through the ONE print path.
  *
  * The shop profile comes from the print settings — there is no hard-coded
@@ -599,7 +613,7 @@ export async function printPurchaseOrder(
   const job = {
     html: buildPurchaseOrderHtml(id, paper),
     paper,
-    printerKey: paper === 'a4' ? 'invoice' : 'receipt',
+    printerKey: purchaseOrderPrinterKey(paper),
     jobName: 'Purchase Order',
   };
   return printDocument(job as unknown as import('./printService').PrintJob);
@@ -608,15 +622,21 @@ export async function printPurchaseOrder(
 /** Preview a purchase order in the shared preview window. */
 export async function previewPurchaseOrder(
   id: number,
-  paper: DocumentPaper = 'a4'
+  paper: DocumentPaper = 'a4',
+  labels?: PrintPreviewLabels
 ): Promise<{ ok: boolean; message: string }> {
   const job = {
     html: buildPurchaseOrderHtml(id, paper),
     paper,
-    printerKey: paper === 'a4' ? 'invoice' : 'receipt',
+    printerKey: purchaseOrderPrinterKey(paper),
     jobName: 'Purchase Order',
   };
-  return previewDocument(job as unknown as import('./printService').PrintJob, { title: 'Purchase Order preview' });
+  return previewDocument(job as unknown as import('./printService').PrintJob, {
+    title: 'Purchase Order preview',
+    // Phase 4, item 4.16 — the preview toolbar follows the shop's language.
+    printButtonLabel: labels?.print || 'Print purchase order',
+    labels,
+  });
 }
 
 /** Save a plain-text version (share via WhatsApp / anything that takes text). */

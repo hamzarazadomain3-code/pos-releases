@@ -1502,6 +1502,42 @@ export interface PrinterSettingsSnapshot {
 export interface PrintResult {
   ok: boolean;
   message: string;
+  /**
+   * Phase 4, item 4.14 — the notes a successful print carries (e.g. "the
+   * template did not fit the paper, so another layout was used"). They used
+   * to be glued onto `message`, and the renderer threw every successful
+   * message away, so the owner never saw them.
+   */
+  warnings?: string[];
+}
+
+/**
+ * The preview window's toolbar labels (Phase 4, item 5).
+ *
+ * The toolbar is built in the MAIN process (it is injected into a plain
+ * `BrowserWindow` with no preload), so it cannot read the renderer's i18n
+ * files. The renderer therefore sends the TRANSLATED strings with the
+ * request, and the main process falls back to English when they are absent.
+ */
+export interface PrintPreviewLabels {
+  /** The main button — "Print receipt". */
+  print?: string;
+  /** "Download PDF". */
+  pdf?: string;
+  /** "WhatsApp". */
+  whatsapp?: string;
+  /** "Close". */
+  close?: string;
+  /** The copies box's tooltip — "Number of copies". */
+  copies?: string;
+  /** The label shown while the button is busy — "Printing…". */
+  printing?: string;
+  /** "Saving…" (the PDF button). */
+  saving?: string;
+  /** "Sending…" (the WhatsApp button). */
+  sending?: string;
+  /** The prefix of a failure message — "Error: ". */
+  error?: string;
 }
 
 /**
@@ -1511,12 +1547,14 @@ export interface PrintResult {
  *  - `amendedVersion` prints the CURRENT (amended) state and carries the
  *    "AMENDED" marker with the amendment count.
  *  - `kickDrawer` pulses the cash drawer after a successful print.
+ *  - `labels`   the preview toolbar's own strings, in the shop's language.
  */
 export interface PrintSaleOptions {
   copies?: number;
   duplicate?: boolean;
   amendedVersion?: boolean;
   kickDrawer?: boolean;
+  labels?: PrintPreviewLabels;
 }
 
 /**
@@ -1639,7 +1677,7 @@ export interface PosBridge {
     /** WhatsApp a slip for one manual entry. */
     shareEntrySlip: (transactionId: number, phone?: string) => Promise<WhatsAppSendResult>;
     printStatement: (customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') => Promise<PrintResult>;
-    previewStatement: (customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') => Promise<PrintResult>;
+    previewStatement: (customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58', labels?: PrintPreviewLabels) => Promise<PrintResult>;
     exportStatementPdf: (customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') => Promise<{ ok: boolean; message: string; data?: Blob | Uint8Array }>;
     /** WhatsApp a text statement (item list included). */
     shareStatement: (customerId: number, from?: string, to?: string, phone?: string) => Promise<WhatsAppSendResult>;
@@ -1660,7 +1698,7 @@ export interface PosBridge {
     printLabel: (productId: number, copies?: number) => Promise<PrintResult>;
     printBarcodeLabel: (productId: number, copies?: number) => Promise<PrintResult>;
     printBarcodeBatch: (productIds: number[], size?: string, copies?: number) => Promise<PrintResult>;
-    previewBarcodeBatch: (productIds: number[], size?: string, copies?: number) => Promise<PrintResult>;
+    previewBarcodeBatch: (productIds: number[], size?: string, copies?: number, labels?: PrintPreviewLabels) => Promise<PrintResult>;
     printBarcodeBatchWithOptions: (productIds: number[], size?: string, copies?: number, options?: { printer?: string; xOffset?: number; yOffset?: number; mirror?: boolean; rotation?: number; template?: unknown; run?: unknown }) => Promise<PrintResult>;
     exportLabelBatchToPDF: (productIds: number[], template: any, size?: string, copies?: number, run?: unknown) => Promise<{ ok: boolean; message: string; data?: Blob | Uint8Array }>;
     exportLabelBatchToPNG: (productIds: number[], template: any, size?: string, copies?: number, run?: unknown) => Promise<{ ok: boolean; message: string; data?: Blob | Uint8Array }>;
@@ -1668,7 +1706,7 @@ export interface PosBridge {
     openCashDrawer: () => Promise<{ ok: boolean; message: string }>;
     previewReceipt: (saleId: number, template?: string, opts?: PrintSaleOptions) => Promise<PrintResult>;
     reprintLastReceipt: () => Promise<PrintResult>;
-    previewInvoice: (saleId: number) => Promise<PrintResult>;
+    previewInvoice: (saleId: number, opts?: PrintSaleOptions) => Promise<PrintResult>;
     printInvoice: (saleId: number) => Promise<PrintResult>;
     // Phase 5: X/Z reports
     printXReport: (shiftId?: number) => Promise<PrintResult>;
@@ -1852,7 +1890,7 @@ export interface PosBridge {
     importLast: () => Promise<{ id: number; created_at: string; supplier_id: number | null; imported_count: number } | null>;
     importLog: (limit?: number) => Promise<PurchaseImportLogRow[]>;
     printOrder: (id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58') => Promise<{ ok: boolean; message: string }>;
-    previewOrder: (id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58') => Promise<{ ok: boolean; message: string }>;
+    previewOrder: (id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58', labels?: PrintPreviewLabels) => Promise<{ ok: boolean; message: string }>;
     shareOrder: (id: number) => Promise<string>;
     saveOrderText: (id: number) => Promise<boolean>;
   };
@@ -2066,7 +2104,13 @@ export interface PosBridge {
   receipt: {
     sendSms: (saleId: number, phone: string) => Promise<{ ok: boolean; message: string }>;
     sendEmail: (saleId: number, email: string) => Promise<{ ok: boolean; message: string }>;
-    getTemplates: () => Promise<Array<{ id: string; name: string; description: string; width: string }>>;
+    /**
+     * The receipt layouts the engine ships (Phase 4, item 4.13 — the shape is
+     * the backend's: the physical `paper` and the printable `contentMm` in
+     * mm. The old `width` field did not exist, so the Settings panel showed
+     * "Width: undefined").
+     */
+    getTemplates: () => Promise<Array<{ id: string; name: string; description: string; paper: string; contentMm: number }>>;
     getDesign: () => Promise<{ design: ReceiptDesign; enabled: boolean }>;
     setDesign: (design: ReceiptDesign, enabled?: boolean) => Promise<{ ok: boolean; message: string }>;
     resetDesign: () => Promise<{ ok: boolean; message: string }>;

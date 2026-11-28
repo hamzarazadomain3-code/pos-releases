@@ -13,6 +13,7 @@ import { runEscapeGesture, runPageRefresh } from '../keyboard/escapeRefresh';
 import { formatDateTimeAdmin, formatTimeAdmin, formatDateAdmin, toLocalDateString } from '../utils/dateUtils';
 import { getCurrencySymbol, formatMoney } from '../utils/currency';
 import { eventCombo, keyFromEvent, matchesShortcut } from '../utils/shortcutKeys';
+import { previewLabels } from '../utils/previewLabels';
 import { type CartLine, lineTotals, rehydrateCartLines, serializeCartLine, summarizeHeldBill, type HeldBillSummary } from '@shared/cartMath';
 import { defaultCombo, hintRows, isActionAllowedOn, resolveCombo, resolveCombos } from '@shared/shortcuts';
 import { parseNegativeStockPolicy, checkNegativeStock, type NegativeStockPolicy } from '@shared/negativeStock';
@@ -462,7 +463,7 @@ export default function Billing({
   const [showRunningBar, setShowRunningBar] = useState(true);
 
   // Receipt template selector
-  const [receiptTemplates, setReceiptTemplates] = useState<Array<{ id: string; name: string; description: string; width: string }>>([]);
+  const [receiptTemplates, setReceiptTemplates] = useState<Array<{ id: string; name: string; description: string; paper: string; contentMm: number }>>([]);
   const [receiptTemplate, setReceiptTemplate] = useState<string>('standard');
 
   const searchRef = useRef<HTMLInputElement>(null);
@@ -1201,7 +1202,10 @@ useEffect(() => {
       setExpiredApprovedBy(null);
       if ((autoPrintReceipt || opts?.forcePrint) && result.sale?.id) {
         window.api.printing.printSale(result.sale.id, receiptTemplate)
-          .then((r) => { if (r && r.ok === false) setNotice(`Auto-print failed: ${r.message}`); })
+          .then((r) => {
+          if (r && r.ok === false) setNotice(`Auto-print failed: ${r.message}`);
+          else if (r && r.warnings && r.warnings.length) setNotice(r.warnings.join(' '));
+        })
           .catch((e) => setNotice(`Auto-print failed: ${e instanceof Error ? e.message : String(e)}`));
       }
       return true;
@@ -1430,7 +1434,14 @@ useEffect(() => {
     if (!success?.sale?.id) return;
     window.api.printing
       .printInvoice(success.sale.id)
-      .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+      .then((r) => {
+        // Phase 4, item 4.14 — a SUCCESSFUL print can carry notes (e.g. the
+        // chosen layout did not fit the paper and another one was used). They
+        // used to be thrown away with the success message, so the owner never
+        // learned that the paper in Settings is wrong.
+        if (r && r.ok === false) setNotice(r.message);
+        else if (r && r.warnings && r.warnings.length) setNotice(r.warnings.join(' '));
+      })
       .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
   }, [success]);
 
@@ -1527,7 +1538,14 @@ useEffect(() => {
           if (success) {
             window.api.printing
               .printSale(success.sale.id, receiptTemplate, { duplicate: true })
-              .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+              .then((r) => {
+        // Phase 4, item 4.14 — a SUCCESSFUL print can carry notes (e.g. the
+        // chosen layout did not fit the paper and another one was used). They
+        // used to be thrown away with the success message, so the owner never
+        // learned that the paper in Settings is wrong.
+        if (r && r.ok === false) setNotice(r.message);
+        else if (r && r.warnings && r.warnings.length) setNotice(r.warnings.join(' '));
+      })
               .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
           } else {
             setNotice('No completed sale to print');
@@ -2233,7 +2251,10 @@ function openPay() {
       // Auto-print receipt if enabled
       if (autoPrintReceipt && result.sale?.id) {
         window.api.printing.printSale(result.sale.id, receiptTemplate)
-          .then((r) => { if (r && r.ok === false) setNotice(`Auto-print failed: ${r.message}`); })
+          .then((r) => {
+          if (r && r.ok === false) setNotice(`Auto-print failed: ${r.message}`);
+          else if (r && r.warnings && r.warnings.length) setNotice(r.warnings.join(' '));
+        })
           .catch((e) => setNotice(`Auto-print failed: ${e instanceof Error ? e.message : String(e)}`));
       }
     } catch (e) {
@@ -4019,8 +4040,15 @@ const handleUnitChange = (newLevel: number) => {
                   className="btn"
                   onClick={() => {
                     window.api.printing
-                      .previewReceipt(success.sale.id, receiptTemplate)
-                      .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+                      .previewReceipt(success.sale.id, receiptTemplate, { labels: previewLabels(t) })
+                      .then((r) => {
+        // Phase 4, item 4.14 — a SUCCESSFUL print can carry notes (e.g. the
+        // chosen layout did not fit the paper and another one was used). They
+        // used to be thrown away with the success message, so the owner never
+        // learned that the paper in Settings is wrong.
+        if (r && r.ok === false) setNotice(r.message);
+        else if (r && r.warnings && r.warnings.length) setNotice(r.warnings.join(' '));
+      })
                       .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
                   }}
                 >
@@ -4030,7 +4058,14 @@ const handleUnitChange = (newLevel: number) => {
                   className="btn"
                   onClick={() => {
                     window.api.printing.printSale(success.sale.id, receiptTemplate)
-                      .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+                      .then((r) => {
+        // Phase 4, item 4.14 — a SUCCESSFUL print can carry notes (e.g. the
+        // chosen layout did not fit the paper and another one was used). They
+        // used to be thrown away with the success message, so the owner never
+        // learned that the paper in Settings is wrong.
+        if (r && r.ok === false) setNotice(r.message);
+        else if (r && r.warnings && r.warnings.length) setNotice(r.warnings.join(' '));
+      })
                       .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
                   }}
                 >
@@ -4041,7 +4076,14 @@ const handleUnitChange = (newLevel: number) => {
                   title="Print the last completed sale again, stamped DUPLICATE COPY"
                   onClick={() => {
                     window.api.printing.reprintLastReceipt()
-                      .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+                      .then((r) => {
+        // Phase 4, item 4.14 — a SUCCESSFUL print can carry notes (e.g. the
+        // chosen layout did not fit the paper and another one was used). They
+        // used to be thrown away with the success message, so the owner never
+        // learned that the paper in Settings is wrong.
+        if (r && r.ok === false) setNotice(r.message);
+        else if (r && r.warnings && r.warnings.length) setNotice(r.warnings.join(' '));
+      })
                       .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
                   }}
                 >
@@ -4051,8 +4093,15 @@ const handleUnitChange = (newLevel: number) => {
                   className="btn"
                   onClick={() => {
                     window.api.printing
-                      .previewInvoice(success.sale.id)
-                      .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+                      .previewInvoice(success.sale.id, { labels: previewLabels(t, 'invoice') })
+                      .then((r) => {
+        // Phase 4, item 4.14 — a SUCCESSFUL print can carry notes (e.g. the
+        // chosen layout did not fit the paper and another one was used). They
+        // used to be thrown away with the success message, so the owner never
+        // learned that the paper in Settings is wrong.
+        if (r && r.ok === false) setNotice(r.message);
+        else if (r && r.warnings && r.warnings.length) setNotice(r.warnings.join(' '));
+      })
                       .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
                   }}
                 >
@@ -4954,7 +5003,14 @@ const handleUnitChange = (newLevel: number) => {
               )}
               <button className="btn btn-secondary" onClick={() => {
                 window.api.printing.printSale(saleDetail.id, undefined, { duplicate: true })
-                  .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+                  .then((r) => {
+        // Phase 4, item 4.14 — a SUCCESSFUL print can carry notes (e.g. the
+        // chosen layout did not fit the paper and another one was used). They
+        // used to be thrown away with the success message, so the owner never
+        // learned that the paper in Settings is wrong.
+        if (r && r.ok === false) setNotice(r.message);
+        else if (r && r.warnings && r.warnings.length) setNotice(r.warnings.join(' '));
+      })
                   .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
               }}>Reprint Receipt</button>
               <button className="btn btn-primary" onClick={handleDuplicateAsNewSale}>Duplicate as New Sale</button>
@@ -5033,7 +5089,14 @@ const handleUnitChange = (newLevel: number) => {
               )}
               <button className="btn btn-secondary" onClick={() => {
                 window.api.printing.printSale(saleDetail.id, undefined, { duplicate: true })
-                  .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+                  .then((r) => {
+        // Phase 4, item 4.14 — a SUCCESSFUL print can carry notes (e.g. the
+        // chosen layout did not fit the paper and another one was used). They
+        // used to be thrown away with the success message, so the owner never
+        // learned that the paper in Settings is wrong.
+        if (r && r.ok === false) setNotice(r.message);
+        else if (r && r.warnings && r.warnings.length) setNotice(r.warnings.join(' '));
+      })
                   .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
               }}>Reprint Receipt</button>
               <button className="btn btn-primary" onClick={handleDuplicateAsNewSale}>Duplicate as New Sale</button>
@@ -5059,7 +5122,14 @@ const handleUnitChange = (newLevel: number) => {
           }}
           onReprint={(saleId) => {
             window.api.printing.printSale(saleId, undefined, { duplicate: true, amendedVersion: true })
-              .then((r) => { if (r && r.ok === false) setNotice(r.message); })
+              .then((r) => {
+        // Phase 4, item 4.14 — a SUCCESSFUL print can carry notes (e.g. the
+        // chosen layout did not fit the paper and another one was used). They
+        // used to be thrown away with the success message, so the owner never
+        // learned that the paper in Settings is wrong.
+        if (r && r.ok === false) setNotice(r.message);
+        else if (r && r.warnings && r.warnings.length) setNotice(r.warnings.join(' '));
+      })
               .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
           }}
         />

@@ -37,6 +37,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { getAllAdminSettings } from './admin';
+import { getDb } from '../db';
 import { log } from '../logger';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -392,30 +393,116 @@ export function getReceiptBottomFeedMm(): number {
   return Number.isFinite(n) && n >= 0 ? Math.min(30, n) : 4;
 }
 
-interface Target {
+/**
+ * Should a completed sale pulse the cash drawer? Opt-in: default OFF.
+ *
+ * Phase 4, item 3 — the rule lives HERE (with the rest of the print pipeline)
+ * so the direct print, the preview window's Print button and the reprint all
+ * ask the SAME question.
+ */
+export function getCashDrawerKickEnabled(): boolean {
+  return safeAdminSetting('cash_drawer_kick') === 'true';
+}
+
+/**
+ * Remember which sale last reached a printer, so "Reprint last receipt" works
+ * after the sale modal is gone.
+ *
+ * Written straight to `admin_settings` (a system-managed key) because
+ * `setAdminSetting` is owner-gated and a cashier must be able to print.
+ */
+function recordLastPrintedSale(saleId: number): void {
+  try {
+    getDb()
+      .prepare('INSERT OR REPLACE INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)')
+      .run('last_printed_sale_id', String(saleId));
+  } catch {
+    /* the reprint shortcut is a convenience — never fail a print over it */
+  }
+}
+
+/**
+ * What must happen after a print SUCCEEDS.
+ *
+ * Phase 4, item 3 — this is the ONE rule for the "after a print" behaviour.
+ * It used to live in `printing.printSale()`, which meant the preview
+ * window's **Print** button (which calls `printDocument()` directly) never
+ * recorded the sale and never popped the cash drawer: the cashier printed the
+ * receipt from the preview, the drawer stayed shut and "Reprint last receipt"
+ * went back to the PREVIOUS sale.
+ *
+ * The rule:
+ *   - a job that carries NO sale id is not a customer receipt (an invoice, a
+ *     label, a test print, the calibration sheet). It never records a sale
+ *     and it NEVER pops the drawer;
+ *   - a job that carries a sale id records it as "the last printed sale";
+ *   - the drawer pops only for a FRESH receipt — a reprint never pops it, and
+ *     the caller can force it either way with `kickDrawer`.
+ */
+export interface AfterPrintActions {
+  /** The sale to remember as "the last printed sale" (null = not a sale). */
+  recordSaleId: number | null;
+  /** Should the cash drawer pulse? */
+  kickDrawer: boolean;
+}
+
+/** The pure rule behind "what happens after a successful print". */
+export function afterPrintActions(
+  job: { saleId?: number | null; duplicate?: boolean; kickDrawer?: boolean } | null | undefined,
+  drawerKickEnabled: boolean
+): AfterPrintActions {
+  const saleId = Number(job?.saleId) || 0;
+  if (!saleId) return { recordSaleId: null, kickDrawer: false };
+  const kick = job?.kickDrawer ?? (!job?.duplicate && drawerKickEnabled);
+  return { recordSaleId: saleId, kickDrawer: !!kick };
+}
+
+export interface Target {
   silent: boolean;
   deviceName: string;
   reason: string;
 }
 
 /**
- * Printer resolution policy:
+ * The printer resolution policy — ONE rule, in ONE place.
  *
+ * Phase 4, item 2 — this used to be a private function that read the settings
+ * from the database, so the rule could not be tested without a live settings
+ * table and a printer. It is now a PURE function (`resolvePrintTarget`) and
+ * the database-reading wrapper (`resolveTarget`) is only the glue.
+ *
+ * The policy:
  *  - `mode: 'dialog'` (or the admin `print_mode` = dialog) always shows the OS
  *    dialog, even when a printer is configured.
  *  - A printer explicitly chosen in Settings -> silent, straight to that printer.
- *  - No printer configured -> OS dialog, so the user always picks a real target.
+ *  - The explicit `DEFAULT_PRINTER` sentinel -> silent to the SYSTEM DEFAULT.
+ *  - `AUTO_PRINTER` ("ask every time") and "nothing configured" -> the OS
+ *    dialog, so the user always picks a real target.
  *
- * The app NEVER silently prints to the Windows default. On machines where that
- * default is a file-output printer (Microsoft XPS Document Writer, Print to PDF,
- * OneNote) silent printing produced a save-file prompt instead of a receipt —
- * and where the default was a `nul:`-port software printer the job vanished
- * entirely, which is what surfaced as random applications being opened.
+ * The app NEVER silently prints to the Windows default unless the owner
+ * explicitly picked the "System default printer" option. On machines where
+ * that default is a file-output printer (Microsoft XPS Document Writer, Print
+ * to PDF, OneNote) silent printing produced a save-file prompt instead of a
+ * receipt — and where the default was a `nul:`-port software printer the job
+ * vanished entirely, which is what surfaced as random applications opening.
  */
-function resolveTarget(job: PrintJob): Target {
-  const configured = (job.printerName || (job.printerKey ? getConfiguredPrinter(job.printerKey) : '') || '').trim();
+export function resolvePrintTarget(
+  input: {
+    /** The printer for THIS job (overrides the configured one). */
+    printerName?: string | null;
+    /** The printer configured in Settings for this slot. */
+    configuredPrinter?: string | null;
+    /** The job's own mode. */
+    mode?: 'auto' | 'dialog' | 'silent';
+    /** The shop's `print_mode` setting. */
+    printMode?: 'silent' | 'dialog';
+  },
+  printMode: 'silent' | 'dialog' = 'silent'
+): Target {
+  const configured = (input.printerName || input.configuredPrinter || '').trim();
+  const shopMode = input.printMode ?? printMode;
 
-  if (job.mode === 'dialog' || (job.mode !== 'silent' && getPrintMode() === 'dialog')) {
+  if (input.mode === 'dialog' || (input.mode !== 'silent' && shopMode === 'dialog')) {
     return { silent: false, deviceName: '', reason: 'print mode set to show the print dialog' };
   }
   // Explicit opt-in to the OS default printer: silent, deviceName '' tells
@@ -431,6 +518,18 @@ function resolveTarget(job: PrintJob): Target {
     deviceName: '',
     reason: 'no printer configured — choose one in Settings, or pick one in the print dialog',
   };
+}
+
+/** The wrapper that reads the shop's settings and applies the policy. */
+function resolveTarget(job: PrintJob): Target {
+  return resolvePrintTarget(
+    {
+      printerName: job.printerName,
+      configuredPrinter: job.printerKey ? getConfiguredPrinter(job.printerKey) : '',
+      mode: job.mode,
+    },
+    getPrintMode()
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -455,6 +554,19 @@ export interface PrintJob {
   /** Overrides the configured printer for this job only. */
   printerName?: string;
   jobName?: string;
+  /**
+   * Phase 4, item 3 — the sale this job prints.
+   *
+   * A job that carries a sale id IS a customer receipt: after it prints, the
+   * sale is remembered as "the last printed sale" (so **Reprint last receipt**
+   * works) and the cash drawer may pulse. A job WITHOUT one (an invoice, a
+   * label, the test print, the calibration sheet) never does either.
+   */
+  saleId?: number;
+  /** This job is a REPRINT — the cash drawer must not pulse. */
+  duplicate?: boolean;
+  /** Force the cash-drawer pulse on / off (the default is the shop setting). */
+  kickDrawer?: boolean;
   /** Non-fatal problems worth surfacing to the user. */
   warnings?: string[];
 }
@@ -462,6 +574,13 @@ export interface PrintJob {
 export interface PrintResult {
   ok: boolean;
   message: string;
+  /**
+   * Phase 4, item 4.14 — the notes a successful print carries (e.g. the
+   * chosen layout did not fit the paper, so another one was used). They are
+   * STRUCTURED, so the renderer can show them instead of guessing whether a
+   * message is a warning.
+   */
+  warnings?: string[];
 }
 
 /** On-screen width (px) that matches the real printed content width. */
@@ -846,13 +965,144 @@ async function renderJob<T>(
   throw lastErr;
 }
 
+/**
+ * Run the "after a successful print" behaviour.
+ *
+ * Phase 4, item 3 — every print path ends here: the direct print, the preview
+ * window's **Print** button and the reprint. The rule itself is
+ * `afterPrintActions()` (pure, and directly testable).
+ */
+export function runAfterPrint(job: PrintJob): AfterPrintActions {
+  const actions = afterPrintActions(job, getCashDrawerKickEnabled());
+  if (actions.recordSaleId) recordLastPrintedSale(actions.recordSaleId);
+  if (actions.kickDrawer) {
+    // Fire-and-forget: a drawer that isn't wired must never fail the print.
+    void openCashDrawer().then((r) => {
+      if (!r.ok) log(`cash drawer kick after print: ${r.message}`);
+    });
+  }
+  return actions;
+}
+
+/**
+ * Pulse the cash drawer.
+ *
+ * Phase 4, item 3 — this moved here from `printing.ts` so the whole
+ * "after a print" behaviour lives in ONE module: the drawer is physically
+ * wired into the till's receipt printer, so it is a print-pipeline concern.
+ *
+ * Unlike a document it cannot fall back to the Windows print dialog — there is
+ * nothing to show the user — so when no receipt printer is configured we use
+ * the system default rather than failing.
+ */
+export async function openCashDrawer(): Promise<{ ok: boolean; message: string }> {
+  const configured = getConfiguredPrinter('receipt');
+  const target = configured && configured !== AUTO_PRINTER ? configured.replace(/'/g, "''") : '';
+  const script = `
+$ErrorActionPreference = 'Stop'
+$target = '${target}'
+try {
+  if ($target) {
+    $printer = Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $target } | Select-Object -First 1
+  }
+  if (-not $printer) {
+    $printer = Get-CimInstance Win32_Printer | Where-Object { $_.Default -eq $true } | Select-Object -First 1
+  }
+  if (-not $printer) {
+    Write-Output 'NO_PRINTER'
+    exit 2
+  }
+  Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class DrawerPulse {
+  [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
+  public static extern bool OpenPrinter(string pPrinterName, out IntPtr phPrinter, IntPtr pDefault);
+  [DllImport("winspool.drv", SetLastError = true)]
+  public static extern bool ClosePrinter(IntPtr hPrinter);
+  [DllImport("winspool.drv", SetLastError = true)]
+  public static extern bool StartDocPrinter(IntPtr hPrinter, int level, ref DOC_INFO_1 pDocInfo);
+  [DllImport("winspool.drv", SetLastError = true)]
+  public static extern bool EndDocPrinter(IntPtr hPrinter);
+  [DllImport("winspool.drv", SetLastError = true)]
+  public static extern bool WritePrinter(IntPtr hPrinter, byte[] pBytes, int dwCount, out int dwWritten);
+  [StructLayout(LayoutKind.Sequential)]
+  public struct DOC_INFO_1 { public string pDocName; public string pOutputFile; public string pDatatype; }
+}
+'@
+  $docInfo = New-Object DrawerPulse+DOC_INFO_1
+  $docInfo.pDocName = 'Cash Drawer'
+  $docInfo.pDatatype = 'RAW'
+  $hPrinter = [IntPtr]::Zero
+  if (-not [DrawerPulse]::OpenPrinter($printer.Name, [ref]$hPrinter, [IntPtr]::Zero)) {
+    Write-Output 'OPEN_FAILED'
+    exit 3
+  }
+  try {
+    [DrawerPulse]::StartDocPrinter($hPrinter, 1, [ref]$docInfo) | Out-Null
+    # ESC/POS cash drawer kick: ESC p m t1 t2  (pulse pin 2, 50ms on, 250ms off)
+    $bytes = [byte[]](0x1B, 0x70, 0x00, 0x19, 0xFA)
+    $written = 0
+    [DrawerPulse]::WritePrinter($hPrinter, $bytes, $bytes.Length, [ref]$written) | Out-Null
+    [DrawerPulse]::EndDocPrinter($hPrinter) | Out-Null
+    Write-Output 'KICK_SENT'
+  } finally {
+    [DrawerPulse]::ClosePrinter($hPrinter) | Out-Null
+  }
+} catch {
+  Write-Output ('ERROR: ' + $_.Exception.Message)
+  exit 1
+}
+`;
+  return new Promise((resolve) => {
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', script],
+      { timeout: 15000, windowsHide: true },
+      (err, stdout) => {
+        const out = String(stdout || '').trim();
+        if (out.includes('NO_PRINTER')) {
+          resolve({ ok: false, message: 'No default printer found. Connect a thermal printer to use the cash drawer.' });
+          return;
+        }
+        if (out.includes('OPEN_FAILED')) {
+          resolve({ ok: false, message: 'Could not open the printer for a drawer pulse. Check that the printer is online.' });
+          return;
+        }
+        if (err || out.includes('ERROR:')) {
+          resolve({
+            ok: false,
+            message: out.includes('ERROR:')
+              ? out.replace('ERROR: ', '')
+              : String(err?.message ?? 'Unknown printer error'),
+          });
+          return;
+        }
+        if (out.includes('KICK_SENT')) {
+          resolve({ ok: true, message: 'Cash drawer pulse sent.' });
+          return;
+        }
+        resolve({ ok: false, message: 'Cash drawer command failed — no response from printer.' });
+      }
+    );
+  });
+}
+
 /** Render, size and print a document. This is the app's only print entry point. */
 export async function printDocument(job: PrintJob): Promise<PrintResult> {
   const target = resolveTarget(job);
   try {
     const result = await renderJob(job, (win, geo) => runPrint(win, job, geo, target));
+    if (result.ok) {
+      // Phase 4, item 3 — ONE rule for every print path (see `runAfterPrint`).
+      runAfterPrint(job);
+    }
     if (job.warnings && job.warnings.length && result.ok) {
-      return { ok: result.ok, message: `${result.message} ${job.warnings.join(' ')}` };
+      // Phase 4, item 4.14 — the notes are STRUCTURED now, so the renderer
+      // can show them without guessing whether a message is a warning (the
+      // old code glued them onto `message`, and every successful message was
+      // thrown away by the renderer).
+      return { ok: result.ok, message: result.message, warnings: job.warnings.slice() };
     }
     return result;
   } catch (e) {
@@ -1016,6 +1266,29 @@ function textResponse(body: string, status = 200): Response {
   return new Response(body, { status, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 }
 
+/**
+ * The job the preview window's **Print** button actually prints.
+ *
+ * Phase 4, item 3 — the preview used to call `printDocument()` with the bare
+ * job, so the print behaved differently from the direct print: the sale was
+ * not remembered ("Reprint last receipt" went back to the previous sale) and
+ * the cash drawer never popped. The preview now carries the sale id on the
+ * job, so the SAME `afterPrintActions()` rule applies to it.
+ *
+ * The copies box in the preview toolbar rides along here (clamped 1..10).
+ */
+export function previewPrintJob(job: PrintJob, saleId: number | null, copies: number): PrintJob {
+  const n = Math.floor(Number(copies));
+  const effectiveCopies = Number.isFinite(n) && n > 0 ? Math.min(10, n) : 0;
+  const out: PrintJob = {
+    ...job,
+    saleId: saleId ?? job.saleId ?? undefined,
+    duplicate: job.duplicate,
+  };
+  if (effectiveCopies > 0) out.copies = effectiveCopies;
+  return out;
+}
+
 export function registerPrintProtocol(): void {
   if (protocolRegistered) return;
   protocolRegistered = true;
@@ -1044,7 +1317,11 @@ export function registerPrintProtocol(): void {
         if (!job) return textResponse('Unknown print job.', 404);
         // The toolbar's copies box rides along on the query string.
         const copies = Math.floor(Number(params.get('copies')));
-        const effective = Number.isFinite(copies) && copies > 0 ? { ...job, copies } : job;
+        // Phase 4, item 3 — the preview's Print button must behave EXACTLY
+        // like the direct print: same document, same copies, and the same
+        // "after the print" behaviour (the sale is remembered, the drawer
+        // pops for a fresh receipt).
+        const effective = previewPrintJob(job, previewSaleIds.get(token) ?? null, copies);
         const res = await printDocument(effective);
         return textResponse(res.message);
       }
@@ -1102,11 +1379,23 @@ export function registerPrintProtocol(): void {
  * Toolbar injected into every preview window. Written with plain string
  * concatenation (no backticks / `${}`) because it is itself embedded in a
  * template literal by `injectToolbar`.
+ *
+ * Phase 4, item 5 — every visible string is a placeholder, so the renderer can
+ * send the shop's language (the toolbar lives in the MAIN process and cannot
+ * read the renderer's i18n files).
  */
 const TOOLBAR_JS = `
 (() => {
   const TOKEN = __TOKEN__;
   const PRINT_LABEL = __PRINT_LABEL__;
+  const PDF_LABEL = __PDF_LABEL__;
+  const SHARE_LABEL = __SHARE_LABEL__;
+  const CLOSE_LABEL = __CLOSE_LABEL__;
+  const COPIES_TITLE = __COPIES_TITLE__;
+  const PRINTING_LABEL = __PRINTING_LABEL__;
+  const SAVING_LABEL = __SAVING_LABEL__;
+  const SENDING_LABEL = __SENDING_LABEL__;
+  const ERROR_LABEL = __ERROR_LABEL__;
   const SHOW_PDF = __SHOW_PDF__;
   const SHOW_SHARE = __SHOW_SHARE__;
   const COPIES = __COPIES__;
@@ -1126,7 +1415,7 @@ const TOOLBAR_JS = `
     fetch(url)
       .then((r) => r.text())
       .then((t) => { meta.textContent = t; })
-      .catch((err) => { meta.textContent = 'Error: ' + err; })
+      .catch((err) => { meta.textContent = ERROR_LABEL + err; })
       .finally(() => { busy.on = false; btn.disabled = false; btn.textContent = original; });
   };
   const copiesBox = document.createElement('input');
@@ -1135,33 +1424,33 @@ const TOOLBAR_JS = `
   copiesBox.min = '1';
   copiesBox.max = '10';
   copiesBox.value = String(COPIES || 1);
-  copiesBox.title = 'Number of copies';
+  copiesBox.title = COPIES_TITLE;
   bar.appendChild(copiesBox);
   const go = document.createElement('button');
   go.className = 'go';
   go.textContent = PRINT_LABEL;
   go.onclick = () => {
     const n = Math.max(1, Math.min(10, parseInt(copiesBox.value, 10) || 1));
-    call('posprint://print/' + TOKEN + '?copies=' + n, go, 'Printing…');
+    call('posprint://print/' + TOKEN + '?copies=' + n, go, PRINTING_LABEL);
   };
   bar.appendChild(go);
   if (SHOW_PDF) {
     const pdf = document.createElement('button');
     pdf.className = 'alt';
-    pdf.textContent = 'Download PDF';
-    pdf.onclick = () => call('posprint://pdf/' + TOKEN, pdf, 'Saving…');
+    pdf.textContent = PDF_LABEL;
+    pdf.onclick = () => call('posprint://pdf/' + TOKEN, pdf, SAVING_LABEL);
     bar.appendChild(pdf);
   }
   if (SHOW_SHARE) {
     const share = document.createElement('button');
     share.className = 'alt';
-    share.textContent = 'WhatsApp';
-    share.onclick = () => call('posprint://share/' + TOKEN, share, 'Sending…');
+    share.textContent = SHARE_LABEL;
+    share.onclick = () => call('posprint://share/' + TOKEN, share, SENDING_LABEL);
     bar.appendChild(share);
   }
   const x = document.createElement('button');
   x.className = 'x';
-  x.textContent = 'Close';
+  x.textContent = CLOSE_LABEL;
   x.onclick = () => { fetch('posprint://close/' + TOKEN).catch(() => {}); };
   bar.appendChild(x);
   document.body.appendChild(bar);
@@ -1199,33 +1488,79 @@ body { background: #fff; box-shadow: 0 1px 8px rgba(0,0,0,.35); }
 @media print { #__posbar { display: none !important; } body { padding-top: 0 !important; } }
 `;
 
+/** The preview toolbar's own strings (Phase 4, item 5). */
+export interface PreviewLabels {
+  print?: string;
+  pdf?: string;
+  whatsapp?: string;
+  close?: string;
+  copies?: string;
+  printing?: string;
+  saving?: string;
+  sending?: string;
+  error?: string;
+}
+
+/** The English fallbacks — used when the renderer sends no labels. */
+const DEFAULT_PREVIEW_LABELS: Required<PreviewLabels> = {
+  print: 'Print receipt',
+  pdf: 'Download PDF',
+  whatsapp: 'WhatsApp',
+  close: 'Close',
+  copies: 'Number of copies',
+  printing: 'Printing…',
+  saving: 'Saving…',
+  sending: 'Sending…',
+  error: 'Error: ',
+};
+
 function injectToolbar(
   win: BrowserWindow,
   token: string,
   meta: string,
-  opts: { printLabel: string; showPdf: boolean; showShare: boolean; copies: number }
-): void {
+  opts: {
+    printLabel: string;
+    showPdf: boolean;
+    showShare: boolean;
+    copies: number;
+    labels?: PreviewLabels;
+  }
+): Promise<void> {
+  const l = { ...DEFAULT_PREVIEW_LABELS, ...(opts.labels || {}) };
   const js = TOOLBAR_JS
     .replace(/__TOKEN__/g, JSON.stringify(token))
     .replace(/__META__/g, JSON.stringify(meta))
     .replace(/__PRINT_LABEL__/g, JSON.stringify(opts.printLabel))
+    .replace(/__PDF_LABEL__/g, JSON.stringify(l.pdf))
+    .replace(/__SHARE_LABEL__/g, JSON.stringify(l.whatsapp))
+    .replace(/__CLOSE_LABEL__/g, JSON.stringify(l.close))
+    .replace(/__COPIES_TITLE__/g, JSON.stringify(l.copies))
+    .replace(/__PRINTING_LABEL__/g, JSON.stringify(l.printing))
+    .replace(/__SAVING_LABEL__/g, JSON.stringify(l.saving))
+    .replace(/__SENDING_LABEL__/g, JSON.stringify(l.sending))
+    .replace(/__ERROR_LABEL__/g, JSON.stringify(l.error))
     .replace(/__SHOW_PDF__/g, opts.showPdf ? 'true' : 'false')
     .replace(/__SHOW_SHARE__/g, opts.showShare ? 'true' : 'false')
     .replace(/__COPIES__/g, String(Math.max(1, Math.floor(opts.copies) || 1)));
-  win.webContents
+  return win.webContents
     .executeJavaScript(`(() => {
       const s = document.createElement('style');
       s.textContent = ${JSON.stringify(TOOLBAR_CSS)};
       document.head.appendChild(s);
       ${js}
     })()`)
-    .catch((e) => log(`preview toolbar injection failed: ${String(e)}`));
+    .then(() => undefined)
+    .catch((e) => {
+      throw new Error(`preview toolbar injection failed: ${String(e)}`);
+    });
 }
 
 export interface PreviewOptions {
   /** Shown in the preview toolbar. */
   title: string;
   printButtonLabel?: string;
+  /** Phase 4, item 5 — the toolbar's strings in the shop's language. */
+  labels?: PreviewLabels;
   /** Sale behind a receipt preview — turns on the Download PDF + WhatsApp buttons. */
   saleId?: number;
   /** Offer the "Download PDF" button (default: on). */
@@ -1247,6 +1582,10 @@ export async function previewDocument(job: PrintJob, opts: PreviewOptions): Prom
   const win = newPrintWindow(winPx, 700);
   win.setTitle(opts.title);
   const token = `p${++tokenSeq}-${Date.now()}`;
+  // Phase 4, item 3 — the preview carries the sale id on the job, so the
+  // preview's Print button behaves like the direct print (the sale is
+  // remembered and a fresh receipt pops the drawer).
+  if (opts.saleId) job.saleId = opts.saleId;
   previewJobs.set(token, job);
   previewWindows.set(token, win);
   if (opts.saleId) previewSaleIds.set(token, opts.saleId);
@@ -1276,12 +1615,27 @@ export async function previewDocument(job: PrintJob, opts: PreviewOptions): Prom
       Math.round(winPx),
       Math.max(300, Math.min(1600, Math.round(mmToPx(geo.heightMm)) + 46))
     );
-    injectToolbar(win, token, `${opts.title} — ${geo.widthMm}mm wide`, {
-      printLabel: opts.printButtonLabel || 'Print',
-      showPdf: opts.allowPdf !== false,
-      showShare: opts.allowShare !== false && !!opts.saleId,
-      copies: opts.copies && opts.copies > 0 ? opts.copies : 1,
-    });
+    try {
+      await injectToolbar(win, token, `${opts.title} — ${geo.widthMm}mm wide`, {
+        printLabel: opts.printButtonLabel || opts.labels?.print || DEFAULT_PREVIEW_LABELS.print,
+        showPdf: opts.allowPdf !== false,
+        showShare: opts.allowShare !== false && !!opts.saleId,
+        copies: opts.copies && opts.copies > 0 ? opts.copies : 1,
+        labels: opts.labels,
+      });
+    } catch (e) {
+      // Phase 4, item 4.14 — a preview WITHOUT its toolbar is a preview the
+      // owner cannot print from, save or close. It used to be reported as
+      // "Preview opened." anyway (the injection error was only logged), so
+      // the owner saw a window with no controls and no explanation.
+      const msg = e instanceof Error ? e.message : String(e);
+      log(`preview toolbar injection failed: ${msg}`);
+      disposeWindow(win);
+      previewJobs.delete(token);
+      previewWindows.delete(token);
+      previewSaleIds.delete(token);
+      return { ok: false, message: `Could not open the preview: ${msg}` };
+    }
     // The loaded document carries its own <title>Receipt</title>, which Chromium
     // pushes onto the window title. Re-assert ours AFTER the load so the window
     // is titled exactly as spec'd ("Receipt preview"), not "Receipt".
@@ -1305,13 +1659,36 @@ export async function previewDocument(job: PrintJob, opts: PreviewOptions): Prom
 //  CALIBRATION
 // ═══════════════════════════════════════════════════════════════════
 
+/**
+ * Which printer slot a paper belongs to.
+ *
+ * Phase 4, items 4.9 / 4.11 — a ROLL (thermal58 / thermal80) belongs to the receipt
+ * printer, a SHEET (A4 / A5) to the invoice printer. The old rule was
+ * "`a4` means the invoice printer, everything else the receipt printer", so
+ * an A5 purchase order went to the till's thermal printer.
+ */
+export function printerKeyForPaper(paper: PaperKind | string): PrinterKey {
+  return paper === 'a4' || paper === 'a5' ? 'invoice' : 'receipt';
+}
+
 export async function printCalibration(
   paper: PaperKind,
   build: (widthMm: number, printerLabel: string) => string
 ): Promise<PrintResult> {
   const spec = PAPER_SPECS[paper];
+  // Phase 4, item 4.9 — an unknown paper used to be dereferenced blind
+  // (`PAPER_SPECS['receipt']` is undefined, because the paper keys are
+  // thermal58 / thermal80 / a4 / a5), so the "Print Test Page" button threw
+  // before it printed anything. Fail with a reason instead.
+  if (!spec) {
+    return { ok: false, message: `Unknown paper: ${String(paper)}` };
+  }
+  // A SHEET (A4/A5) belongs to the invoice printer; a ROLL to the receipt
+  // printer. The old code always used the receipt printer, so the A4 test
+  // page went to the till's thermal printer.
+  const printerKey: PrinterKey = printerKeyForPaper(paper);
   let printerLabel = 'unknown printer';
-  const configured = getConfiguredPrinter('receipt');
+  const configured = getConfiguredPrinter(printerKey);
   try {
     const list = await getAvailablePrinters();
     const match = configured && configured !== AUTO_PRINTER ? list.find((p) => p.name === configured) : list.find((p) => p.isDefault);
@@ -1322,7 +1699,7 @@ export async function printCalibration(
   return printDocument({
     html: build(spec.widthMm, printerLabel),
     paper,
-    printerKey: 'receipt',
+    printerKey,
     jobName: `Calibration sheet (${spec.widthMm}mm)`,
   });
 }

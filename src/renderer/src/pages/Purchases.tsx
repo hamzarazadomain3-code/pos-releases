@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { Product, PurchaseItem, PurchaseOrder, PurchasePriceRow, Supplier, SupplierTransaction } from '../../../shared/types';
 import { DateRangePicker, SearchInput, FilterBar, FilterRow } from '../components/filters';
 import { formatDateTimeAdmin } from '../utils/dateUtils';
+import { previewLabels } from '../utils/previewLabels';
 import { Modal } from '../components/Modal';
 import { KeyboardInput } from '../components/KeyboardInput';
 import { useListKeyboard } from '../hooks/useListKeyboard';
@@ -786,7 +787,7 @@ export default function Purchases() {
               </div>
             </div>
             <div className="row-btns" style={{ flexWrap: 'wrap' }}>
-              <button className="btn btn-sm" onClick={() => window.api.purchases.previewOrder(poView.order.id).catch((e) => setErr(String(e)))}>
+              <button className="btn btn-sm" onClick={() => window.api.purchases.previewOrder(poView.order.id, 'a4', previewLabels(t)).catch((e) => setErr(String(e)))}>
                 {t('purchases.page.previewPrint')}
               </button>
               <button className="btn btn-sm" onClick={() => printPo(poView.order.id, 'a4')}>

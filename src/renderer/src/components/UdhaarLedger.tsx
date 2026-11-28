@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type {
   UdhaarItemLine,
   UdhaarLedger,
@@ -10,6 +11,7 @@ import { UdhaarEntryModal } from './UdhaarEntryModal';
 import { UdhaarCatalogModal } from './UdhaarCatalogModal';
 import { SearchInput, DateRangePicker } from './filters';
 import { formatDateTimeAdmin, formatDateAdmin } from '../utils/dateUtils';
+import { previewLabels } from '../utils/previewLabels';
 import { formatMoney, getCurrencySymbol } from '../utils/currency';
 import { useListKeyboard } from '../hooks/useListKeyboard';
 import { downloadBytes } from '../utils/download';
@@ -42,6 +44,7 @@ export interface UdhaarLedgerModalProps {
 }
 
 export function UdhaarLedgerModal({ customerId, onClose, onChanged }: UdhaarLedgerModalProps) {
+  const { t } = useTranslation();
   const [data, setData] = useState<UdhaarLedger | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -168,8 +171,21 @@ export function UdhaarLedgerModal({ customerId, onClose, onChanged }: UdhaarLedg
     if (!data) return;
     setBusy(true);
     try {
-      const fn = preview ? window.api.udhaar.previewStatement : window.api.udhaar.printStatement;
-      const res = await fn(data.customer.id, from || undefined, to || undefined, paper);
+      // Phase 4, item 4.16 — the preview toolbar follows the shop's language.
+      const res = preview
+        ? await window.api.udhaar.previewStatement(
+            data.customer.id,
+            from || undefined,
+            to || undefined,
+            paper,
+            previewLabels(t)
+          )
+        : await window.api.udhaar.printStatement(
+            data.customer.id,
+            from || undefined,
+            to || undefined,
+            paper
+          );
       if (!res.ok) setNotice(res.message);
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
@@ -240,7 +256,9 @@ export function UdhaarLedgerModal({ customerId, onClose, onChanged }: UdhaarLedg
 
   async function openReceipt(saleId: number) {
     try {
-      const res = await window.api.printing.previewReceipt(saleId);
+      const res = await window.api.printing.previewReceipt(saleId, undefined, {
+        labels: previewLabels(t),
+      });
       if (!res.ok) setNotice(res.message);
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));

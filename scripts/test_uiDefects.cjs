@@ -307,11 +307,29 @@ async function signIn(username, password) {
     `login as ${username}`,
     20000
   );
-  if (await js("/owner password/i.test(window.__ui.loginText())")) {
+  // The app shows a FORCED "set a new owner password" screen when the owner is
+  // still on the default password. It appears ONE TICK AFTER the login (the
+  // app asks the service first), so the old code RACED it: on a loaded
+  // machine the screen was not up yet, the branch was skipped, and the forced
+  // screen then stayed on top of EVERYTHING - including the dialogs whose
+  // z-order this suite measures. Ask the service whether the screen is coming
+  // instead of guessing, and wait for it to really be gone (a silent "the
+  // login screen is gone" check passed while the forced screen was still up).
+  const forced = await js('window.api.auth.defaultPasswordActive().catch(() => false)');
+  if (forced) {
+    await waitUntil(
+      "/owner password/i.test(window.__ui.loginText())",
+      'the forced password screen',
+      10000
+    );
     await js("window.__ui.setLogin(0, 'OwnerPass1')");
     await js("window.__ui.setLogin(1, 'OwnerPass1')");
     await js("window.__ui.clickLogin('Save')");
-    await waitUntil('!window.__ui.hasLogin()', 'the forced password modal to close', 20000);
+    await waitUntil(
+      '!/owner password/i.test(window.__ui.loginText())',
+      'the forced password modal to close',
+      20000
+    );
   }
 }
 

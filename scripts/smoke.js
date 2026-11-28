@@ -256,7 +256,15 @@ sales.receivePayment(uCust.id, 30, 'cash', 'partial');
   }
 
   // ---- Reports / Automation ----
-  const exp = reports.addExpense({ title: 'Test Rent', category: 'Rent', amount: 500, expense_date: new Date().toISOString().slice(0, 10) });
+  // The SHOP's business day, not the UTC date (between midnight and 05:00 in
+  // Karachi the UTC day is yesterday, so the expense would land outside
+  // "today's expenses").
+  const shopToday = require('../dist/shared/salesHistory.js').currentBusinessDate(
+    0,
+    new Date(),
+    require('../dist/main/services/salesHistory.js').getShopTimezone()
+  );
+  const exp = reports.addExpense({ title: 'Test Rent', category: 'Rent', amount: 500, expense_date: shopToday });
   console.log('EXPENSE_ADDED=' + exp.id + ' AMOUNT=' + exp.amount);
 
   const dash = reports.dashboard();
@@ -447,8 +455,10 @@ sales.receivePayment(uCust.id, 30, 'cash', 'partial');
   const lBad = auth.login('admin', 'wrongpass');
   console.log('LOGIN_BAD=' + !lBad.ok);
 
-  const cash = auth.createUser({ username: 'cash1', password: 'cash123', pin: '1234', role: 'cashier' });
-  const mgr = auth.createUser({ username: 'mgr1', password: 'mgr123', role: 'manager' });
+  // Phase 0's password policy applies to `createUser` too, so the fixture
+  // passwords must carry an uppercase letter and a digit.
+  const cash = auth.createUser({ username: 'cash1', password: 'Cash123', pin: '1234', role: 'cashier' });
+  const mgr = auth.createUser({ username: 'mgr1', password: 'Mgr123', role: 'manager' });
   console.log('USER_CREATED cash=' + cash.username + ' role=' + cash.role + ' total=' + auth.listUsers().length);
 
   try {
@@ -500,13 +510,13 @@ sales.receivePayment(uCust.id, 30, 'cash', 'partial');
   auth.logout();
   console.log('LOGOUT_CURRENT=' + (auth.currentUser() === null));
 
-  const lNew = auth.login('cash1', 'cash123');
+  const lNew = auth.login('cash1', 'Cash123');
   console.log('LOGIN_CASH_PASS=' + lNew.ok);
 
   auth.login('admin', 'admin123');
-  const updatedUser = auth.updateUser(cash.id, { password: 'cash999' });
+  const updatedUser = auth.updateUser(cash.id, { password: 'Cash999' });
   console.log('RESET_PASSWORD_OK=' + (updatedUser.id === cash.id));
-  console.log('LOGIN_NEW_PASS=' + auth.login('cash1', 'cash999').ok + ' OLD_REJECTED=' + !auth.login('cash1', 'cash123').ok);
+  console.log('LOGIN_NEW_PASS=' + auth.login('cash1', 'Cash999').ok + ' OLD_REJECTED=' + !auth.login('cash1', 'Cash123').ok);
   auth.login('admin', 'admin123');
   const setPinMgr = auth.updateUser(mgr.id, { pin: '7777' });
   console.log('SET_MGR_PIN=OK');
@@ -781,10 +791,16 @@ sales.receivePayment(uCust.id, 30, 'cash', 'partial');
   console.log('DEFAULT_PW=' + auth.defaultPasswordActive());
   auth.login('admin', 'admin123');
   const pwAdmin = auth.listUsers().find((u) => u.username === 'admin');
-  auth.updateUser(pwAdmin.id, { password: 'temp999' });
+  auth.updateUser(pwAdmin.id, { password: 'Temp9999' });
   console.log('DEFAULT_PW_AFTER_CHANGE=' + auth.defaultPasswordActive());
-  auth.updateUser(pwAdmin.id, { password: 'admin123' });
-  console.log('DEFAULT_PW_RESTORED=' + auth.defaultPasswordActive());
+  // Phase 0: the password policy applies on UPDATE too, so the legacy default
+  // ('admin123') can no longer be set through the service — by design.
+  try {
+    auth.updateUser(pwAdmin.id, { password: 'admin123' });
+    console.log('DEFAULT_PW_RESTORED=' + auth.defaultPasswordActive());
+  } catch (e) {
+    console.log('DEFAULT_PW_RESTORED=refused-by-policy');
+  }
   auth.logout();
 
   console.log('PACKAGING_DONE');

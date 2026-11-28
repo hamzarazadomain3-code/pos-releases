@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { PosBridge } from '../shared/types';
+import type { PosBridge, PrintSaleOptions, PrintPreviewLabels } from '../shared/types';
 
 const bridge: PosBridge = {
   app: {
@@ -85,8 +85,8 @@ const bridge: PosBridge = {
     ledger: (customerId: number) => ipcRenderer.invoke('udhaar:ledger', customerId),
     printStatement: (customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') =>
       ipcRenderer.invoke('udhaar:printStatement', customerId, from, to, paper),
-    previewStatement: (customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') =>
-      ipcRenderer.invoke('udhaar:previewStatement', customerId, from, to, paper),
+    previewStatement: (customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58', labels?: PrintPreviewLabels) =>
+      ipcRenderer.invoke('udhaar:previewStatement', customerId, from, to, paper, labels),
     exportStatementPdf: (customerId: number, from?: string, to?: string, paper?: 'a4' | 'thermal80' | 'thermal58') =>
       ipcRenderer.invoke('udhaar:exportStatementPdf', customerId, from, to, paper),
     shareStatement: (customerId: number, from?: string, to?: string, phone?: string) =>
@@ -127,7 +127,7 @@ const bridge: PosBridge = {
     printLabel: (productId: number, copies?: number) => ipcRenderer.invoke('printing:printLabel', productId, copies),
     printBarcodeLabel: (productId: number, copies?: number) => ipcRenderer.invoke('printing:printBarcodeLabel', productId, copies),
     printBarcodeBatch: (productIds: number[], size?: string, copies?: number) => ipcRenderer.invoke('printing:printBarcodeBatch', productIds, size, copies),
-    previewBarcodeBatch: (productIds: number[], size?: string, copies?: number) => ipcRenderer.invoke('printing:previewBarcodeBatch', productIds, size, copies),
+    previewBarcodeBatch: (productIds: number[], size?: string, copies?: number, labels?: PrintPreviewLabels) => ipcRenderer.invoke('printing:previewBarcodeBatch', productIds, size, copies, labels),
     printBarcodeBatchWithOptions: (productIds: number[], size?: string, copies?: number, options?: { printer?: string; xOffset?: number; yOffset?: number; mirror?: boolean; rotation?: number; template?: unknown; run?: unknown }) => ipcRenderer.invoke('printing:printBarcodeBatchWithOptions', productIds, size, copies, options),
     exportLabelBatchToPDF: (productIds: number[], template: unknown, size?: string, copies?: number, run?: unknown) => ipcRenderer.invoke('printing:exportLabelBatchToPDF', productIds, template, size, copies, run),
     exportLabelBatchToPNG: (productIds: number[], template: unknown, size?: string, copies?: number, run?: unknown) => ipcRenderer.invoke('printing:exportLabelBatchToPNG', productIds, template, size, copies, run),
@@ -135,7 +135,8 @@ const bridge: PosBridge = {
     openCashDrawer: () => ipcRenderer.invoke('printing:openCashDrawer'),
     previewReceipt: (saleId: number, template?: string, opts?: { copies?: number; duplicate?: boolean }) => ipcRenderer.invoke('printing:previewReceipt', saleId, template, opts),
     reprintLastReceipt: () => ipcRenderer.invoke('printing:reprintLastReceipt'),
-    previewInvoice: (saleId: number) => ipcRenderer.invoke('printing:previewInvoice', saleId),
+    previewInvoice: (saleId: number, opts?: PrintSaleOptions) =>
+      ipcRenderer.invoke('printing:previewInvoice', saleId, opts),
     // Phase 5: X/Z reports
     printXReport: (shiftId?: number) => ipcRenderer.invoke('printing:printXReport', shiftId),
     printZReport: () => ipcRenderer.invoke('printing:printZReport'),
@@ -312,8 +313,8 @@ const bridge: PosBridge = {
     importLog: (limit?: number) => ipcRenderer.invoke('purchases:importLog', limit),
     printOrder: (id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58') =>
       ipcRenderer.invoke('purchases:printOrder', id, paper),
-    previewOrder: (id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58') =>
-      ipcRenderer.invoke('purchases:previewOrder', id, paper),
+    previewOrder: (id: number, paper?: 'a4' | 'a5' | 'thermal80' | 'thermal58', labels?: PrintPreviewLabels) =>
+      ipcRenderer.invoke('purchases:previewOrder', id, paper, labels),
     shareOrder: (id: number) => ipcRenderer.invoke('purchases:shareOrder', id),
     saveOrderText: (id: number) => ipcRenderer.invoke('purchases:saveOrderText', id),
   },

@@ -9,6 +9,7 @@ import type {
 import { ModalShell } from './ModalShell';
 import { DateInput } from './DateInput';
 import { downloadBytes } from '../utils/download';
+import { previewLabels } from '../utils/previewLabels';
 import { fileBytesFromResult, toBase64Payload } from '../../../shared/binaryTransfer';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -969,7 +970,7 @@ export default function PurchaseImportWizard({
             </div>
             {summary.purchase_order_id && (
               <div className="row-btns" style={{ marginTop: 10, flexWrap: 'wrap' }}>
-                <button type="button" className="btn btn-sm" onClick={() => window.api.purchases.previewOrder(summary.purchase_order_id!).catch((e) => setError(String(e)))}>
+                <button type="button" className="btn btn-sm" onClick={() => window.api.purchases.previewOrder(summary.purchase_order_id!, 'a4', previewLabels(t)).catch((e) => setError(String(e)))}>
                   {t('purchases.import.previewPrint')}
                 </button>
                 <button type="button" className="btn btn-sm" onClick={shareOrder}>
