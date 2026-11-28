@@ -491,3 +491,64 @@ updated with the reference, never the other way around.
 rendered in code from one constant, is never a settings key / template field /
 footer HTML, and appears on every output and every reprint — it is the one line
 that can never be hidden, edited or toggled by any owner/admin setting.
+
+---
+
+# Phase 6 — the Billten gap, mapped to the real code (2026-11-28)
+
+Baseline `2.33.0` (`main` @ `6629afc`). Scope read from the code, not guessed.
+Every row was verified by grepping `src/` and `migrations/`; a **DONE** claim
+means the symbol/table/column exists and is exercised by a permanent suite.
+
+## 19. Gap → code status (verified this session)
+
+| # | Billten feature | In Rokar? | Evidence (code) | Verdict |
+|---|---|---|---|---|
+| 6.1 | Warehouses + warehouse transfer | **NO** | only `branches.ts` (`listBranches`); no `warehouse` table/column anywhere in `migrations/` | build behind `multi_branch` (feature-flag) |
+| 6.2 | Product variants (colour/size) | **PARTIAL** | `migrations/036_product_variants.js` + `src/main/services/variants.ts` (`product_variants`, attributes, combos) + `has_variants` flag | exists; no variant-wise stock report in Reports |
+| 6.3 | Sub-category / Company / Brand | **NO** | `products` table (migration 001) has only `category_id`; all `ALTER TABLE products` adds are image/batch/units/etc — no company/brand/sub_category | add columns + masters |
+| 6.4 | IMEI / Serial tracking | **NO** | no `serial`/`imei` table or column; `receipt_show_serial_number` is a receipt field, not product serial | new table + reports |
+| 6.5 | Product Groups (bundle, group barcode) | **NO** | no `product_groups`/`bundle` table | new |
+| 6.6 | Units master with conversion | **PARTIAL** | `flexible_units` (migration 019), `src/shared/units.ts`, `unit_id`, `units_per_box` | has packaging; no 26-unit master UI |
+| 6.7 | Tax Rate **and** Tax Group master | **PARTIAL** | `taxes` table (001) `(name, rate, inclusive)` + `products.tax_rate` + receipt tax line | per-product tax exists; no Tax Group master, no tax-inclusive/exclusive UI |
+| 6.8 | Bulk Sale Price Update (% / amount) | **NO** | no bulk-price service/UI | new (10.1 #5) |
+| 6.9 | Stock Adjustment + Damage/Waste screens | **PARTIAL** | `adjustStock()` (inventory.ts:347) covers adjustment; **no** dedicated Damage/Waste screen | add Damage/Waste UI |
+| 6.10 | Purchase Return, Payment Out, bulk Payment In | **PARTIAL** | `returns.ts` (sale returns incl. negative bills), PO service; **no** purchase-return, **no** payment-out, **no** bulk payment-in | build these |
+| 6.11 | Party Advanced Ledger, Promise Date, Areas | **PARTIAL** | `udhaar.ts` (ledger + aging), `customers` (credit limits); **no** promise-date, **no** areas | extend |
+| 6.12 | Day Book, P&L (bill/salesman/user-wise) | **PARTIAL** | `profitability.ts` (daily/weekly/monthly/category/breakEven) + `reports.ts`; **no** Day Book, **no** per-bill/salesman/user P&L | add |
+| 6.13 | 40+ reports with column picker + paper + export | **PARTIAL** | 12 report tabs in `Reports.tsx`, PDF/Excel export (`exportReportPDF`/`exportReportExcel`); **no** column picker, **no** report toolkit pattern | add the toolkit (10.1 #8) |
+| 6.14 | HRM (employees, attendance, payroll) | **NO** | no employee/attendance/payroll service | optional later |
+| 6.15 | Invoice Designer per document type | **PARTIAL** | `receiptDesigner.ts` + `invoiceTemplates.ts`; receipt designer exists, other document types not | extend |
+| 6.16 | Remote/web owner access | **PARTIAL** | Worker web app exists (same renderer, `cloud/`); read-first owner dashboard does not | phase 2 of sync |
+| 6.17 | Keyboard-first billing (F1/F2.../Alt+I...) | **PARTIAL** | `src/shared/shortcuts.ts` registry + tooltips; F-keys/Alt-chords for every billing action not all there | extend registry (10.1 #1) |
+| 6.18 | Sale Settings drawer (20 toggles, searchable) | **NO** | Billing has settings but no drawer of per-column toggles | build (10.1 #2) |
+| 6.19 | Two sale screens (grid + Quick Sale tiles) | **PARTIAL** | `QuickSaleGrid.tsx` exists (tile screen) | mostly there |
+| 6.20 | Add product from sale screen (modal) | **PARTIAL** | product modals exist; not from the Billing grid directly | build (10.1 #4) |
+| 6.21 | Smart PO (quantity method, load by vendor) | **PARTIAL** | PO modal has suggestions + manual; no auto-quantity methods | extend (10.1 #7) |
+| 6.22 | Product stock transaction history (ledger) | **PARTIAL** | `stock_movements` + FIFO engine; **no** per-item ledger screen with KPI cards | build (10.1 #6) |
+| 6.23 | Quotation workflow (status, valid-until, save&print, convert) | **YES** | `quotations.ts`: status + `valid_until` + `convertToSale` + status auto-expire | verified |
+
+## 20. What the matrix says
+
+- **Genuinely missing** (build from scratch): warehouses, company/brand/sub-category,
+  IMEI/serial, product groups, bulk price update, purchase return, payment out,
+  bulk payment in, promise date, areas, Day Book, per-bill P&L, the report toolkit
+  (column picker + paper + export on every tab), the sale-settings drawer, HRM.
+- **Present but thin** (extend): variants (no variant report), units master UI, tax
+  group, damage/waste screen, invoice designer for other documents, web owner
+  dashboard, keyboard coverage, smart-PO quantity methods, stock ledger screen.
+- **Already done** (do not re-build): quotation workflow, two sale screens, the
+  receipt designer + thermal pipeline, the shared settings bridge, the unified
+  numbers (Phase 0.4), the date/calendar system.
+
+**Execution order (Phase 6 → 7 → 8, from the roadmap):** 6.A stabilize/verified
+(this session's battery), 6.B the report toolkit + the stock ledger (biggest daily
+value, smallest risk), 6.C the sales-side actions (purchase return, payment out,
+bulk payment in), 6.D the product data model (company/brand/sub-category, units
+master, tax group, product groups), 6.E warehouses + IMEI/serial, 6.F the sale
+settings drawer + add-from-sale, 6.G smart PO quantity methods, then Phase 7
+(cloud sync/owner dashboard) and Phase 8 (restaurant) behind feature flags.
+
+**Rule kept from the prompt:** every new feature is additive + migration-guarded,
+behind a feature toggle where it changes core billing, and comes with a permanent
+suite. Money stays REAL (D3) until the paisa migration is its own project.
