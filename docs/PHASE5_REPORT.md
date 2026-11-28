@@ -204,7 +204,7 @@ insists the bundle is produced.
 | The fix | `cloud/src/shims/electron-server.ts` (`safeStorage`, `powerMonitor`), `scripts/test_cloudShim.cjs`, `package.json` (`test:cloudShim`) |
 | The guard | `npm run test:cloudShim` → **13/13 ALL PASSED** (`E:\temp\proof\p5_cloudShim.txt`) |
 | The deploy | `npm run deploy` (build → build:web → fix-workerd → `wrangler deploy`) → **deploy OK** |
-| The live Worker version id | `542daefc-bf0a-454c-b60a-017edd92de36` (the final push; the first successful deploy was `29d1d6ec-6e42-4247-b5af-2884f7f861c8`) |
+| The live Worker version id | the Worker is **redeployed on every `main` push**, so the id changes each time - the last verified one is `faa90df8-93d5-46d8-9f05-a9dcc1102941` (the first successful deploy was `29d1d6ec-6e42-4247-b5af-2884f7f861c8`). The **proof is the live check, not the id**: `E:\temp\proof\live_verify_v2.33.0.txt`. |
 | The live URL | `https://rokar-pos.bakery-saas.workers.dev/app` → **200** |
 | The live health | `https://rokar-pos.bakery-saas.workers.dev/api/health` → **200** `{"ok":true,"service":"rokar-pos","version":"0.1.0"}` |
 | The live bundle | the served `/app/assets/index-*.js` **carries 2.33.0** and the Phase 4 printing work |
