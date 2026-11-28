@@ -1,9 +1,13 @@
-# OWNER CHECKLIST — Rokar POS (the master-prompt run, v2.32.0 → next)
+# OWNER CHECKLIST — Rokar POS (the master-prompt run, v2.33.0)
 
 **For the shop owner.** Every box below is something the automated tests
 **cannot** prove — a real printer, a real till, a real customer's money.
 The automated evidence for the same run lives in `docs/PHASE0_REPORT.md` …
 `docs/PHASE5_REPORT.md` and in `E:\temp\proof\`.
+
+**This checklist ships with v2.33.0** (the release of 2026-11-28). The
+short, printable smoke test is `MANUAL_TEST_CHECKLIST.md`; this file is the
+complete one.
 
 **How to use it:** do it on a **test machine** first, never on the live till
 as the first place you try it. Take a **backup** before you install
@@ -201,6 +205,10 @@ Documents).
       download verifies (no "Cannot find channel latest.yml" error).
 - [ ] The **Worker** (the web app's backend) is deployed and the web smoke
       test passes.
+- [ ] The **web app** loads at the website's browser-version link: sign in as
+      owner and as cashier, and confirm the shop's screens come up. (The web
+      app has no OS key store, so a credential saved on the web is stored as
+      plain text — see §9.)
 
 ---
 
@@ -222,3 +230,11 @@ recorded in `docs/DECISIONS.md` and in the phase reports.
 | 9 | Should the **currency policy** (symbol, position, decimals) reach **every** printed document — the invoice, the purchase order, the udhaar statement — or only the designed receipt? | Phase 4 risk 1 |
 | 10 | Should the **Receipt Designer** cover the other document types (invoice, purchase order, statement, credit slip), or stay receipt-only? | Phase 4 risk 2 |
 | 11 | The **legacy receipt-template dropdown** (Settings + the till) is ignored by the printer on a fresh install, because the designer drives the layout. Should it be **hidden**, or wired into the template library? | Phase 4 risk 3 |
+| 12 | On the **web app**, a credential (the SMTP password, the SMS keys, the WhatsApp token) is stored in the shop's **cloud** database as plain text, because a Worker has no operating-system key store. The **desktop** app encrypts it with the Windows key store. Should the web app get its own protection (a per-shop key in the cloud), or should the web app simply refuse to hold these secrets? | Phase 5, D45 |
+
+> **A note about the web app's secrets.** The desktop app encrypts the
+> credentials with the Windows key store (so a copied database cannot reveal
+> them). The web app has **no** operating-system key store, so it stores them
+> as plain text in the shop's cloud database — the same as before the vault
+> existed. If your shop uses the web version and stores a mailbox password
+> there, treat that password as a web-only secret and use a separate one.

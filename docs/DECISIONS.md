@@ -526,3 +526,37 @@ dashboard of another and failed (88/89). **Decision:** every suite that needs
 getShopTimezone())` - never the raw UTC date. The lesson is recorded here
 because it is a property of the **clock**, not of the code: a green battery
 is only evidence for the hour it ran in.
+
+## D44 - a suite's verdict comes from the suite's OWN output
+
+The battery runner judged each suite with PowerShell's `-match`, which is
+**case-insensitive**, against a loose alternation
+(`[FAIL]|RESULT: FAIL|FAILED:|FAILURES`). Two **green** suites were
+therefore reported as RED: `test:ipcError` (whose PASS line reads
+"[PASS] internal: Error: UNIQUE constraint failed: users.username") and
+`test:recovery` ("[PASS] lockout engages at 5 failures even for the
+right answer"). Both printed their own success markers. **Decision:** the
+verdict rule is **strict** - a failure must be a line that *starts* with
+`[FAIL]`, or a `RESULT: FAIL` / `FAILED:` / `FAILURES: n>0` /
+`N passed, M failed` summary line, all **case sensitive**; and a suite is
+GREEN only when its **own** output carries a pass marker. The exit code alone
+never decides (Electron's stderr banner makes Windows report a non-zero exit
+for a green suite). The saved outputs are re-judged from the evidence rather
+than re-run, and every line in every output that mentions a failure is read by
+hand - the final 104 outputs: 57 such lines, 0 in a strict failure shape.
+
+## D45 - the Worker shim must export every value import the desktop takes from 'electron'
+
+The Cloudflare Worker bundles the **real** desktop `src/main/ipc.ts`, so
+'electron' is aliased to `cloud/src/shims/electron-server.ts`. A missing
+export there breaks the **whole bundle** - Phase 0's credential vault
+(`safeStorage`) killed the deploy, and no test suite could see it because
+nothing built the Worker. **Decision:** the shim must cover the desktop's whole
+electron surface (`safeStorage`: no key store on a Worker, so a credential
+is stored as plain text and a value encrypted on the desktop reads as empty;
+`powerMonitor`: no power events on a Worker), and
+`npm run test:cloudShim` is the permanent guard - it compares every
+**value** import (a `import type` is erased and needs nothing) with the
+shim's exports and then runs the **real** cloud build and insists the bundle
+is produced. A suite that does not build the thing you deploy cannot protect
+it.

@@ -102,7 +102,11 @@ The full list is in `docs/OWNER_CHECKLIST.md` §9. The main ones:
 - decide whether the Receipt Designer should cover the invoice, purchase
   order and statement too;
 - decide whether the legacy receipt-template dropdown is hidden or wired into
-  the library.
+  the library;
+- **on the web app**, a credential is stored in the shop's cloud database as
+  plain text (a Worker has no operating-system key store; the desktop app
+  encrypts it with the Windows key store). If you use the web version, treat
+  that mailbox password as a web-only secret and use a separate one.
 
 Older release notes (v2.15.1 and earlier) remain in the git history and on the
 GitHub releases page.

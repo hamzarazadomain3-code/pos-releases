@@ -7,9 +7,11 @@ entries cite the phase item number. A DONE entry means code + a regression test
 ## Phase 5 - the release, the owner checklist, the deploy (2026-11-28)
 
 - **5.1** **The final battery: every `test:*` / `check:*` script in
-  `package.json` - 103 suites (102 + the typecheck), 103 GREEN**, each with its
-  own saved output under `E:\temp\proof\final_<suite>.txt` and the one-line
-  verdict in `E:\temp\proof\final_summary.txt`.
+  `package.json` - 104 suites (103 + the typecheck), 104 GREEN, 0 RED**, each
+  with its own saved output under `E:\temp\proof\final_<suite>.txt` and the
+  one-line verdict in `E:\temp\proof\final_summary.txt`. The battery was run
+  again on the FINAL tree (after the item 5.9 fix) - the table above is from
+  that run.
 - **5.2** **The verdict rule was fixed, and two suites were re-judged.** The
   runner's first rule was case-insensitive and unanchored, so it read a
   **PASS** line as a failure - `[PASS] internal: Error: UNIQUE constraint
@@ -18,13 +20,16 @@ entries cite the phase item number. A DONE entry means code + a regression test
   printed their own `38/38` and `ALL PASSED: 48/48`. The rule is now strict
   (case sensitive, anchored, and a suite is GREEN only when its OWN output
   carries a pass marker), the saved outputs were re-judged from the evidence
-  (`E:\temp\proof\rejudge_final.ps1`), and every line in all 103 outputs that
+  (`E:\temp\proof\rejudge_final.ps1`), and every line in the outputs that
   mentions a failure was read by hand - all 57 are PASS lines describing a
   failure scenario, none is a failure. **No product code changed for this.**
+  The scan was repeated over the final 104 outputs: the same 57 lines, **0** in
+  a strict failure shape.
 - **5.3** **The owner checklist is now one document** -
   `docs/OWNER_CHECKLIST.md` (install, first launch, billing, stock/batches/
   expiry, the purchase-order screen, printing, users/security, the web app,
-  deploy/release, and the 11 owner decisions).
+  deploy/release, and the owner decisions - **12** now, the 12th being the web
+  app's plain-text credential storage).
 - **5.4** **`MANUAL_TEST_CHECKLIST.md` is replaced** (it still described
   v1.5.0: the default `admin/admin123`, the old licence grace, screens that
   no longer exist). The new file is the v2.33.0 smoke test and points at the
@@ -48,7 +53,7 @@ entries cite the phase item number. A DONE entry means code + a regression test
   `src/main/services/secretVault.ts` imports `safeStorage` from 'electron',
   and the shim had no such export, so esbuild refused to bundle and the
   deploy died (`DEPLOY FAILED: npm run deploy exited with code 1`). The
-  **103-suite battery could not see it** - no suite builds the Worker. The
+  **battery could not see it** - no suite builds the Worker. The
   shim now exports `safeStorage` (no key store on a Worker: the credential
   is stored as plain text, and a value encrypted on the desktop reads as
   empty instead of leaking) and `powerMonitor` (no power events on a
