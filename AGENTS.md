@@ -999,3 +999,45 @@ the phase-3 behaviour.
   (present on a reprint, absent on an original, hidden by the toggle), and the copies/bottom-feed
   defaults and clamps. `npm run test:print` (138) and `npm run test:receipt` (68) still pass.
 
+#### The printer pipeline's own rules (phase 4, items 4.9 - 4.16)
+
+`npm run test:printPipeline` (**112 checks**) is the permanent guard. The rules it
+pins — use these, do not write a second copy:
+
+- **Which printer slot does a paper belong to?** `printerKeyForPaper(paper)` in
+  `src/main/services/printService.ts`: a **ROLL** (58/80mm) → the **receipt**
+  printer, a **SHEET** (A4/A5) → the **invoice** printer. The purchase-order
+  service has its own `purchaseOrderPrinterKey()` (a different module, so it
+  cannot import the engine's helper without a cycle). The old rules were
+  `paper === 'a4' ? 'invoice' : 'receipt'`, so an **A5** order and the **A4
+  calibration sheet** both went to the till's thermal printer.
+- **The paper of a calibration sheet** is `resolveCalibrationPaper(paper?)`
+  (`printing.ts`). **`'receipt'` is NOT a paper key** — the paper keys are
+  `thermal58` / `thermal80` / `a4` / `a5` — so `'receipt'` means *"the receipt
+  paper this shop uses"*. An unknown key must NEVER reach `PAPER_SPECS`
+  (`PAPER_SPECS['receipt']` is `undefined`, and reading `spec.widthMm` threw
+  the "Print Test Page" button away).
+- **The label stock the shop configured IS the page that prints.**
+  `resolveLabelSize()` accepts **every** size in `LABEL_SPECS` (eight of them),
+  not three — anything else falls back to `38x25`.
+- **The notes of a successful print are DATA.** `PrintResult.warnings?: string[]`.
+  The engine used to glue them onto the success message, and the till screen
+  only read the failure messages, so the owner never saw them.
+- **A preview whose toolbar failed to inject is a FAILURE.** `injectToolbar()`
+  rejects and `previewDocument()` awaits it — a preview with no Print / PDF /
+  Close button is not a preview. Do not "just log it".
+- **Every preview toolbar speaks the shop's language.** The labels are plumbed
+  through the service → the IPC channel → the preload → the shared type → the
+  renderer call site for the receipt, the invoice, the labels, the purchase
+  order and the udhaar statement. English is the fallback for an old caller.
+- **The forced "set a new owner password" screen may not race the app shell.**
+  `App.tsx`'s `handleLogin()` fetches the flag **and** the landing page
+  **before** `setUser()`, so the shell and the forced screen render in the
+  same commit. A suite that must clear the screen **asks the service**
+  (`window.api.auth.defaultPasswordActive()`) and waits for the screen to
+  really be gone — "the login screen is gone" is true while the forced screen
+  is still up. This cost `test:ui` two checks on a loaded machine.
+- **The receipt-template metadata is `paper` + `contentMm`** (the printable
+  width in mm). There has **never** been a `width` field — asking for one
+  printed "Width: undefined" on the owner's screen.
+

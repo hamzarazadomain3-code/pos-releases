@@ -4,6 +4,76 @@ Newest first. Phase 0 entries cite the master-prompt item number; the Phase 1
 entries cite the phase item number. A DONE entry means code + a regression test
 + a saved proof run.
 
+## Phase 4 — the printer pipeline (2026-11-27, baseline v2.32.0)
+
+- **4.1** **Printing from the receipt preview now behaves exactly like
+  printing directly.** The preview's Print button used to call the low-level
+  print engine, so the **cash drawer never popped** and **"Reprint last
+  receipt" went back to the PREVIOUS sale** — the document was right, the two
+  side effects were missing.
+- **4.2** The printer-resolution policy ("which printer, silently or with a
+  dialog?") is now **one pure, exported, tested rule**. The behaviour is
+  unchanged: a named printer prints silently to it, **"Ask every time"** and
+  "nothing configured" open the Windows dialog, and the app **never**
+  silently substitutes the Windows default unless the owner explicitly
+  picked the "System default printer" option.
+- **4.3** The "after a successful print" behaviour moved into the **print
+  engine** and became **one rule**: only a job that carries a sale id
+  remembers it, and only a **fresh** receipt pops the drawer — an invoice, a
+  label, a test print and a reprint never do.
+- **4.4** The **Printers & Paper** and **Receipt Template** panels in
+  Settings are now **bilingual** (English + Urdu) — `Settings.tsx` had no
+  translation hook at all, so the one screen where an Urdu shop sets up its
+  printer was English only.
+- **4.5** The **receipt-preview window's toolbar** (Print / Download PDF /
+  WhatsApp / Close, the copies box, the busy labels) follows the shop's
+  language — the toolbar is built in the main process, so the renderer now
+  sends the translated strings with the request, and English is the fallback.
+- **4.6** The receipt template's fit warning was checked and deliberately
+  **left alone**: in the designed path the template is ignored (the design
+  is resolved for the paper being printed), so the warning would mislead.
+- **4.7** The copies (1–10), the cut margin (0–30 mm) and the drawer switch
+  keep their clamps — and they are now **pinned by tests**, including the
+  empty-value case (`Number('') === 0` would have turned the 4 mm cut-margin
+  default into no feed).
+- **4.8** The 102-suite final battery found that the Phase 0 password policy
+  had broken three of the run's own permanent guards
+  (`test:billAmend`, `test:billAmendItems`, `test:billAmendUi`): their
+  fixture passwords no longer met the policy, so the suites crashed before
+  they could run. The app's rule is right; the **fixtures** were stale, and
+  they now meet the policy.
+- **4.9** The **"Print Test Page" button works.** It passed `'receipt'` — not
+  a paper key — into `PAPER_SPECS`, so it **threw before it printed
+  anything**. An unknown paper now fails with a message, and a **sheet**
+  (A4/A5) goes to the **invoice** printer while a **roll** goes to the
+  receipt printer.
+- **4.10** **The label stock the shop configured is the page that prints.**
+  Only three sizes were honoured; every other size the engine knows silently
+  printed on a 38×25 page.
+- **4.11** **An A5 purchase order no longer goes to the till's thermal
+  printer** — a roll belongs to the receipt printer, a sheet to the invoice
+  printer.
+- **4.12** **The udhaar entry slip follows the receipt paper** — it was
+  always 80mm, so a 58mm shop got a slip that does not fit its roll.
+- **4.13** The Settings receipt-template panel shows the **real printable
+  width** ("Printable width: 72mm") instead of **"Width: undefined"**.
+- **4.14** **A successful print can now tell the owner something.** The "this
+  layout does not fit your paper" note used to be glued onto a success
+  message that the till screen threw away — the notes are now structured data
+  and the till shows them. A preview whose toolbar failed to inject is also
+  reported as a **failure** instead of "Preview opened".
+- **4.15** **The forced "set a new owner password" screen can no longer race
+  the app shell.** The flag was fetched after the app was already up, so the
+  screen could arrive a tick late and sit on top of every dialog (the
+  `test:ui` suite went 28/30 on a loaded machine). The app now renders the
+  shell and the screen in the same commit, and the suite asks the service
+  instead of guessing.
+- **4.16** **Every preview toolbar speaks the shop's language** — the label,
+  purchase-order and udhaar-statement previews sent no labels and stayed
+  English in an Urdu shop.
+  `npm run test:printPipeline` **100/100** plus a 15-suite regression battery.
+  Proof: `E:\temp\proof\p4_*`.
+
 ## Phase 3 — the purchase-order screen (2026-11-27, baseline v2.32.0)
 
 - **3.1** The purchase catalog now carries the **units** and the **last

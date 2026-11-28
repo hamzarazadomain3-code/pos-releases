@@ -357,4 +357,172 @@ header **and** on every line; the header's `updated_at` moves on every
 write. The branch is still only **recorded** — the stock itself is still one
 number per product (Phase 1 risk 1).
 
+---
 
+# Phase 4 — the printer pipeline
+
+## D32 — the printer-resolution policy is ONE pure, exported rule
+
+The decision "which printer, silently or with a dialog?" used to live in a
+private function that read the shop's settings from the database. The rule
+itself was correct; the problem was that **no test could reach it**, and it
+is the one function that decides whether the receipt lands on the right
+device. **Decision:** the policy is now a **pure exported function**
+(`resolvePrintTarget(input, printMode)` in `printService.ts`) and the
+database-reading wrapper is only glue. The policy is unchanged:
+
+- a printer named in Settings → silent, to that printer;
+- the explicit `DEFAULT_PRINTER` sentinel → silent, to the **Windows
+  default**;
+- `AUTO_PRINTER` ("ask every time") and "nothing configured" → the **OS
+  dialog**.
+
+The app **never** silently prints to the Windows default unless the owner
+explicitly picked the "System default printer" option. A Windows default
+that is a file-output printer (XPS, Print to PDF, OneNote) turns a silent
+print into a save-file prompt; a default on a `nul:`-port software printer
+makes the job vanish — which is what surfaced as random applications
+opening on the till.
+
+## D33 — the after-print behaviour is ONE rule, and it lives in the engine
+
+"What happens after a successful print" lived inside
+`printing.printSale()`. The drawer pulse and the "last printed sale" write
+were therefore attached to **one call site**, not to the print — so the
+preview window's Print button (which calls the engine directly) silently
+skipped both. **Decision:** the whole after-print behaviour moved into the
+**print engine** (`printService.ts`):
+
+- `afterPrintActions(job, drawerKickEnabled)` — the pure rule;
+- `runAfterPrint(job)` — the rule plus the two effects;
+- `openCashDrawer()` — moved here from `printing.ts` (the drawer is wired
+  into the receipt printer, so it is a print-pipeline concern) and
+  re-exported from `printing.ts` so no caller changed.
+
+The rule: a job that carries **no sale id** is not a customer receipt (an
+invoice, a label, the test print, the calibration sheet) — it never records
+a sale and it **never** pops the drawer. A job that carries a sale id
+records it; the drawer pops only for a **fresh** receipt, never for a
+reprint, and the caller can force it either way.
+
+## D34 — the preview window's Print button behaves exactly like the direct print
+
+The preview is built from the **same job** as the paper, so the document was
+always right — but the two **side effects** were not, because the preview
+called the engine while the direct print called the service. **Decision:**
+the job itself says what it is (`saleId`, `duplicate`, `kickDrawer`), the
+engine runs the one after-print rule (D33) whenever a print **succeeded**,
+and the preview's protocol handler builds its job with `previewPrintJob()`
+so it carries the sale id and the "this is a reprint" flag.
+
+Consequence: printing from the preview now pops the drawer (for a fresh
+receipt) and "Reprint last receipt" reprints the sale the cashier actually
+printed — the same as the direct print.
+
+## D35 — the preview toolbar's strings are sent by the renderer
+
+The preview window is a plain `BrowserWindow` with **no preload**, and its
+toolbar is injected by the **main process**, which cannot read the
+renderer's i18n files. Every label was therefore an English literal.
+**Decision:** the toolbar's strings are **placeholders**, and the **renderer
+sends the translated strings with the request** (`PrintSaleOptions.labels`,
+built by `src/renderer/src/utils/previewLabels.ts`). The main process keeps
+the English strings as the **fallback**, so a caller that sends nothing
+still gets a working toolbar.
+
+The **window title** stays English ("Receipt preview"): it is pinned by the
+spec and by the rule that it must be re-asserted *after* the document loads
+(the document's own `<title>Receipt</title>` otherwise overwrites it).
+
+## D36 — the printer surface is bilingual under a new `printing.*` namespace
+
+`Settings.tsx` had no `useTranslation` at all, so the Printers & Paper and
+Receipt Template panels — the one screen where an Urdu shop sets up its
+printer — were English only. **Decision:** a new `printing.*` namespace in
+**both** `i18n/en.json` and `i18n/ur.json` (the same keys in both files, and
+the parity is a permanent check), covering the two panels and the preview
+toolbar. The two paragraphs that carry **bold / italic** use `Trans`, so the
+emphasis survives the translation instead of being flattened into the text.
+
+The rest of the Settings page and the whole Receipt Designer screen are
+still English. They are named surfaces, not accidents: the designer screen
+has no i18n at all, and it is the next surface on the list.
+
+
+
+
+## D37 - one rule for "which printer slot does this paper belong to?"
+
+The audit found three places that decided "receipt printer or invoice
+printer?" by hand, and each was wrong in a different way: the calibration
+sheet always used the receipt printer (so an **A4** test page went to the
+thermal printer), and the purchase-order path used `paper === 'a4' ? ...`
+(so an **A5** order went to the thermal printer too). **Decision:** one
+exported rule, `printerKeyForPaper(paper)` in `printService.ts` - a **ROLL**
+(58/80mm) belongs to the **receipt** printer, a **SHEET** (A4/A5) to the
+**invoice** printer. The purchase-order service uses the same idea through
+its own `purchaseOrderPrinterKey()` (it lives in a different module, so it
+cannot import the engine's helper without a cycle).
+
+## D38 - an unknown paper is a controlled failure, never a crash
+
+`PAPER_SPECS` has four keys (`thermal58` / `thermal80` / `a4` / `a5`), and
+`'receipt'` is **not** one of them - yet the Settings screen passed
+`'receipt'` to the test-page button, and the value was dereferenced blind.
+**Decision:** the paper a calibration sheet uses is resolved by one function
+(`resolveCalibrationPaper()`), which maps `'receipt'` to the receipt paper
+the **shop** uses and falls back to it for anything unknown, so a bad key can
+never reach `PAPER_SPECS`. `printCalibration()` additionally fails with a
+**message** (`Unknown paper: ...`) instead of throwing.
+
+## D39 - the label stock the shop configured IS the page that prints
+
+The engine knows eight label sizes; the resolver accepted three and quietly
+fell back to `38x25` for the rest, so the printed page did not match the
+physical stock. **Decision:** the resolver accepts **every size in
+`LABEL_SPECS`** and falls back to `38x25` only for a value the engine does
+not know. The rule is exported so the permanent suite can pin it per size.
+
+## D40 - the notes of a successful print are structured, not glued onto the message
+
+The engine reported "the chosen layout does not fit your paper" by
+appending it to the success message; the till screen only ever read the
+**failure** messages, so the owner never saw it. **Decision:**
+`PrintResult.warnings?: string[]` - the notes travel as **data**, the
+message stays clean, and the renderer decides to show them. A preview whose
+toolbar failed to inject is also reported as a **failure** now (the
+injection is awaited and rejects), because a preview with no Print / PDF /
+Close button is not a preview.
+
+## D41 - the forced "set a new owner password" screen may not race the app shell
+
+The screen is correct and must be above every dialog. The **race** was not:
+the flag was fetched *after* `setUser()`, so for a frame the app was up
+without the forced screen - and every UI suite that signs in with the
+default password could lose that race (on a loaded machine one did, and
+`test:ui` went 28/30). **Decision:** the app fetches the flag **and** the
+landing page **before** `setUser()`, so the shell and the forced screen are
+rendered in the **same commit**; and a suite that must clear the screen
+**asks the service** (`window.api.auth.defaultPasswordActive()`) and waits
+for the screen to really be gone instead of guessing from the DOM.
+
+## D42 - every preview toolbar speaks the shop's language
+
+D35 made the preview toolbar bilingual, but only for the two preview paths
+that happened to be wired. **Decision:** the labels are plumbed through
+**every** preview path (the receipt, the invoice, the labels, the purchase
+order, the udhaar statement) - service, IPC channel, preload, shared type
+and renderer call site each carry them - and the permanent suite checks
+every call site, so a new preview cannot silently be English-only.
+## D43 - a suite asks for the SHOP's business day, never the UTC day
+
+The app resolves "today" through `currentBusinessDate(startHour, now,
+timezone)` in `src/shared/salesHistory.ts` - the Phase 0 resolver. One of the
+run's own suites did NOT: it used `new Date().toISOString().slice(0, 10)`,
+which is the **UTC** day. Between midnight and 05:00 in Karachi the UTC day
+is **yesterday**, so the suite compared the history of one day with the
+dashboard of another and failed (88/89). **Decision:** every suite that needs
+"today" asks the app's own resolver - `currentBusinessDate(0, new Date(),
+getShopTimezone())` - never the raw UTC date. The lesson is recorded here
+because it is a property of the **clock**, not of the code: a green battery
+is only evidence for the hour it ran in.

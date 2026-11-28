@@ -332,4 +332,82 @@ guessed from the prompt's wording.
   rule, because a service line may legitimately be split by batch (D25).
 - **Money as integer paisa** — still deferred (D3).
 
+---
 
+# Phase 4 — the printer pipeline (2026-11-27)
+
+Baseline `v2.32.0` (`main` @ `51a9096`). The phase report is
+`docs/PHASE4_REPORT.md`; the proofs are in `E:\temp\proof\p4_*`.
+
+## 14. Phase 4 scope
+
+The prompt's Phase 4 is the **printer pipeline** — the path a receipt takes
+from the sale screen to the roll in the shop's printer. The phase-4 printing
+features (the preview window, the reprints, the copies, the cut margin, the
+drawer kick, the system-default printer) were already in the tree from the
+earlier runs; the items below were **found in the code** (an explore pass
+over `printService.ts`, `printing.ts`, the IPC layer and the printer
+settings screen), not guessed.
+
+## 15. Phase 4 status (as run)
+
+| # | Item | Status | The defect that was fixed | Proof |
+|---|---|---|---|---|
+| 4.1 | the preview window's Print button was a DIFFERENT print | **DONE (new)** | it called the low-level engine, so the cash drawer never popped and "Reprint last receipt" went back to the PREVIOUS sale | `test:printPipeline` |
+| 4.2 | the printer-resolution policy could not be tested | **DONE (new)** | it was a private, DB-reading function — the one function that decides whether the receipt lands on the right device was untestable | `test:printPipeline` (10 checks) |
+| 4.3 | the after-print behaviour was in the wrong place | **DONE (new)** | it lived in one call site, not in the print — every other path silently skipped it | `test:printPipeline` (7 checks) |
+| 4.4 | the printer settings screen was hard-coded English | **DONE (new)** | `Settings.tsx` had no `useTranslation` at all — the one screen where an Urdu shop sets up its printer | `test:printPipeline` (the en/ur parity) |
+| 4.5 | the preview toolbar was hard-coded English | **DONE (new)** | the toolbar is injected by the main process, which cannot read the renderer's i18n files | `test:printPipeline` (the source checks) |
+| 4.6 | the receipt template's fit warning | **CHECKED (no change)** | the designed path correctly returns no template warning — the design is resolved FOR the printed paper | the report §2 |
+| 4.7 | the settings clamps | **CHECKED + PINNED** | the empty-value case (`Number('') === 0`) would turn the 4mm cut-margin default into no feed | `test:printPipeline` (13 checks) |
+| 4.8 | the run's own permanent guards were broken | **DONE (fix)** | the Phase 0 password policy made `test:billAmend`, `test:billAmendItems` and `test:billAmendUi` crash on their stale fixture passwords — found by the 102-suite final battery | the three suites re-run green |
+| 4.9 | the "Print Test Page" button threw before it printed | **DONE (new)** | the screen passed `'receipt'` — not a paper key — into `PAPER_SPECS`, so `spec.widthMm` threw; and the A4 sheet always went to the thermal printer | `test:printPipeline` (11 checks) |
+| 4.10 | the configured label stock was not the page that printed | **DONE (new)** | the resolver accepted three sizes and fell back to `38x25` for the other five the engine knows | `test:printPipeline` (10 checks) |
+| 4.11 | an A5 purchase order went to the till's thermal printer | **DONE (new)** | `paper === 'a4' ? 'invoice' : 'receipt'` — A5 is sheet media | `test:printPipeline` (4 checks) |
+| 4.12 | the udhaar entry slip was always 80mm | **DONE (new)** | the roll was hard-coded — a 58mm shop got a slip that does not fit its roll | `test:printPipeline` (4 checks) |
+| 4.13 | the Settings panel said "Width: undefined" | **DONE (new)** | the backend sends `paper` + `contentMm`; the renderer asked for a `width` field that never existed | `test:printPipeline` (4 checks) |
+| 4.14 | a preview without its toolbar was reported as a success | **DONE (new)** | the injection error was only logged; and the print notes were glued onto a success message the till threw away | `test:printPipeline` (5 checks) |
+| 4.15 | the forced "set a new owner password" screen raced the app shell | **DONE (new)** | the flag was fetched AFTER `setUser()`, so the screen arrived a tick late and sat on top of every dialog — `test:ui` went 28/30 | `test:printPipeline` (5 checks) + `test:ui` 30/30 |
+| 4.16 | only the receipt + invoice previews spoke the shop's language | **DONE (new)** | the label, purchase-order and statement previews sent no labels | `test:printPipeline` (15 checks) |
+| 4.17 | a suite was reading the UTC day instead of the shop's business day | **DONE (fix)** | `test:billAmend` asked for `toISOString().slice(0,10)` — between midnight and 05:00 in Karachi that is yesterday, while the dashboard asks for the business day — the suite went 88/89 at 00:47 | `test:billAmend` 89/89 ALL PASSED |
+
+**The whole phase: `npm run test:printPipeline` 112/112, plus the 15-suite
+regression battery (`E:\temp\proof\p4_regr_summary.txt`).**
+
+### The rules that moved into one place
+- the **printer resolution** — `resolvePrintTarget()` in
+  `src/main/services/printService.ts` (a pure, exported rule) — D32.
+- the **after-print behaviour** — `afterPrintActions()` /
+  `runAfterPrint()` in the same file (one rule for the direct print, the
+  preview and the reprint) — D33.
+- the **printer slot of a paper** — `printerKeyForPaper()` (a roll → the
+  receipt printer, a sheet → the invoice printer) — D37.
+- the **paper of a calibration sheet** — `resolveCalibrationPaper()` — D38.
+- the **label stock** — `resolveLabelSize()` (every size the engine knows) —
+  D39.
+- the **notes of a print** — `PrintResult.warnings` (data, not a glued-on
+  string) — D40.
+- the **business day** — `currentBusinessDate()` in
+  `src/shared/salesHistory.ts` (a suite must never ask for the UTC day) —
+  D43.
+
+### What Phase 4 did NOT do (and why)
+- **The WhatsApp receipt is still a plain-text document** — sending the
+  designed receipt means sending an image or a PDF instead of text, which
+  changes what the customer receives (named in the report's risks).
+- **The preview window's title is still English** — it is pinned by the spec.
+- **The rest of the Settings page and the whole Receipt Designer screen are
+  still English** — named surfaces, not accidents; they are the next i18n
+  surfaces.
+- **The currency policy does not reach every printed document** — an owner
+  decision (which symbol / position / decimals), and it changes the
+  documents themselves.
+- **The Receipt Designer still only designs the receipt** — making it cover
+  the invoice, the purchase order, the statement and the credit slip is a
+  large feature, not a defect fix.
+- **The legacy receipt-template selector is still shown** (and is ignored by
+  the printer on a fresh install) — hiding it or wiring it into the library
+  is a UX decision that changes two screens.
+- **A silent print that times out may open a second dialog** — it touches
+  the print queue's timing.
+- **Money as integer paisa** — still deferred (D3).

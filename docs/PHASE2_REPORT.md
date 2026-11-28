@@ -216,10 +216,15 @@ is untouched by it).
 4. **The preview is not a screenshot of the paper.** It is the same HTML the
    print job uses, rendered in a window — the paper size, the margins and the
    driver's own scaling are the driver's business.
-5. **The designer is bilingual only where the app is bilingual.** The
-   designer screen's own labels follow the app's language files; the
-   **document content** (the section labels the owner types) is whatever the
-   owner writes — it is their receipt, in their words.
+5. **The designer screen is hard-coded English.** Checked in the code: the
+   editor (`src/renderer/src/pages/ReceiptDesigner.tsx`) has **no** i18n at all
+   — no `useTranslation`, no `t()`, no language lookup. Every label on that
+   screen (the sections, the properties, the template toolbar) is English,
+   even when the shop is running in Urdu. The **document content** the owner
+   types is whatever they want in their own words — that part is theirs; the
+   screen around it is ours, and it is still English. Carried into the Phase 4
+   list as an open item, and it is why the "all UI text is bilingual" promise
+   is **not** claimed for this phase.
 
 ---
 
