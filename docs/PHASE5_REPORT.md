@@ -238,14 +238,14 @@ scripts were left exactly as they were.
 | `package.json` | the version → **2.33.0** + the new `test:cloudShim` script | `94d3fe2`, `d5b9e0c` |
 | `package-lock.json` | the version field → **2.33.0** (it was still `2.21.0`) | `94d3fe2` |
 | `AGENTS.md` | the version line + a new section: **the Worker shim must keep up with the desktop's electron imports** | `94d3fe2`, `d5b9e0c` |
-| `CHANGELOG.md` | the whole Phase 5 block (5.1 → 5.9) | `94d3fe2`, `d5b9e0c` |
-| `PROGRESS.md` | the Phase 5 ledger (9 rows, with the real hashes) | `94d3fe2`, `d5b9e0c`, the phase-close commit |
-| `docs/PLAN.md` | §16 (the scope) + §17 (the status matrix, 5.1 → 5.9) | `94d3fe2`, `d5b9e0c` |
-| `docs/DECISIONS.md` | **D44** (a suite's verdict comes from its own output) + **D45** (the Worker shim must export every value import) | the phase-close commit |
-| `docs/PHASE5_REPORT.md` | this report (new) | the phase-close commit |
-| `docs/OWNER_CHECKLIST.md` | the v2.33.0 header, the web-app secret note in §8, and a **12th owner decision** | the phase-close commit |
+| `CHANGELOG.md` | the whole Phase 5 block (5.1 → 5.9) | `94d3fe2`, `d5b9e0c`, `3177809` |
+| `PROGRESS.md` | the Phase 5 ledger (9 rows, with the real hashes) | `94d3fe2`, `d5b9e0c`, `3177809` |
+| `docs/PLAN.md` | §16 (the scope) + §17 (the status matrix, 5.1 → 5.9) | `94d3fe2`, `d5b9e0c`, `3177809` |
+| `docs/DECISIONS.md` | **D44** (a suite's verdict comes from its own output) + **D45** (the Worker shim must export every value import) | `3177809` |
+| `docs/PHASE5_REPORT.md` | this report (new) | `3177809` |
+| `docs/OWNER_CHECKLIST.md` | the v2.33.0 header, the web-app secret note in §8, and a **12th owner decision** | `3177809` |
 | `MANUAL_TEST_CHECKLIST.md` | **replaced** (it described v1.5.0) | `94d3fe2` |
-| `RELEASE_NOTES.md` | **replaced** (it carried v2.15.1) + the web-app secret note | `94d3fe2`, the phase-close commit |
+| `RELEASE_NOTES.md` | **replaced** (it carried v2.15.1) + the web-app secret note | `94d3fe2`, `3177809` |
 | `cloud/src/shims/electron-server.ts` | the `safeStorage` + `powerMonitor` stubs (item 5.9) | `d5b9e0c` |
 | `scripts/test_cloudShim.cjs` | the permanent guard for the Worker build (new) | `d5b9e0c` |
 | `E:\antigravty\rokar-site\src\content.json` | `latestVersion` → 2.33.0 + the new changelog entry (the **site** repo) | the site commit `73b1793` |

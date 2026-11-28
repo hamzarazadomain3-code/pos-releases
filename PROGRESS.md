@@ -297,15 +297,15 @@ NOT add features: it **proves the whole tree, writes what only the owner can
 check, and ships it**. The phase report is `docs/PHASE5_REPORT.md`; the status
 matrix is `docs/PLAN.md` (sections 16-17). Phase 5's own commits:
 `94d3fe2` (the version bump + the release notes + the manual test checklist),
-`d5b9e0c` (the Worker-shim fix, item 5.9), the phase-close commit (this report,
-the decisions D44-D45, the owner checklist) and the ledger commit (the real
-hashes, like every phase before it).
+`d5b9e0c` (the Worker-shim fix, item 5.9), `3177809` (the phase-close commit:
+this report, the decisions D44-D45, the owner checklist) and the ledger commit
+(the real hashes, like every phase before it).
 
 | Item | Status | Scope | File:line | Test / proof | Commit |
 |------|--------|-------|-----------|--------------|--------|
 | 5.1 - the final battery | DONE | every `test:*` / `check:*` script in `package.json` (103, after the new `test:cloudShim`) + the typecheck = **104 suites**, each with its own saved output | `package.json` (the scripts), `E:\temp\proof\run_final_battery.ps1` | **104 GREEN / 0 RED** - `E:\temp\proof\final_summary.txt` + `final_<suite>.txt` | 94d3fe2 + d5b9e0c |
 | 5.2 - the verdict rule | DONE (fix) | the runner's first rule was case-insensitive and unanchored, so two **PASS** lines were read as failures (`test:ipcError`, `test:recovery`); the rule is now strict (case sensitive + anchored, and a suite is GREEN only when its OWN output carries a pass marker) | `E:\temp\proof\run_final_battery.ps1`, `E:\temp\proof\rejudge_final.ps1`, `E:\temp\proof\run_p4_batch.ps1` | the saved outputs re-judged from the evidence: **104 GREEN / 0 RED**; every line in every output that mentions a failure was read by hand - each one is a PASS line describing a failure scenario | 94d3fe2 |
-| 5.3 - the owner checklist | DONE | the things no automated test can prove (a real printer, a real till, a real customer's money) + the 12 open owner decisions | `docs/OWNER_CHECKLIST.md` | the report's section 3 | b1d49b1 + (the phase-close commit) |
+| 5.3 - the owner checklist | DONE | the things no automated test can prove (a real printer, a real till, a real customer's money) + the 12 open owner decisions | `docs/OWNER_CHECKLIST.md` | the report's section 3 | b1d49b1 + 3177809 |
 | 5.4 - the manual test checklist was stale | DONE (replace) | it still described v1.5.0 (the default `admin/admin123`, the old licence grace, screens that no longer exist) | `MANUAL_TEST_CHECKLIST.md` | the report's section 3 | 94d3fe2 |
 | 5.5 - the release notes were stale | DONE (replace) | it still carried v2.15.1 as the newest release | `RELEASE_NOTES.md` | the report's section 3 | 94d3fe2 |
 | 5.6 - the version bump | DONE | `2.32.0` -> **2.33.0**; `package-lock.json`'s version field was still `2.21.0` and is now in step | `package.json`, `package-lock.json`, `AGENTS.md` (the version line) | the report's section 4 | 94d3fe2 |
