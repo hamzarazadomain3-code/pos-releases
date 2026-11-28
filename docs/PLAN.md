@@ -451,3 +451,43 @@ check, and ships it**:
   suite is never called green on the exit code alone (Electron's stderr banner
   makes Windows report a non-zero exit for a green suite) and never called red
   because a PASS line happened to contain the word "failed".
+
+---
+
+# Receipt reference implementation (`docs/receipt.html`)
+
+Added: **2026-11-28** (user provided `C:\Users\Hamza PC\Downloads\receipt.html`).
+
+The master prompt's Section 11 says *"A reference implementation receipt.html
+exists beside this file and was tested at both widths: use it as the visual and
+structural target."* The file is now in the repo at **`docs/receipt.html`** so
+the receipt code always has the reference beside the spec.
+
+## 18. What the reference pins down
+
+| Spec promise (Section 11) | How `docs/receipt.html` implements it |
+|---|---|
+| body width = paper width (80mm / 58mm) with 3mm / 2mm padding | `:root{--w:80mm;--pad:3mm}`; `.w58{--w:58mm;--pad:2mm}`; `body{width:var(--w);padding:var(--pad)}` |
+| nothing wider than the body | `*{box-sizing:border-box}`; every child uses the `--w` body |
+| header: logo max 22mm, shop name wraps, address, phone/WhatsApp, centered | `.logo{max-width:22mm;max-height:22mm}`, `.shop` (17px bold, `overflow-wrap:anywhere`), `.sm` centered lines |
+| meta block: 2-column grid, label left / value right, values wrap | `.meta{display:grid;grid-template-columns:auto 1fr;gap:1px 3mm}`; `.meta span{text-align:right;overflow-wrap:anywhere;word-break:break-all}` |
+| item = two lines: name (wraps); qty unit × rate left, amount right | `.item .name{font-weight:600;overflow-wrap:anywhere}` + `.row.sub` flex |
+| label/value rows: flex space-between, gap 3mm, left min-width 0, right nowrap flex none | `.row{display:flex;justify-content:space-between;gap:3mm;align-items:baseline}`; `.row>*:first-child{min-width:0;overflow-wrap:anywhere}`; `.row>*:last-child{white-space:nowrap;text-align:right;flex:none}` |
+| totals: Sub total, Discount, Tax, NET TOTAL with currency (big), Paid (method), Balance | `.tot .row` block + `.net` (15px bold) + payments block |
+| numbers: tabular-nums, one money formatter | `font-variant-numeric:tabular-nums` on body |
+| footer: user thank-you text, then the mandatory brand line | `.foot` then `.pw` — `Powered by <b>Rokar POS</b>` rendered in code, not a template/DB field |
+| Urdu must not overlap numbers | values right-aligned + `overflow-wrap:anywhere` (RTL safe when the text is RTL) |
+| 58mm adjustment | `.w58` sets `--pad:2mm` and body font 11px |
+
+**Relationship to the shipped code:** the production builders
+(`buildRoll()` in `src/main/services/receiptTemplates.ts` and the designed
+`buildDesignedReceiptAsync()` in `src/main/services/receiptDesigner.ts`) already
+follow this structure and are measured by `npm run test:print` (138/138) and
+`npm run test:receipt` (68/68). This reference is the visual/structural target
+the tests were written against; if the two ever disagree the tests must be
+updated with the reference, never the other way around.
+
+**Verification rule:** the mandatory brand line (`Powered by Rokar POS`) is
+rendered in code from one constant, is never a settings key / template field /
+footer HTML, and appears on every output and every reprint — it is the one line
+that can never be hidden, edited or toggled by any owner/admin setting.
